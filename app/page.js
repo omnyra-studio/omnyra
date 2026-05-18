@@ -317,8 +317,33 @@ export default function OmnyraApp() {
   const [searchOpen,setSearchOpen] = useState(false);
   const [notifOpen,setNotifOpen]   = useState(false);
   const [toast,setToast]           = useState({visible:false,message:""});
-  useEffect(()=>{const t=setTimeout(()=>setStage(localStorage.getItem("omnyra_onboarded")?"app":"onboard"),1800);return()=>clearTimeout(t);},[]);
+
+  // On mount: show splash, then resolve to the right stage based on session + localStorage
+  useEffect(() => {
+    const resolve = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        setStage("app");
+      } else if (localStorage.getItem("omnyra_onboarded")) {
+        setStage("login");
+      } else {
+        setStage("onboard");
+      }
+    };
+    const t = setTimeout(resolve, 1800);
+    return () => clearTimeout(t);
+  }, []);
+
+  // React to auth changes (sign-in from inline form, token refresh, sign-out)
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) setStage("app");
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
   const showToast = msg => { setToast({visible:true,message:msg}); setTimeout(()=>setToast({visible:false,message:""}),2200); };
+
   return (
     <div style={{minHeight:"100vh",background:C.bg,color:C.text,fontFamily:'"Instrument Sans","Inter",-apple-system,sans-serif',overflow:"hidden",position:"relative"}}>
       <GlobalStyles/><Atmosphere/>
@@ -326,11 +351,10 @@ export default function OmnyraApp() {
       <div style={{maxWidth:440,margin:"0 auto",minHeight:"100vh",position:"relative",zIndex:1}}>
         {stage==="splash"  && <Splash/>}
         {stage==="onboard" && <Onboarding onDone={()=>setStage("paywall")}/>}
-        {stage==="paywall" && <Paywall onDone={()=>{localStorage.setItem("omnyra_onboarded","1");window.location.href="/login";}} showToast={showToast}/>}
-{stage==="login"   && <LoginGate onDone={()=>setStage("app")}/>}
-{stage==="app" && (
-  <>
-
+        {stage==="paywall" && <Paywall onDone={()=>{ localStorage.setItem("omnyra_onboarded","1"); setStage("login"); }} showToast={showToast}/>}
+        {stage==="login"   && <LoginGate onDone={()=>setStage("app")}/>}
+        {stage==="app" && (
+          <>
             {searchOpen && <SearchOverlay onClose={()=>setSearchOpen(false)} onTool={t=>{setActiveTool(t);setSearchOpen(false);}}/>}
             {notifOpen  && <NotifOverlay  onClose={()=>setNotifOpen(false)} showToast={showToast}/>}
             {!searchOpen&&!notifOpen&&(
@@ -2458,8 +2482,77 @@ function GlobalStyles() {
   );
 }
 function LoginGate({ onDone }) {
-  useEffect(() => {
-    window.location.href = '/login?next=/'
-  }, [])
-  return null
+  const [tab,setTab]         = useState("signin");
+  const [email,setEmail]     = useState("");
+  const [password,setPassword] = useState("");
+  const [loading,setLoading] = useState(false);
+  const [error,setError]     = useState(null);
+  const [success,setSuccess] = useState(null);
+
+  const handle = async e => {
+    e.preventDefault();
+    setLoading(true); setError(null); setSuccess(null);
+    if (tab === "signup") {
+      const { error: err } = await supabase.auth.signUp({ email, password });
+      if (err) setError(err.message);
+      else setSuccess("Account created! Check your email, then sign in.");
+    } else {
+      const { error: err } = await supabase.auth.signInWithPassword({ email, password });
+      if (err) setError(err.message);
+      // onAuthStateChange handles the transition to "app" on success
+    }
+    setLoading(false);
+  };
+
+  const inp = { width:"100%", padding:"13px 16px", background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:14, color:C.text, fontSize:15, outline:"none", fontFamily:"inherit", boxSizing:"border-box" };
+
+  return (
+    <div style={{minHeight:"100vh",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"28px 24px",animation:"fadeIn 0.4s ease"}}>
+      <div style={{width:"100%",maxWidth:400}}>
+        {/* Logo */}
+        <div style={{textAlign:"center",marginBottom:36}}>
+          <Orb size={64}/>
+          <div style={{marginTop:20,fontSize:28,fontWeight:300,letterSpacing:"-0.03em"}}>
+            Omnyra <span style={{background:"linear-gradient(135deg,#22d3ee,#8b5cf6)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",fontWeight:500}}>AI</span>
+          </div>
+          <div style={{marginTop:6,fontSize:13,color:C.sub}}>The Creator OS</div>
+        </div>
+
+        {/* Tab toggle */}
+        <div style={{display:"flex",background:"rgba(255,255,255,0.04)",borderRadius:14,padding:4,marginBottom:24,border:"1px solid rgba(255,255,255,0.07)"}}>
+          {[["signin","Sign In"],["signup","Sign Up"]].map(([id,label])=>(
+            <PressBtn key={id} onClick={()=>{setTab(id);setError(null);setSuccess(null);}} style={{flex:1,padding:"11px",borderRadius:11,border:"none",fontSize:14,fontWeight:600,fontFamily:"inherit",background:tab===id?"linear-gradient(135deg,rgba(139,92,246,0.3),rgba(34,211,238,0.2))":"transparent",color:tab===id?"#fff":C.sub}}>
+              {label}
+            </PressBtn>
+          ))}
+        </div>
+
+        {/* Form */}
+        <form onSubmit={handle} style={{display:"flex",flexDirection:"column",gap:14}}>
+          <div>
+            <label style={{...labelStyle,display:"block",marginBottom:6}}>Email</label>
+            <input type="email" value={email} onChange={e=>setEmail(e.target.value)} required placeholder="you@example.com" style={inp}/>
+          </div>
+          <div>
+            <label style={{...labelStyle,display:"block",marginBottom:6}}>Password</label>
+            <input type="password" value={password} onChange={e=>setPassword(e.target.value)} required placeholder="••••••••" style={inp}/>
+          </div>
+
+          {error   && <div style={{padding:"11px 14px",borderRadius:12,background:"rgba(239,68,68,0.1)",border:"1px solid rgba(239,68,68,0.25)",color:"#f87171",fontSize:13}}>{error}</div>}
+          {success && <div style={{padding:"11px 14px",borderRadius:12,background:"rgba(52,211,153,0.1)",border:"1px solid rgba(52,211,153,0.25)",color:"#34d399",fontSize:13}}>{success}</div>}
+
+          <PressBtn onClick={()=>{}} style={{...primaryBtn,justifyContent:"center",width:"100%",marginTop:4,opacity:loading?0.7:1,pointerEvents:loading?"none":"auto"}}>
+            {loading
+              ? <><div style={{width:16,height:16,borderRadius:"50%",border:"2px solid rgba(255,255,255,0.3)",borderTopColor:"#fff",animation:"spin 1s linear infinite"}}/>Please wait…</>
+              : tab==="signin" ? "Sign In" : "Create Account"
+            }
+          </PressBtn>
+        </form>
+
+        <div style={{textAlign:"center",marginTop:20,fontSize:12,color:C.sub}}>
+          No credit card required · Free plan available
+        </div>
+      </div>
+    </div>
+  );
 }
