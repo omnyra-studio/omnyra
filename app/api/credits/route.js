@@ -1,0 +1,38 @@
+// Run supabase/setup.sql once in the Supabase SQL editor before using this route.
+
+import { supabaseAdmin } from '../../../lib/supabase-admin';
+import { deductCredits } from '../../../lib/credits';
+
+async function getUserFromRequest(request) {
+  const token = request.headers.get('authorization')?.replace('Bearer ', '');
+  if (!token) return null;
+  const { data: { user } } = await supabaseAdmin.auth.getUser(token);
+  return user ?? null;
+}
+
+export async function GET(request) {
+  const user = await getUserFromRequest(request);
+  if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const { data } = await supabaseAdmin
+    .from('credits')
+    .select('balance')
+    .eq('user_id', user.id)
+    .single();
+
+  return Response.json({ balance: data?.balance ?? 0 });
+}
+
+export async function POST(request) {
+  const user = await getUserFromRequest(request);
+  if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const { action } = await request.json();
+  const result = await deductCredits(user.id, action);
+
+  if (!result.success) {
+    return Response.json({ error: result.error, balance: result.balance }, { status: 402 });
+  }
+
+  return Response.json({ balance: result.remaining, cost: result.cost });
+}
