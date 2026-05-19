@@ -1,11 +1,5 @@
 import Stripe from 'stripe';
 
-let _stripe = null
-function getStripe() {
-  if (!_stripe) _stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
-  return _stripe
-}
-
 const PLANS = {
   Creator: { amount: 2900, label: 'Omnyra Creator', description: '200 credits/month · 1 min video · No watermark' },
   Pro:     { amount: 6900, label: 'Omnyra Pro',     description: '500 credits/month · 3 min video · 4K exports' },
@@ -13,6 +7,7 @@ const PLANS = {
 };
 
 export async function POST(request) {
+  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
   const { plan } = await request.json();
 
   if (!PLANS[plan]) {
@@ -22,7 +17,7 @@ export async function POST(request) {
   const { amount, label, description } = PLANS[plan];
   const origin = request.headers.get('origin') || 'http://localhost:3000';
 
-  const session = await getStripe().checkout.sessions.create({
+  const session = await stripe.checkout.sessions.create({
     mode: 'subscription',
     line_items: [{
       price_data: {

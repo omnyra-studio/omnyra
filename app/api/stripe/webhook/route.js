@@ -13,12 +13,6 @@ import Stripe from 'stripe';
 import { supabaseAdmin } from '../../../../lib/supabase-admin';
 import { sendSubscriptionConfirmation } from '../../../../lib/email.js';
 
-let _stripe = null
-function getStripe() {
-  if (!_stripe) _stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
-  return _stripe
-}
-
 const PLAN_CREDITS = {
   creator: 200,
   pro:     500,
@@ -76,12 +70,13 @@ async function applyPlan(userId, plan, customerId, subscriptionId) {
 }
 
 export async function POST(request) {
+  const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
   const body = await request.text();
   const sig  = request.headers.get('stripe-signature');
 
   let event;
   try {
-    event = getStripe().webhooks.constructEvent(body, sig, process.env.STRIPE_WEBHOOK_SECRET);
+    event = stripe.webhooks.constructEvent(body, sig, process.env.STRIPE_WEBHOOK_SECRET);
   } catch (err) {
     console.error('Stripe webhook signature failed:', err.message);
     return new Response(`Webhook Error: ${err.message}`, { status: 400 });
