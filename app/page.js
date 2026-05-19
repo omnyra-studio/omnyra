@@ -28,21 +28,26 @@ const TOOLS = [
   { id: 'prompt',   name: 'Research Studio',    desc: 'Your AI study & research partner',      emoji: '📚', color: C.violet },
 ]
 
+// TODO: replace these with your real Stripe price IDs (see /api/checkout/route.js)
+// Get them from: Stripe Dashboard → Products → (each product) → Prices → copy ID (price_xxx)
 const PLANS = [
   {
-    name: 'Free', price: 0, period: 'forever', tag: null, credits: 50,
+    name: 'Free', price: 0, period: 'forever', tag: null, credits: 50, priceId: null,
     features: ['50 credits / month', '30 sec video max', 'Watermark on exports', 'Scripts & research FREE', 'All 7 thinking modes'],
   },
   {
     name: 'Creator', price: 29, period: '/ mo AUD', tag: null, credits: 200,
+    priceId: 'price_CREATOR_AUD_ID_HERE',
     features: ['200 credits / month', '1 min video max', 'No watermark · HD exports', 'Scripts & research FREE', 'Commercial rights'],
   },
   {
     name: 'Pro', price: 69, period: '/ mo AUD', tag: 'POPULAR', credits: 500,
+    priceId: 'price_PRO_AUD_ID_HERE',
     features: ['500 credits / month', '3 min video max', '4K HD exports', 'Scripts & research FREE', 'Fast queue · Priority', 'Premium voices & models', 'Commercial rights'],
   },
   {
     name: 'Studio', price: 99, period: '/ mo AUD', tag: 'BEST', credits: 1500,
+    priceId: 'price_STUDIO_AUD_ID_HERE',
     features: ['1,500 credits / month', '5 min video max', 'Highest quality exports', 'Scripts & research FREE', 'Fastest queue · Top priority', 'Batch generation · Full commercial'],
   },
 ]
@@ -50,6 +55,25 @@ const PLANS = [
 export default function LandingPage() {
   const [checking, setChecking] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [loadingPlan, setLoadingPlan] = useState(null)
+
+  async function handleCheckout(plan, priceId) {
+    setLoadingPlan(plan)
+    try {
+      const res = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ price_id: priceId, plan: plan.toLowerCase() }),
+      })
+      const { url, error } = await res.json()
+      if (error) { alert(error); return }
+      window.location.href = url
+    } catch {
+      alert('Checkout failed. Please try again.')
+    } finally {
+      setLoadingPlan(null)
+    }
+  }
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -237,9 +261,20 @@ export default function LandingPage() {
                       </li>
                     ))}
                   </ul>
-                  <a href="/dashboard" className="cta-btn" style={{ display: 'block', marginTop: 24, padding: '13px', borderRadius: 14, textAlign: 'center', textDecoration: 'none', fontSize: 14, fontWeight: 600, background: featured ? 'linear-gradient(135deg,#8b5cf6,#22d3ee)' : C.surface, border: featured ? 'none' : `1px solid ${C.border}`, color: featured ? '#fff' : C.text, boxShadow: featured ? '0 8px 24px -8px rgba(139,92,246,0.5)' : 'none' }}>
-                    {p.price === 0 ? 'Get started free' : `Start ${p.name} →`}
-                  </a>
+                  {p.price === 0 ? (
+                    <a href="/dashboard" className="cta-btn" style={{ display: 'block', marginTop: 24, padding: '13px', borderRadius: 14, textAlign: 'center', textDecoration: 'none', fontSize: 14, fontWeight: 600, background: C.surface, border: `1px solid ${C.border}`, color: C.text }}>
+                      Get started free
+                    </a>
+                  ) : (
+                    <button
+                      onClick={() => handleCheckout(p.name, p.priceId)}
+                      disabled={!!loadingPlan}
+                      className="cta-btn"
+                      style={{ display: 'block', width: '100%', marginTop: 24, padding: '13px', borderRadius: 14, textAlign: 'center', fontSize: 14, fontWeight: 600, background: featured ? 'linear-gradient(135deg,#8b5cf6,#22d3ee)' : C.surface, border: featured ? 'none' : `1px solid ${C.border}`, color: featured ? '#fff' : C.text, boxShadow: featured ? '0 8px 24px -8px rgba(139,92,246,0.5)' : 'none', cursor: loadingPlan ? 'wait' : 'pointer', opacity: loadingPlan && loadingPlan !== p.name ? 0.5 : 1 }}
+                    >
+                      {loadingPlan === p.name ? 'Loading…' : `Start ${p.name} →`}
+                    </button>
+                  )}
                 </div>
               )
             })}
