@@ -2,16 +2,20 @@ import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
 import { sendWelcomeEmail } from '../../../lib/email.js'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_ROLE_KEY
-)
+let _supabase = null
+function getSupabase() {
+  if (!_supabase) _supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  )
+  return _supabase
+}
 
 export async function POST(request) {
   const { action, email, password } = await request.json()
 
   if (action === 'signup') {
-    const { data, error } = await supabase.auth.admin.createUser({
+    const { data, error } = await getSupabase().auth.admin.createUser({
       email,
       password,
       email_confirm: true,
@@ -22,7 +26,7 @@ export async function POST(request) {
   }
 
   if (action === 'signin') {
-    const { data, error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await getSupabase().auth.signInWithPassword({
       email,
       password,
     })
