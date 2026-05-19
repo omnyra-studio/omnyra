@@ -170,7 +170,8 @@ const ONBOARDING = [
 
 /* ── HELPERS ── */
 /* ── WATERMARK OVERLAY — Free tier only ── */
-function WatermarkOverlay({ opacity = 0.85 }) {
+function WatermarkOverlay({ opacity = 0.85, plan }) {
+  if (plan !== undefined && plan !== 'free') return null;
   return (
     <div style={{
       position:"absolute", bottom:0, left:0, right:0,
@@ -1207,7 +1208,7 @@ function OneClickFlow({ mode, setMode, onBack, showToast, brand }) {
 /* ─────────────────────────────────────────────
    PRESENTER STUDIO (AI Avatars — 40 avatars)
 ──────────────────────────────────────────────*/
-function AvatarGenerateForm({ script, onScript, voices, voicesLoading, voiceId, onVoice, duration, onDuration, generating, jobStatus, videoUrl, onGenerate }) {
+function AvatarGenerateForm({ script, onScript, voices, voicesLoading, voiceId, onVoice, duration, onDuration, generating, jobStatus, videoUrl, onGenerate, plan = 'free' }) {
   return (
     <>
       <div style={{ marginTop: 20 }}>
@@ -1262,9 +1263,12 @@ function AvatarGenerateForm({ script, onScript, voices, voicesLoading, voiceId, 
 
       {videoUrl && (
         <div style={{ marginTop: 20, borderRadius: 20, overflow: "hidden", border: "1px solid rgba(139,92,246,0.3)" }}>
-          <video controls style={{ width: "100%", display: "block", background: "#000" }}>
-            <source src={videoUrl} type="video/mp4" />
-          </video>
+          <div style={{ position: "relative" }}>
+            <video controls style={{ width: "100%", display: "block", background: "#000" }}>
+              <source src={videoUrl} type="video/mp4" />
+            </video>
+            <WatermarkOverlay plan={plan} />
+          </div>
           <div style={{ padding: "12px 14px", background: "rgba(139,92,246,0.08)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <span style={{ fontSize: 12, color: C.sub }}>Avatar video ready ✓</span>
             <a href={videoUrl} download style={{ fontSize: 12, color: "#a78bfa", textDecoration: "none" }}>Download</a>
@@ -1460,7 +1464,7 @@ function AvatarStudio({ mode, onBack, showToast, plan = 'free' }) {
               voices={voices} voicesLoading={voicesLoading} voiceId={voiceId} onVoice={setVoiceId}
               duration={duration} onDuration={setDuration}
               generating={generating} jobStatus={jobStatus} videoUrl={videoUrl}
-              onGenerate={generate}
+              onGenerate={generate} plan={plan}
             />
           )}
         </div>
@@ -1522,7 +1526,7 @@ function AvatarStudio({ mode, onBack, showToast, plan = 'free' }) {
                 voices={voices} voicesLoading={voicesLoading} voiceId={voiceId} onVoice={setVoiceId}
                 duration={duration} onDuration={setDuration}
                 generating={generating} jobStatus={jobStatus} videoUrl={videoUrl}
-                onGenerate={generate}
+                onGenerate={generate} plan={plan}
               />
             </>
           )}
@@ -1661,9 +1665,12 @@ function VideoTool({ onBack, showToast, onGenerated, plan = 'free' }) {
 
       {videoUrl && (
         <div style={{ marginTop: 20, borderRadius: 20, overflow: "hidden", border: "1px solid rgba(139,92,246,0.3)", animation: "slideUp 0.4s ease" }}>
-          <video controls autoPlay muted style={{ width: "100%", display: "block", background: "#000" }}>
-            <source src={videoUrl} type="video/mp4" />
-          </video>
+          <div style={{ position: "relative" }}>
+            <video controls autoPlay muted style={{ width: "100%", display: "block", background: "#000" }}>
+              <source src={videoUrl} type="video/mp4" />
+            </video>
+            <WatermarkOverlay plan={plan} />
+          </div>
           <div style={{ padding: "12px 16px", background: "rgba(139,92,246,0.08)", display: "flex", gap: 10 }}>
             <a href={videoUrl} download="omnyra-video.mp4" target="_blank" rel="noreferrer"
               style={{ ...primaryBtn, flex: 1, justifyContent: "center", textDecoration: "none" }}>
@@ -2134,9 +2141,12 @@ function LipSyncStudio({ onBack, showToast, onGenerated, plan = 'free' }) {
       {/* Result */}
       {resultUrl && (
         <div style={{ marginTop: 20, borderRadius: 20, overflow: 'hidden', border: '1px solid rgba(139,92,246,0.3)', animation: 'slideUp 0.4s ease' }}>
-          <video controls autoPlay style={{ width: '100%', display: 'block', background: '#000' }}>
-            <source src={resultUrl} type="video/mp4" />
-          </video>
+          <div style={{ position: 'relative' }}>
+            <video controls autoPlay style={{ width: '100%', display: 'block', background: '#000' }}>
+              <source src={resultUrl} type="video/mp4" />
+            </video>
+            <WatermarkOverlay plan={plan} />
+          </div>
           <div style={{ padding: '12px 16px', background: 'rgba(139,92,246,0.08)', display: 'flex', gap: 10 }}>
             <a href={resultUrl} download="omnyra-lipsync.mp4" target="_blank" rel="noreferrer"
               style={{ ...primaryBtn, flex: 1, justifyContent: 'center', textDecoration: 'none' }}>
@@ -2243,7 +2253,10 @@ function ImageTool({ onBack, showToast, onGenerated, plan = 'free' }) {
 
       {imageUrl && (
         <div style={{ marginTop: 20, borderRadius: 20, overflow: "hidden", border: "1px solid rgba(139,92,246,0.3)", animation: "slideUp 0.4s ease" }}>
-          <img src={imageUrl} alt={prompt} style={{ width: "100%", display: "block" }} />
+          <div style={{ position: "relative" }}>
+            <img src={imageUrl} alt={prompt} style={{ width: "100%", display: "block" }} />
+            <WatermarkOverlay plan={plan} />
+          </div>
           <div style={{ padding: "12px 16px", background: "rgba(139,92,246,0.08)", display: "flex", gap: 10 }}>
             <a
               href={imageUrl}
@@ -2815,9 +2828,12 @@ function MotionStudio({ mode, setMode, onBack, showToast, onGenerated, plan = 'f
 
       {videoUrl && (
         <div style={{marginTop:20,borderRadius:20,overflow:"hidden",border:"1px solid rgba(251,191,36,0.3)",animation:"slideUp 0.4s ease"}}>
-          <video controls autoPlay muted style={{width:"100%",display:"block",background:"#000"}}>
-            <source src={videoUrl} type="video/mp4"/>
-          </video>
+          <div style={{position:"relative"}}>
+            <video controls autoPlay muted style={{width:"100%",display:"block",background:"#000"}}>
+              <source src={videoUrl} type="video/mp4"/>
+            </video>
+            <WatermarkOverlay plan={plan} />
+          </div>
           <div style={{padding:"12px 16px",background:"rgba(251,191,36,0.06)",display:"flex",gap:10}}>
             <a href={videoUrl} download="omnyra-motion.mp4" target="_blank" rel="noreferrer"
               style={{...primaryBtn,flex:1,justifyContent:"center",textDecoration:"none"}}>
