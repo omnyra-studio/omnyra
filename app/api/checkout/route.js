@@ -1,6 +1,10 @@
 import Stripe from 'stripe'
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
+let _stripe = null
+function getStripe() {
+  if (!_stripe) _stripe = new Stripe(process.env.STRIPE_SECRET_KEY)
+  return _stripe
+}
 
 export async function POST(request) {
   const { price_id, plan } = await request.json()
@@ -11,7 +15,7 @@ export async function POST(request) {
 
   const origin = request.headers.get('origin') || 'https://omnyra.studio'
 
-  const session = await stripe.checkout.sessions.create({
+  const session = await getStripe().checkout.sessions.create({
     mode: 'subscription',
     line_items: [{ price: price_id, quantity: 1 }],
     metadata: { plan: plan ?? '' },
