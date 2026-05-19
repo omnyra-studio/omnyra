@@ -9,7 +9,7 @@ import {
   Lightbulb, Camera, Film, Layers, X, Upload, Copy,
   LogOut, HelpCircle, Sliders, Smartphone, Brain,
   CreditCard, Lock, Shield, RefreshCw, Clapperboard, Mic2, Square,
-  Building2
+  Building2, Calendar, Send, Clock, ChevronLeft, LayoutGrid, Share2
 } from "lucide-react";
 
 /* ── TOKENS ── */
@@ -516,7 +516,38 @@ function AppShell({ screen, setScreen, subScreen, setSubScreen, activeTool, setA
     } catch {}
   };
 
-  useEffect(() => { refreshCredits(); loadBrand(); }, []);
+  useEffect(() => {
+    refreshCredits();
+    loadBrand();
+    // Handle OAuth callback redirects
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const connected = params.get('social_connected');
+      const socialError = params.get('social_error');
+      if (connected) {
+        showToast(`${connected.charAt(0).toUpperCase()+connected.slice(1)} connected! 🎉`);
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+      if (socialError) {
+        showToast(`Connection failed: ${socialError}`);
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+    }
+  }, []);
+
+  const saveToLibrary = async (type, pipelineState) => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { showToast('Sign in to save'); return; }
+      const res = await fetch('/api/library', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` },
+        body: JSON.stringify({ type, pipeline_state: pipelineState }),
+      });
+      if (res.ok) showToast('Saved to Library ✓');
+      else showToast('Save failed — try again');
+    } catch { showToast('Connection failed'); }
+  };
 
   // Called after any generation; refreshes the displayed balance.
   // Deduction now happens server-side inside each generation route.
@@ -526,8 +557,8 @@ function AppShell({ screen, setScreen, subScreen, setSubScreen, activeTool, setA
   };
 
   if (brandPanelOpen) return <BrandPanel onClose={(saved) => { if (saved) setBrand(saved); setBrandPanelOpen(false); }} showToast={showToast}/>;
-  if (activeTool?.id==="oneclick") return <OneClickFlow mode={mode} setMode={setMode} onBack={()=>setActiveTool(null)} showToast={showToast} brand={brand}/>;
-  if (activeTool?.id==="script")   return <ScriptStudio  mode={mode} setMode={setMode} onBack={()=>setActiveTool(null)} showToast={showToast} brand={brand}/>;
+  if (activeTool?.id==="oneclick") return <OneClickFlow mode={mode} setMode={setMode} onBack={()=>setActiveTool(null)} showToast={showToast} brand={brand} onSave={saveToLibrary}/>;
+  if (activeTool?.id==="script")   return <ScriptStudio  mode={mode} setMode={setMode} onBack={()=>setActiveTool(null)} showToast={showToast} brand={brand} onSave={saveToLibrary}/>;
   if (activeTool?.id==="avatar")   return <AvatarStudio  mode={mode} onBack={()=>setActiveTool(null)} showToast={showToast} plan={plan}/>;
   if (activeTool?.id==="video")    return <VideoTool    onBack={()=>setActiveTool(null)} showToast={showToast} onGenerated={onGenerated} plan={plan}/>;
   if (activeTool?.id==="lipsync")  return <LipSyncStudio    onBack={()=>setActiveTool(null)} showToast={showToast} onGenerated={onGenerated} plan={plan}/>;
@@ -748,7 +779,7 @@ function ToolCard({ tool, onClick }) {
 /* ─────────────────────────────────────────────
    OMNYRA SCRIPT STUDIO
 ──────────────────────────────────────────────*/
-function ScriptStudio({ mode, setMode, onBack, showToast, brand }) {
+function ScriptStudio({ mode, setMode, onBack, showToast, brand, onSave }) {
   const [step,setStep]       = useState(1);
   const [platform,setPlatform] = useState(null);
   const [tone,setTone]       = useState(null);
@@ -960,7 +991,7 @@ function ScriptStudio({ mode, setMode, onBack, showToast, brand }) {
               <PressBtn onClick={()=>showToast("Video Generator — connect Kling · Sync Labs in Connected Apps")} style={{...ghostBtn,justifyContent:"center",fontSize:11}}>🎬 Video Generator</PressBtn>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              <PressBtn onClick={()=>showToast("Saved to Library")} style={{...ghostBtn,justifyContent:"center",fontSize:11}}>💾 Save Script</PressBtn>
+              <PressBtn onClick={()=>onSave?.('script',{title:prompt,platform:platform?.label,tone:tone?.id,mode,expanded})} style={{...ghostBtn,justifyContent:"center",fontSize:11}}>💾 Save Script</PressBtn>
               <PressBtn onClick={()=>{setStep(4);setExp(null);}} style={{...ghostBtn,justifyContent:"center",fontSize:11}}>← Try another</PressBtn>
             </div>
           </div>
@@ -973,7 +1004,7 @@ function ScriptStudio({ mode, setMode, onBack, showToast, brand }) {
 /* ─────────────────────────────────────────────
    Creator Hub POST — Full orchestration flow
 ──────────────────────────────────────────────*/
-function OneClickFlow({ mode, setMode, onBack, showToast, brand }) {
+function OneClickFlow({ mode, setMode, onBack, showToast, brand, onSave }) {
   const [step,setStep]       = useState(1);
   const [platform,setPlatform] = useState(null);
   const [style,setStyle]     = useState(null);
@@ -1195,7 +1226,7 @@ function OneClickFlow({ mode, setMode, onBack, showToast, brand }) {
             </PressBtn>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
               <PressBtn onClick={()=>showToast("Export — connect video APIs")} style={{...ghostBtn,justifyContent:"center"}}>📤 Export Video</PressBtn>
-              <PressBtn onClick={()=>showToast("Saved to Library")} style={{...ghostBtn,justifyContent:"center"}}>💾 Save Project</PressBtn>
+              <PressBtn onClick={()=>onSave?.('oneclick',{title:prompt,platform:platform?.label,style:style?.label,tone:tone?.id,mode,expanded})} style={{...ghostBtn,justifyContent:"center"}}>💾 Save Project</PressBtn>
             </div>
             <PressBtn onClick={()=>{setStep(5);setExp(null);}} style={{...ghostBtn,width:"100%",justifyContent:"center"}}>← Try different direction</PressBtn>
           </div>
@@ -3050,52 +3081,373 @@ function Studio({ onTool }) {
   );
 }
 
-function Library({ showToast }) {
-  const [selected,setSel] = useState(null);
-  const items=[
-    {type:"Creator Hub",title:"Lottery ticket story",time:"1h ago",color:"gold",detail:"Platform: TikTok · Emotional · Viral Mode\nHook: 'Nobody saw this coming…'\nScript generated + scene plan + hashtags"},
-    {type:"Caption",title:"ADHD awareness post",time:"Yesterday",color:"cyan",detail:"5 captions generated · Educational Mode\nTop caption: 42 chars · 12 hashtags"},
-    {type:"Script",title:"Morning routine hack",time:"2 days",color:"violet",detail:"Platform: YouTube Shorts · Inspirational\n3 min script · Voice-ready with [PAUSE] markers"},
-    {type:"Motion",title:"Cat dancing",time:"5 days",color:"gold",detail:"3 images uploaded · Cinematic style\nAction: Make the cat dance · Kling Labs"}
-  ];
-  const bg={violet:"rgba(139,92,246,0.35)",cyan:"rgba(34,211,238,0.3)",gold:"rgba(251,191,36,0.3)"};
+const TYPE_COLOR = {oneclick:"gold",script:"violet",caption:"cyan",image:"violet",video:"gold",voice:"cyan",avatar:"violet",motion:"gold",clone:"cyan"};
+const TYPE_LABEL = {oneclick:"Creator Hub",script:"Script",caption:"Caption",image:"Image",video:"Video",voice:"Voice Over",avatar:"Avatar",motion:"Motion",clone:"Voice Clone"};
+const BG = {violet:"rgba(139,92,246,0.35)",cyan:"rgba(34,211,238,0.3)",gold:"rgba(251,191,36,0.3)"};
+const SOCIAL_PLATFORMS = [
+  {id:"tiktok",label:"TikTok",emoji:"🎵",color:"#ff2d55"},
+  {id:"instagram",label:"Instagram",emoji:"📸",color:"#e1306c"},
+  {id:"youtube",label:"YouTube",emoji:"▶️",color:"#ff0000"},
+  {id:"twitter",label:"Twitter / X",emoji:"𝕏",color:"#1d9bf0"},
+];
 
-  if (selected !== null) {
-    const item = items[selected];
-    return (
-      <div style={{padding:"56px 20px 0",animation:"fadeIn 0.3s ease"}}>
+function timeAgo(ts) {
+  const s=(Date.now()-new Date(ts))/1000;
+  if(s<60)return"Just now";if(s<3600)return`${Math.floor(s/60)}m ago`;
+  if(s<86400)return`${Math.floor(s/3600)}h ago`;return`${Math.floor(s/86400)}d ago`;
+}
+
+function Library({ showToast }) {
+  const [session,setSession]   = useState(null);
+  const [items,setItems]       = useState([]);
+  const [posts,setPosts]       = useState([]);
+  const [connections,setConns] = useState([]);
+  const [loading,setLoading]   = useState(true);
+  const [view,setView]         = useState('grid');
+  const [tab,setTab]           = useState('all');
+  const [selected,setSel]      = useState(null);
+  const [publishTarget,setPub] = useState(null);
+  const [calMonth,setCalMonth] = useState(new Date());
+  const [calDay,setCalDay]     = useState(null);
+
+  useEffect(()=>{
+    const init=async()=>{
+      const {data:{session:s}}=await supabase.auth.getSession();
+      setSession(s);
+      if(s){
+        await Promise.all([
+          fetch('/api/library',{headers:{Authorization:`Bearer ${s.access_token}`}}).then(r=>r.ok?r.json():[]).then(setItems),
+          fetch('/api/social/posts',{headers:{Authorization:`Bearer ${s.access_token}`}}).then(r=>r.ok?r.json():[]).then(setPosts),
+          fetch('/api/social/connections',{headers:{Authorization:`Bearer ${s.access_token}`}}).then(r=>r.ok?r.json():[]).then(d=>setConns(d.map(c=>c.platform))),
+        ]);
+      }
+      setLoading(false);
+    };
+    init();
+  },[]);
+
+  const deleteItem=async(id)=>{
+    if(!session)return;
+    await fetch(`/api/library?id=${id}`,{method:'DELETE',headers:{Authorization:`Bearer ${session.access_token}`}});
+    setItems(p=>p.filter(i=>i.id!==id));
+    setSel(null);
+    showToast('Deleted');
+  };
+
+  const deletePost=async(id)=>{
+    if(!session)return;
+    await fetch(`/api/social/posts?id=${id}`,{method:'DELETE',headers:{Authorization:`Bearer ${session.access_token}`}});
+    setPosts(p=>p.filter(i=>i.id!==id));
+  };
+
+  // Calendar helpers
+  const calYear=calMonth.getFullYear(), calMon=calMonth.getMonth();
+  const firstDow=new Date(calYear,calMon,1).getDay();
+  const daysInMonth=new Date(calYear,calMon+1,0).getDate();
+  const postsByDay={};
+  posts.forEach(p=>{
+    if(!p.scheduled_for)return;
+    const key=new Date(p.scheduled_for).toDateString();
+    (postsByDay[key]||(postsByDay[key]=[])).push(p);
+  });
+  const calDayKey=calDay?new Date(calYear,calMon,calDay).toDateString():null;
+  const calDayPosts=calDayKey?postsByDay[calDayKey]??[]:[];
+  const MONTH_NAMES=["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+  const filteredItems = tab==='all' ? items : [];
+  const filteredPosts = tab==='scheduled' ? posts.filter(p=>p.status==='scheduled'||p.status==='publishing')
+                      : tab==='published' ? posts.filter(p=>p.status==='published'||p.status==='failed') : [];
+
+  // ── Detail view ──
+  if(selected){
+    const it=selected;
+    const color=TYPE_COLOR[it.type]||'violet';
+    const ps=it.pipeline_state||{};
+    const linkedPost=posts.find(p=>p.generation_id===it.id);
+    return(
+      <div style={{padding:"56px 20px 120px",animation:"fadeIn 0.3s ease"}}>
         <PressBtn onClick={()=>setSel(null)} style={ghostBtn}><ArrowLeft size={18}/></PressBtn>
-        <div style={{marginTop:16,padding:20,borderRadius:22,background:`linear-gradient(135deg,${bg[item.color]},rgba(10,10,30,0.9))`,border:"1px solid rgba(255,255,255,0.1)"}}>
-          <div style={{fontSize:10,color:C.sub,textTransform:"uppercase",letterSpacing:"0.1em"}}>{item.type}</div>
-          <div style={{fontSize:22,fontWeight:400,marginTop:6,letterSpacing:"-0.02em"}}>{item.title}</div>
-          <div style={{fontSize:12,color:C.sub,marginTop:4}}>{item.time}</div>
+        <div style={{marginTop:16,padding:20,borderRadius:22,background:`linear-gradient(135deg,${BG[color]},rgba(10,10,30,0.9))`,border:"1px solid rgba(255,255,255,0.1)"}}>
+          <div style={{fontSize:10,color:C.sub,textTransform:"uppercase",letterSpacing:"0.1em"}}>{TYPE_LABEL[it.type]||it.type}</div>
+          <div style={{fontSize:22,fontWeight:400,marginTop:6,letterSpacing:"-0.02em"}}>{ps.title||ps.prompt||it.type}</div>
+          <div style={{fontSize:12,color:C.sub,marginTop:4}}>{timeAgo(it.created_at)}</div>
         </div>
-        <div style={{marginTop:14,padding:"16px 18px",borderRadius:18,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)"}}>
-          <div style={{fontSize:11,color:C.sub,letterSpacing:"0.1em",textTransform:"uppercase",fontWeight:600,marginBottom:10}}>Details</div>
-          {item.detail.split('\n').map((line,i)=><div key={i} style={{fontSize:13,color:C.text,lineHeight:1.7}}>{line}</div>)}
-        </div>
-        <div style={{marginTop:14,display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-          <PressBtn onClick={()=>showToast("Copying…")} style={{...primaryBtn,justifyContent:"center"}}><Copy size={14}/> Copy</PressBtn>
-          <PressBtn onClick={()=>showToast("Deleted")} style={{...ghostBtn,justifyContent:"center",color:"#f43f5e",borderColor:"rgba(244,63,94,0.2)"}}>🗑 Delete</PressBtn>
+        {(ps.platform||ps.tone||ps.mode)&&(
+          <div style={{marginTop:12,padding:"14px 16px",borderRadius:16,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)"}}>
+            <div style={{fontSize:11,color:C.sub,letterSpacing:"0.1em",textTransform:"uppercase",fontWeight:600,marginBottom:8}}>Details</div>
+            {ps.platform&&<div style={{fontSize:13,color:C.text,lineHeight:1.7}}>Platform: {ps.platform}</div>}
+            {ps.tone&&<div style={{fontSize:13,color:C.text,lineHeight:1.7}}>Tone: {ps.tone}</div>}
+            {ps.mode&&<div style={{fontSize:13,color:C.text,lineHeight:1.7}}>Mode: {ps.mode}</div>}
+          </div>
+        )}
+        {linkedPost&&(
+          <div style={{marginTop:10,padding:"12px 16px",borderRadius:14,background:"rgba(34,211,238,0.06)",border:"1px solid rgba(34,211,238,0.2)",display:"flex",alignItems:"center",gap:10}}>
+            <Clock size={14} color="#22d3ee"/>
+            <div style={{fontSize:12,color:"#22d3ee"}}>
+              {linkedPost.status==='published'?`Published · ${linkedPost.platforms?.join(', ')}`
+               :linkedPost.status==='failed'?`Failed: ${linkedPost.error_message||'unknown error'}`
+               :`Scheduled · ${linkedPost.platforms?.join(', ')} · ${linkedPost.scheduled_for?new Date(linkedPost.scheduled_for).toLocaleString():'Now'}`}
+            </div>
+          </div>
+        )}
+        <div style={{marginTop:14,display:"flex",flexDirection:"column",gap:10}}>
+          <PressBtn onClick={()=>{setSel(null);setPub(it);}} style={{...primaryBtn,width:"100%",justifyContent:"center"}}><Share2 size={15}/> Publish to Social</PressBtn>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <PressBtn onClick={()=>{navigator.clipboard?.writeText(JSON.stringify(it.pipeline_state,null,2));showToast('Copied!');}} style={{...ghostBtn,justifyContent:"center"}}><Copy size={14}/> Copy</PressBtn>
+            <PressBtn onClick={()=>deleteItem(it.id)} style={{...ghostBtn,justifyContent:"center",color:"#f43f5e",borderColor:"rgba(244,63,94,0.2)"}}>🗑 Delete</PressBtn>
+          </div>
         </div>
       </div>
     );
   }
 
-  return (
-    <div style={{padding:"56px 20px 0",animation:"fadeIn 0.4s ease"}}>
-      <h1 style={{fontSize:28,fontWeight:300,letterSpacing:"-0.03em",margin:0}}>Library</h1>
-      <p style={{fontSize:13,color:C.sub,marginTop:4}}>Tap any creation to view details.</p>
-      <div style={{marginTop:22,display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-        {items.map((it,i)=>(
-          <PressBtn key={i} onClick={()=>setSel(i)} style={{aspectRatio:"3/4",borderRadius:20,position:"relative",overflow:"hidden",background:`linear-gradient(135deg,${bg[it.color]},rgba(10,10,30,0.8))`,border:"1px solid rgba(255,255,255,0.08)",animation:`slideUp 0.4s ${i*0.05}s both`,fontFamily:"inherit",width:"100%",padding:0}}>
-            <div style={{position:"absolute",bottom:0,left:0,right:0,padding:14,background:"linear-gradient(to top,rgba(0,0,0,0.7),transparent)"}}>
-              <div style={{fontSize:10,color:C.sub,textTransform:"uppercase",letterSpacing:"0.08em"}}>{it.type}</div>
-              <div style={{fontSize:13,fontWeight:500,marginTop:4,lineHeight:1.3,color:C.text}}>{it.title}</div>
-              <div style={{fontSize:10,color:C.sub,marginTop:4}}>{it.time}</div>
+  // ── Calendar view ──
+  if(view==='cal'){
+    const cells=[];
+    for(let i=0;i<firstDow;i++)cells.push(null);
+    for(let d=1;d<=daysInMonth;d++)cells.push(d);
+    while(cells.length%7!==0)cells.push(null);
+    return(
+      <div style={{padding:"56px 20px 120px",animation:"fadeIn 0.4s ease"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+          <h1 style={{fontSize:28,fontWeight:300,letterSpacing:"-0.03em",margin:0}}>Calendar</h1>
+          <PressBtn onClick={()=>setView('grid')} style={{...ghostBtn,padding:"8px 14px",fontSize:12,display:"flex",alignItems:"center",gap:6}}><LayoutGrid size={14}/> Grid</PressBtn>
+        </div>
+        <div style={{padding:"16px",borderRadius:20,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+            <PressBtn onClick={()=>setCalMonth(new Date(calYear,calMon-1,1))} style={{...ghostBtn,padding:"6px 10px"}}><ChevronLeft size={16}/></PressBtn>
+            <div style={{fontSize:15,fontWeight:500}}>{MONTH_NAMES[calMon]} {calYear}</div>
+            <PressBtn onClick={()=>setCalMonth(new Date(calYear,calMon+1,1))} style={{...ghostBtn,padding:"6px 10px"}}><ChevronRight size={16}/></PressBtn>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2,marginBottom:8}}>
+            {["Su","Mo","Tu","We","Th","Fr","Sa"].map(d=><div key={d} style={{textAlign:"center",fontSize:10,color:C.sub,padding:"4px 0",fontWeight:600}}>{d}</div>)}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:2}}>
+            {cells.map((d,i)=>{
+              if(!d)return<div key={i}/>;
+              const key=new Date(calYear,calMon,d).toDateString();
+              const dayPosts=postsByDay[key]??[];
+              const isToday=new Date().toDateString()===key;
+              const isSel=calDay===d;
+              return(
+                <PressBtn key={i} onClick={()=>setCalDay(isSel?null:d)} style={{padding:"8px 4px",borderRadius:10,background:isSel?"linear-gradient(135deg,rgba(139,92,246,0.3),rgba(34,211,238,0.2))":isToday?"rgba(255,255,255,0.08)":"transparent",border:isSel?"1px solid rgba(139,92,246,0.5)":isToday?"1px solid rgba(255,255,255,0.15)":"1px solid transparent",display:"flex",flexDirection:"column",alignItems:"center",gap:3,fontFamily:"inherit"}}>
+                  <div style={{fontSize:13,color:isSel?C.text:isToday?"#a78bfa":C.text,fontWeight:isToday||isSel?600:400}}>{d}</div>
+                  {dayPosts.length>0&&(
+                    <div style={{display:"flex",gap:2,flexWrap:"wrap",justifyContent:"center"}}>
+                      {dayPosts.slice(0,3).map((p,j)=>{
+                        const plt=SOCIAL_PLATFORMS.find(x=>p.platforms?.includes(x.id));
+                        return<div key={j} style={{width:6,height:6,borderRadius:"50%",background:plt?.color||C.violet}}/>;
+                      })}
+                    </div>
+                  )}
+                </PressBtn>
+              );
+            })}
+          </div>
+        </div>
+        {calDay&&(
+          <div style={{marginTop:16}}>
+            <div style={{fontSize:12,color:C.sub,fontWeight:600,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:10}}>
+              {MONTH_NAMES[calMon]} {calDay} — {calDayPosts.length} post{calDayPosts.length!==1?'s':''}
             </div>
+            {calDayPosts.length===0?<div style={{fontSize:13,color:C.sub}}>No posts scheduled.</div>:calDayPosts.map(p=>(
+              <div key={p.id} style={{padding:"14px 16px",borderRadius:16,marginBottom:8,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",display:"flex",alignItems:"center",gap:12}}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:13,fontWeight:500}}>{p.title||'Untitled'}</div>
+                  <div style={{fontSize:11,color:C.sub,marginTop:2,display:"flex",gap:8}}>
+                    <span>{p.platforms?.map(id=>SOCIAL_PLATFORMS.find(x=>x.id===id)?.emoji).join(' ')}</span>
+                    {p.scheduled_for&&<span>{new Date(p.scheduled_for).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</span>}
+                    <span style={{color:p.status==='published'?'#a3e635':p.status==='failed'?'#f43f5e':'#fbbf24'}}>{p.status}</span>
+                  </div>
+                </div>
+                <PressBtn onClick={()=>deletePost(p.id)} style={{padding:"6px 10px",borderRadius:10,background:"rgba(244,63,94,0.08)",border:"1px solid rgba(244,63,94,0.15)",color:"#f43f5e",fontFamily:"inherit",fontSize:12}}>✕</PressBtn>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── Grid view ──
+  return(
+    <div style={{padding:"56px 20px 120px",animation:"fadeIn 0.4s ease"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+        <h1 style={{fontSize:28,fontWeight:300,letterSpacing:"-0.03em",margin:0}}>Library</h1>
+        <PressBtn onClick={()=>setView('cal')} style={{...ghostBtn,padding:"8px 14px",fontSize:12,display:"flex",alignItems:"center",gap:6}}><Calendar size={14}/> Calendar</PressBtn>
+      </div>
+      <div style={{display:"flex",gap:8,marginTop:14,marginBottom:18}}>
+        {['all','scheduled','published'].map(t=>(
+          <PressBtn key={t} onClick={()=>setTab(t)} style={{padding:"7px 16px",borderRadius:100,fontSize:12,fontWeight:500,fontFamily:"inherit",background:tab===t?"linear-gradient(135deg,rgba(139,92,246,0.35),rgba(34,211,238,0.25))":"rgba(255,255,255,0.06)",border:tab===t?"1px solid rgba(139,92,246,0.4)":"1px solid rgba(255,255,255,0.1)",color:tab===t?C.text:C.sub}}>
+            {t.charAt(0).toUpperCase()+t.slice(1)}
           </PressBtn>
         ))}
+      </div>
+
+      {loading&&<div style={{textAlign:"center",color:C.sub,paddingTop:40,fontSize:13}}>Loading…</div>}
+
+      {!loading&&tab==='all'&&(
+        filteredItems.length===0?(
+          <div style={{textAlign:"center",paddingTop:40}}>
+            <div style={{fontSize:32,marginBottom:12}}>📂</div>
+            <div style={{fontSize:15,fontWeight:400,color:C.text}}>Nothing saved yet</div>
+            <div style={{fontSize:12,color:C.sub,marginTop:6}}>Generate a script or creator post and tap 💾 to save it here.</div>
+          </div>
+        ):(
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            {filteredItems.map((it,i)=>{
+              const color=TYPE_COLOR[it.type]||'violet';
+              const ps=it.pipeline_state||{};
+              return(
+                <PressBtn key={it.id} onClick={()=>setSel(it)} style={{aspectRatio:"3/4",borderRadius:20,position:"relative",overflow:"hidden",background:`linear-gradient(135deg,${BG[color]},rgba(10,10,30,0.8))`,border:"1px solid rgba(255,255,255,0.08)",animation:`slideUp 0.4s ${i*0.05}s both`,fontFamily:"inherit",width:"100%",padding:0}}>
+                  <div style={{position:"absolute",bottom:0,left:0,right:0,padding:14,background:"linear-gradient(to top,rgba(0,0,0,0.8),transparent)"}}>
+                    <div style={{fontSize:10,color:C.sub,textTransform:"uppercase",letterSpacing:"0.08em"}}>{TYPE_LABEL[it.type]||it.type}</div>
+                    <div style={{fontSize:13,fontWeight:500,marginTop:4,lineHeight:1.3,color:C.text}}>{ps.title||ps.prompt||'Untitled'}</div>
+                    <div style={{fontSize:10,color:C.sub,marginTop:4}}>{timeAgo(it.created_at)}</div>
+                  </div>
+                </PressBtn>
+              );
+            })}
+          </div>
+        )
+      )}
+
+      {!loading&&(tab==='scheduled'||tab==='published')&&(
+        filteredPosts.length===0?(
+          <div style={{textAlign:"center",paddingTop:40}}>
+            <div style={{fontSize:32,marginBottom:12}}>{tab==='scheduled'?'🗓':'✅'}</div>
+            <div style={{fontSize:15,fontWeight:400,color:C.text}}>No {tab} posts yet</div>
+            <div style={{fontSize:12,color:C.sub,marginTop:6}}>Save content and hit Publish to Social to get started.</div>
+          </div>
+        ):(
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {filteredPosts.map(p=>(
+              <div key={p.id} style={{padding:"16px 18px",borderRadius:18,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)"}}>
+                <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10}}>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:13,fontWeight:500}}>{p.title||'Untitled'}</div>
+                    <div style={{fontSize:11,color:C.sub,marginTop:4,display:"flex",gap:10,flexWrap:"wrap"}}>
+                      <span>{p.platforms?.map(id=>SOCIAL_PLATFORMS.find(x=>x.id===id)?.emoji+' '+SOCIAL_PLATFORMS.find(x=>x.id===id)?.label).join(' · ')}</span>
+                    </div>
+                    {p.scheduled_for&&<div style={{fontSize:11,color:"#fbbf24",marginTop:4,display:"flex",alignItems:"center",gap:4}}><Clock size={10}/>{new Date(p.scheduled_for).toLocaleString()}</div>}
+                    {p.status==='failed'&&<div style={{fontSize:11,color:"#f43f5e",marginTop:4}}>{p.error_message}</div>}
+                  </div>
+                  <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                    <div style={{fontSize:11,padding:"3px 10px",borderRadius:100,background:p.status==='published'?"rgba(163,230,53,0.15)":p.status==='failed'?"rgba(244,63,94,0.15)":"rgba(251,191,36,0.15)",color:p.status==='published'?"#a3e635":p.status==='failed'?"#f43f5e":"#fbbf24",fontWeight:600}}>{p.status}</div>
+                    <PressBtn onClick={()=>deletePost(p.id)} style={{padding:"5px 8px",borderRadius:8,background:"rgba(244,63,94,0.08)",border:"1px solid rgba(244,63,94,0.15)",color:"#f43f5e",fontFamily:"inherit",fontSize:11}}>✕</PressBtn>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      )}
+
+      {publishTarget&&<PublishModal item={publishTarget} session={session} connections={connections} showToast={showToast} onClose={()=>setPub(null)} onPublished={(p)=>{setPosts(prev=>[...prev,p]);showToast(p.scheduled_for?'Post scheduled ✓':'Publishing now…');}}/>}
+    </div>
+  );
+}
+
+/* ── PUBLISH MODAL ── */
+function PublishModal({ item, session, connections, showToast, onClose, onPublished }) {
+  const ps=item.pipeline_state||{};
+  const [selPlatforms,setSelP] = useState(connections.length?[connections[0]]:[]);
+  const [caption,setCaption]   = useState(ps.caption||ps.hook||'');
+  const [mode,setMode]         = useState('now');
+  const [date,setDate]         = useState('');
+  const [time,setTime]         = useState('09:00');
+  const [busy,setBusy]         = useState(false);
+
+  const togglePlatform=(id)=>setSelP(p=>p.includes(id)?p.filter(x=>x!==id):[...p,id]);
+
+  const handleSubmit=async()=>{
+    if(!selPlatforms.length){showToast('Pick at least one platform');return;}
+    if(!session){showToast('Please sign in');return;}
+    setBusy(true);
+    try{
+      let scheduled_for=null;
+      if(mode==='schedule'&&date){
+        scheduled_for=new Date(`${date}T${time||'09:00'}`).toISOString();
+      }
+      const res=await fetch('/api/social/posts',{
+        method:'POST',
+        headers:{'Content-Type':'application/json',Authorization:`Bearer ${session.access_token}`},
+        body:JSON.stringify({
+          generation_id:item.id,
+          title:ps.title||ps.prompt||'Untitled',
+          caption,
+          media_url:ps.media_url||ps.imageUrl||ps.videoUrl||null,
+          media_type:item.type==='image'?'image':item.type==='video'||item.type==='avatar'||item.type==='motion'?'video':'text',
+          platforms:selPlatforms,
+          scheduled_for,
+        }),
+      });
+      if(res.ok){
+        const data=await res.json();
+        onPublished(data);
+        onClose();
+      } else {
+        const err=await res.json();
+        showToast(err.error||'Publish failed');
+      }
+    }catch{showToast('Connection failed');}
+    setBusy(false);
+  };
+
+  return(
+    <div style={{position:"fixed",inset:0,zIndex:200,display:"flex",flexDirection:"column",justifyContent:"flex-end"}} onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"#0f0f1c",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"28px 28px 0 0",padding:"24px 20px 40px",animation:"slideUp 0.3s ease",maxHeight:"90vh",overflowY:"auto"}}>
+        <div style={{width:40,height:4,borderRadius:2,background:"rgba(255,255,255,0.2)",margin:"0 auto 20px"}}/>
+        <div style={{fontSize:18,fontWeight:500,marginBottom:18,display:"flex",alignItems:"center",gap:8}}><Share2 size={17} color={C.violet}/> Publish to Social</div>
+
+        {/* Platform grid */}
+        <div style={{fontSize:11,color:C.sub,textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:600,marginBottom:10}}>Platforms</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:20}}>
+          {SOCIAL_PLATFORMS.map(pl=>{
+            const connected=connections.includes(pl.id);
+            const active=selPlatforms.includes(pl.id);
+            return(
+              <PressBtn key={pl.id} onClick={()=>connected&&togglePlatform(pl.id)} style={{padding:"12px 14px",borderRadius:14,background:active?"linear-gradient(135deg,rgba(139,92,246,0.25),rgba(34,211,238,0.15))":"rgba(255,255,255,0.04)",border:active?"1px solid rgba(139,92,246,0.5)":"1px solid rgba(255,255,255,0.08)",display:"flex",alignItems:"center",gap:8,fontFamily:"inherit",opacity:connected?1:0.5}}>
+                <span style={{fontSize:18}}>{pl.emoji}</span>
+                <div style={{flex:1,textAlign:"left"}}>
+                  <div style={{fontSize:12,fontWeight:500,color:C.text}}>{pl.label}</div>
+                  <div style={{fontSize:10,color:connected?"#a3e635":"#f43f5e"}}>{connected?'Connected':'Not connected'}</div>
+                </div>
+                {active&&connected&&<Check size={14} color="#22d3ee"/>}
+              </PressBtn>
+            );
+          })}
+        </div>
+
+        {/* Caption */}
+        <div style={{fontSize:11,color:C.sub,textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:600,marginBottom:8}}>Caption</div>
+        <textarea value={caption} onChange={e=>setCaption(e.target.value)} placeholder="Write your caption…" rows={3} style={{width:"100%",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:14,color:C.text,fontSize:13,padding:"12px 14px",fontFamily:"inherit",resize:"vertical",outline:"none",boxSizing:"border-box",marginBottom:18}}/>
+
+        {/* Schedule toggle */}
+        <div style={{fontSize:11,color:C.sub,textTransform:"uppercase",letterSpacing:"0.1em",fontWeight:600,marginBottom:10}}>When</div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:mode==='schedule'?14:20}}>
+          {['now','schedule'].map(m=>(
+            <PressBtn key={m} onClick={()=>setMode(m)} style={{padding:"11px",borderRadius:12,background:mode===m?"linear-gradient(135deg,rgba(139,92,246,0.3),rgba(34,211,238,0.2))":"rgba(255,255,255,0.04)",border:mode===m?"1px solid rgba(139,92,246,0.5)":"1px solid rgba(255,255,255,0.08)",color:mode===m?C.text:C.sub,fontSize:13,fontWeight:mode===m?600:400,fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+              {m==='now'?<><Send size={13}/> Post now</>:<><Clock size={13}/> Schedule</>}
+            </PressBtn>
+          ))}
+        </div>
+        {mode==='schedule'&&(
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:20}}>
+            <div>
+              <div style={{fontSize:11,color:C.sub,marginBottom:6}}>Date</div>
+              <input type="date" value={date} onChange={e=>setDate(e.target.value)} min={new Date().toISOString().split('T')[0]} style={{width:"100%",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:12,color:C.text,fontSize:13,padding:"10px 12px",fontFamily:"inherit",outline:"none",boxSizing:"border-box",colorScheme:"dark"}}/>
+            </div>
+            <div>
+              <div style={{fontSize:11,color:C.sub,marginBottom:6}}>Time</div>
+              <input type="time" value={time} onChange={e=>setTime(e.target.value)} style={{width:"100%",background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:12,color:C.text,fontSize:13,padding:"10px 12px",fontFamily:"inherit",outline:"none",boxSizing:"border-box",colorScheme:"dark"}}/>
+            </div>
+          </div>
+        )}
+
+        <PressBtn onClick={handleSubmit} disabled={busy||!selPlatforms.length} style={{...primaryBtn,width:"100%",justifyContent:"center",opacity:busy||!selPlatforms.length?0.6:1}}>
+          {busy?<><div style={{width:14,height:14,borderRadius:"50%",border:"2px solid rgba(255,255,255,0.3)",borderTopColor:"#fff",animation:"spin 1s linear infinite"}}/>Working…</>:<><Share2 size={15}/>{mode==='now'?'Publish Now':'Schedule Post'}</>}
+        </PressBtn>
       </div>
     </div>
   );
@@ -3177,28 +3529,82 @@ function ExportScreen({ onBack, showToast }) {
 }
 
 function ConnectedAppsScreen({ onBack, showToast }) {
-  const [conn,setConn]=useState({anthropic:true,elevenlabs:false,did:false,Kling:false,kling:false,runway:false,stability:false});
-  const apps=[
+  const [session,setSession] = useState(null);
+  const [socialConns,setSocial] = useState([]);
+  const [aiConn,setAI] = useState({anthropic:true,elevenlabs:false,did:false,Kling:false,kling:false,runway:false,stability:false});
+  const [socialLoading,setSocialLoading] = useState(true);
+
+  useEffect(()=>{
+    const init=async()=>{
+      const {data:{session:s}}=await supabase.auth.getSession();
+      setSession(s);
+      if(s){
+        const res=await fetch('/api/social/connections',{headers:{Authorization:`Bearer ${s.access_token}`}});
+        if(res.ok)setSocial((await res.json()).map(c=>c.platform));
+      }
+      setSocialLoading(false);
+    };
+    init();
+  },[]);
+
+  const connectSocial=async(platform)=>{
+    if(!session){showToast('Sign in first');return;}
+    window.location.href=`/api/social/connect/${platform}?token=${session.access_token}`;
+  };
+
+  const disconnectSocial=async(platform)=>{
+    if(!session)return;
+    await fetch(`/api/social/connections?platform=${platform}`,{method:'DELETE',headers:{Authorization:`Bearer ${session.access_token}`}});
+    setSocial(p=>p.filter(x=>x!==platform));
+    showToast(`${platform.charAt(0).toUpperCase()+platform.slice(1)} disconnected`);
+  };
+
+  const aiApps=[
     {k:"anthropic", n:"Anthropic Claude",  s:"AI writing · scripts · research", i:"✦", c:"#f97316"},
     {k:"elevenlabs",n:"ElevenLabs",         s:"Voice cloning & text-to-speech",  i:"🎙", c:"#22d3ee"},
     {k:"did",       n:"D-ID",               s:"Avatars · digital twin · lip sync",i:"🎭", c:"#8b5cf6"},
-    {k:"Kling",      n:"Kling Labs",          s:"Image to video (cost-efficient)",  i:"⚡", c:"#fbbf24"},
+    {k:"Kling",     n:"Kling Labs",          s:"Image to video (cost-efficient)",  i:"⚡", c:"#fbbf24"},
     {k:"kling",     n:"Kling AI",           s:"Realistic image-to-video motion",  i:"🎬", c:"#a3e635"},
     {k:"runway",    n:"Runway ML",          s:"Advanced cinematic video gen",     i:"🎞", c:"#60a5fa"},
     {k:"stability", n:"Stability AI",       s:"AI image generation",              i:"🖼", c:"#e879f9"}
   ];
+
   return (
-    <div style={{padding:"56px 20px 40px"}}>
+    <div style={{padding:"56px 20px 60px"}}>
       <SubHeader title="Connected Apps" onBack={onBack}/>
-      <div style={{padding:"12px 14px",borderRadius:14,background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.2)",marginBottom:16,fontSize:12,color:C.sub}}>
-        🔌 Recommended stack: <span style={{color:"#f97316"}}>Claude</span> writes · <span style={{color:"#fbbf24"}}>Kling · Sync Labs</span> animates · <span style={{color:"#22d3ee"}}>ElevenLabs</span> voices · <span style={{color:"#8b5cf6"}}>D-ID</span> avatars
+
+      {/* Social Platforms */}
+      <div style={{fontSize:11,color:C.sub,textTransform:"uppercase",letterSpacing:"0.12em",fontWeight:700,marginBottom:10}}>Social Platforms</div>
+      <div style={{padding:"12px 14px",borderRadius:14,background:"rgba(139,92,246,0.06)",border:"1px solid rgba(139,92,246,0.2)",marginBottom:14,fontSize:12,color:C.sub}}>
+        📱 Connect your accounts to schedule and publish content directly from Omnyra
       </div>
-      {apps.map(app=>(
-        <div key={app.k} style={{padding:"16px 18px",borderRadius:16,marginTop:8,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",display:"flex",alignItems:"center",gap:14}}>
+      {SOCIAL_PLATFORMS.map(pl=>{
+        const connected=socialConns.includes(pl.id);
+        return(
+          <div key={pl.id} style={{padding:"16px 18px",borderRadius:16,marginBottom:8,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",display:"flex",alignItems:"center",gap:14}}>
+            <div style={{width:42,height:42,borderRadius:14,background:`${pl.color}22`,border:`1px solid ${pl.color}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>{pl.emoji}</div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:13,fontWeight:500}}>{pl.label}</div>
+              <div style={{fontSize:11,color:connected?"#a3e635":C.sub,marginTop:2}}>{connected?'Connected · tap to disconnect':'Not connected'}</div>
+            </div>
+            <PressBtn onClick={()=>connected?disconnectSocial(pl.id):connectSocial(pl.id)} style={{padding:"7px 14px",borderRadius:100,background:connected?"rgba(34,211,238,0.15)":"linear-gradient(135deg,rgba(139,92,246,0.3),rgba(34,211,238,0.2))",border:connected?"1px solid rgba(34,211,238,0.4)":"1px solid rgba(139,92,246,0.4)",color:connected?"#22d3ee":"#fff",fontSize:11,fontWeight:600,fontFamily:"inherit"}}>
+              {socialLoading?'…':connected?'Connected':'Connect'}
+            </PressBtn>
+          </div>
+        );
+      })}
+
+      {/* AI Tools */}
+      <div style={{fontSize:11,color:C.sub,textTransform:"uppercase",letterSpacing:"0.12em",fontWeight:700,marginBottom:10,marginTop:24}}>AI Tools</div>
+      <div style={{padding:"12px 14px",borderRadius:14,background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.2)",marginBottom:14,fontSize:12,color:C.sub}}>
+        🔌 <span style={{color:"#f97316"}}>Claude</span> writes · <span style={{color:"#fbbf24"}}>Kling · Sync Labs</span> animates · <span style={{color:"#22d3ee"}}>ElevenLabs</span> voices · <span style={{color:"#8b5cf6"}}>D-ID</span> avatars
+      </div>
+      {aiApps.map(app=>(
+        <div key={app.k} style={{padding:"16px 18px",borderRadius:16,marginBottom:8,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.06)",display:"flex",alignItems:"center",gap:14}}>
           <div style={{width:42,height:42,borderRadius:14,background:`${app.c}22`,border:`1px solid ${app.c}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>{app.i}</div>
           <div style={{flex:1}}><div style={{fontSize:13,fontWeight:500}}>{app.n}</div><div style={{fontSize:11,color:C.sub,marginTop:2}}>{app.s}</div></div>
-          <PressBtn onClick={()=>{setConn(c=>({...c,[app.k]:!c[app.k]}));showToast(conn[app.k]?`${app.n} disconnected`:`${app.n} connected! 🎉`);}} style={{padding:"7px 14px",borderRadius:100,background:conn[app.k]?"rgba(34,211,238,0.15)":"linear-gradient(135deg,rgba(139,92,246,0.3),rgba(34,211,238,0.2))",border:conn[app.k]?"1px solid rgba(34,211,238,0.4)":"1px solid rgba(139,92,246,0.4)",color:conn[app.k]?"#22d3ee":"#fff",fontSize:11,fontWeight:600,fontFamily:"inherit"}}>
-            {conn[app.k]?"Connected":"Connect"}
+          <PressBtn onClick={()=>{setAI(c=>({...c,[app.k]:!c[app.k]}));showToast(aiConn[app.k]?`${app.n} disconnected`:`${app.n} connected! 🎉`);}} style={{padding:"7px 14px",borderRadius:100,background:aiConn[app.k]?"rgba(34,211,238,0.15)":"linear-gradient(135deg,rgba(139,92,246,0.3),rgba(34,211,238,0.2))",border:aiConn[app.k]?"1px solid rgba(34,211,238,0.4)":"1px solid rgba(139,92,246,0.4)",color:aiConn[app.k]?"#22d3ee":"#fff",fontSize:11,fontWeight:600,fontFamily:"inherit"}}>
+            {aiConn[app.k]?"Connected":"Connect"}
           </PressBtn>
         </div>
       ))}
