@@ -8,8 +8,7 @@ export const maxDuration = 300;
 export async function GET(request) {
   // Verify cron secret
   const auth = request.headers.get('authorization');
-  const secret = process.env.CRON_SECRET;
-  if (secret && auth !== `Bearer ${secret}`) {
+  if (auth !== `Bearer ${process.env.CRON_SECRET}`) {
     return new Response('Unauthorized', { status: 401 });
   }
 

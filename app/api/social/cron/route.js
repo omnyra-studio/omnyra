@@ -83,7 +83,7 @@ export async function GET(request) {
 // POST for immediate publish (triggered by posts route)
 export async function POST(request) {
   const secret = request.headers.get('x-cron-secret')
-  if (secret !== (process.env.CRON_SECRET || '')) {
+  if (secret !== process.env.CRON_SECRET) {
     return Response.json({ error: 'Forbidden' }, { status: 403 })
   }
 
