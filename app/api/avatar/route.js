@@ -20,7 +20,8 @@ export async function POST(request) {
     return Response.json({ error: credit.error, balance: credit.balance }, { status: 402 })
   }
 
-  const provider = AVATAR_PROVIDER[plan] ?? 'did'
+  // avatarId present = HeyGen preset avatar; imageUrl only = custom image → always D-ID
+  const provider = avatarId && AVATAR_PROVIDER[plan] === 'heygen' ? 'heygen' : 'did'
 
   try {
     let jobId, status

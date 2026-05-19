@@ -1,5 +1,5 @@
 import { getUserAndPlan } from '../../../lib/auth'
-import { pollKling, pollRunway, pollDID, pollHeyGen } from '../../../lib/providers'
+import { pollKling, pollRunway, pollDID, pollHeyGen, pollSyncLabs } from '../../../lib/providers'
 
 // Normalise each provider's response into { status, url }
 // status: 'processing' | 'complete' | 'failed'
@@ -34,6 +34,13 @@ function normaliseHeyGen(data) {
   }
 }
 
+function normaliseSyncLabs(data) {
+  return {
+    status: data.status === 'completed' ? 'complete' : data.status === 'failed' ? 'failed' : 'processing',
+    url: data.url ?? null,
+  }
+}
+
 export async function GET(request) {
   const { user } = await getUserAndPlan(request)
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
@@ -41,6 +48,7 @@ export async function GET(request) {
   const { searchParams } = new URL(request.url)
   const jobId    = searchParams.get('jobId')
   const provider = searchParams.get('provider')
+  const subtype  = searchParams.get('subtype') ?? 'text2video'
 
   if (!jobId || !provider) {
     return Response.json({ error: 'jobId and provider required' }, { status: 400 })
@@ -51,7 +59,7 @@ export async function GET(request) {
 
     switch (provider) {
       case 'kling':
-        raw = await pollKling(jobId)
+        raw = await pollKling(jobId, subtype)
         normalised = normaliseKling(raw)
         break
       case 'runway':
@@ -65,6 +73,10 @@ export async function GET(request) {
       case 'heygen':
         raw = await pollHeyGen(jobId)
         normalised = normaliseHeyGen(raw)
+        break
+      case 'synclabs':
+        raw = await pollSyncLabs(jobId)
+        normalised = normaliseSyncLabs(raw)
         break
       default:
         return Response.json({ error: `Unknown provider: ${provider}` }, { status: 400 })

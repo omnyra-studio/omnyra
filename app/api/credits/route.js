@@ -16,11 +16,11 @@ export async function GET(request) {
 
   const { data } = await supabaseAdmin
     .from('credits')
-    .select('balance')
+    .select('balance, plan')
     .eq('user_id', user.id)
     .single();
 
-  return Response.json({ balance: data?.balance ?? 0 });
+  return Response.json({ balance: data?.balance ?? 0, plan: data?.plan ?? 'free' });
 }
 
 export async function POST(request) {

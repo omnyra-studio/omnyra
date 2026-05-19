@@ -12,8 +12,12 @@ const STYLE_SUFFIXES = {
   meme:       ', meme style, funny, internet culture',
 }
 
-// Pro/Studio get higher inference steps for better quality
-const STEPS_BY_PLAN = { free: 20, creator: 24, pro: 28, studio: 35 }
+const FLUX_MODEL = {
+  free:    'fal-ai/flux/schnell',
+  creator: 'fal-ai/flux/schnell',
+  pro:     'fal-ai/flux/dev',
+  studio:  'fal-ai/flux-pro',
+}
 
 export async function POST(request) {
   const { user, plan } = await getUserAndPlan(request)
@@ -22,7 +26,6 @@ export async function POST(request) {
   const { prompt, style = 'realistic' } = await request.json()
   if (!prompt?.trim()) return Response.json({ error: 'No prompt provided' }, { status: 400 })
 
-  // HD quality for Pro and Studio
   const creditAction = (plan === 'pro' || plan === 'studio') ? 'image_hd' : 'image_standard'
   const credit = await deductCredits(user.id, creditAction)
   if (!credit.success) {
@@ -30,21 +33,27 @@ export async function POST(request) {
   }
 
   const fullPrompt = prompt.trim() + (STYLE_SUFFIXES[style] ?? '')
-  const steps      = STEPS_BY_PLAN[plan] ?? 28
+  const model      = FLUX_MODEL[plan] ?? 'fal-ai/flux/schnell'
+  const isPro      = model === 'fal-ai/flux-pro'
+  const isSchnell  = model === 'fal-ai/flux/schnell'
 
-  const response = await fetch('https://fal.run/fal-ai/flux/dev', {
+  const body = {
+    prompt: fullPrompt,
+    image_size: 'portrait_4_3',
+    num_images: 1,
+    ...(isPro
+      ? { safety_tolerance: '2' }
+      : { num_inference_steps: isSchnell ? 4 : 28, enable_safety_checker: true }
+    ),
+  }
+
+  const response = await fetch(`https://fal.run/${model}`, {
     method: 'POST',
     headers: {
-      'Authorization': `Key ${process.env.FALAI_API_KEY}`,
+      'Authorization': `Key ${process.env.FAL_API_KEY}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      prompt: fullPrompt,
-      image_size: 'portrait_4_3',
-      num_inference_steps: steps,
-      num_images: 1,
-      enable_safety_checker: true,
-    }),
+    body: JSON.stringify(body),
   })
 
   if (!response.ok) {
@@ -57,5 +66,5 @@ export async function POST(request) {
 
   if (!imageUrl) return Response.json({ error: 'No image returned' }, { status: 500 })
 
-  return Response.json({ url: imageUrl, balance: credit.remaining })
+  return Response.json({ url: imageUrl, model, balance: credit.remaining })
 }

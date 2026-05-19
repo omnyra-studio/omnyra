@@ -452,7 +452,7 @@ function Paywall({ onDone, showToast }) {
     try {
       const res = await fetch("/api/stripe",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({plan:sel})});
       const data = await res.json();
-      if (data.url) { window.location.href=data.url; } else { showToast("Payment unavailable — try again"); setLoading(false); }
+      if (data.url) { localStorage.setItem("omnyra_onboarded","1"); window.location.href=data.url; } else { showToast("Payment unavailable — try again"); setLoading(false); }
     } catch { showToast("Connection failed"); setLoading(false); }
   };
 
@@ -486,6 +486,7 @@ function Paywall({ onDone, showToast }) {
 
 function AppShell({ screen, setScreen, subScreen, setSubScreen, activeTool, setActiveTool, mode, setMode, onSearch, onNotif, showToast }) {
   const [credits, setCredits] = useState(null);
+  const [plan, setPlan]       = useState('free');
   const [brand, setBrand] = useState(null);
   const [brandPanelOpen, setBrandPanelOpen] = useState(false);
 
@@ -494,7 +495,11 @@ function AppShell({ screen, setScreen, subScreen, setSubScreen, activeTool, setA
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
       const res = await fetch('/api/credits', { headers: { Authorization: `Bearer ${session.access_token}` } });
-      if (res.ok) setCredits((await res.json()).balance);
+      if (res.ok) {
+        const d = await res.json();
+        setCredits(d.balance);
+        if (d.plan) setPlan(d.plan);
+      }
     } catch {}
   };
 
@@ -522,11 +527,14 @@ function AppShell({ screen, setScreen, subScreen, setSubScreen, activeTool, setA
   if (brandPanelOpen) return <BrandPanel onClose={(saved) => { if (saved) setBrand(saved); setBrandPanelOpen(false); }} showToast={showToast}/>;
   if (activeTool?.id==="oneclick") return <OneClickFlow mode={mode} setMode={setMode} onBack={()=>setActiveTool(null)} showToast={showToast} brand={brand}/>;
   if (activeTool?.id==="script")   return <ScriptStudio  mode={mode} setMode={setMode} onBack={()=>setActiveTool(null)} showToast={showToast} brand={brand}/>;
-  if (activeTool?.id==="avatar")   return <AvatarStudio  mode={mode} onBack={()=>setActiveTool(null)} showToast={showToast}/>;
-  if (activeTool?.id==="image")    return <ImageTool onBack={()=>setActiveTool(null)} showToast={showToast} onGenerated={onGenerated}/>;
+  if (activeTool?.id==="avatar")   return <AvatarStudio  mode={mode} onBack={()=>setActiveTool(null)} showToast={showToast} plan={plan}/>;
+  if (activeTool?.id==="video")    return <VideoTool    onBack={()=>setActiveTool(null)} showToast={showToast} onGenerated={onGenerated} plan={plan}/>;
+  if (activeTool?.id==="lipsync")  return <LipSyncStudio    onBack={()=>setActiveTool(null)} showToast={showToast} onGenerated={onGenerated} plan={plan}/>;
+  if (activeTool?.id==="twin")     return <DigitalTwinStudio onBack={()=>setActiveTool(null)} showToast={showToast} onGenerated={onGenerated}/>;
+  if (activeTool?.id==="image")    return <ImageTool    onBack={()=>setActiveTool(null)} showToast={showToast} onGenerated={onGenerated} plan={plan}/>;
   if (activeTool?.id==="voice")    return <VoiceTool onBack={()=>setActiveTool(null)} showToast={showToast} onGenerated={onGenerated}/>;
   if (activeTool?.id==="clone")    return <VoiceCloneStudio mode={mode} setMode={setMode} onBack={()=>setActiveTool(null)} showToast={showToast}/>;
-  if (activeTool?.id==="motion")   return <MotionStudio  mode={mode} setMode={setMode} onBack={()=>setActiveTool(null)} showToast={showToast}/>;
+  if (activeTool?.id==="motion")   return <MotionStudio  mode={mode} setMode={setMode} onBack={()=>setActiveTool(null)} showToast={showToast} onGenerated={onGenerated} plan={plan}/>;
   if (activeTool?.id==="caption")  return <CaptionTool   mode={mode} setMode={setMode} onBack={()=>setActiveTool(null)} showToast={showToast} brand={brand}/>;
   if (activeTool)                  return <GenericTool   tool={activeTool} mode={mode} setMode={setMode} onBack={()=>setActiveTool(null)} showToast={showToast} brand={brand}/>;
   if (subScreen)                   return <SubScreen     name={subScreen} onBack={()=>setSubScreen(null)} showToast={showToast}/>;
@@ -1199,105 +1207,958 @@ function OneClickFlow({ mode, setMode, onBack, showToast, brand }) {
 /* ─────────────────────────────────────────────
    PRESENTER STUDIO (AI Avatars — 40 avatars)
 ──────────────────────────────────────────────*/
-function AvatarStudio({ mode, onBack, showToast }) {
-  const [cat,setCat]           = useState("realistic");
-  const [selected,setSel]      = useState(null);
-  const [selfie,setSelfie]     = useState(null);
-  const fileRef                = useRef();
-  const catAvatars             = AVATARS.filter(a=>a.cat===cat);
-
+function AvatarGenerateForm({ script, onScript, voices, voicesLoading, voiceId, onVoice, duration, onDuration, generating, jobStatus, videoUrl, onGenerate }) {
   return (
-    <div style={{minHeight:"100vh",padding:"50px 20px 40px",animation:"fadeIn 0.3s ease"}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}>
-        <PressBtn onClick={onBack} style={ghostBtn}><ArrowLeft size={18}/></PressBtn>
-        <div style={{display:"inline-flex",alignItems:"center",gap:6,padding:"5px 12px",borderRadius:100,background:"rgba(139,92,246,0.15)",border:"1px solid rgba(139,92,246,0.3)",fontSize:10,fontWeight:600,color:"#a78bfa"}}>🎭 PRESENTER STUDIO</div>
+    <>
+      <div style={{ marginTop: 20 }}>
+        <label style={labelStyle}>Script</label>
+        <div style={{ marginTop: 8, borderRadius: 20, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", overflow: "hidden" }}>
+          <textarea
+            value={script}
+            onChange={e => onScript(e.target.value)}
+            placeholder="Type what the presenter should say…"
+            style={{ width: "100%", minHeight: 110, padding: 16, background: "transparent", border: "none", outline: "none", color: C.text, fontSize: 14, fontFamily: "inherit", resize: "none", lineHeight: 1.5, boxSizing: "border-box" }}
+          />
+          <div style={{ padding: "8px 12px 12px", display: "flex", justifyContent: "flex-end" }}>
+            <span style={{ fontSize: 10, color: C.sub }}>{script.length} chars</span>
+          </div>
+        </div>
       </div>
 
-      <h1 style={{fontSize:26,fontWeight:300,letterSpacing:"-0.03em",margin:"0 0 4px"}}>Choose Presenter Style</h1>
-      <p style={{margin:"0 0 18px",fontSize:13,color:C.sub}}>40 AI presenters · 7 styles · powered by D-ID</p>
+      <div style={{ marginTop: 16 }}>
+        <label style={labelStyle}>Voice (ElevenLabs)</label>
+        <div style={{ marginTop: 8 }}>
+          <VoicePicker voices={voices} selectedId={voiceId} onSelect={onVoice} loading={voicesLoading} />
+        </div>
+      </div>
 
-      {/* Category tabs */}
-      <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:4,scrollbarWidth:"none",marginBottom:18}}>
-        {AVATAR_CATEGORIES.map(c=>{
-          const a=cat===c.id;
-          return <PressBtn key={c.id} onClick={()=>{setCat(c.id);setSel(null);}} style={{flexShrink:0,padding:"8px 14px",borderRadius:100,background:a?"linear-gradient(135deg,rgba(139,92,246,0.3),rgba(34,211,238,0.2))":"rgba(255,255,255,0.04)",border:a?"1px solid rgba(139,92,246,0.5)":"1px solid rgba(255,255,255,0.08)",color:a?"#fff":C.sub,fontSize:12,fontWeight:a?600:400,display:"flex",alignItems:"center",gap:6,fontFamily:"inherit",whiteSpace:"nowrap"}}>
-            {c.emoji} {c.label}
-          </PressBtn>;
+      <div style={{ marginTop: 16 }}>
+        <label style={labelStyle}>Duration</label>
+        <div style={{ marginTop: 8, display: "flex", gap: 8 }}>
+          {[{ v: 30, label: "30 sec", credits: "25 credits" }, { v: 60, label: "60 sec", credits: "45 credits" }].map(d => (
+            <PressBtn key={d.v} onClick={() => onDuration(d.v)} style={{
+              flex: 1, padding: "12px", borderRadius: 14,
+              background: duration === d.v ? "linear-gradient(135deg,rgba(139,92,246,0.2),rgba(34,211,238,0.15))" : "rgba(255,255,255,0.04)",
+              border: duration === d.v ? "1.5px solid rgba(139,92,246,0.5)" : "1px solid rgba(255,255,255,0.08)",
+              color: C.text, fontFamily: "inherit", display: "flex", flexDirection: "column", alignItems: "center", gap: 3,
+            }}>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>{d.label}</span>
+              <span style={{ fontSize: 10, color: C.sub }}>{d.credits}</span>
+            </PressBtn>
+          ))}
+        </div>
+      </div>
+
+      <PressBtn
+        onClick={onGenerate}
+        disabled={generating || !script.trim()}
+        style={{ ...primaryBtn, width: "100%", justifyContent: "center", marginTop: 16, opacity: generating || !script.trim() ? 0.5 : 1 }}
+      >
+        {generating
+          ? <><RefreshCw size={16} style={{ animation: "spin 1s linear infinite" }} /> {jobStatus === "processing" ? "Rendering…" : "Starting…"}</>
+          : <><Clapperboard size={16} /> Generate Avatar Video</>
+        }
+      </PressBtn>
+
+      {videoUrl && (
+        <div style={{ marginTop: 20, borderRadius: 20, overflow: "hidden", border: "1px solid rgba(139,92,246,0.3)" }}>
+          <video controls style={{ width: "100%", display: "block", background: "#000" }}>
+            <source src={videoUrl} type="video/mp4" />
+          </video>
+          <div style={{ padding: "12px 14px", background: "rgba(139,92,246,0.08)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <span style={{ fontSize: 12, color: C.sub }}>Avatar video ready ✓</span>
+            <a href={videoUrl} download style={{ fontSize: 12, color: "#a78bfa", textDecoration: "none" }}>Download</a>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+function AvatarStudio({ mode, onBack, showToast, plan = 'free' }) {
+  const [view, setView]                     = useState("pick");
+  const [presenters, setPresenters]         = useState([]);
+  const [presLoading, setPresLoad]          = useState(true);
+  const [avatarProvider, setAvatarProvider] = useState("did");
+  const [selected, setSelected]             = useState(null);
+  const [voices, setVoices]                 = useState([]);
+  const [voicesLoading, setVLoading]        = useState(true);
+  const [voiceId, setVoiceId]               = useState("");
+  const [script, setScript]                 = useState("");
+  const [duration, setDuration]             = useState(30);
+  const [generating, setGenerating]         = useState(false);
+  const [jobId, setJobId]                   = useState(null);
+  const [provider, setProvider]             = useState(null);
+  const [jobStatus, setJobStatus]           = useState(null);
+  const [videoUrl, setVideoUrl]             = useState(null);
+  const [selfie, setSelfie]                 = useState(null);  // local blob URL for preview
+  const [selfieUrl, setSelfieUrl]           = useState(null);  // public Supabase URL for D-ID
+  const fileRef = useRef();
+  const pollRef = useRef();
+
+  useEffect(() => {
+    (async () => {
+      try {
+        if (plan === 'studio') {
+          const { data: { session } } = await supabase.auth.getSession();
+          if (session) {
+            const res = await fetch('/api/heygen', { headers: { Authorization: `Bearer ${session.access_token}` } });
+            if (res.ok) {
+              const d = await res.json();
+              const list = d.avatars || [];
+              if (list.length) { setPresenters(list); setAvatarProvider('heygen'); return; }
+            }
+          }
+        }
+        const res = await fetch('/api/avatars');
+        const d = await res.json();
+        setPresenters(d.presenters || []);
+        setAvatarProvider('did');
+      } catch {} finally { setPresLoad(false); }
+    })();
+
+    fetch("/api/voices")
+      .then(r => r.json())
+      .then(d => {
+        const list = d.voices || [];
+        setVoices(list);
+        if (list.length) setVoiceId(list[0].voice_id);
+      })
+      .catch(() => {})
+      .finally(() => setVLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (!jobId || !provider) return;
+    const poll = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const res = await fetch(`/api/status?jobId=${jobId}&provider=${provider}`, {
+          headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
+        });
+        const data = await res.json();
+        setJobStatus(data.status);
+        if (data.status === "complete") {
+          setVideoUrl(data.url);
+          setGenerating(false);
+          clearInterval(pollRef.current);
+          showToast("Avatar video ready! 🎭");
+        } else if (data.status === "failed") {
+          setGenerating(false);
+          clearInterval(pollRef.current);
+          showToast("Generation failed — try again");
+        }
+      } catch {}
+    };
+    pollRef.current = setInterval(poll, 5000);
+    poll();
+    return () => clearInterval(pollRef.current);
+  }, [jobId, provider]);
+
+  const generate = async () => {
+    if (!script.trim()) { showToast("Add a script first"); return; }
+    const useHeyGen = avatarProvider === 'heygen' && view === 'pick';
+    if (useHeyGen && !selected?.id) { showToast("Select a presenter first"); return; }
+    if (!useHeyGen && view === 'twin' && !selfieUrl) { showToast(selfie ? 'Selfie still uploading…' : 'Upload your selfie first'); return; }
+    if (!useHeyGen && view !== 'twin' && !selected?.thumbnail_url) { showToast("Select a presenter first"); return; }
+    setGenerating(true); setVideoUrl(null); setJobStatus(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const body = useHeyGen
+        ? { avatarId: selected.id, scriptText: script, voiceId, duration }
+        : { imageUrl: view === 'twin' ? selfieUrl : selected.thumbnail_url, scriptText: script, voiceId, duration };
+      const res = await fetch("/api/avatar", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(session && { Authorization: `Bearer ${session.access_token}` }) },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (data.error) { showToast(data.error); setGenerating(false); return; }
+      setJobId(data.jobId);
+      setProvider(data.provider);
+    } catch {
+      showToast("Generation failed");
+      setGenerating(false);
+    }
+  };
+
+  const resetJob = () => { setVideoUrl(null); setJobId(null); setJobStatus(null); };
+
+  return (
+    <div style={{ minHeight: "100vh", padding: "50px 20px 100px", animation: "fadeIn 0.3s ease" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
+        <PressBtn onClick={onBack} style={ghostBtn}><ArrowLeft size={18} /></PressBtn>
+        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "5px 12px", borderRadius: 100, background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", fontSize: 10, fontWeight: 600, color: "#a78bfa" }}>🎭 PRESENTER STUDIO</div>
+      </div>
+
+      <h1 style={{ fontSize: 26, fontWeight: 300, letterSpacing: "-0.03em", margin: "0 0 4px" }}>Presenter Studio</h1>
+      <div style={{ margin: "0 0 18px", display: "flex", alignItems: "center", gap: 8 }}>
+        <p style={{ margin: 0, fontSize: 13, color: C.sub }}>
+          {avatarProvider === 'heygen' ? 'HeyGen Studio avatars · ElevenLabs voice' : 'D-ID avatars · ElevenLabs voice · instant video'}
+        </p>
+        {avatarProvider === 'heygen' && (
+          <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 100, background: "rgba(251,191,36,0.15)", border: "1px solid rgba(251,191,36,0.3)", color: C.gold, fontWeight: 600 }}>STUDIO</span>
+        )}
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
+        {[{ id: "pick", label: "Presenters", emoji: "🎭" }, { id: "twin", label: "Digital Twin", emoji: "📷" }].map(t => {
+          const a = view === t.id;
+          return (
+            <PressBtn key={t.id} onClick={() => { setView(t.id); setSelected(null); resetJob(); }} style={{
+              padding: "8px 16px", borderRadius: 100, fontSize: 12, fontWeight: a ? 600 : 400,
+              background: a ? "linear-gradient(135deg,rgba(139,92,246,0.3),rgba(34,211,238,0.2))" : "rgba(255,255,255,0.04)",
+              border: a ? "1px solid rgba(139,92,246,0.5)" : "1px solid rgba(255,255,255,0.08)",
+              color: a ? "#fff" : C.sub, fontFamily: "inherit",
+            }}>
+              {t.emoji} {t.label}
+            </PressBtn>
+          );
         })}
       </div>
 
-      {/* Digital Twin special screen */}
-      {cat==="twin"?(
+      {/* DIGITAL TWIN */}
+      {view === "twin" && (
         <div>
-          <div style={{padding:"20px 18px",borderRadius:22,background:"linear-gradient(135deg,rgba(139,92,246,0.15),rgba(34,211,238,0.1))",border:"1px solid rgba(139,92,246,0.3)",marginBottom:18}}>
-            <div style={{fontSize:16,fontWeight:600,marginBottom:6}}>📷 Your AI Digital Twin</div>
-            <div style={{fontSize:13,color:C.sub,lineHeight:1.6}}>Upload one selfie. Omnyra creates your talking clone — lip-sync presenter, AI influencer version of yourself. The killer feature.</div>
+          <div style={{ padding: "20px 18px", borderRadius: 22, background: "linear-gradient(135deg,rgba(139,92,246,0.15),rgba(34,211,238,0.1))", border: "1px solid rgba(139,92,246,0.3)", marginBottom: 18 }}>
+            <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 6 }}>📷 Your AI Digital Twin</div>
+            <div style={{ fontSize: 13, color: C.sub, lineHeight: 1.6 }}>Upload one selfie. D-ID turns you into a talking AI presenter.</div>
           </div>
-          <input ref={fileRef} type="file" accept="image/*" style={{display:"none"}} onChange={e=>{if(e.target.files[0]){const r=new FileReader();r.onload=ev=>setSelfie(ev.target.result);r.readAsDataURL(e.target.files[0]);showToast("Selfie uploaded! Creating your twin… 🎭");}}}/>
-          <PressBtn onClick={()=>fileRef.current?.click()} style={{width:"100%",padding:24,borderRadius:22,background:selfie?"rgba(139,92,246,0.1)":"rgba(255,255,255,0.03)",border:selfie?"1px solid rgba(139,92,246,0.4)":"1px dashed rgba(255,255,255,0.15)",textAlign:"center",color:C.text,fontFamily:"inherit"}}>
-            {selfie?(
-              <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:12}}>
-                <img src={selfie} alt="" style={{width:100,height:100,borderRadius:"50%",objectFit:"cover",border:"2px solid rgba(139,92,246,0.5)"}}/>
-                <div style={{fontSize:14,fontWeight:500,color:"#a78bfa"}}>✓ Selfie ready — connect D-ID to generate</div>
+          <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={async e => {
+            const file = e.target.files[0]; if (!file) return;
+            setSelfie(URL.createObjectURL(file)); setSelfieUrl(null);
+            try {
+              const { data: { session } } = await supabase.auth.getSession();
+              const ext = file.name.split('.').pop() || 'jpg';
+              const path = `${session.user.id}/twin-${Date.now()}.${ext}`;
+              const { data, error: upErr } = await supabase.storage
+                .from('lipsync-media').upload(path, file, { upsert: true, contentType: file.type });
+              if (upErr) throw upErr;
+              const { data: pub } = supabase.storage.from('lipsync-media').getPublicUrl(data.path);
+              setSelfieUrl(pub.publicUrl);
+              showToast("Selfie ready ✓");
+            } catch { showToast("Upload failed — check lipsync-media bucket"); setSelfie(null); }
+          }} />
+          <PressBtn onClick={() => fileRef.current?.click()} style={{ width: "100%", padding: 24, borderRadius: 22, background: selfie ? "rgba(139,92,246,0.1)" : "rgba(255,255,255,0.03)", border: selfie ? "1px solid rgba(139,92,246,0.4)" : "1px dashed rgba(255,255,255,0.15)", textAlign: "center", color: C.text, fontFamily: "inherit" }}>
+            {selfie ? (
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+                <img src={selfie} alt="" style={{ width: 100, height: 100, borderRadius: "50%", objectFit: "cover", border: "2px solid rgba(139,92,246,0.5)" }} />
+                <div style={{ fontSize: 14, fontWeight: 500, color: selfieUrl ? "#a78bfa" : C.sub }}>{selfieUrl ? "✓ Selfie ready" : "Uploading…"}</div>
               </div>
-            ):(
+            ) : (
               <>
-                <div style={{fontSize:48,marginBottom:12}}>📷</div>
-                <div style={{fontSize:16,fontWeight:600}}>Upload your selfie</div>
-                <div style={{fontSize:12,color:C.sub,marginTop:6}}>One photo · Creates your full AI presenter clone</div>
+                <div style={{ fontSize: 48, marginBottom: 12 }}>📷</div>
+                <div style={{ fontSize: 16, fontWeight: 600 }}>Upload your selfie</div>
+                <div style={{ fontSize: 12, color: C.sub, marginTop: 6 }}>One photo · AI talking presenter clone</div>
               </>
             )}
           </PressBtn>
-          <div style={{marginTop:14,padding:"14px 18px",borderRadius:18,background:"rgba(232,121,249,0.06)",border:"1px solid rgba(232,121,249,0.2)",fontSize:12,color:C.sub}}>
-            🔌 <span style={{color:"#e879f9"}}>D-ID API</span> powers Digital Twin · Connect in Profile → Connected Apps
-          </div>
-        </div>
-      ):(
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-          {catAvatars.map(av=>{
-            const isSelected=selected?.id===av.id;
-            return (
-              <PressBtn key={av.id} onClick={()=>{setSel(av);showToast(`${av.name} selected!`);}} style={{padding:16,borderRadius:22,textAlign:"left",background:isSelected?`linear-gradient(135deg,${av.colors[0]}33,${av.colors[1]}22)`:"rgba(255,255,255,0.03)",border:isSelected?`1.5px solid ${av.colors[0]}88`:"1px solid rgba(255,255,255,0.08)",color:C.text,fontFamily:"inherit",position:"relative",overflow:"hidden"}}>
-                <div style={{position:"absolute",top:0,right:0,width:60,height:60,background:`linear-gradient(135deg,${av.colors[0]},${av.colors[1]})`,borderRadius:"0 22px 0 100%",opacity:0.4}}/>
-                <div style={{position:"relative"}}>
-                  <div style={{width:44,height:44,borderRadius:"50%",background:`linear-gradient(135deg,${av.colors[0]},${av.colors[1]})`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,marginBottom:10}}>
-                    {av.emoji}
-                  </div>
-                  <div style={{fontSize:13,fontWeight:600}}>{av.name}</div>
-                  <div style={{fontSize:11,color:"rgba(255,255,255,0.5)",marginTop:2}}>{av.role}</div>
-                  <div style={{fontSize:10,color:C.sub,marginTop:4}}>{av.desc}</div>
-                  {isSelected&&<div style={{marginTop:8,display:"inline-flex",alignItems:"center",gap:4,padding:"3px 10px",borderRadius:100,background:`${av.colors[0]}33`,border:`1px solid ${av.colors[0]}66`,fontSize:10,color:av.colors[0]}}><Check size={10}/> Selected</div>}
-                </div>
-              </PressBtn>
-            );
-          })}
+          {selfie && (
+            <AvatarGenerateForm
+              script={script} onScript={setScript}
+              voices={voices} voicesLoading={voicesLoading} voiceId={voiceId} onVoice={setVoiceId}
+              duration={duration} onDuration={setDuration}
+              generating={generating} jobStatus={jobStatus} videoUrl={videoUrl}
+              onGenerate={generate}
+            />
+          )}
         </div>
       )}
 
-      {selected&&cat!=="twin"&&(
-        <div style={{marginTop:16,padding:"16px 18px",borderRadius:20,background:"linear-gradient(135deg,rgba(139,92,246,0.15),rgba(34,211,238,0.1))",border:"1px solid rgba(139,92,246,0.3)"}}>
-          <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
-            <div style={{fontSize:32}}>{selected.emoji}</div>
-            <div>
-              <div style={{fontSize:15,fontWeight:600}}>{selected.name}</div>
-              <div style={{fontSize:12,color:C.sub}}>{selected.role} · {selected.desc}</div>
+      {/* PRESENTER PICKER */}
+      {view === "pick" && (
+        <>
+          {presLoading ? (
+            <div style={{ padding: "40px", textAlign: "center", color: C.sub, fontSize: 13 }}>Loading presenters…</div>
+          ) : presenters.length === 0 ? (
+            <div style={{ padding: "30px 20px", textAlign: "center", borderRadius: 20, border: "1px solid rgba(255,255,255,0.08)", color: C.sub }}>
+              <div style={{ fontSize: 32, marginBottom: 10 }}>🔌</div>
+              <div style={{ fontSize: 14, fontWeight: 500, color: C.text }}>No presenters found</div>
+              <div style={{ fontSize: 12, marginTop: 6 }}>
+                {avatarProvider === 'heygen' ? 'Check HEYGEN_API_KEY in your environment' : 'Check DID_API_KEY in your environment'}
+              </div>
             </div>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-            <PressBtn onClick={()=>showToast("Connect D-ID to generate video")} style={{...primaryBtn,justifyContent:"center",flex:1}}>🎬 Use in Video</PressBtn>
-            <PressBtn onClick={()=>showToast("Connect D-ID for lip sync")} style={{...ghostBtn,justifyContent:"center",flex:1}}>🎤 Lip Sync</PressBtn>
-          </div>
-          <div style={{marginTop:10,fontSize:11,color:C.sub,textAlign:"center"}}>🔌 Connect D-ID in Profile → Connected Apps · More affordable than HeyGen</div>
-        </div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              {presenters.map(p => {
+                const isSel = selected?.id === p.id;
+                return (
+                  <PressBtn key={p.id} onClick={() => { setSelected(isSel ? null : p); resetJob(); }} style={{
+                    padding: 0, borderRadius: 18, overflow: "hidden", position: "relative",
+                    border: isSel ? "2px solid rgba(139,92,246,0.8)" : "1.5px solid rgba(255,255,255,0.08)",
+                    background: "rgba(255,255,255,0.03)", fontFamily: "inherit", aspectRatio: "3/4",
+                  }}>
+                    {p.thumbnail_url
+                      ? <img src={p.thumbnail_url} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      : <div style={{ width: "100%", height: "100%", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 40 }}>🎭</div>
+                    }
+                    <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, padding: "24px 10px 10px", background: "linear-gradient(to top,rgba(0,0,0,0.85) 0%,transparent 100%)" }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: "#fff" }}>{p.name}</div>
+                      {p.gender && <div style={{ fontSize: 10, color: "rgba(255,255,255,0.6)", textTransform: "capitalize", marginTop: 2 }}>{p.gender}</div>}
+                    </div>
+                    {isSel && (
+                      <div style={{ position: "absolute", top: 8, right: 8, width: 24, height: 24, borderRadius: "50%", background: "#8b5cf6", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 8px rgba(139,92,246,0.5)" }}>
+                        <Check size={13} color="#fff" />
+                      </div>
+                    )}
+                  </PressBtn>
+                );
+              })}
+            </div>
+          )}
+
+          {selected && (
+            <>
+              <div style={{ marginTop: 16, padding: "14px 16px", borderRadius: 18, background: "linear-gradient(135deg,rgba(139,92,246,0.12),rgba(34,211,238,0.08))", border: "1px solid rgba(139,92,246,0.25)", display: "flex", alignItems: "center", gap: 12 }}>
+                {selected.thumbnail_url && <img src={selected.thumbnail_url} alt={selected.name} style={{ width: 44, height: 44, borderRadius: 12, objectFit: "cover", flexShrink: 0 }} />}
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>{selected.name}</div>
+                  {selected.gender && <div style={{ fontSize: 11, color: C.sub, textTransform: "capitalize" }}>{selected.gender} presenter</div>}
+                </div>
+              </div>
+              <AvatarGenerateForm
+                script={script} onScript={setScript}
+                voices={voices} voicesLoading={voicesLoading} voiceId={voiceId} onVoice={setVoiceId}
+                duration={duration} onDuration={setDuration}
+                generating={generating} jobStatus={jobStatus} videoUrl={videoUrl}
+                onGenerate={generate}
+              />
+            </>
+          )}
+        </>
       )}
     </div>
   );
 }
 
 /* ─────────────────────────────────────────────
+   AI VIDEO TOOL
+──────────────────────────────────────────────*/
+const VIDEO_PROVIDER_LABEL = {
+  free:    'Pika 2.2 · Fal AI',
+  creator: 'Pika 2.2 · Fal AI',
+  pro:     'Kling AI · Runway ML',
+  studio:  'Kling AI Pro',
+}
+
+const IMG2VIDEO_LABEL = {
+  free:    'Pika 2.2 · Fal AI',
+  creator: 'Pika 2.2 · Fal AI',
+  pro:     'Runway ML',
+  studio:  'Kling AI Pro',
+}
+
+function VideoTool({ onBack, showToast, onGenerated, plan = 'free' }) {
+  const [prompt, setPrompt]     = useState("")
+  const [loading, setLoading]   = useState(false)
+  const [videoUrl, setVideoUrl] = useState(null)
+  const [jobStatus, setJobStatus] = useState(null)
+  const [error, setError]       = useState(null)
+  const [jobId, setJobId]       = useState(null)
+  const [provider, setProvider] = useState(null)
+  const [subtype, setSubtype]   = useState(null)
+  const pollRef = useRef()
+
+  useEffect(() => {
+    if (!jobId || !provider) return
+    const poll = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const qs = new URLSearchParams({ jobId, provider, ...(subtype && { subtype }) })
+        const res = await fetch(`/api/status?${qs}`, {
+          headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
+        })
+        const d = await res.json()
+        setJobStatus(d.status)
+        if (d.status === 'complete') {
+          setVideoUrl(d.url); setLoading(false); clearInterval(pollRef.current); onGenerated?.()
+        } else if (d.status === 'failed') {
+          setError('Video generation failed.'); setLoading(false); clearInterval(pollRef.current)
+        }
+      } catch {}
+    }
+    pollRef.current = setInterval(poll, 4000)
+    poll()
+    return () => clearInterval(pollRef.current)
+  }, [jobId, provider, subtype])
+
+  const generate = async () => {
+    if (!prompt.trim()) { showToast("Add a prompt first"); return }
+    clearInterval(pollRef.current)
+    setLoading(true); setVideoUrl(null); setError(null)
+    setJobId(null); setProvider(null); setSubtype(null); setJobStatus(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(session && { Authorization: `Bearer ${session.access_token}` }) },
+        body: JSON.stringify({ prompt, duration: 5 }),
+      })
+      const data = await res.json()
+      if (data.error) { setError(data.error); setLoading(false); return }
+      onGenerated?.(data.balance)
+      if (data.status === 'complete' && data.url) {
+        // Pika via Fal AI returns synchronously
+        setVideoUrl(data.url); setLoading(false)
+      } else {
+        // Kling / Runway — poll until done
+        setJobId(data.jobId); setProvider(data.provider); setSubtype(data.subtype ?? null); setJobStatus('processing')
+      }
+    } catch { setError("Connection failed."); setLoading(false) }
+  }
+
+  return (
+    <div style={{ minHeight: "100vh", padding: "50px 20px 40px", animation: "fadeIn 0.3s ease" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <PressBtn onClick={onBack} style={ghostBtn}><ArrowLeft size={18} /></PressBtn>
+      </div>
+
+      <div style={{ marginTop: 18, marginBottom: 24 }}>
+        <div style={{ width: 50, height: 50, borderRadius: 16, background: "linear-gradient(135deg,rgba(139,92,246,0.3),rgba(34,211,238,0.2))", border: "1px solid rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <Video size={22} color="#fff" strokeWidth={1.6} />
+        </div>
+        <h1 style={{ fontSize: 26, fontWeight: 300, margin: "12px 0 4px" }}>AI Video</h1>
+        <p style={{ margin: 0, fontSize: 13, color: C.sub }}>{VIDEO_PROVIDER_LABEL[plan] ?? 'Pika 2.2 · Fal AI'}</p>
+      </div>
+
+      <label style={labelStyle}>Describe your video</label>
+      <div style={{ marginTop: 8, borderRadius: 20, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", overflow: "hidden" }}>
+        <textarea
+          value={prompt}
+          onChange={e => setPrompt(e.target.value)}
+          placeholder="A cinematic aerial shot of a neon-lit city at night…"
+          style={{ width: "100%", minHeight: 110, padding: 16, background: "transparent", border: "none", outline: "none", color: C.text, fontSize: 14, fontFamily: "inherit", resize: "none", lineHeight: 1.5 }}
+        />
+        <div style={{ padding: "8px 12px 12px", display: "flex", justifyContent: "flex-end" }}>
+          <div style={{ fontSize: 10, color: C.sub }}>{prompt.length} chars</div>
+        </div>
+      </div>
+
+      <PressBtn
+        onClick={generate}
+        disabled={loading || !prompt.trim()}
+        style={{ ...primaryBtn, width: "100%", justifyContent: "center", marginTop: 16, opacity: loading || !prompt.trim() ? 0.5 : 1 }}
+      >
+        {loading
+          ? <><div style={{ width: 16, height: 16, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", animation: "spin 1s linear infinite" }} /> Generating…</>
+          : <><Video size={16} /> {videoUrl ? "Regenerate" : "Generate Video"}</>}
+      </PressBtn>
+
+      {error && (
+        <div style={{ marginTop: 12, padding: "12px 16px", borderRadius: 14, background: "rgba(244,63,94,0.1)", border: "1px solid rgba(244,63,94,0.3)", fontSize: 13, color: "#f43f5e" }}>⚠ {error}</div>
+      )}
+
+      {loading && !videoUrl && (
+        <div style={{ marginTop: 20, padding: 24, borderRadius: 20, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+          <div style={{ width: 44, height: 44, borderRadius: "50%", border: "3px solid rgba(139,92,246,0.2)", borderTopColor: "#8b5cf6", animation: "spin 1s linear infinite" }} />
+          <div style={{ fontSize: 13, color: C.sub }}>{jobStatus === 'processing' ? 'Rendering your video…' : 'Starting generation…'}</div>
+          {jobStatus === 'processing' && provider !== 'pika' && (
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.25)" }}>This can take 1–3 minutes</div>
+          )}
+        </div>
+      )}
+
+      {videoUrl && (
+        <div style={{ marginTop: 20, borderRadius: 20, overflow: "hidden", border: "1px solid rgba(139,92,246,0.3)", animation: "slideUp 0.4s ease" }}>
+          <video controls autoPlay muted style={{ width: "100%", display: "block", background: "#000" }}>
+            <source src={videoUrl} type="video/mp4" />
+          </video>
+          <div style={{ padding: "12px 16px", background: "rgba(139,92,246,0.08)", display: "flex", gap: 10 }}>
+            <a href={videoUrl} download="omnyra-video.mp4" target="_blank" rel="noreferrer"
+              style={{ ...primaryBtn, flex: 1, justifyContent: "center", textDecoration: "none" }}>
+              <Copy size={14} /> Download
+            </a>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ─────────────────────────────────────────────
+   DIGITAL TWIN STUDIO
+──────────────────────────────────────────────*/
+function DigitalTwinStudio({ onBack, showToast, onGenerated }) {
+  const [selfieBlob, setSelfieBlob]   = useState(null)   // local preview
+  const [selfieUrl, setSelfieUrl]     = useState(null)   // public URL for D-ID
+  const [uploading, setUploading]     = useState(false)
+  const [voices, setVoices]           = useState([])
+  const [voicesLoading, setVLoading]  = useState(true)
+  const [voiceId, setVoiceId]         = useState('')
+  const [script, setScript]           = useState('')
+  const [duration, setDuration]       = useState(30)
+  const [generating, setGenerating]   = useState(false)
+  const [jobId, setJobId]             = useState(null)
+  const [jobStatus, setJobStatus]     = useState(null)
+  const [videoUrl, setVideoUrl]       = useState(null)
+  const [error, setError]             = useState(null)
+  const pollRef = useRef()
+  const fileRef = useRef()
+
+  useEffect(() => {
+    fetch('/api/voices').then(r => r.json()).then(d => {
+      const list = d.voices || []
+      setVoices(list)
+      if (list.length) setVoiceId(list[0].voice_id)
+    }).catch(() => {}).finally(() => setVLoading(false))
+  }, [])
+
+  const handleSelfie = async (e) => {
+    const file = e.target.files?.[0]; if (!file) return
+    setSelfieBlob(URL.createObjectURL(file)); setSelfieUrl(null); setUploading(true)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const ext  = file.name.split('.').pop() || 'jpg'
+      const path = `${session.user.id}/twin-${Date.now()}.${ext}`
+      const { data, error: upErr } = await supabase.storage
+        .from('lipsync-media').upload(path, file, { upsert: true, contentType: file.type })
+      if (upErr) throw upErr
+      const { data: pub } = supabase.storage.from('lipsync-media').getPublicUrl(data.path)
+      setSelfieUrl(pub.publicUrl)
+    } catch { showToast('Upload failed — check lipsync-media Supabase bucket'); setSelfieBlob(null) }
+    finally { setUploading(false) }
+  }
+
+  useEffect(() => {
+    if (!jobId) return
+    const poll = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const res = await fetch(`/api/status?jobId=${jobId}&provider=did`, {
+          headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
+        })
+        const d = await res.json()
+        setJobStatus(d.status)
+        if (d.status === 'complete') {
+          setVideoUrl(d.url); setGenerating(false); clearInterval(pollRef.current); onGenerated?.()
+        } else if (d.status === 'failed') {
+          setError('Generation failed — try again'); setGenerating(false); clearInterval(pollRef.current)
+        }
+      } catch {}
+    }
+    pollRef.current = setInterval(poll, 3000)
+    poll()
+    return () => clearInterval(pollRef.current)
+  }, [jobId])
+
+  const generate = async () => {
+    if (!selfieUrl) { showToast(uploading ? 'Photo still uploading…' : 'Upload your selfie first'); return }
+    if (!script.trim()) { showToast('Add a script first'); return }
+    clearInterval(pollRef.current)
+    setGenerating(true); setVideoUrl(null); setError(null); setJobId(null); setJobStatus(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/avatar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(session && { Authorization: `Bearer ${session.access_token}` }) },
+        body: JSON.stringify({ imageUrl: selfieUrl, scriptText: script, voiceId, duration }),
+      })
+      const data = await res.json()
+      if (data.error) { setError(data.error); setGenerating(false); return }
+      onGenerated?.(data.balance)
+      setJobId(data.jobId); setJobStatus(data.status)
+    } catch { setError('Connection failed'); setGenerating(false) }
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', padding: '50px 20px 40px', animation: 'fadeIn 0.3s ease' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <PressBtn onClick={onBack} style={ghostBtn}><ArrowLeft size={18} /></PressBtn>
+      </div>
+
+      <div style={{ marginTop: 18, marginBottom: 24 }}>
+        <div style={{ width: 50, height: 50, borderRadius: 16, background: 'linear-gradient(135deg,rgba(34,211,238,0.3),rgba(139,92,246,0.2))', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Camera size={22} color="#fff" strokeWidth={1.6} />
+        </div>
+        <h1 style={{ fontSize: 26, fontWeight: 300, margin: '12px 0 4px' }}>Digital Twin</h1>
+        <p style={{ margin: 0, fontSize: 13, color: C.sub }}>One selfie · D-ID turns you into a talking AI presenter</p>
+      </div>
+
+      {/* Selfie upload */}
+      <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleSelfie} />
+      <PressBtn onClick={() => fileRef.current?.click()} style={{ width: '100%', padding: 28, borderRadius: 24, background: selfieBlob ? 'rgba(34,211,238,0.06)' : 'rgba(255,255,255,0.03)', border: selfieBlob ? '1px solid rgba(34,211,238,0.3)' : '1px dashed rgba(255,255,255,0.15)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12, color: C.text, fontFamily: 'inherit' }}>
+        {selfieBlob ? (
+          <>
+            <img src={selfieBlob} alt="" style={{ width: 96, height: 96, borderRadius: '50%', objectFit: 'cover', border: `3px solid ${selfieUrl ? 'rgba(34,211,238,0.6)' : 'rgba(255,255,255,0.2)'}` }} />
+            <div style={{ fontSize: 13, fontWeight: 500, color: uploading ? C.sub : selfieUrl ? '#22d3ee' : '#f43f5e' }}>
+              {uploading ? 'Uploading…' : selfieUrl ? '✓ Selfie ready — tap to change' : 'Upload failed'}
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ width: 80, height: 80, borderRadius: '50%', background: 'linear-gradient(135deg,rgba(34,211,238,0.15),rgba(139,92,246,0.1))', border: '1px dashed rgba(255,255,255,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Camera size={30} color="rgba(255,255,255,0.4)" strokeWidth={1.5} />
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: 15, fontWeight: 500 }}>Upload your selfie</div>
+              <div style={{ fontSize: 12, color: C.sub, marginTop: 4 }}>One clear face photo · front-facing works best</div>
+            </div>
+          </>
+        )}
+      </PressBtn>
+
+      {/* Script + voice + duration + generate (revealed once selfie selected) */}
+      {selfieBlob && (
+        <AvatarGenerateForm
+          script={script}          onScript={setScript}
+          voices={voices}          voicesLoading={voicesLoading}
+          voiceId={voiceId}        onVoice={setVoiceId}
+          duration={duration}      onDuration={setDuration}
+          generating={generating}  jobStatus={jobStatus}
+          videoUrl={videoUrl}      onGenerate={generate}
+        />
+      )}
+
+      {error && (
+        <div style={{ marginTop: 12, padding: '12px 16px', borderRadius: 14, background: 'rgba(244,63,94,0.1)', border: '1px solid rgba(244,63,94,0.3)', fontSize: 13, color: '#f43f5e' }}>⚠ {error}</div>
+      )}
+    </div>
+  )
+}
+
+/* ─────────────────────────────────────────────
+   LIP SYNC STUDIO
+──────────────────────────────────────────────*/
+function LipSyncStudio({ onBack, showToast, onGenerated, plan = 'free' }) {
+  const [videoMode, setVideoMode]         = useState('upload')  // 'upload' | 'avatar'
+  const [videoBlobUrl, setVideoBlobUrl]   = useState(null)
+  const [videoPublicUrl, setVideoPublicUrl] = useState(null)
+  const [videoUploading, setVideoUploading] = useState(false)
+  const [avatars, setAvatars]             = useState([])
+  const [avatarsLoaded, setAvatarsLoaded] = useState(false)
+  const [avatarsLoading, setAvatarsLoading] = useState(false)
+  const [selectedAvatar, setSelectedAvatar] = useState(null)
+
+  const [audioMode, setAudioMode]         = useState('upload')  // 'upload' | 'voice'
+  const [audioBlobUrl, setAudioBlobUrl]   = useState(null)
+  const [audioPublicUrl, setAudioPublicUrl] = useState(null)
+  const [audioUploading, setAudioUploading] = useState(false)
+  const [voices, setVoices]               = useState([])
+  const [voicesLoading, setVLoading]      = useState(true)
+  const [voiceId, setVoiceId]             = useState('')
+  const [ttsText, setTtsText]             = useState('')
+  const [ttsLoading, setTtsLoading]       = useState(false)
+
+  const [syncing, setSyncing]     = useState(false)
+  const [jobId, setJobId]         = useState(null)
+  const [jobStatus, setJobStatus] = useState(null)
+  const [resultUrl, setResultUrl] = useState(null)
+  const [error, setError]         = useState(null)
+  const pollRef    = useRef()
+  const vidFileRef = useRef()
+  const audFileRef = useRef()
+
+  // Load voices
+  useEffect(() => {
+    fetch('/api/voices').then(r => r.json()).then(d => {
+      const list = d.voices || []
+      setVoices(list)
+      if (list.length) setVoiceId(list[0].voice_id)
+    }).catch(() => {}).finally(() => setVLoading(false))
+  }, [])
+
+  // Load avatars when avatar tab is opened
+  useEffect(() => {
+    if (videoMode !== 'avatar' || avatarsLoaded) return
+    setAvatarsLoading(true)
+    ;(async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (plan === 'studio' && session) {
+          const r = await fetch('/api/heygen', { headers: { Authorization: `Bearer ${session.access_token}` } })
+          if (r.ok) { const d = await r.json(); if (d.avatars?.length) { setAvatars(d.avatars); setAvatarsLoaded(true); return } }
+        }
+        const r = await fetch('/api/avatars')
+        const d = await r.json()
+        setAvatars(d.presenters || [])
+        setAvatarsLoaded(true)
+      } catch {} finally { setAvatarsLoading(false) }
+    })()
+  }, [videoMode, avatarsLoaded, plan])
+
+  // Upload file to Supabase Storage (public bucket: lipsync-media)
+  const uploadFile = async (file, prefix) => {
+    const { data: { session } } = await supabase.auth.getSession()
+    const ext  = file.name.split('.').pop() || 'bin'
+    const path = `${session.user.id}/${prefix}-${Date.now()}.${ext}`
+    const { data, error: uploadErr } = await supabase.storage
+      .from('lipsync-media').upload(path, file, { upsert: true, contentType: file.type })
+    if (uploadErr) throw new Error(uploadErr.message)
+    const { data: pub } = supabase.storage.from('lipsync-media').getPublicUrl(data.path)
+    return pub.publicUrl
+  }
+
+  const handleVideoFile = async (e) => {
+    const file = e.target.files?.[0]; if (!file) return
+    setVideoBlobUrl(URL.createObjectURL(file)); setVideoPublicUrl(null); setVideoUploading(true)
+    try { setVideoPublicUrl(await uploadFile(file, 'vid')) }
+    catch { showToast('Upload failed — create public bucket "lipsync-media" in Supabase') }
+    finally { setVideoUploading(false) }
+  }
+
+  const handleAudioFile = async (e) => {
+    const file = e.target.files?.[0]; if (!file) return
+    setAudioBlobUrl(URL.createObjectURL(file)); setAudioPublicUrl(null); setAudioUploading(true)
+    try { setAudioPublicUrl(await uploadFile(file, 'aud')) }
+    catch { showToast('Upload failed — create public bucket "lipsync-media" in Supabase') }
+    finally { setAudioUploading(false) }
+  }
+
+  const generateVoice = async () => {
+    if (!ttsText.trim()) { showToast('Add script text first'); return }
+    setTtsLoading(true); setAudioBlobUrl(null); setAudioPublicUrl(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/voice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(session && { Authorization: `Bearer ${session.access_token}` }) },
+        body: JSON.stringify({ text: ttsText, voiceId }),
+      })
+      if (!res.ok) throw new Error()
+      const blob = await res.blob()
+      setAudioBlobUrl(URL.createObjectURL(blob))
+      const file = new File([blob], `tts-${Date.now()}.mp3`, { type: 'audio/mpeg' })
+      setAudioPublicUrl(await uploadFile(file, 'tts'))
+    } catch { showToast('Voice generation failed') } finally { setTtsLoading(false) }
+  }
+
+  const finalVideoUrl = videoMode === 'avatar'
+    ? (selectedAvatar?.preview_url ?? null)
+    : videoPublicUrl
+
+  const hasVideoSrc = videoMode === 'avatar' ? !!selectedAvatar : !!videoBlobUrl
+  const readyToSync = !!finalVideoUrl && !!audioPublicUrl && !syncing
+
+  const syncLips = async () => {
+    if (!finalVideoUrl) { showToast(videoMode === 'avatar' ? 'Selected avatar has no video preview URL' : 'Video still uploading…'); return }
+    if (!audioPublicUrl) { showToast('Audio still uploading…'); return }
+    setSyncing(true); setError(null); setResultUrl(null)
+    clearInterval(pollRef.current); setJobId(null); setJobStatus(null)
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      const res = await fetch('/api/lipsync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(session && { Authorization: `Bearer ${session.access_token}` }) },
+        body: JSON.stringify({ videoUrl: finalVideoUrl, audioUrl: audioPublicUrl }),
+      })
+      const data = await res.json()
+      if (data.error) { setError(data.error); setSyncing(false); return }
+      onGenerated?.(data.balance)
+      setJobId(data.jobId); setJobStatus('processing')
+    } catch { setError('Connection failed'); setSyncing(false) }
+  }
+
+  useEffect(() => {
+    if (!jobId) return
+    const poll = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        const res = await fetch(`/api/status?jobId=${jobId}&provider=synclabs`, {
+          headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
+        })
+        const d = await res.json()
+        setJobStatus(d.status)
+        if (d.status === 'complete') {
+          setResultUrl(d.url); setSyncing(false); clearInterval(pollRef.current); onGenerated?.()
+        } else if (d.status === 'failed') {
+          setError('Lip sync failed. Try again.'); setSyncing(false); clearInterval(pollRef.current)
+        }
+      } catch {}
+    }
+    pollRef.current = setInterval(poll, 4000)
+    poll()
+    return () => clearInterval(pollRef.current)
+  }, [jobId])
+
+  const tab = (active) => ({
+    flex: 1, padding: '8px 12px', borderRadius: 100, fontSize: 12, fontWeight: 500,
+    background: active ? 'rgba(139,92,246,0.2)' : 'transparent',
+    border: active ? '1px solid rgba(139,92,246,0.4)' : '1px solid transparent',
+    color: active ? '#a78bfa' : C.sub, fontFamily: 'inherit', textAlign: 'center',
+  })
+
+  return (
+    <div style={{ minHeight: '100vh', padding: '50px 20px 40px', animation: 'fadeIn 0.3s ease' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <PressBtn onClick={onBack} style={ghostBtn}><ArrowLeft size={18} /></PressBtn>
+      </div>
+
+      {/* Header */}
+      <div style={{ marginTop: 18, marginBottom: 24 }}>
+        <div style={{ width: 50, height: 50, borderRadius: 16, background: 'linear-gradient(135deg,rgba(139,92,246,0.3),rgba(34,211,238,0.2))', border: '1px solid rgba(255,255,255,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <Mic size={22} color="#fff" strokeWidth={1.6} />
+        </div>
+        <h1 style={{ fontSize: 26, fontWeight: 300, margin: '12px 0 4px' }}>Lip Sync Studio</h1>
+        <p style={{ margin: 0, fontSize: 13, color: C.sub }}>Sync Labs · upload a video or pick an avatar, add audio</p>
+      </div>
+
+      {/* ── STEP 1: VIDEO ── */}
+      <label style={labelStyle}>1 · Video source</label>
+      <div style={{ display: 'flex', gap: 6, marginTop: 8, marginBottom: 12, background: 'rgba(255,255,255,0.03)', borderRadius: 100, padding: 4 }}>
+        <PressBtn style={tab(videoMode === 'upload')} onClick={() => setVideoMode('upload')}>Upload Video</PressBtn>
+        <PressBtn style={tab(videoMode === 'avatar')} onClick={() => setVideoMode('avatar')}>Pick Avatar</PressBtn>
+      </div>
+
+      {videoMode === 'upload' && (
+        <>
+          <input ref={vidFileRef} type="file" accept="video/*" style={{ display: 'none' }} onChange={handleVideoFile} />
+          <PressBtn onClick={() => vidFileRef.current?.click()} style={{ width: '100%', padding: 20, borderRadius: 20, background: videoBlobUrl ? 'rgba(139,92,246,0.08)' : 'rgba(255,255,255,0.03)', border: videoBlobUrl ? '1px solid rgba(139,92,246,0.3)' : '1px dashed rgba(255,255,255,0.15)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, color: C.text, fontFamily: 'inherit' }}>
+            {videoBlobUrl
+              ? <><Film size={22} color="#a78bfa" /><span style={{ fontSize: 13, fontWeight: 500, color: '#a78bfa' }}>{videoUploading ? 'Uploading…' : videoPublicUrl ? '✓ Video ready' : 'Upload failed'}</span></>
+              : <><Upload size={22} color="rgba(255,255,255,0.4)" strokeWidth={1.5} /><span style={{ fontSize: 14, fontWeight: 500 }}>Upload video</span><span style={{ fontSize: 11, color: C.sub }}>MP4, MOV, WebM</span></>}
+          </PressBtn>
+          {videoBlobUrl && (
+            <div style={{ marginTop: 10, borderRadius: 14, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.08)' }}>
+              <video src={videoBlobUrl} style={{ width: '100%', maxHeight: 200, display: 'block', background: '#000' }} muted playsInline loop autoPlay />
+            </div>
+          )}
+        </>
+      )}
+
+      {videoMode === 'avatar' && (
+        avatarsLoading
+          ? <div style={{ padding: 24, textAlign: 'center', color: C.sub, fontSize: 13 }}>Loading avatars…</div>
+          : !avatars.length
+            ? <div style={{ padding: 24, textAlign: 'center', color: C.sub, fontSize: 13, borderRadius: 16, border: '1px solid rgba(255,255,255,0.08)' }}>No avatars — check D-ID or HeyGen API keys</div>
+            : (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, maxHeight: 280, overflowY: 'auto' }}>
+                {avatars.map(a => {
+                  const sel = selectedAvatar?.id === a.id
+                  return (
+                    <PressBtn key={a.id} onClick={() => setSelectedAvatar(a)} style={{ position: 'relative', borderRadius: 14, overflow: 'hidden', border: `2px solid ${sel ? '#8b5cf6' : 'rgba(255,255,255,0.08)'}`, padding: 0, background: 'transparent', aspectRatio: '3/4', display: 'block' }}>
+                      {a.thumbnail_url
+                        ? <img src={a.thumbnail_url} alt={a.name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                        : <div style={{ width: '100%', height: '100%', background: 'rgba(139,92,246,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30 }}>🎭</div>}
+                      {sel && <div style={{ position: 'absolute', top: 6, right: 6, width: 20, height: 20, borderRadius: '50%', background: '#8b5cf6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Check size={11} color="#fff" /></div>}
+                      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '18px 8px 6px', background: 'linear-gradient(transparent,rgba(0,0,0,0.75))', fontSize: 11, color: '#fff', fontWeight: 500, textAlign: 'left' }}>{a.name}</div>
+                    </PressBtn>
+                  )
+                })}
+              </div>
+            )
+      )}
+      {videoMode === 'avatar' && selectedAvatar && !selectedAvatar.preview_url && (
+        <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 10, background: 'rgba(251,191,36,0.08)', border: '1px solid rgba(251,191,36,0.2)', fontSize: 11, color: C.gold }}>
+          ⚠ This avatar has no video preview URL — lip sync may fail
+        </div>
+      )}
+
+      {/* ── STEP 2: AUDIO ── */}
+      <label style={{ ...labelStyle, marginTop: 24, display: 'block' }}>2 · Audio source</label>
+      <div style={{ display: 'flex', gap: 6, marginTop: 8, marginBottom: 12, background: 'rgba(255,255,255,0.03)', borderRadius: 100, padding: 4 }}>
+        <PressBtn style={tab(audioMode === 'upload')} onClick={() => setAudioMode('upload')}>Upload Audio</PressBtn>
+        <PressBtn style={tab(audioMode === 'voice')} onClick={() => setAudioMode('voice')}>Generate Voice</PressBtn>
+      </div>
+
+      {audioMode === 'upload' && (
+        <>
+          <input ref={audFileRef} type="file" accept="audio/*" style={{ display: 'none' }} onChange={handleAudioFile} />
+          <PressBtn onClick={() => audFileRef.current?.click()} style={{ width: '100%', padding: 20, borderRadius: 20, background: audioBlobUrl ? 'rgba(34,211,238,0.06)' : 'rgba(255,255,255,0.03)', border: audioBlobUrl ? '1px solid rgba(34,211,238,0.3)' : '1px dashed rgba(255,255,255,0.15)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, color: C.text, fontFamily: 'inherit' }}>
+            {audioBlobUrl
+              ? <><Volume2 size={22} color="#22d3ee" /><span style={{ fontSize: 13, fontWeight: 500, color: '#22d3ee' }}>{audioUploading ? 'Uploading…' : audioPublicUrl ? '✓ Audio ready' : 'Upload failed'}</span></>
+              : <><Upload size={22} color="rgba(255,255,255,0.4)" strokeWidth={1.5} /><span style={{ fontSize: 14, fontWeight: 500 }}>Upload audio</span><span style={{ fontSize: 11, color: C.sub }}>MP3, WAV, M4A</span></>}
+          </PressBtn>
+          {audioBlobUrl && <audio controls src={audioBlobUrl} style={{ width: '100%', marginTop: 10 }} />}
+        </>
+      )}
+
+      {audioMode === 'voice' && (
+        <div>
+          <VoicePicker voices={voices} selectedId={voiceId} onSelect={setVoiceId} loading={voicesLoading} />
+          <label style={{ ...labelStyle, marginTop: 16, display: 'block' }}>Script</label>
+          <div style={{ marginTop: 8, borderRadius: 16, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+            <textarea value={ttsText} onChange={e => setTtsText(e.target.value)} placeholder="Type what the presenter should say…"
+              style={{ width: '100%', minHeight: 90, padding: 14, background: 'transparent', border: 'none', outline: 'none', color: C.text, fontSize: 14, fontFamily: 'inherit', resize: 'none', lineHeight: 1.5 }} />
+          </div>
+          <PressBtn onClick={generateVoice} disabled={ttsLoading || !ttsText.trim()}
+            style={{ ...ghostBtn, marginTop: 10, opacity: ttsLoading || !ttsText.trim() ? 0.5 : 1 }}>
+            {ttsLoading
+              ? <><div style={{ width: 14, height: 14, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', animation: 'spin 1s linear infinite' }} />Generating voice…</>
+              : <><Volume2 size={14} />Generate Voice</>}
+          </PressBtn>
+          {audioBlobUrl && <audio controls src={audioBlobUrl} style={{ width: '100%', marginTop: 10 }} />}
+          {audioBlobUrl && audioPublicUrl && <div style={{ marginTop: 4, fontSize: 11, color: '#22d3ee' }}>✓ Voice ready</div>}
+        </div>
+      )}
+
+      {/* ── PREVIEW (both sources ready) ── */}
+      {hasVideoSrc && audioBlobUrl && !resultUrl && (
+        <div style={{ marginTop: 24, borderRadius: 20, background: 'rgba(139,92,246,0.06)', border: '1px solid rgba(139,92,246,0.2)', padding: 16 }}>
+          <div style={{ fontSize: 11, color: '#a78bfa', fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 12 }}>Preview · review before syncing</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 16 }}>
+            {/* Video thumbnail */}
+            <div style={{ borderRadius: 12, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.08)', background: '#000', aspectRatio: '9/16', position: 'relative', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {videoMode === 'avatar' && selectedAvatar?.thumbnail_url
+                ? <img src={selectedAvatar.thumbnail_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                : videoBlobUrl
+                  ? <video src={videoBlobUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted playsInline loop autoPlay />
+                  : <Film size={24} color={C.sub} />}
+              <div style={{ position: 'absolute', bottom: 6, left: 0, right: 0, textAlign: 'center', fontSize: 10, color: 'rgba(255,255,255,0.5)' }}>
+                {videoPublicUrl || selectedAvatar?.preview_url ? '✓ Ready' : videoUploading ? 'Uploading…' : ''}
+              </div>
+            </div>
+            {/* Audio panel */}
+            <div style={{ borderRadius: 12, border: '1px solid rgba(34,211,238,0.2)', background: 'rgba(34,211,238,0.04)', aspectRatio: '9/16', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 10, padding: 10 }}>
+              <Volume2 size={28} color="#22d3ee" />
+              <div style={{ fontSize: 12, color: '#22d3ee', fontWeight: 500, textAlign: 'center' }}>
+                {audioPublicUrl ? 'Audio ready' : 'Uploading…'}
+              </div>
+              {audioBlobUrl && <audio controls src={audioBlobUrl} style={{ width: '100%' }} />}
+            </div>
+          </div>
+          <PressBtn onClick={syncLips} disabled={!readyToSync}
+            style={{ ...primaryBtn, width: '100%', justifyContent: 'center', opacity: readyToSync ? 1 : 0.5 }}>
+            <Mic size={16} /> Sync Lips
+          </PressBtn>
+          {!readyToSync && (videoUploading || audioUploading) && (
+            <div style={{ marginTop: 8, textAlign: 'center', fontSize: 11, color: C.sub }}>Waiting for uploads to finish…</div>
+          )}
+        </div>
+      )}
+
+      {/* Syncing */}
+      {syncing && (
+        <div style={{ marginTop: 20, padding: 28, borderRadius: 20, background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 44, height: 44, borderRadius: '50%', border: '3px solid rgba(139,92,246,0.2)', borderTopColor: '#8b5cf6', animation: 'spin 1s linear infinite' }} />
+          <div style={{ fontSize: 13, color: C.sub }}>Syncing lips…</div>
+          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.25)' }}>Sync Labs is processing · usually 1–3 min</div>
+        </div>
+      )}
+
+      {/* Error */}
+      {error && (
+        <div style={{ marginTop: 12, padding: '12px 16px', borderRadius: 14, background: 'rgba(244,63,94,0.1)', border: '1px solid rgba(244,63,94,0.3)', fontSize: 13, color: '#f43f5e' }}>⚠ {error}</div>
+      )}
+
+      {/* Result */}
+      {resultUrl && (
+        <div style={{ marginTop: 20, borderRadius: 20, overflow: 'hidden', border: '1px solid rgba(139,92,246,0.3)', animation: 'slideUp 0.4s ease' }}>
+          <video controls autoPlay style={{ width: '100%', display: 'block', background: '#000' }}>
+            <source src={resultUrl} type="video/mp4" />
+          </video>
+          <div style={{ padding: '12px 16px', background: 'rgba(139,92,246,0.08)', display: 'flex', gap: 10 }}>
+            <a href={resultUrl} download="omnyra-lipsync.mp4" target="_blank" rel="noreferrer"
+              style={{ ...primaryBtn, flex: 1, justifyContent: 'center', textDecoration: 'none' }}>
+              <Copy size={14} /> Download
+            </a>
+            <PressBtn onClick={() => { setResultUrl(null); setSyncing(false); setJobId(null); setJobStatus(null) }}
+              style={{ ...ghostBtn, flex: 1, justifyContent: 'center' }}>
+              New Sync
+            </PressBtn>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ─────────────────────────────────────────────
    AI IMAGE TOOL
 ──────────────────────────────────────────────*/
-function ImageTool({ onBack, showToast, onGenerated }) {
+const FLUX_LABEL = { free: 'FLUX Schnell', creator: 'FLUX Schnell', pro: 'FLUX Dev', studio: 'FLUX Pro' };
+
+function ImageTool({ onBack, showToast, onGenerated, plan = 'free' }) {
   const [prompt, setPrompt]   = useState("");
   const [style, setStyle]     = useState("realistic");
   const [loading, setLoading] = useState(false);
@@ -1341,7 +2202,7 @@ function ImageTool({ onBack, showToast, onGenerated }) {
           <ImageIcon size={22} color="#fff" strokeWidth={1.6} />
         </div>
         <h1 style={{ marginTop: 12, fontSize: 26, fontWeight: 300, margin: "12px 0 4px" }}>AI Image</h1>
-        <p style={{ margin: 0, fontSize: 13, color: C.sub }}>Generate images with FLUX</p>
+        <p style={{ margin: 0, fontSize: 13, color: C.sub }}>Generate images with {FLUX_LABEL[plan] ?? 'FLUX'}</p>
       </div>
 
       <label style={labelStyle}>Describe your image</label>
@@ -1404,15 +2265,107 @@ function ImageTool({ onBack, showToast, onGenerated }) {
 }
 
 /* ─────────────────────────────────────────────
+   VOICE PICKER (shared)
+──────────────────────────────────────────────*/
+function VoicePicker({ voices, selectedId, onSelect, loading }) {
+  const [playing, setPlaying] = useState(null);
+  const audioRef = useRef(null);
+
+  const togglePreview = (voice, e) => {
+    e.stopPropagation();
+    if (playing === voice.voice_id) {
+      audioRef.current?.pause();
+      setPlaying(null);
+      return;
+    }
+    audioRef.current?.pause();
+    if (!voice.preview_url) return;
+    const audio = new Audio(voice.preview_url);
+    audioRef.current = audio;
+    setPlaying(voice.voice_id);
+    audio.play().catch(() => {});
+    audio.onended = () => setPlaying(null);
+    audio.onerror = () => setPlaying(null);
+  };
+
+  useEffect(() => () => { audioRef.current?.pause(); }, []);
+
+  if (loading) return (
+    <div style={{ padding: "16px", textAlign: "center", color: C.sub, fontSize: 13, borderRadius: 16, border: "1px solid rgba(255,255,255,0.08)" }}>
+      Loading voices…
+    </div>
+  );
+
+  return (
+    <div style={{ maxHeight: 260, overflowY: "auto", borderRadius: 16, border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.02)" }}>
+      {voices.map((v, i) => {
+        const sel = v.voice_id === selectedId;
+        const isPlaying = playing === v.voice_id;
+        const cat = v.category || "premade";
+        const catLabel = cat.charAt(0).toUpperCase() + cat.slice(1);
+        const isCyan = cat === "cloned" || cat === "generated";
+        return (
+          <div
+            key={v.voice_id}
+            onClick={() => onSelect(v.voice_id)}
+            style={{
+              display: "flex", alignItems: "center", gap: 12,
+              padding: "11px 14px",
+              background: sel ? "linear-gradient(135deg,rgba(139,92,246,0.15),rgba(34,211,238,0.08))" : "transparent",
+              borderBottom: i < voices.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none",
+              cursor: "pointer",
+            }}
+          >
+            <PressBtn
+              onClick={e => togglePreview(v, e)}
+              style={{
+                width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
+                background: isPlaying ? "rgba(139,92,246,0.25)" : "rgba(255,255,255,0.05)",
+                border: `1px solid ${isPlaying ? "rgba(139,92,246,0.5)" : "rgba(255,255,255,0.1)"}`,
+                display: "flex", alignItems: "center", justifyContent: "center", padding: 0,
+              }}
+            >
+              {isPlaying
+                ? <Square size={10} color="#a78bfa" fill="#a78bfa" />
+                : <Play size={11} color="rgba(255,255,255,0.5)" fill="rgba(255,255,255,0.5)" />
+              }
+            </PressBtn>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: sel ? 600 : 400, color: sel ? "#fff" : C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {v.name}
+              </div>
+              <div style={{ marginTop: 2, display: "flex", alignItems: "center", gap: 5 }}>
+                <span style={{
+                  fontSize: 10, padding: "1px 7px", borderRadius: 100,
+                  background: isCyan ? "rgba(34,211,238,0.1)" : "rgba(139,92,246,0.1)",
+                  color: isCyan ? "#22d3ee" : "#a78bfa",
+                  border: `1px solid ${isCyan ? "rgba(34,211,238,0.2)" : "rgba(139,92,246,0.2)"}`,
+                }}>
+                  {catLabel}
+                </span>
+                {v.labels?.gender && <span style={{ fontSize: 10, color: C.sub }}>{v.labels.gender}</span>}
+                {v.labels?.accent && <span style={{ fontSize: 10, color: C.sub }}>· {v.labels.accent}</span>}
+              </div>
+            </div>
+            {sel && <Check size={14} color="#8b5cf6" style={{ flexShrink: 0 }} />}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ─────────────────────────────────────────────
    AI VOICE TOOL
 ──────────────────────────────────────────────*/
 function VoiceTool({ onBack, showToast, onGenerated }) {
-  const [voices, setVoices]     = useState([]);
-  const [voiceId, setVoiceId]   = useState("");
-  const [text, setText]         = useState("");
-  const [loading, setLoading]   = useState(false);
-  const [audioUrl, setAudioUrl] = useState(null);
-  const audioRef                = useRef();
+  const [voices, setVoices]          = useState([]);
+  const [voicesLoading, setVLoading] = useState(true);
+  const [voiceId, setVoiceId]        = useState("");
+  const [text, setText]              = useState("");
+  const [loading, setLoading]        = useState(false);
+  const [audioUrl, setAudioUrl]      = useState(null);
+  const audioRef                     = useRef();
 
   useEffect(() => {
     fetch("/api/voices")
@@ -1422,7 +2375,8 @@ function VoiceTool({ onBack, showToast, onGenerated }) {
         setVoices(list);
         if (list.length) setVoiceId(list[0].voice_id);
       })
-      .catch(() => showToast("Failed to load voices"));
+      .catch(() => showToast("Failed to load voices"))
+      .finally(() => setVLoading(false));
   }, []);
 
   useEffect(() => {
@@ -1473,14 +2427,9 @@ function VoiceTool({ onBack, showToast, onGenerated }) {
       </div>
 
       <label style={labelStyle}>Voice</label>
-      <select
-        value={voiceId}
-        onChange={e => setVoiceId(e.target.value)}
-        style={{ width: "100%", marginTop: 8, padding: "13px 16px", borderRadius: 16, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: C.text, fontSize: 14, fontFamily: "inherit", outline: "none", appearance: "none", cursor: "pointer" }}
-      >
-        {voices.length === 0 && <option value="">Loading voices…</option>}
-        {voices.map(v => <option key={v.voice_id} value={v.voice_id} style={{ background: "#111" }}>{v.name}</option>)}
-      </select>
+      <div style={{ marginTop: 8 }}>
+        <VoicePicker voices={voices} selectedId={voiceId} onSelect={setVoiceId} loading={voicesLoading} />
+      </div>
 
       <label style={{ ...labelStyle, marginTop: 20, display: "block" }}>What should it say?</label>
       <div style={{ marginTop: 8, borderRadius: 20, background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", overflow: "hidden" }}>
@@ -1519,19 +2468,33 @@ function VoiceTool({ onBack, showToast, onGenerated }) {
    VOICE CLONE STUDIO
 ──────────────────────────────────────────────*/
 function VoiceCloneStudio({ mode, setMode, onBack, showToast }) {
-  const [method,setMethod]     = useState(null); // "record" | "upload" | "describe"
-  const [recording,setRec]     = useState(false);
-  const [recTime,setRecTime]   = useState(0);
-  const [recBlob,setRecBlob]   = useState(null);
-  const [uploadFile,setUpload] = useState(null);
+  const [method,setMethod]           = useState(null); // "record" | "upload" | "describe"
+  const [recording,setRec]           = useState(false);
+  const [recTime,setRecTime]         = useState(0);
+  const [recBlob,setRecBlob]         = useState(null);
+  const [uploadFile,setUpload]       = useState(null);
   const [description,setDescription] = useState("");
-  const [voiceStyle,setVStyle] = useState(null);
-  const [consent,setConsent]   = useState(false);
-  const [generating,setGen]    = useState(false);
-  const mediaRec               = useRef(null);
-  const timerRef               = useRef(null);
-  const chunks                 = useRef([]);
-  const fileRef                = useRef();
+  const [voiceId,setVoiceId]         = useState("");
+  const [voices,setVoices]           = useState([]);
+  const [voicesLoading,setVLoading]  = useState(true);
+  const [consent,setConsent]         = useState(false);
+  const [generating,setGen]          = useState(false);
+  const mediaRec                     = useRef(null);
+  const timerRef                     = useRef(null);
+  const chunks                       = useRef([]);
+  const fileRef                      = useRef();
+
+  useEffect(() => {
+    fetch("/api/voices")
+      .then(r => r.json())
+      .then(d => {
+        const list = d.voices || [];
+        setVoices(list);
+        if (list.length) setVoiceId(list[0].voice_id);
+      })
+      .catch(() => {})
+      .finally(() => setVLoading(false));
+  }, []);
 
   const startRecording = async () => {
     try {
@@ -1653,19 +2616,9 @@ function VoiceCloneStudio({ mode, setMode, onBack, showToast }) {
       {/* Voice Style */}
       {method&&(
         <>
-          <label style={labelStyle}>Voice style</label>
-          <div style={{marginTop:8,display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16}}>
-            {VOICE_STYLES.map(vs=>{
-              const a=voiceStyle===vs.id;
-              return <PressBtn key={vs.id} onClick={()=>setVStyle(vs.id)} style={{padding:"12px 14px",borderRadius:16,background:a?"linear-gradient(135deg,rgba(34,211,238,0.2),rgba(139,92,246,0.15))":"rgba(255,255,255,0.04)",border:a?"1.5px solid rgba(34,211,238,0.5)":"1px solid rgba(255,255,255,0.08)",display:"flex",alignItems:"center",gap:10,color:C.text,fontFamily:"inherit"}}>
-                <span style={{fontSize:18}}>{vs.emoji}</span>
-                <div style={{flex:1,textAlign:"left"}}>
-                  <div style={{fontSize:12,fontWeight:500}}>{vs.label}</div>
-                  <div style={{fontSize:10,color:C.sub}}>{vs.desc}</div>
-                </div>
-                {a&&<Check size={12} color="#22d3ee"/>}
-              </PressBtn>;
-            })}
+          <label style={labelStyle}>Base voice</label>
+          <div style={{marginTop:8,marginBottom:16}}>
+            <VoicePicker voices={voices} selectedId={voiceId} onSelect={setVoiceId} loading={voicesLoading}/>
           </div>
 
           {/* Consent checkbox — REQUIRED */}
@@ -1698,19 +2651,95 @@ function VoiceCloneStudio({ mode, setMode, onBack, showToast }) {
 /* ─────────────────────────────────────────────
    MOTION STUDIO
 ──────────────────────────────────────────────*/
-function MotionStudio({ mode, setMode, onBack, showToast }) {
-  const [images,setImages]   = useState([null,null,null]);
-  const [action,setAction]   = useState("");
-  const [style,setStyle]     = useState("cinematic");
-  const fileRefs             = [useRef(),useRef(),useRef()];
-  const examples             = ["Make them hug 🤗","Make the cat dance 🐱","Turn into cinematic trailer 🎬","Change outfit when she claps 👗","Anime fight ⚔️","Make this photo sing 🎵","Walk together 🚶","Pixar scene 🎨"];
+function MotionStudio({ mode, setMode, onBack, showToast, onGenerated, plan = 'free' }) {
+  const [images, setImages]         = useState([null, null, null]);
+  const [publicUrls, setPublicUrls] = useState([null, null, null]);
+  const [action, setAction]         = useState("");
+  const [style, setStyle]           = useState("cinematic");
+  const [generating, setGenerating] = useState(false);
+  const [jobId, setJobId]           = useState(null);
+  const [provider, setProvider]     = useState(null);
+  const [subtype, setSubtype]       = useState(null);
+  const [jobStatus, setJobStatus]   = useState(null);
+  const [videoUrl, setVideoUrl]     = useState(null);
+  const [error, setError]           = useState(null);
+  const fileRefs                    = [useRef(), useRef(), useRef()];
+  const pollRef                     = useRef();
+  const examples = ["Make them hug 🤗","Make the cat dance 🐱","Turn into cinematic trailer 🎬","Change outfit when she claps 👗","Anime fight ⚔️","Make this photo sing 🎵","Walk together 🚶","Pixar scene 🎨"];
 
-  const handleUpload = (idx,file) => {
+  useEffect(() => {
+    if (!jobId || !provider) return;
+    const poll = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const qs = new URLSearchParams({ jobId, provider, ...(subtype && { subtype }) });
+        const res = await fetch(`/api/status?${qs}`, {
+          headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
+        });
+        const d = await res.json();
+        setJobStatus(d.status);
+        if (d.status === 'complete') {
+          setVideoUrl(d.url); setGenerating(false); clearInterval(pollRef.current); onGenerated?.();
+        } else if (d.status === 'failed') {
+          setError('Video generation failed.'); setGenerating(false); clearInterval(pollRef.current);
+        }
+      } catch {}
+    };
+    pollRef.current = setInterval(poll, 4000);
+    poll();
+    return () => clearInterval(pollRef.current);
+  }, [jobId, provider, subtype]);
+
+  const handleUpload = async (idx, file) => {
     if (!file) return;
-    const r=new FileReader();
-    r.onload=e=>{const n=[...images];n[idx]={file,preview:e.target.result};setImages(n);showToast(`Image ${idx+1} uploaded! ✅`);};
-    r.readAsDataURL(file);
+    const preview = URL.createObjectURL(file);
+    const n = [...images]; n[idx] = { file, preview }; setImages(n);
+    showToast(`Image ${idx+1} uploaded! ✅`);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const ext = file.name.split('.').pop() || 'jpg';
+      const path = `${session.user.id}/motion-${idx}-${Date.now()}.${ext}`;
+      const { data, error: upErr } = await supabase.storage
+        .from('lipsync-media').upload(path, file, { upsert: true, contentType: file.type });
+      if (!upErr) {
+        const { data: pub } = supabase.storage.from('lipsync-media').getPublicUrl(data.path);
+        const u = [...publicUrls]; u[idx] = pub.publicUrl; setPublicUrls(u);
+      }
+    } catch {}
   };
+
+  const removeImage = (idx) => {
+    const n = [...images]; n[idx] = null; setImages(n);
+    const u = [...publicUrls]; u[idx] = null; setPublicUrls(u);
+  };
+
+  const generate = async () => {
+    const firstUrl = publicUrls.find(u => u);
+    if (!firstUrl) { showToast("Upload at least one image first"); return; }
+    if (!action.trim()) { showToast("Describe the action first"); return; }
+    clearInterval(pollRef.current);
+    setGenerating(true); setVideoUrl(null); setError(null);
+    setJobId(null); setProvider(null); setSubtype(null); setJobStatus(null);
+    const prompt = `${style} style: ${action}`;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch('/api/video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(session && { Authorization: `Bearer ${session.access_token}` }) },
+        body: JSON.stringify({ prompt, imageUrl: firstUrl, duration: 5 }),
+      });
+      const data = await res.json();
+      if (data.error) { setError(data.error); setGenerating(false); return; }
+      onGenerated?.(data.balance);
+      if (data.status === 'complete' && data.url) {
+        setVideoUrl(data.url); setGenerating(false);
+      } else {
+        setJobId(data.jobId); setProvider(data.provider); setSubtype(data.subtype ?? null); setJobStatus('processing');
+      }
+    } catch { setError("Connection failed."); setGenerating(false); }
+  };
+
+  const hasImage = publicUrls.some(u => u);
 
   return (
     <div style={{minHeight:"100vh",padding:"50px 20px 40px",animation:"fadeIn 0.3s ease"}}>
@@ -1721,8 +2750,8 @@ function MotionStudio({ mode, setMode, onBack, showToast }) {
       <div style={{marginBottom:18}}>
         <div style={{width:50,height:50,borderRadius:16,background:"linear-gradient(135deg,rgba(251,191,36,0.3),rgba(139,92,246,0.2))",border:"1px solid rgba(255,255,255,0.1)",display:"flex",alignItems:"center",justifyContent:"center"}}><Clapperboard size={22} color="#fbbf24" strokeWidth={1.6}/></div>
         <h1 style={{marginTop:12,fontSize:26,fontWeight:300,margin:"12px 0 2px"}}>Motion Studio AI</h1>
-        <p style={{margin:"0 0 4px",fontSize:13,color:C.sub}}>Image to video generator</p>
-        <p style={{margin:0,fontSize:11,color:"rgba(251,191,36,0.7)"}}>Upload 1–3 images · describe action · generates cinematic multi-scene production</p>
+        <p style={{margin:"0 0 4px",fontSize:13,color:C.sub}}>{IMG2VIDEO_LABEL[plan] ?? 'Pika 2.2 · Fal AI'} · Image to video</p>
+        <p style={{margin:0,fontSize:11,color:"rgba(251,191,36,0.7)"}}>Upload 1–3 images · describe action · generates cinematic motion</p>
       </div>
       <div style={{marginTop:16,padding:"14px 16px",borderRadius:20,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)"}}>
         <ModeGrid mode={mode} setMode={setMode}/>
@@ -1733,10 +2762,16 @@ function MotionStudio({ mode, setMode, onBack, showToast }) {
           {[0,1,2].map(idx=>(
             <div key={idx}>
               <input ref={fileRefs[idx]} type="file" accept="image/*" style={{display:"none"}} onChange={e=>handleUpload(idx,e.target.files[0])}/>
-              <PressBtn onClick={()=>fileRefs[idx].current?.click()} style={{width:"100%",aspectRatio:"1",borderRadius:16,background:images[idx]?"transparent":"rgba(255,255,255,0.03)",border:images[idx]?"1px solid rgba(139,92,246,0.4)":"1px dashed rgba(255,255,255,0.15)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:6,overflow:"hidden",fontFamily:"inherit",padding:0}}>
-                {images[idx]?<img src={images[idx].preview} alt="" style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:16}}/>:<><Upload size={20} color="rgba(255,255,255,0.4)" strokeWidth={1.5}/><span style={{fontSize:10,color:C.sub}}>Image {idx+1}</span></>}
+              <PressBtn onClick={()=>fileRefs[idx].current?.click()} style={{width:"100%",aspectRatio:"1",borderRadius:16,background:images[idx]?"transparent":"rgba(255,255,255,0.03)",border:images[idx]?`1px solid rgba(139,92,246,${publicUrls[idx]?0.6:0.25})`:"1px dashed rgba(255,255,255,0.15)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:6,overflow:"hidden",fontFamily:"inherit",padding:0}}>
+                {images[idx]
+                  ? <img src={images[idx].preview} alt="" style={{width:"100%",height:"100%",objectFit:"cover",borderRadius:16}}/>
+                  : <><Upload size={20} color="rgba(255,255,255,0.4)" strokeWidth={1.5}/><span style={{fontSize:10,color:C.sub}}>Image {idx+1}</span></>}
               </PressBtn>
-              {images[idx]&&<PressBtn onClick={()=>{const n=[...images];n[idx]=null;setImages(n);}} style={{width:"100%",marginTop:4,padding:"4px 8px",borderRadius:8,background:"rgba(244,63,94,0.1)",border:"1px solid rgba(244,63,94,0.2)",color:"#f43f5e",fontSize:10,fontFamily:"inherit",justifyContent:"center",display:"flex"}}>Remove</PressBtn>}
+              {images[idx] && (
+                <PressBtn onClick={()=>removeImage(idx)} style={{width:"100%",marginTop:4,padding:"4px 8px",borderRadius:8,background:"rgba(244,63,94,0.1)",border:"1px solid rgba(244,63,94,0.2)",color:"#f43f5e",fontSize:10,fontFamily:"inherit",justifyContent:"center",display:"flex"}}>
+                  {publicUrls[idx] ? "Remove" : "Uploading…"}
+                </PressBtn>
+              )}
             </div>
           ))}
         </div>
@@ -1755,17 +2790,42 @@ function MotionStudio({ mode, setMode, onBack, showToast }) {
         </div>
       </div>
       <StylePicker style={style} setStyle={setStyle}/>
-      <div style={{marginTop:14,padding:"14px 18px",borderRadius:18,background:"rgba(251,191,36,0.06)",border:"1px solid rgba(251,191,36,0.2)"}}>
-        <div style={{fontSize:13,fontWeight:500,color:C.gold,marginBottom:6}}>🔌 Connect a Video API to animate</div>
-        <div style={{fontSize:12,color:C.sub,lineHeight:1.7}}>
-          Recommended: <span style={{color:C.text}}>Kling AI</span> (most cost-efficient)<br/>
-          Also supports: <span style={{color:C.text}}>Runway ML · Luma AI</span><br/>
-          Connect in Profile → Connected Apps
-        </div>
-      </div>
-      <PressBtn onClick={()=>showToast("Connect Kling AI or Sync Labs in Connected Apps!")} style={{...primaryBtn,marginTop:14,width:"100%",justifyContent:"center",padding:"15px 20px",fontSize:15}}>
-        🎬 Generate Cinematic Multi-Scene Production
+
+      <PressBtn
+        onClick={generate}
+        disabled={generating || !hasImage || !action.trim()}
+        style={{...primaryBtn, marginTop:14, width:"100%", justifyContent:"center", padding:"15px 20px", fontSize:15, opacity: generating || !hasImage || !action.trim() ? 0.5 : 1}}
+      >
+        {generating
+          ? <><div style={{width:16,height:16,borderRadius:"50%",border:"2px solid rgba(255,255,255,0.3)",borderTopColor:"#fff",animation:"spin 1s linear infinite"}}/> Generating…</>
+          : <><Clapperboard size={16}/> {videoUrl ? "Regenerate" : "Generate Motion Video"}</>}
       </PressBtn>
+
+      {error && (
+        <div style={{marginTop:12,padding:"12px 16px",borderRadius:14,background:"rgba(244,63,94,0.1)",border:"1px solid rgba(244,63,94,0.3)",fontSize:13,color:"#f43f5e"}}>⚠ {error}</div>
+      )}
+
+      {generating && !videoUrl && (
+        <div style={{marginTop:20,padding:24,borderRadius:20,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",display:"flex",flexDirection:"column",alignItems:"center",gap:12}}>
+          <div style={{width:44,height:44,borderRadius:"50%",border:"3px solid rgba(251,191,36,0.2)",borderTopColor:"#fbbf24",animation:"spin 1s linear infinite"}}/>
+          <div style={{fontSize:13,color:C.sub}}>{jobStatus==='processing'?'Animating your image…':'Starting generation…'}</div>
+          {jobStatus==='processing' && <div style={{fontSize:11,color:"rgba(255,255,255,0.25)"}}>This can take 1–3 minutes</div>}
+        </div>
+      )}
+
+      {videoUrl && (
+        <div style={{marginTop:20,borderRadius:20,overflow:"hidden",border:"1px solid rgba(251,191,36,0.3)",animation:"slideUp 0.4s ease"}}>
+          <video controls autoPlay muted style={{width:"100%",display:"block",background:"#000"}}>
+            <source src={videoUrl} type="video/mp4"/>
+          </video>
+          <div style={{padding:"12px 16px",background:"rgba(251,191,36,0.06)",display:"flex",gap:10}}>
+            <a href={videoUrl} download="omnyra-motion.mp4" target="_blank" rel="noreferrer"
+              style={{...primaryBtn,flex:1,justifyContent:"center",textDecoration:"none"}}>
+              <Copy size={14}/> Download
+            </a>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2173,7 +3233,7 @@ function PricingScreen({ onBack, showToast }) {
     try {
       const res = await fetch("/api/stripe",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({plan:sel})});
       const data = await res.json();
-      if (data.url) { window.location.href=data.url; } else { showToast("Payment unavailable — try again"); setLoading(false); }
+      if (data.url) { localStorage.setItem("omnyra_onboarded","1"); window.location.href=data.url; } else { showToast("Payment unavailable — try again"); setLoading(false); }
     } catch { showToast("Connection failed"); setLoading(false); }
   };
   return (

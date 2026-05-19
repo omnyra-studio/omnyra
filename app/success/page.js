@@ -1,4 +1,5 @@
 'use client'
+import { useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
 
@@ -20,6 +21,10 @@ function SuccessContent() {
   const params = useSearchParams()
   const plan = params.get('plan') || 'Pro'
   const details = PLAN_DETAILS[plan] || PLAN_DETAILS.Pro
+
+  useEffect(() => {
+    localStorage.setItem("omnyra_onboarded", "1")
+  }, [])
 
   return (
     <div style={{

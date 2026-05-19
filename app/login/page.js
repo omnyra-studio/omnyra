@@ -14,6 +14,7 @@ export default function LoginPage() {
 
   // Redirect to home if already logged in
   useEffect(() => {
+    localStorage.setItem("omnyra_onboarded", "1")
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) window.location.replace('/')
       else setLoading(false)
