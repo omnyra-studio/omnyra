@@ -522,6 +522,88 @@
       border-top-color: rgba(139,92,246,0.5);
     }
 
+    /* ── PWA INSTALL BANNER ─────────────────────────────── */
+    .pwa-banner {
+      max-width: 1080px;
+      margin: 0 auto 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+      flex-wrap: wrap;
+      padding: 18px 24px;
+      border-radius: 18px;
+      background: linear-gradient(135deg, rgba(139,92,246,0.13) 0%, rgba(34,211,238,0.08) 100%);
+      border: 1px solid rgba(139,92,246,0.3);
+    }
+
+    .pwa-banner-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .pwa-banner-emoji {
+      font-size: 28px;
+      flex-shrink: 0;
+      line-height: 1;
+    }
+
+    .pwa-banner-title {
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 3px;
+    }
+
+    .pwa-banner-sub {
+      font-size: 12px;
+      color: var(--sub);
+      letter-spacing: 0.01em;
+    }
+
+    .pwa-install-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 10px 20px;
+      border-radius: 100px;
+      border: none;
+      background: linear-gradient(135deg, var(--violet), var(--violet2));
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      font-family: inherit;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.15s;
+      white-space: nowrap;
+      box-shadow: 0 6px 20px -6px rgba(139,92,246,0.55);
+      flex-shrink: 0;
+    }
+
+    .pwa-install-btn:hover { opacity: 0.88; transform: translateY(-1px); }
+
+    .pwa-install-hint {
+      font-size: 12px;
+      color: var(--muted);
+      line-height: 1.7;
+      flex-shrink: 0;
+    }
+
+    .pwa-install-hint strong {
+      color: var(--sub);
+      font-weight: 600;
+    }
+
+    .pwa-installed-msg {
+      font-size: 13px;
+      color: #a3e635;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
     /* ── FOOTER ──────────────────────────────────────────── */
     footer {
       padding: 48px 24px;
@@ -572,6 +654,7 @@
       nav { padding: 0 20px; }
       section { padding: 72px 20px; }
       .hero-stats { gap: 20px; }
+      .pwa-banner { flex-direction: column; align-items: flex-start; gap: 14px; }
       .download-inner { flex-direction: column; }
       .download-badges { width: 100%; }
       .store-badge { flex: 1; justify-content: center; }
@@ -746,6 +829,25 @@
 
   <!-- ── MOBILE DOWNLOAD ────────────────────────────────────── -->
   <section class="download-section">
+
+    <!-- PWA Install Banner -->
+    <div class="pwa-banner" id="pwaBanner">
+      <div class="pwa-banner-left">
+        <div class="pwa-banner-emoji">📲</div>
+        <div>
+          <div class="pwa-banner-title">Install Omnyra AI as an app on your device</div>
+          <div class="pwa-banner-sub">Works offline &nbsp;·&nbsp; Instant launch &nbsp;·&nbsp; No app store needed</div>
+        </div>
+      </div>
+      <div id="pwaAction">
+        <!-- Filled by JS: install button, OS hint, or installed message -->
+        <div class="pwa-install-hint">
+          <span id="pwaHintIos">🍎 iOS: tap <strong>Share</strong> then <strong>Add to Home Screen</strong></span>
+          <span id="pwaHintAndroid" style="display:none">🤖 Android / Desktop: tap <strong>Install</strong> in your browser menu</span>
+        </div>
+      </div>
+    </div>
+
     <div class="download-inner">
 
       <div class="download-text">
@@ -765,7 +867,7 @@
             <span class="badge-sub">Download on the</span>
             <span class="badge-main">App Store</span>
           </div>
-          <div class="badge-tooltip">Coming Soon</div>
+          <div class="badge-tooltip">Coming Soon &middot; Join Waitlist</div>
         </a>
 
         <!-- Google Play -->
@@ -798,7 +900,7 @@
             <span class="badge-sub">Get it on</span>
             <span class="badge-main">Google Play</span>
           </div>
-          <div class="badge-tooltip">Coming Soon</div>
+          <div class="badge-tooltip">Coming Soon &middot; Join Waitlist</div>
         </a>
 
       </div>
@@ -821,6 +923,69 @@
       </nav>
     </div>
   </footer>
+
+  <script>
+    // ── PWA Install logic ──────────────────────────────────────
+    const action   = document.getElementById('pwaAction');
+    const hintIos  = document.getElementById('pwaHintIos');
+    const hintAnd  = document.getElementById('pwaHintAndroid');
+
+    // Detect platform for the right default hint
+    const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
+    if (!isIos) { hintIos.style.display = 'none'; hintAnd.style.display = 'inline'; }
+
+    // Already installed as PWA — show confirmation and hide banner
+    if (window.matchMedia('(display-mode: standalone)').matches || navigator.standalone) {
+      document.getElementById('pwaBanner').innerHTML =
+        '<div class="pwa-banner-left"><div class="pwa-banner-emoji">✅</div>' +
+        '<div><div class="pwa-banner-title" style="color:#a3e635">Omnyra AI is installed on this device</div>' +
+        '<div class="pwa-banner-sub">Launch it any time from your home screen</div></div></div>';
+    }
+
+    // Chrome / Edge / Android — capture install prompt
+    let deferredPrompt = null;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+
+      // Replace hint with native install button
+      action.innerHTML =
+        '<button class="pwa-install-btn" id="pwaInstallBtn">' +
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">' +
+        '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>' +
+        '<polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>' +
+        'Install App</button>';
+
+      document.getElementById('pwaInstallBtn').addEventListener('click', async () => {
+        if (!deferredPrompt) return;
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        deferredPrompt = null;
+        if (outcome === 'accepted') {
+          action.innerHTML =
+            '<div class="pwa-installed-msg">' +
+            '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' +
+            'Installed! Open from your home screen.</div>';
+        }
+      });
+    });
+
+    window.addEventListener('appinstalled', () => {
+      deferredPrompt = null;
+      action.innerHTML =
+        '<div class="pwa-installed-msg">' +
+        '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>' +
+        'Installed successfully!</div>';
+    });
+
+    // ── Store badge tooltip — also add "Join Waitlist" link behaviour ──
+    document.querySelectorAll('.store-badge').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        // Future: open waitlist modal / link
+      });
+    });
+  </script>
 
 </body>
 </html>
