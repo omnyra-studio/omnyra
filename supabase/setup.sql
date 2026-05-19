@@ -97,6 +97,10 @@ create policy "Users can manage their own brand profile"
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 
+-- Migration: extend brand_profiles with tagline and content style notes
+alter table brand_profiles add column if not exists tagline             text;
+alter table brand_profiles add column if not exists content_style_notes text;
+
 
 -- ── 6. Seed credits for any existing users ───────────────────
 insert into credits (user_id, balance, plan)

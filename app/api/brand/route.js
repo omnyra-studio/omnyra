@@ -23,17 +23,19 @@ export async function POST(request) {
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json()
-  const { brand_name, colors, tone_of_voice, target_audience, niche } = body
+  const { brand_name, tagline, colors, tone_of_voice, target_audience, niche, content_style_notes } = body
 
   const { data, error } = await supabaseAdmin
     .from('brand_profiles')
     .upsert({
       user_id: user.id,
       brand_name: brand_name || null,
+      tagline: tagline || null,
       colors: colors || [],
       tone_of_voice: tone_of_voice || null,
       target_audience: target_audience || null,
       niche: niche || null,
+      content_style_notes: content_style_notes || null,
       updated_at: new Date().toISOString()
     }, { onConflict: 'user_id' })
     .select()

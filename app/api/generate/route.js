@@ -212,11 +212,13 @@ No character limit — give as complete an answer as the question deserves.`;
 function buildBrandContext(brand) {
   if (!brand) return "";
   const parts = [];
-  if (brand.brand_name)      parts.push(`Brand Name: ${brand.brand_name}`);
-  if (brand.niche)           parts.push(`Niche / Industry: ${brand.niche}`);
-  if (brand.target_audience) parts.push(`Target Audience: ${brand.target_audience}`);
-  if (brand.tone_of_voice)   parts.push(`Tone of Voice: ${brand.tone_of_voice}`);
-  if (brand.colors?.length)  parts.push(`Brand Colors: ${brand.colors.join(", ")}`);
+  if (brand.brand_name)          parts.push(`Brand Name: ${brand.brand_name}`);
+  if (brand.tagline)             parts.push(`Tagline: ${brand.tagline}`);
+  if (brand.niche)               parts.push(`Niche / Industry: ${brand.niche}`);
+  if (brand.target_audience)     parts.push(`Target Audience: ${brand.target_audience}`);
+  if (brand.tone_of_voice)       parts.push(`Tone of Voice: ${brand.tone_of_voice}`);
+  if (brand.colors?.length)      parts.push(`Brand Colors: ${brand.colors.join(", ")}`);
+  if (brand.content_style_notes) parts.push(`Content Style Notes: ${brand.content_style_notes}`);
   if (!parts.length) return "";
   return `\n\nBRAND IDENTITY (always align ALL content — scripts, captions, hashtags, CTAs — to this brand):\n${parts.join("\n")}`;
 }

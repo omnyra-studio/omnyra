@@ -769,7 +769,8 @@ function Home({ onTool, mode, setMode, onSearch, onNotif, credits, brand, onBran
         <div style={{marginTop:12,padding:"9px 14px",borderRadius:14,background:"linear-gradient(135deg,rgba(139,92,246,0.1),rgba(34,211,238,0.06))",border:"1px solid rgba(139,92,246,0.2)",display:"flex",alignItems:"center",gap:8}}>
           <Building2 size={12} color="#a78bfa"/>
           <span style={{fontSize:11,color:"#a78bfa",fontWeight:500}}>{brand.brand_name || brand.niche}</span>
-          {brand.tone_of_voice && <span style={{fontSize:11,color:C.sub}}>· {brand.tone_of_voice}</span>}
+          {brand.tagline && <span style={{fontSize:11,color:C.sub,fontStyle:"italic"}}>· "{brand.tagline}"</span>}
+          {!brand.tagline && brand.tone_of_voice && <span style={{fontSize:11,color:C.sub}}>· {brand.tone_of_voice}</span>}
           <span style={{marginLeft:"auto",fontSize:10,color:"#a78bfa",opacity:0.7}}>Brand active</span>
         </div>
       )}
@@ -3839,13 +3840,16 @@ function Orb({ size=120 }) {
 
 /* ── BRAND PANEL ── */
 function BrandPanel({ onClose, showToast }) {
-  const [brandName,    setBrandName]    = useState("");
-  const [colors,       setColors]       = useState(["#8b5cf6","",""]);
-  const [toneOfVoice,  setToneOfVoice]  = useState("");
-  const [audience,     setAudience]     = useState("");
-  const [niche,        setNiche]        = useState("");
-  const [saving,       setSaving]       = useState(false);
-  const [loaded,       setLoaded]       = useState(false);
+  const [brandName,         setBrandName]         = useState("");
+  const [tagline,           setTagline]           = useState("");
+  const [primaryColor,      setPrimaryColor]      = useState("#8b5cf6");
+  const [secondaryColor,    setSecondaryColor]    = useState("");
+  const [toneOfVoice,       setToneOfVoice]       = useState("");
+  const [audience,          setAudience]          = useState("");
+  const [niche,             setNiche]             = useState("");
+  const [contentStyleNotes, setContentStyleNotes] = useState("");
+  const [saving,            setSaving]            = useState(false);
+  const [loaded,            setLoaded]            = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -3857,10 +3861,13 @@ function BrandPanel({ onClose, showToast }) {
           const d = await res.json();
           if (d) {
             setBrandName(d.brand_name || "");
-            if (d.colors?.length) setColors([...d.colors, "", ""].slice(0, 3));
+            setTagline(d.tagline || "");
+            setPrimaryColor(d.colors?.[0] || "#8b5cf6");
+            setSecondaryColor(d.colors?.[1] || "");
             setToneOfVoice(d.tone_of_voice || "");
             setAudience(d.target_audience || "");
             setNiche(d.niche || "");
+            setContentStyleNotes(d.content_style_notes || "");
           }
         }
       } catch {}
@@ -3874,28 +3881,39 @@ function BrandPanel({ onClose, showToast }) {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) { showToast("Please sign in first"); setSaving(false); return; }
-      const filteredColors = colors.filter(c => c);
-      const payload = { brand_name: brandName, colors: filteredColors, tone_of_voice: toneOfVoice, target_audience: audience, niche };
+      const colors = [primaryColor, secondaryColor].filter(c => c);
+      const payload = { brand_name: brandName, tagline, colors, tone_of_voice: toneOfVoice, target_audience: audience, niche, content_style_notes: contentStyleNotes };
       const res = await fetch('/api/brand', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` }, body: JSON.stringify(payload) });
-      if (res.ok) { showToast("Brand memory saved ✓"); onClose(payload); }
+      if (res.ok) { showToast("Brand Kit saved ✓"); onClose(payload); }
       else showToast("Save failed — try again");
     } catch { showToast("Connection failed"); }
     setSaving(false);
   };
 
-  const clearBrand = () => { setBrandName(""); setColors(["#8b5cf6","",""]); setToneOfVoice(""); setAudience(""); setNiche(""); };
+  const clearBrand = () => {
+    setBrandName(""); setTagline(""); setPrimaryColor("#8b5cf6"); setSecondaryColor("");
+    setToneOfVoice(""); setAudience(""); setNiche(""); setContentStyleNotes("");
+  };
 
-  const TONES = ["Professional","Casual","Inspirational","Humorous","Educational","Luxury","Bold & Direct","Warm & Friendly"];
+  const TONES = [
+    { id: "Professional",  emoji: "💼" },
+    { id: "Casual",        emoji: "😊" },
+    { id: "Funny",         emoji: "😂" },
+    { id: "Inspirational", emoji: "✨" },
+    { id: "Educational",   emoji: "📚" },
+  ];
+
+  const inp = { width:"100%", marginTop:8, padding:"12px 16px", borderRadius:14, background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", color:C.text, fontSize:14, outline:"none", fontFamily:"inherit", boxSizing:"border-box" };
   const hasBrand = brandName || niche;
 
   return (
     <div style={{minHeight:"100vh",background:C.bg,animation:"fadeIn 0.2s ease",overflowY:"auto"}}>
-      <div style={{padding:"56px 20px 40px"}}>
+      <div style={{padding:"56px 20px 60px"}}>
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:8}}>
           <PressBtn onClick={()=>onClose(null)} style={ghostBtn}><ArrowLeft size={16}/></PressBtn>
           <div>
-            <h2 style={{margin:0,fontSize:22,fontWeight:300,letterSpacing:"-0.02em"}}>Brand Memory</h2>
-            <p style={{margin:"4px 0 0",fontSize:12,color:C.sub}}>Auto-applied to all scripts, captions &amp; content</p>
+            <h2 style={{margin:0,fontSize:22,fontWeight:300,letterSpacing:"-0.02em"}}>Brand Kit</h2>
+            <p style={{margin:"4px 0 0",fontSize:12,color:C.sub}}>Auto-injected into every script, caption &amp; generation</p>
           </div>
         </div>
 
@@ -3905,68 +3923,110 @@ function BrandPanel({ onClose, showToast }) {
           </div>
         ) : (
           <>
-            <div style={{marginBottom:16}}>
+            {/* ── Identity ── */}
+            <div style={{fontSize:10,color:C.sub,letterSpacing:"0.12em",textTransform:"uppercase",fontWeight:700,marginBottom:12,marginTop:4}}>Identity</div>
+
+            <div style={{marginBottom:14}}>
               <label style={labelStyle}>Brand Name</label>
-              <input value={brandName} onChange={e=>setBrandName(e.target.value)} placeholder="e.g. Omnyra AI" style={{width:"100%",marginTop:8,padding:"12px 16px",borderRadius:14,background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",color:C.text,fontSize:14,outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
+              <input value={brandName} onChange={e=>setBrandName(e.target.value)} placeholder="e.g. Omnyra AI" style={inp}/>
             </div>
 
-            <div style={{marginBottom:16}}>
+            <div style={{marginBottom:14}}>
+              <label style={labelStyle}>Tagline</label>
+              <input value={tagline} onChange={e=>setTagline(e.target.value)} placeholder="e.g. Create. Don't juggle." style={inp}/>
+            </div>
+
+            <div style={{marginBottom:14}}>
               <label style={labelStyle}>Niche / Industry</label>
-              <input value={niche} onChange={e=>setNiche(e.target.value)} placeholder="e.g. AI tools, fitness, real estate" style={{width:"100%",marginTop:8,padding:"12px 16px",borderRadius:14,background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",color:C.text,fontSize:14,outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
+              <input value={niche} onChange={e=>setNiche(e.target.value)} placeholder="e.g. AI tools, fitness, real estate" style={inp}/>
             </div>
 
-            <div style={{marginBottom:16}}>
+            <div style={{marginBottom:22}}>
               <label style={labelStyle}>Target Audience</label>
-              <input value={audience} onChange={e=>setAudience(e.target.value)} placeholder="e.g. Entrepreneurs 25–40, content creators" style={{width:"100%",marginTop:8,padding:"12px 16px",borderRadius:14,background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",color:C.text,fontSize:14,outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
+              <input value={audience} onChange={e=>setAudience(e.target.value)} placeholder="e.g. Entrepreneurs 25–40, content creators" style={inp}/>
             </div>
 
-            <div style={{marginBottom:20}}>
-              <label style={labelStyle}>Tone of Voice</label>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:8,marginBottom:8}}>
-                {TONES.map(t=>(
-                  <PressBtn key={t} onClick={()=>setToneOfVoice(t)} style={{padding:"10px 12px",borderRadius:12,background:toneOfVoice===t?"linear-gradient(135deg,rgba(139,92,246,0.3),rgba(34,211,238,0.2))":"rgba(255,255,255,0.03)",border:toneOfVoice===t?"1px solid rgba(139,92,246,0.5)":"1px solid rgba(255,255,255,0.07)",color:toneOfVoice===t?"#fff":C.sub,fontSize:12,fontFamily:"inherit"}}>
-                    {t}
+            {/* ── Tone ── */}
+            <div style={{fontSize:10,color:C.sub,letterSpacing:"0.12em",textTransform:"uppercase",fontWeight:700,marginBottom:12}}>Tone of Voice</div>
+            <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:10}}>
+              {TONES.map(t=>{
+                const active = toneOfVoice === t.id;
+                return (
+                  <PressBtn key={t.id} onClick={()=>setToneOfVoice(active ? "" : t.id)} style={{padding:"9px 14px",borderRadius:100,background:active?"linear-gradient(135deg,rgba(139,92,246,0.3),rgba(34,211,238,0.2))":"rgba(255,255,255,0.04)",border:active?"1px solid rgba(139,92,246,0.5)":"1px solid rgba(255,255,255,0.08)",color:active?"#fff":C.sub,fontSize:12,fontFamily:"inherit",display:"flex",alignItems:"center",gap:5}}>
+                    <span>{t.emoji}</span><span style={{fontWeight:active?600:400}}>{t.id}</span>
+                    {active && <Check size={11} style={{marginLeft:2}}/>}
                   </PressBtn>
-                ))}
-              </div>
-              <input value={toneOfVoice} onChange={e=>setToneOfVoice(e.target.value)} placeholder="Or type a custom tone…" style={{width:"100%",padding:"10px 16px",borderRadius:14,background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.1)",color:C.text,fontSize:13,outline:"none",fontFamily:"inherit",boxSizing:"border-box"}}/>
+                );
+              })}
+            </div>
+            <div style={{marginBottom:22}}>
+              <input value={toneOfVoice} onChange={e=>setToneOfVoice(e.target.value)} placeholder="Or describe your custom tone…" style={{...inp, marginTop:0, fontSize:13}}/>
             </div>
 
-            <div style={{marginBottom:24}}>
-              <label style={labelStyle}>Brand Colors</label>
-              <div style={{display:"flex",gap:12,marginTop:8,alignItems:"center"}}>
-                {colors.map((col,i)=>(
-                  <div key={i} style={{position:"relative",width:48,height:48,borderRadius:14,background:col||"rgba(255,255,255,0.06)",border:`2px solid ${col?col+"80":"rgba(255,255,255,0.12)"}`,overflow:"hidden",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>
-                    {!col && <span style={{fontSize:20,color:C.sub,pointerEvents:"none"}}>+</span>}
-                    <input type="color" value={col||"#8b5cf6"} onChange={e=>{const n=[...colors];n[i]=e.target.value;setColors(n);}} style={{position:"absolute",inset:0,opacity:0,cursor:"pointer",width:"100%",height:"100%"}}/>
+            {/* ── Colors ── */}
+            <div style={{fontSize:10,color:C.sub,letterSpacing:"0.12em",textTransform:"uppercase",fontWeight:700,marginBottom:12}}>Brand Colors</div>
+            <div style={{display:"flex",gap:14,marginBottom:22,alignItems:"flex-start"}}>
+              {[
+                { label:"Primary",   value:primaryColor,   set:setPrimaryColor,   fallback:"#8b5cf6" },
+                { label:"Secondary", value:secondaryColor, set:setSecondaryColor, fallback:"#22d3ee" },
+              ].map(slot=>(
+                <div key={slot.label} style={{display:"flex",flexDirection:"column",alignItems:"center",gap:6}}>
+                  <div style={{position:"relative",width:52,height:52,borderRadius:16,background:slot.value||"rgba(255,255,255,0.06)",border:`2px solid ${slot.value?slot.value+"80":"rgba(255,255,255,0.12)"}`,overflow:"hidden",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                    {!slot.value && <span style={{fontSize:22,color:C.sub,pointerEvents:"none"}}>+</span>}
+                    <input type="color" value={slot.value||slot.fallback} onChange={e=>slot.set(e.target.value)} style={{position:"absolute",inset:0,opacity:0,cursor:"pointer",width:"100%",height:"100%"}}/>
                   </div>
-                ))}
-                <span style={{fontSize:11,color:C.sub}}>Click to pick your brand palette</span>
+                  <span style={{fontSize:10,color:C.sub,letterSpacing:"0.06em"}}>{slot.label}</span>
+                </div>
+              ))}
+              <div style={{flex:1,display:"flex",alignItems:"center",paddingTop:4}}>
+                <span style={{fontSize:11,color:C.sub,lineHeight:1.5}}>Tap a swatch<br/>to pick a colour</span>
               </div>
             </div>
 
+            {/* ── Content Style Notes ── */}
+            <div style={{fontSize:10,color:C.sub,letterSpacing:"0.12em",textTransform:"uppercase",fontWeight:700,marginBottom:12}}>Content Style Notes</div>
+            <div style={{marginBottom:24}}>
+              <textarea
+                value={contentStyleNotes}
+                onChange={e=>setContentStyleNotes(e.target.value)}
+                placeholder={"e.g. Always open with a bold statement. Use short punchy sentences. Avoid corporate jargon. End every video with a question to drive comments."}
+                rows={4}
+                style={{...inp, marginTop:0, resize:"vertical", lineHeight:1.6, fontSize:13}}
+              />
+              <div style={{marginTop:6,fontSize:11,color:C.sub}}>This is added verbatim to every generation — be as specific as you like.</div>
+            </div>
+
+            {/* ── Preview ── */}
             {hasBrand && (
-              <div style={{marginBottom:24,padding:"14px 16px",borderRadius:18,background:"linear-gradient(135deg,rgba(139,92,246,0.1),rgba(34,211,238,0.07))",border:"1px solid rgba(139,92,246,0.2)"}}>
-                <div style={{fontSize:10,color:C.sub,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:8}}>Preview</div>
-                {brandName     && <div style={{fontSize:14,fontWeight:500,color:"#fff",marginBottom:4}}>{brandName}</div>}
-                {niche         && <div style={{fontSize:12,color:C.sub,marginBottom:2}}>Niche: {niche}</div>}
-                {audience      && <div style={{fontSize:12,color:C.sub,marginBottom:2}}>Audience: {audience}</div>}
-                {toneOfVoice   && <div style={{fontSize:12,color:"#a78bfa",marginBottom:4}}>Tone: {toneOfVoice}</div>}
-                {colors.filter(c=>c).length>0 && (
-                  <div style={{display:"flex",gap:6,marginTop:4}}>
-                    {colors.filter(c=>c).map((c,i)=><div key={i} style={{width:18,height:18,borderRadius:5,background:c}}/>)}
+              <div style={{marginBottom:24,padding:"16px 18px",borderRadius:18,background:"linear-gradient(135deg,rgba(139,92,246,0.1),rgba(34,211,238,0.07))",border:"1px solid rgba(139,92,246,0.2)"}}>
+                <div style={{fontSize:10,color:C.sub,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:10,fontWeight:700}}>Kit Preview</div>
+                {brandName   && <div style={{fontSize:15,fontWeight:600,color:"#fff",marginBottom:2}}>{brandName}</div>}
+                {tagline     && <div style={{fontSize:12,color:"#a78bfa",marginBottom:8,fontStyle:"italic"}}>"{tagline}"</div>}
+                <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                  {niche               && <div style={{fontSize:12,color:C.sub}}>🏷 {niche}</div>}
+                  {audience            && <div style={{fontSize:12,color:C.sub}}>👥 {audience}</div>}
+                  {toneOfVoice         && <div style={{fontSize:12,color:"#a78bfa"}}>🎙 {toneOfVoice} tone</div>}
+                  {contentStyleNotes   && <div style={{fontSize:11,color:C.sub,marginTop:4,lineHeight:1.5,borderTop:"1px solid rgba(255,255,255,0.07)",paddingTop:8}}>{contentStyleNotes.length>120?contentStyleNotes.slice(0,120)+"…":contentStyleNotes}</div>}
+                </div>
+                {(primaryColor||secondaryColor) && (
+                  <div style={{display:"flex",gap:6,marginTop:10,alignItems:"center"}}>
+                    {primaryColor   && <div style={{width:20,height:20,borderRadius:6,background:primaryColor,border:"1px solid rgba(255,255,255,0.15)"}}/>}
+                    {secondaryColor && <div style={{width:20,height:20,borderRadius:6,background:secondaryColor,border:"1px solid rgba(255,255,255,0.15)"}}/>}
+                    <span style={{fontSize:10,color:C.sub}}>Brand palette</span>
                   </div>
                 )}
               </div>
             )}
 
             <PressBtn onClick={save} disabled={saving} style={{...primaryBtn,width:"100%",justifyContent:"center",opacity:saving?0.7:1}}>
-              {saving ? <><div style={{width:16,height:16,borderRadius:"50%",border:"2px solid rgba(255,255,255,0.3)",borderTopColor:"#fff",animation:"spin 1s linear infinite"}}/>Saving…</> : <><Check size={16}/>Save Brand Memory</>}
+              {saving
+                ? <><div style={{width:16,height:16,borderRadius:"50%",border:"2px solid rgba(255,255,255,0.3)",borderTopColor:"#fff",animation:"spin 1s linear infinite"}}/>Saving…</>
+                : <><Check size={16}/>Save Brand Kit</>}
             </PressBtn>
 
             {hasBrand && (
               <PressBtn onClick={clearBrand} style={{...ghostBtn,width:"100%",justifyContent:"center",marginTop:10,color:"rgba(244,63,94,0.7)",border:"1px solid rgba(244,63,94,0.15)"}}>
-                Clear brand memory
+                Clear brand kit
               </PressBtn>
             )}
           </>
