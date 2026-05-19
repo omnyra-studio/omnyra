@@ -93,7 +93,7 @@ function SuccessContent() {
         </div>
 
         <a
-          href="/"
+          href="/dashboard"
           style={{
             display: 'block', width: '100%', padding: '15px 20px',
             borderRadius: 100, textAlign: 'center', textDecoration: 'none',

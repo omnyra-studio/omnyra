@@ -4,6 +4,10 @@
     {
       "path": "/api/social/cron",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/monthly-summary",
+      "schedule": "0 1 1 * *"
     }
   ]
 }

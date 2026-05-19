@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js'
 import { NextResponse } from 'next/server'
+import { sendWelcomeEmail } from '../../../lib/email.js'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -16,6 +17,7 @@ export async function POST(request) {
       email_confirm: true,
     })
     if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+    sendWelcomeEmail(email).catch(err => console.error('[email] Welcome email failed:', err.message))
     return NextResponse.json({ user: data.user })
   }
 

@@ -2,6 +2,8 @@
 // Omnyra AI — Multi-API Orchestration Layer
 // Claude writes · Pika/Kling animates · ElevenLabs voices · D-ID avatars
 
+import { getUserAndPlan } from '../../../lib/auth'
+
 const MODE_CONTEXTS = {
   viral:      "VIRAL MODE: Write for maximum engagement, FYP hooks, emotional triggers. Short punchy sentences. Open loops. Power words.",
   strategist: "STRATEGIST MODE: Think in systems and growth frameworks. Be structured, data-aware and actionable.",
@@ -224,6 +226,9 @@ function buildBrandContext(brand) {
 // ============================================================
 export async function POST(request) {
   try {
+    const { user } = await getUserAndPlan(request)
+    if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+
     const body = await request.json();
     const { tool, prompt, mode, phase, platform, style, tone, length, direction, section, context, brand } = body;
     const brandCtx = buildBrandContext(brand);

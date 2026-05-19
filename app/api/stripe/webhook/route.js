@@ -11,6 +11,7 @@
 
 import Stripe from 'stripe';
 import { supabaseAdmin } from '../../../../lib/supabase-admin';
+import { sendSubscriptionConfirmation } from '../../../../lib/email.js';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
@@ -94,6 +95,10 @@ export async function POST(request) {
         const userId = await findUserIdByEmail(email);
         if (userId) {
           await applyPlan(userId, plan, session.customer, session.subscription);
+          if (email) {
+            sendSubscriptionConfirmation(email, { plan, credits: PLAN_CREDITS[plan] ?? 50 })
+              .catch(err => console.error('[email] Subscription confirmation failed:', err.message));
+          }
         } else {
           console.warn('checkout.session.completed: no user found for', email);
         }

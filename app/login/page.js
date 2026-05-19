@@ -14,9 +14,8 @@ export default function LoginPage() {
 
   // Redirect to home if already logged in
   useEffect(() => {
-    localStorage.setItem("omnyra_onboarded", "1")
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) window.location.replace('/')
+      if (session) window.location.replace('/dashboard')
       else setLoading(false)
     })
   }, [])
@@ -34,7 +33,7 @@ export default function LoginPage() {
     } else {
       const { error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) { setError(error.message); setLoading(false) }
-      else window.location.replace('/')
+      else window.location.replace('/dashboard')
     }
   }
 
