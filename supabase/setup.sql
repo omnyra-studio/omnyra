@@ -25,6 +25,7 @@ create table if not exists credits (
 
 alter table credits enable row level security;
 
+drop policy if exists "Users can read their own credits" on credits;
 create policy "Users can read their own credits"
   on credits for select
   using (auth.uid() = user_id);
@@ -42,6 +43,7 @@ create table if not exists credit_transactions (
 
 alter table credit_transactions enable row level security;
 
+drop policy if exists "Users can read their own transactions" on credit_transactions;
 create policy "Users can read their own transactions"
   on credit_transactions for select
   using (auth.uid() = user_id);
@@ -89,6 +91,7 @@ create table if not exists brand_profiles (
 
 alter table brand_profiles enable row level security;
 
+drop policy if exists "Users can manage their own brand profile" on brand_profiles;
 create policy "Users can manage their own brand profile"
   on brand_profiles for all
   using (auth.uid() = user_id)
