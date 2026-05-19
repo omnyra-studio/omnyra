@@ -3,7 +3,7 @@
   "crons": [
     {
       "path": "/api/social/cron",
-      "schedule": "0 0 * * *"
+      "schedule": "*/5 * * * *"
     },
     {
       "path": "/api/cron/monthly-summary",
