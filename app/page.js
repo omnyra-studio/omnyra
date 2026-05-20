@@ -134,8 +134,8 @@ export default function LandingPage() {
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             <a href="#features" className="nav-link" style={{ padding: '8px 14px', borderRadius: 100, color: C.sub, textDecoration: 'none', fontSize: 13, display: 'none' }}>Features</a>
             <a href="#pricing" className="nav-link" style={{ padding: '8px 14px', borderRadius: 100, color: C.sub, textDecoration: 'none', fontSize: 13 }}>Pricing</a>
-            <a href="/dashboard" className="ghost-btn" style={{ padding: '9px 18px', borderRadius: 100, background: C.surface, border: `1px solid ${C.border}`, color: C.sub, textDecoration: 'none', fontSize: 13 }}>Sign in</a>
-            <a href="/dashboard" className="cta-btn" style={{ padding: '9px 20px', borderRadius: 100, background: 'linear-gradient(135deg,#8b5cf6,#22d3ee)', color: '#fff', textDecoration: 'none', fontSize: 13, fontWeight: 600, boxShadow: '0 6px 20px -6px rgba(139,92,246,0.6)', whiteSpace: 'nowrap' }}>Get started free</a>
+            <a href="/login" className="ghost-btn" style={{ padding: '9px 18px', borderRadius: 100, background: C.surface, border: `1px solid ${C.border}`, color: C.sub, textDecoration: 'none', fontSize: 13 }}>Sign in</a>
+            <a href="/login" className="cta-btn" style={{ padding: '9px 20px', borderRadius: 100, background: 'linear-gradient(135deg,#8b5cf6,#22d3ee)', color: '#fff', textDecoration: 'none', fontSize: 13, fontWeight: 600, boxShadow: '0 6px 20px -6px rgba(139,92,246,0.6)', whiteSpace: 'nowrap' }}>Get started free</a>
           </div>
         </nav>
 
@@ -155,7 +155,7 @@ export default function LandingPage() {
             No more juggling subscriptions. Scripts &amp; research always free.
           </p>
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap', animation: 'slideUp 0.7s 0.2s both' }}>
-            <a href="/dashboard" className="cta-btn" style={{ padding: '15px 32px', borderRadius: 100, background: 'linear-gradient(135deg,#8b5cf6,#22d3ee)', color: '#fff', textDecoration: 'none', fontSize: 15, fontWeight: 600, boxShadow: '0 10px 36px -10px rgba(139,92,246,0.7)' }}>
+            <a href="/login" className="cta-btn" style={{ padding: '15px 32px', borderRadius: 100, background: 'linear-gradient(135deg,#8b5cf6,#22d3ee)', color: '#fff', textDecoration: 'none', fontSize: 15, fontWeight: 600, boxShadow: '0 10px 36px -10px rgba(139,92,246,0.7)' }}>
               Start creating free →
             </a>
             <a href="#pricing" className="ghost-btn" style={{ padding: '15px 32px', borderRadius: 100, background: C.surface, border: `1px solid ${C.border}`, color: C.text, textDecoration: 'none', fontSize: 15 }}>
@@ -262,7 +262,7 @@ export default function LandingPage() {
                     ))}
                   </ul>
                   {p.price === 0 ? (
-                    <a href="/dashboard" className="cta-btn" style={{ display: 'block', marginTop: 24, padding: '13px', borderRadius: 14, textAlign: 'center', textDecoration: 'none', fontSize: 14, fontWeight: 600, background: C.surface, border: `1px solid ${C.border}`, color: C.text }}>
+                    <a href="/login" className="cta-btn" style={{ display: 'block', marginTop: 24, padding: '13px', borderRadius: 14, textAlign: 'center', textDecoration: 'none', fontSize: 14, fontWeight: 600, background: C.surface, border: `1px solid ${C.border}`, color: C.text }}>
                       Get started free
                     </a>
                   ) : (
@@ -330,7 +330,7 @@ export default function LandingPage() {
               <a href="mailto:info@omnyra.studio" style={{ color: C.sub, textDecoration: 'none', fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }} className="nav-link">
                 ✉ info@omnyra.studio
               </a>
-              <a href="/dashboard" style={{ color: C.sub, textDecoration: 'none', fontSize: 13 }} className="nav-link">Sign in →</a>
+              <a href="/login" style={{ color: C.sub, textDecoration: 'none', fontSize: 13 }} className="nav-link">Sign in →</a>
               <div style={{ fontSize: 11, color: 'rgba(245,243,255,0.25)', marginTop: 4 }}>
                 © 2025 Omnyra AI · All rights reserved · Prices in AUD
               </div>
