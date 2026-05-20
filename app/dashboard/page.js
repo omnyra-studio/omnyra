@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import {
   Sparkles, Video, User, Mic, Image as ImageIcon, Music, Wand2,
@@ -506,6 +507,7 @@ function Paywall({ onDone, showToast }) {
 }
 
 function AppShell({ screen, setScreen, subScreen, setSubScreen, activeTool, setActiveTool, mode, setMode, onSearch, onNotif, showToast }) {
+  const router = useRouter();
   const [credits, setCredits] = useState(null);
   const [plan, setPlan]       = useState('free');
   const [brand, setBrand] = useState(null);
@@ -597,7 +599,7 @@ function AppShell({ screen, setScreen, subScreen, setSubScreen, activeTool, setA
 
   if (brandPanelOpen) return <BrandPanel onClose={(saved) => { if (saved) setBrand(saved); setBrandPanelOpen(false); }} showToast={showToast}/>;
   if (activeTool?.id==="oneclick") return <OneClickFlow mode={mode} setMode={setMode} onBack={()=>setActiveTool(null)} showToast={showToast} brand={brand} onSave={saveToLibrary}/>;
-  if (activeTool?.id==="script")   return <ScriptStudio  mode={mode} setMode={setMode} onBack={()=>setActiveTool(null)} showToast={showToast} brand={brand} onSave={saveToLibrary}/>;
+  if (activeTool?.id==="script")   { router.push('/dashboard/script'); return null; }
   if (activeTool?.id==="avatar")   return <AvatarStudio  mode={mode} onBack={()=>setActiveTool(null)} showToast={showToast} plan={plan}/>;
   if (activeTool?.id==="video")    return <VideoTool    onBack={()=>setActiveTool(null)} showToast={showToast} onGenerated={onGenerated} plan={plan}/>;
   if (activeTool?.id==="lipsync")  return <LipSyncStudio    onBack={()=>setActiveTool(null)} showToast={showToast} onGenerated={onGenerated} plan={plan}/>;
