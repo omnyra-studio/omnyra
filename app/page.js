@@ -127,6 +127,15 @@ export default function LandingPage() {
 
       <div style={{ position: 'relative', zIndex: 1 }}>
 
+        {/* ── LOGO ── */}
+        <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 20 }}>
+          <img
+            src="/omnyra-logo.png"
+            alt="Omnyra AI"
+            style={{ width: 'clamp(90px, 12vw, 120px)', height: 'auto', display: 'block' }}
+          />
+        </div>
+
         {/* ── NAV ── */}
         <nav style={{ maxWidth: 1100, margin: '0 auto', padding: '20px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ fontSize: 20, fontWeight: 400, letterSpacing: '-0.02em', flexShrink: 0 }}>
