@@ -1,25 +1,29 @@
 import { NextResponse } from "next/server";
-import { jwtVerify } from "jose";
-import { isBlacklisted } from "@/app/lib/tokenBlacklist";
-
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || process.env.CRON_SECRET || "omnyra-secret-key"
-);
+import { createServerClient } from "@supabase/ssr";
 
 export async function GET(request) {
-  try {
-    const token = request.cookies.get("omnyra_token")?.value;
-    if (!token) {
-      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    {
+      cookies: {
+        getAll() { return request.cookies.getAll() },
+        setAll() {},
+      },
     }
-    const { payload } = await jwtVerify(token, JWT_SECRET);
-    if (payload.jti && isBlacklisted(payload.jti)) {
-      return NextResponse.json({ error: "Token has been revoked" }, { status: 401 });
-    }
-    return NextResponse.json({
-      user: { id: payload.sub, email: payload.email, name: payload.name, role: payload.role }
-    });
-  } catch {
-    return NextResponse.json({ error: "Invalid or expired token" }, { status: 401 });
+  );
+
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session) {
+    return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
+
+  return NextResponse.json({
+    user: {
+      id: session.user.id,
+      email: session.user.email,
+      name: session.user.user_metadata?.name || session.user.email.split("@")[0],
+      role: session.user.user_metadata?.role || "free",
+    },
+  });
 }

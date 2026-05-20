@@ -1,7 +1,6 @@
 "use client";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, Suspense } from "react";
-import Image from "next/image";
 import { supabase } from "../../lib/supabase";
 
 function SignupForm() {
@@ -18,6 +17,7 @@ function SignupForm() {
     setLoading(true);
     setError("");
     try {
+      // Create user server-side (bypasses email confirmation requirement)
       const res = await fetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -25,7 +25,11 @@ function SignupForm() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Signup failed");
-      await supabase.auth.signInWithPassword({ email, password });
+
+      // Establish Supabase client session
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError) throw new Error(signInError.message);
+
       localStorage.setItem("omnyra_onboarded", "1");
       router.push("/dashboard");
     } catch (err) {
@@ -41,7 +45,7 @@ function SignupForm() {
       <div style={{ width:"100%", maxWidth:420, padding:"2.5rem",
         background:"#111", borderRadius:20, border:"0.5px solid #222" }}>
         <div style={{ marginBottom:24 }}>
-          <img src="/logo-nav.png" alt="Omnyra AI" style={{ height:64, width:'auto', objectFit:'contain', display:'block' }} />
+          <img src="/logo-nav.png" alt="Omnyra AI" style={{ height:64, width:"auto", objectFit:"contain", display:"block" }} />
         </div>
         <p style={{ fontSize:12, color:"#7c6fff", fontWeight:600,
           letterSpacing:2, textTransform:"uppercase", marginBottom:8 }}>

@@ -1,12 +1,6 @@
 import { NextResponse } from "next/server";
-import { SignJWT } from "jose";
-import { randomUUID } from "crypto";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { sendWelcomeEmail } from "@/lib/email";
-
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || process.env.CRON_SECRET || "omnyra-secret-key"
-);
 
 export async function POST(request) {
   try {
@@ -35,29 +29,15 @@ export async function POST(request) {
       console.error("[email] Welcome email failed:", err.message)
     );
 
-    const user = {
-      id: data.user.id,
-      email: data.user.email,
-      name: name || data.user.email.split("@")[0],
-      role: "free",
-    };
-
-    const jti = randomUUID();
-    const token = await new SignJWT({ sub: user.id, email: user.email, name: user.name, role: user.role, jti })
-      .setProtectedHeader({ alg: "HS256" })
-      .setIssuedAt()
-      .setExpirationTime("7d")
-      .sign(JWT_SECRET);
-
-    const response = NextResponse.json({ success: true, user });
-    response.cookies.set("omnyra_token", token, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 7,
-      path: "/",
+    return NextResponse.json({
+      success: true,
+      user: {
+        id: data.user.id,
+        email: data.user.email,
+        name: name || data.user.email.split("@")[0],
+        role: "free",
+      },
     });
-    return response;
   } catch (err) {
     return NextResponse.json({ error: err.message || "Signup failed" }, { status: 400 });
   }

@@ -15,14 +15,8 @@ export default function SigninPage() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/auth/signin", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Sign in failed");
-      await supabase.auth.signInWithPassword({ email, password });
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInError) throw new Error(signInError.message);
       localStorage.setItem("omnyra_onboarded", "1");
       router.push("/dashboard");
     } catch (err) {
@@ -72,7 +66,7 @@ export default function SigninPage() {
           </button>
         </form>
         <p style={{ textAlign: "center", marginTop: 20, fontSize: 13, color: "#444" }}>
-          Don't have an account?{" "}
+          Don&apos;t have an account?{" "}
           <span onClick={() => router.push("/signup")}
             style={{ color: "#7c6fff", cursor: "pointer" }}>Get started free</span>
         </p>
