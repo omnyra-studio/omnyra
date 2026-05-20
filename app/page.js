@@ -132,7 +132,7 @@ export default function LandingPage() {
           <img
             src="/omnyra-logo.png"
             alt="Omnyra AI"
-            style={{ width: 'clamp(90px, 12vw, 120px)', height: 'auto', display: 'block' }}
+            style={{ width: 'clamp(140px, 20vw, 200px)', height: 'auto', display: 'block' }}
           />
         </div>
 
