@@ -1,6 +1,5 @@
 'use client'
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import { supabase } from '../lib/supabase'
 
@@ -55,9 +54,7 @@ const PLANS = [
 ]
 
 export default function LandingPage() {
-  const router = useRouter()
   const [checking, setChecking] = useState(true)
-  const [menuOpen, setMenuOpen] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession()
@@ -128,8 +125,8 @@ export default function LandingPage() {
             <a href="#features" className="nav-link" style={{ padding: '8px 14px', borderRadius: 100, color: C.sub, textDecoration: 'none', fontSize: 13 }}>Features</a>
             <a href="#voice" className="nav-link" style={{ padding: '8px 14px', borderRadius: 100, color: C.sub, textDecoration: 'none', fontSize: 13 }}>Voice AI</a>
             <a href="#pricing" className="nav-link" style={{ padding: '8px 14px', borderRadius: 100, color: C.sub, textDecoration: 'none', fontSize: 13 }}>Pricing</a>
-            <a onClick={() => router.push('/signin')} className="ghost-btn" style={{ padding: '9px 18px', borderRadius: 100, background: C.surface, border: `1px solid ${C.border}`, color: C.sub, textDecoration: 'none', fontSize: 13, cursor: 'pointer' }}>Sign in</a>
-            <a onClick={() => router.push('/signup')} className="cta-btn" style={{ padding: '9px 20px', borderRadius: 100, background: 'linear-gradient(135deg,#8b5cf6,#22d3ee)', color: '#fff', textDecoration: 'none', fontSize: 13, fontWeight: 600, boxShadow: '0 6px 20px -6px rgba(139,92,246,0.6)', whiteSpace: 'nowrap', cursor: 'pointer' }}>Start Free →</a>
+            <a href="/signin" className="ghost-btn" style={{ padding: '9px 18px', borderRadius: 100, background: C.surface, border: `1px solid ${C.border}`, color: C.sub, textDecoration: 'none', fontSize: 13, cursor: 'pointer' }}>Sign in</a>
+            <a href="/signup" className="cta-btn" style={{ padding: '9px 20px', borderRadius: 100, background: 'linear-gradient(135deg,#8b5cf6,#22d3ee)', color: '#fff', textDecoration: 'none', fontSize: 13, fontWeight: 600, boxShadow: '0 6px 20px -6px rgba(139,92,246,0.6)', whiteSpace: 'nowrap', cursor: 'pointer' }}>Start Free →</a>
           </div>
         </nav>
 
@@ -152,7 +149,7 @@ export default function LandingPage() {
             No more juggling subscriptions. Scripts &amp; research always free.
           </p>
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap', animation: 'slideUp 0.7s 0.2s both' }}>
-            <a onClick={() => router.push('/signup')} className="cta-btn" style={{ padding: '15px 32px', borderRadius: 100, background: 'linear-gradient(135deg,#8b5cf6,#22d3ee)', color: '#fff', textDecoration: 'none', fontSize: 15, fontWeight: 600, boxShadow: '0 10px 36px -10px rgba(139,92,246,0.7)', cursor: 'pointer' }}>
+            <a href="/signup" className="cta-btn" style={{ padding: '15px 32px', borderRadius: 100, background: 'linear-gradient(135deg,#8b5cf6,#22d3ee)', color: '#fff', textDecoration: 'none', fontSize: 15, fontWeight: 600, boxShadow: '0 10px 36px -10px rgba(139,92,246,0.7)', cursor: 'pointer' }}>
               Start creating free →
             </a>
             <a href="#pricing" className="ghost-btn" style={{ padding: '15px 32px', borderRadius: 100, background: C.surface, border: `1px solid ${C.border}`, color: C.text, textDecoration: 'none', fontSize: 15 }}>
@@ -260,21 +257,21 @@ export default function LandingPage() {
                     ))}
                   </ul>
                   {p.price === 0 ? (
-                    <button
-                      onClick={() => router.push('/signup')}
+                    <a
+                      href="/signup"
                       className="cta-btn"
-                      style={{ display: 'block', width: '100%', marginTop: 24, padding: '13px', borderRadius: 14, textAlign: 'center', fontSize: 14, fontWeight: 600, background: C.surface, border: `1px solid ${C.border}`, color: C.text, cursor: 'pointer' }}
+                      style={{ display: 'block', width: '100%', marginTop: 24, padding: '13px', borderRadius: 14, textAlign: 'center', fontSize: 14, fontWeight: 600, background: C.surface, border: `1px solid ${C.border}`, color: C.text, textDecoration: 'none', boxSizing: 'border-box' }}
                     >
                       Get Started Free
-                    </button>
+                    </a>
                   ) : (
-                    <button
-                      onClick={() => router.push(`/signup?plan=${p.name.toLowerCase()}`)}
+                    <a
+                      href={`/signup?plan=${p.name.toLowerCase()}`}
                       className="cta-btn"
-                      style={{ display: 'block', width: '100%', marginTop: 24, padding: '13px', borderRadius: 14, textAlign: 'center', fontSize: 14, fontWeight: 600, background: featured ? 'linear-gradient(135deg,#8b5cf6,#22d3ee)' : C.surface, border: featured ? 'none' : `1px solid ${C.border}`, color: featured ? '#fff' : C.text, boxShadow: featured ? '0 8px 24px -8px rgba(139,92,246,0.5)' : 'none', cursor: 'pointer' }}
+                      style={{ display: 'block', width: '100%', marginTop: 24, padding: '13px', borderRadius: 14, textAlign: 'center', fontSize: 14, fontWeight: 600, background: featured ? 'linear-gradient(135deg,#8b5cf6,#22d3ee)' : C.surface, border: featured ? 'none' : `1px solid ${C.border}`, color: featured ? '#fff' : C.text, boxShadow: featured ? '0 8px 24px -8px rgba(139,92,246,0.5)' : 'none', textDecoration: 'none', boxSizing: 'border-box' }}
                     >
                       {`Get ${p.name}`}
-                    </button>
+                    </a>
                   )}
                 </div>
               )
@@ -331,7 +328,7 @@ export default function LandingPage() {
               <a href="mailto:info@omnyra.studio" style={{ color: C.sub, textDecoration: 'none', fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }} className="nav-link">
                 ✉ info@omnyra.studio
               </a>
-              <a onClick={() => router.push('/signin')} style={{ color: C.sub, textDecoration: 'none', fontSize: 13, cursor: 'pointer' }} className="nav-link">Sign in →</a>
+              <a href="/signin" style={{ color: C.sub, textDecoration: 'none', fontSize: 13, cursor: 'pointer' }} className="nav-link">Sign in →</a>
               <div style={{ fontSize: 11, color: 'rgba(245,243,255,0.25)', marginTop: 4 }}>
                 © 2025 Omnyra AI · All rights reserved · Prices in AUD
               </div>
