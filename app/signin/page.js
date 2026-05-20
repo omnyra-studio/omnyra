@@ -1,6 +1,7 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { supabase } from "../../lib/supabase";
 
 export default function SigninPage() {
   const router = useRouter();
@@ -21,6 +22,8 @@ export default function SigninPage() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Sign in failed");
+      await supabase.auth.signInWithPassword({ email, password });
+      localStorage.setItem("omnyra_onboarded", "1");
       router.push("/dashboard");
     } catch (err) {
       setError(err.message);

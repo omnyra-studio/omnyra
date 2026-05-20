@@ -26,6 +26,7 @@ function SignupForm() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Signup failed");
       await supabase.auth.signInWithPassword({ email, password });
+      localStorage.setItem("omnyra_onboarded", "1");
       router.push("/dashboard");
     } catch (err) {
       setError(err.message);
