@@ -1,7 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
 import Image from 'next/image'
-import { supabase } from '../lib/supabase'
 
 const C = {
   bg:      '#070710',
@@ -54,23 +53,15 @@ const PLANS = [
 ]
 
 export default function LandingPage() {
-  const [checking, setChecking] = useState(true)
+  const [loggedIn, setLoggedIn] = useState(false)
 
   useEffect(() => {
-    supabase.auth.getSession()
-      .then(({ data: { session } }) => {
-        if (session) window.location.replace('/dashboard')
-        else setChecking(false)
-      })
-      .catch(() => setChecking(false))
+    import('../lib/supabase').then(({ supabase }) => {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session) setLoggedIn(true)
+      }).catch(() => {})
+    })
   }, [])
-
-  if (checking) return (
-    <div style={{ minHeight: '100vh', background: C.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <div style={{ width: 32, height: 32, borderRadius: '50%', border: '2px solid rgba(139,92,246,0.2)', borderTopColor: C.violet, animation: 'spin 1s linear infinite' }} />
-      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
-    </div>
-  )
 
   return (
     <div style={{ minHeight: '100vh', background: C.bg, color: C.text, fontFamily: '"Instrument Sans","Inter",-apple-system,sans-serif', overflowX: 'hidden' }}>
@@ -125,8 +116,14 @@ export default function LandingPage() {
             <a href="#features" className="nav-link" style={{ padding: '8px 14px', borderRadius: 100, color: C.sub, textDecoration: 'none', fontSize: 13 }}>Features</a>
             <a href="#voice" className="nav-link" style={{ padding: '8px 14px', borderRadius: 100, color: C.sub, textDecoration: 'none', fontSize: 13 }}>Voice AI</a>
             <a href="#pricing" className="nav-link" style={{ padding: '8px 14px', borderRadius: 100, color: C.sub, textDecoration: 'none', fontSize: 13 }}>Pricing</a>
-            <a href="/signin" className="ghost-btn" style={{ padding: '9px 18px', borderRadius: 100, background: C.surface, border: `1px solid ${C.border}`, color: C.sub, textDecoration: 'none', fontSize: 13, cursor: 'pointer' }}>Sign in</a>
-            <a href="/signup" className="cta-btn" style={{ padding: '9px 20px', borderRadius: 100, background: 'linear-gradient(135deg,#8b5cf6,#22d3ee)', color: '#fff', textDecoration: 'none', fontSize: 13, fontWeight: 600, boxShadow: '0 6px 20px -6px rgba(139,92,246,0.6)', whiteSpace: 'nowrap', cursor: 'pointer' }}>Start Free →</a>
+            {loggedIn ? (
+              <a href="/dashboard" className="cta-btn" style={{ padding: '9px 20px', borderRadius: 100, background: 'linear-gradient(135deg,#8b5cf6,#22d3ee)', color: '#fff', textDecoration: 'none', fontSize: 13, fontWeight: 600, boxShadow: '0 6px 20px -6px rgba(139,92,246,0.6)', whiteSpace: 'nowrap', cursor: 'pointer' }}>Go to Dashboard →</a>
+            ) : (
+              <>
+                <a href="/signin" className="ghost-btn" style={{ padding: '9px 18px', borderRadius: 100, background: C.surface, border: `1px solid ${C.border}`, color: C.sub, textDecoration: 'none', fontSize: 13, cursor: 'pointer' }}>Sign in</a>
+                <a href="/signup" className="cta-btn" style={{ padding: '9px 20px', borderRadius: 100, background: 'linear-gradient(135deg,#8b5cf6,#22d3ee)', color: '#fff', textDecoration: 'none', fontSize: 13, fontWeight: 600, boxShadow: '0 6px 20px -6px rgba(139,92,246,0.6)', whiteSpace: 'nowrap', cursor: 'pointer' }}>Start Free →</a>
+              </>
+            )}
           </div>
         </nav>
 
