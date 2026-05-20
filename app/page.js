@@ -125,10 +125,11 @@ export default function LandingPage() {
             </div>
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <a href="#features" className="nav-link" style={{ padding: '8px 14px', borderRadius: 100, color: C.sub, textDecoration: 'none', fontSize: 13, display: 'none' }}>Features</a>
+            <a href="#features" className="nav-link" style={{ padding: '8px 14px', borderRadius: 100, color: C.sub, textDecoration: 'none', fontSize: 13 }}>Features</a>
+            <a href="#voice" className="nav-link" style={{ padding: '8px 14px', borderRadius: 100, color: C.sub, textDecoration: 'none', fontSize: 13 }}>Voice AI</a>
             <a href="#pricing" className="nav-link" style={{ padding: '8px 14px', borderRadius: 100, color: C.sub, textDecoration: 'none', fontSize: 13 }}>Pricing</a>
             <a onClick={() => router.push('/signin')} className="ghost-btn" style={{ padding: '9px 18px', borderRadius: 100, background: C.surface, border: `1px solid ${C.border}`, color: C.sub, textDecoration: 'none', fontSize: 13, cursor: 'pointer' }}>Sign in</a>
-            <a onClick={() => router.push('/signup')} className="cta-btn" style={{ padding: '9px 20px', borderRadius: 100, background: 'linear-gradient(135deg,#8b5cf6,#22d3ee)', color: '#fff', textDecoration: 'none', fontSize: 13, fontWeight: 600, boxShadow: '0 6px 20px -6px rgba(139,92,246,0.6)', whiteSpace: 'nowrap', cursor: 'pointer' }}>Get started free</a>
+            <a onClick={() => router.push('/signup')} className="cta-btn" style={{ padding: '9px 20px', borderRadius: 100, background: 'linear-gradient(135deg,#8b5cf6,#22d3ee)', color: '#fff', textDecoration: 'none', fontSize: 13, fontWeight: 600, boxShadow: '0 6px 20px -6px rgba(139,92,246,0.6)', whiteSpace: 'nowrap', cursor: 'pointer' }}>Start Free →</a>
           </div>
         </nav>
 
@@ -171,6 +172,7 @@ export default function LandingPage() {
 
         {/* ── TOOLS / FEATURES ── */}
         <section id="features" style={{ padding: '60px 24px 80px', maxWidth: 1100, margin: '0 auto' }}>
+          <span id="voice" style={{ display: 'block', position: 'relative', top: -80 }} />
           <div style={{ textAlign: 'center', marginBottom: 52 }}>
             <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: C.sub, marginBottom: 16 }}>12 tools · one subscription</div>
             <h2 style={{ fontSize: 'clamp(30px,5vw,52px)', fontWeight: 300, letterSpacing: '-0.03em', lineHeight: 1.1 }}>
@@ -263,7 +265,7 @@ export default function LandingPage() {
                       className="cta-btn"
                       style={{ display: 'block', width: '100%', marginTop: 24, padding: '13px', borderRadius: 14, textAlign: 'center', fontSize: 14, fontWeight: 600, background: C.surface, border: `1px solid ${C.border}`, color: C.text, cursor: 'pointer' }}
                     >
-                      Get started free
+                      Get Started Free
                     </button>
                   ) : (
                     <button
@@ -271,7 +273,7 @@ export default function LandingPage() {
                       className="cta-btn"
                       style={{ display: 'block', width: '100%', marginTop: 24, padding: '13px', borderRadius: 14, textAlign: 'center', fontSize: 14, fontWeight: 600, background: featured ? 'linear-gradient(135deg,#8b5cf6,#22d3ee)' : C.surface, border: featured ? 'none' : `1px solid ${C.border}`, color: featured ? '#fff' : C.text, boxShadow: featured ? '0 8px 24px -8px rgba(139,92,246,0.5)' : 'none', cursor: 'pointer' }}
                     >
-                      {`Start ${p.name} →`}
+                      {`Get ${p.name}`}
                     </button>
                   )}
                 </div>
