@@ -12,17 +12,22 @@ import {
   Building2, Calendar, Send, Clock, ChevronLeft, LayoutGrid, Share2
 } from "lucide-react";
 
+/* Strips non-ISO-8859-1 characters from a header value string */
+function sanitizeHeader(v) { return String(v).replace(/[^ -ÿ]/g, '') }
+
 /* ── AUTHENTICATED FETCH — attaches the Supabase session token ── */
 async function authFetch(url, opts = {}) {
   const { data: { session } } = await supabase.auth.getSession()
-  return fetch(url, {
-    ...opts,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(session && { Authorization: `Bearer ${session.access_token}` }),
-      ...opts.headers,
-    },
-  })
+  const rawHeaders = {
+    'Content-Type': 'application/json',
+    ...(session && { Authorization: `Bearer ${session.access_token}` }),
+    ...opts.headers,
+  }
+  const headers = {}
+  for (const [k, v] of Object.entries(rawHeaders)) {
+    headers[k] = sanitizeHeader(v)
+  }
+  return fetch(url, { ...opts, headers })
 }
 
 /* ── TOKENS ── */
@@ -4072,13 +4077,20 @@ function LoginGate({ onDone }) {
   const handle = async e => {
     e.preventDefault();
     setLoading(true); setError(null); setSuccess(null);
+    const friendlyErr = (err) => {
+      if (!err) return null;
+      if (err.message?.includes('ISO-8859-1') || err.message?.includes('non ISO')) {
+        return 'Connection error — please clear your browser cookies and try again.';
+      }
+      return err.message;
+    };
     if (tab === "signup") {
       const { error: err } = await supabase.auth.signUp({ email, password });
-      if (err) setError(err.message);
+      if (err) setError(friendlyErr(err));
       else setSuccess("Account created! Check your email, then sign in.");
     } else {
       const { error: err } = await supabase.auth.signInWithPassword({ email, password });
-      if (err) setError(err.message);
+      if (err) setError(friendlyErr(err));
       // onAuthStateChange handles the transition to "app" on success
     }
     setLoading(false);

@@ -22,6 +22,14 @@ export default function LoginPage() {
       .catch(() => setLoading(false))
   }, [])
 
+  function friendlyErr(err) {
+    if (!err) return null
+    if (err.message?.includes('ISO-8859-1') || err.message?.includes('non ISO')) {
+      return 'Connection error — please clear your browser cookies and try again.'
+    }
+    return err.message
+  }
+
   async function handleSubmit(e) {
     e.preventDefault()
     setLoading(true)
@@ -30,11 +38,11 @@ export default function LoginPage() {
 
     if (mode === 'signup') {
       const { error } = await supabase.auth.signUp({ email, password })
-      if (error) { setError(error.message); setLoading(false) }
+      if (error) { setError(friendlyErr(error)); setLoading(false) }
       else setSuccess('Account created! Check your email, then sign in.')
     } else {
       const { error } = await supabase.auth.signInWithPassword({ email, password })
-      if (error) { setError(error.message); setLoading(false) }
+      if (error) { setError(friendlyErr(error)); setLoading(false) }
       else window.location.replace('/dashboard')
     }
   }
