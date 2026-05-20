@@ -19,9 +19,11 @@ export async function middleware(request) {
     }
   )
 
-  const { data: { session } } = await supabase.auth.getSession()
+  // getUser() validates the JWT against Supabase's server on every request.
+  // getSession() only reads from the cookie and trusts it without server verification.
+  const { data: { user } } = await supabase.auth.getUser()
 
-  if (!session && request.nextUrl.pathname.startsWith('/dashboard')) {
+  if (!user && request.nextUrl.pathname.startsWith('/dashboard')) {
     return NextResponse.redirect(new URL('/signin', request.url))
   }
 

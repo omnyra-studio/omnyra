@@ -2,16 +2,30 @@ import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { sendWelcomeEmail } from "@/lib/email";
 
+const log = (step, data) =>
+  console.log(`[auth/signup] ${step}`, JSON.stringify(data));
+
 export async function POST(request) {
   try {
-    const { email, password, name } = await request.json();
+    const body = await request.json();
+    const { password, name } = body;
+    // Normalize: trim whitespace + lowercase before any comparison or storage
+    const email = typeof body.email === "string"
+      ? body.email.trim().toLowerCase()
+      : null;
+
+    log("payload", { hasEmail: !!email, hasPassword: !!password, passwordLength: password?.length ?? 0 });
+
     if (!email || !password) {
+      log("validation_failed", { reason: "missing_fields" });
       return NextResponse.json({ error: "Email and password are required" }, { status: 400 });
     }
     if (password.length < 6) {
+      log("validation_failed", { reason: "password_too_short" });
       return NextResponse.json({ error: "Password must be at least 6 characters" }, { status: 400 });
     }
 
+    log("calling_createUser", { email });
     const { data, error } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
@@ -19,14 +33,16 @@ export async function POST(request) {
     });
 
     if (error) {
-      const msg = error.message.toLowerCase().includes("already")
-        ? "Email already registered"
-        : error.message;
+      const isAlreadyRegistered = error.message.toLowerCase().includes("already");
+      log("createUser_failed", { code: error.code, isAlreadyRegistered });
+      const msg = isAlreadyRegistered ? "Email already registered" : error.message;
       return NextResponse.json({ error: msg }, { status: 400 });
     }
 
+    log("createUser_ok", { userId: data.user.id, emailConfirmed: data.user.email_confirmed_at !== null });
+
     sendWelcomeEmail(email).catch(err =>
-      console.error("[email] Welcome email failed:", err.message)
+      console.error("[auth/signup] Welcome email failed:", err.message)
     );
 
     return NextResponse.json({
@@ -39,6 +55,7 @@ export async function POST(request) {
       },
     });
   } catch (err) {
+    console.error("[auth/signup] Unhandled error:", err.message);
     return NextResponse.json({ error: err.message || "Signup failed" }, { status: 400 });
   }
 }
