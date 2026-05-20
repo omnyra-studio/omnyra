@@ -106,9 +106,7 @@ export default function LandingPage() {
         @keyframes drift2  { 0%,100% { transform: translate(0,0) scale(1) } 50% { transform: translate(-50px,-40px) scale(1.1) } }
         @keyframes drift3  { 0%,100% { transform: translate(0,0) } 50% { transform: translate(-30px,50px) } }
         @keyframes pulse   { 0%,100% { opacity: 1 } 50% { opacity: 0.6 } }
-        .nav-logo { width: 48px; height: 48px; object-fit: contain; display: block; flex-shrink: 0; }
-        @media (min-width: 768px) { .nav-logo { width: 160px; height: 160px; } .nav-brand-text { font-size: 32px !important; } }
-        .tool-card:hover { border-color: rgba(139,92,246,0.4) !important; transform: translateY(-2px); }
+.tool-card:hover { border-color: rgba(139,92,246,0.4) !important; transform: translateY(-2px); }
         .tool-card { transition: border-color 0.2s, transform 0.2s; }
         .plan-card:hover { transform: translateY(-3px); }
         .plan-card { transition: transform 0.2s; }
