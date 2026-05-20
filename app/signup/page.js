@@ -38,7 +38,7 @@ function SignupForm() {
       <div style={{ width:"100%", maxWidth:420, padding:"2.5rem",
         background:"#111", borderRadius:20, border:"0.5px solid #222" }}>
         <div style={{ marginBottom:24 }}>
-          <Image src="/logo-nav.png" alt="Omnyra AI" width={140} height={36} style={{ objectFit:"contain" }} />
+          <img src="/logo-nav.png" alt="Omnyra AI" style={{ height:36, width:'auto', objectFit:'contain', display:'block' }} />
         </div>
         <p style={{ fontSize:12, color:"#7c6fff", fontWeight:600,
           letterSpacing:2, textTransform:"uppercase", marginBottom:8 }}>

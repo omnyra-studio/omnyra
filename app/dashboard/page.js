@@ -749,7 +749,7 @@ function Home({ onTool, mode, setMode, onSearch, onNotif, credits, brand, onBran
   return (
     <div style={{padding:"56px 20px 0",animation:"fadeIn 0.4s ease"}}>
       <div style={{marginBottom:16}}>
-        <Image src="/logo-nav.png" alt="Omnyra AI" width={140} height={36} style={{objectFit:"contain"}} />
+        <img src="/logo-nav.png" alt="Omnyra AI" style={{height:36, width:'auto', objectFit:'contain', display:'block'}} />
       </div>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <div>
