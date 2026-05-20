@@ -1,37 +1,49 @@
 import { NextResponse } from "next/server";
 import { SignJWT } from "jose";
+import { randomUUID } from "crypto";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 const JWT_SECRET = new TextEncoder().encode(
   process.env.JWT_SECRET || process.env.CRON_SECRET || "omnyra-secret-key"
 );
 
-async function findUser(email, password) {
-  const adminEmail = process.env.ADMIN_EMAIL || "info@omnyra.studio";
-  const adminPassword = process.env.ADMIN_PASSWORD || "changeme";
-  if (email === adminEmail && password === adminPassword) {
-    return { id: "1", email, name: "Admin", role: "admin" };
-  }
-  return null;
-}
-
 export async function POST(request) {
   try {
-    const body = await request.json();
-    const { email, password } = body;
+    const { email, password } = await request.json();
     if (!email || !password) {
       return NextResponse.json({ error: "Email and password are required" }, { status: 400 });
     }
-    const user = await findUser(email.toLowerCase().trim(), password);
-    if (!user) {
-      return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
+
+    const adminEmail = process.env.ADMIN_EMAIL || "info@omnyra.studio";
+    const adminPassword = process.env.ADMIN_PASSWORD || "changeme";
+    let user;
+
+    if (email.toLowerCase().trim() === adminEmail && password === adminPassword) {
+      user = { id: "admin-1", email: adminEmail, name: "Admin", role: "admin" };
+    } else {
+      const { data, error } = await supabaseAdmin.auth.signInWithPassword({
+        email: email.toLowerCase().trim(),
+        password,
+      });
+      if (error || !data.user) {
+        return NextResponse.json({ error: "Invalid email or password" }, { status: 401 });
+      }
+      user = {
+        id: data.user.id,
+        email: data.user.email,
+        name: data.user.user_metadata?.name || data.user.email.split("@")[0],
+        role: data.user.user_metadata?.role || "free",
+      };
     }
-    const jti = crypto.randomUUID();
+
+    const jti = randomUUID();
     const token = await new SignJWT({ sub: user.id, email: user.email, name: user.name, role: user.role, jti })
       .setProtectedHeader({ alg: "HS256" })
       .setIssuedAt()
       .setExpirationTime("7d")
       .sign(JWT_SECRET);
-    const response = NextResponse.json({ success: true, user: { id: user.id, email: user.email, name: user.name, role: user.role } });
+
+    const response = NextResponse.json({ success: true, user });
     response.cookies.set("omnyra_token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",

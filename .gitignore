@@ -45,3 +45,6 @@ next-env.d.ts
 .vercel
 
 /lib/generated/prisma
+
+# user data — never commit
+/data/

@@ -17,13 +17,13 @@ function SignupForm() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/auth/signin", {
+      const res = await fetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Sign in failed");
+      if (!res.ok) throw new Error(data.error || "Signup failed");
       router.push("/dashboard");
     } catch (err) {
       setError(err.message);
@@ -71,7 +71,7 @@ function SignupForm() {
               background: loading ? "#333" : "#fff", color: loading ? "#666" : "#000",
               fontWeight:700, fontSize:15, border:"none", cursor: loading ? "not-allowed" : "pointer",
               transition:"all 0.2s" }}>
-            {loading ? "Signing in..." : "Get started →"}
+            {loading ? "Creating account..." : "Get started →"}
           </button>
         </form>
         <p style={{ textAlign:"center", marginTop:20, fontSize:13, color:"#444" }}>
