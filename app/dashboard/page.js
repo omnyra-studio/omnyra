@@ -3849,7 +3849,7 @@ function Profile({ onSub, showToast, onBrandPanel, brand }) {
             <ChevronRight size={14} color={C.sub}/>
           </PressBtn>
         ))}
-        <PressBtn onClick={()=>showToast("Signed out!")} style={{width:"100%",padding:"15px 18px",borderRadius:16,marginTop:8,background:"rgba(244,63,94,0.06)",border:"1px solid rgba(244,63,94,0.15)",display:"flex",alignItems:"center",gap:14,color:"#f43f5e",fontFamily:"inherit",textAlign:"left"}}>
+        <PressBtn onClick={async()=>{ await supabase.auth.signOut(); window.location.replace('/'); }} style={{width:"100%",padding:"15px 18px",borderRadius:16,marginTop:8,background:"rgba(244,63,94,0.06)",border:"1px solid rgba(244,63,94,0.15)",display:"flex",alignItems:"center",gap:14,color:"#f43f5e",fontFamily:"inherit",textAlign:"left"}}>
           <div style={{width:38,height:38,borderRadius:12,background:"rgba(244,63,94,0.12)",display:"flex",alignItems:"center",justifyContent:"center"}}><LogOut size={16} color="#f43f5e" strokeWidth={1.8}/></div>
           <div style={{fontSize:13,fontWeight:500,flex:1}}>Sign out</div>
           <ChevronRight size={14} color="#f43f5e"/>

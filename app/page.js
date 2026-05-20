@@ -363,7 +363,7 @@ export default function LandingPage() {
             </a>
 
             {/* PWA / Web App */}
-            <a href="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 24px', borderRadius: 12, background: 'linear-gradient(135deg, #7c6fff22, #06b6d422)', border: '0.5px solid #7c6fff', color: '#fff', textDecoration: 'none', transition: 'all 0.2s' }}>
+            <Link href="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 24px', borderRadius: 12, background: 'linear-gradient(135deg, #7c6fff22, #06b6d422)', border: '0.5px solid #7c6fff', color: '#fff', textDecoration: 'none', transition: 'all 0.2s' }}>
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#7c6fff" strokeWidth="2">
                 <path d="M12 2L12 14M12 14L8 10M12 14L16 10"/>
                 <rect x="3" y="16" width="18" height="5" rx="1"/>
@@ -372,7 +372,7 @@ export default function LandingPage() {
                 <div style={{ fontSize: 10, color: '#888', lineHeight: 1 }}>Use instantly</div>
                 <div style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.4 }}>Web App</div>
               </div>
-            </a>
+            </Link>
           </div>
 
           <p style={{ fontSize: 13, color: '#444' }}>
