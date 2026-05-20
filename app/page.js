@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '../lib/supabase'
 
 const C = {
@@ -53,27 +54,9 @@ const PLANS = [
 ]
 
 export default function LandingPage() {
+  const router = useRouter()
   const [checking, setChecking] = useState(true)
   const [menuOpen, setMenuOpen] = useState(false)
-  const [loadingPlan, setLoadingPlan] = useState(null)
-
-  async function handleCheckout(plan, priceId) {
-    setLoadingPlan(plan)
-    try {
-      const res = await fetch('/api/checkout', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ price_id: priceId, plan: plan.toLowerCase() }),
-      })
-      const { url, error } = await res.json()
-      if (error) { alert(error); return }
-      window.location.href = url
-    } catch {
-      alert('Checkout failed. Please try again.')
-    } finally {
-      setLoadingPlan(null)
-    }
-  }
 
   useEffect(() => {
     supabase.auth.getSession()
@@ -143,8 +126,8 @@ export default function LandingPage() {
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             <a href="#features" className="nav-link" style={{ padding: '8px 14px', borderRadius: 100, color: C.sub, textDecoration: 'none', fontSize: 13, display: 'none' }}>Features</a>
             <a href="#pricing" className="nav-link" style={{ padding: '8px 14px', borderRadius: 100, color: C.sub, textDecoration: 'none', fontSize: 13 }}>Pricing</a>
-            <a href="/login" className="ghost-btn" style={{ padding: '9px 18px', borderRadius: 100, background: C.surface, border: `1px solid ${C.border}`, color: C.sub, textDecoration: 'none', fontSize: 13 }}>Sign in</a>
-            <a href="https://app.omnyra.studio" className="cta-btn" style={{ padding: '9px 20px', borderRadius: 100, background: 'linear-gradient(135deg,#8b5cf6,#22d3ee)', color: '#fff', textDecoration: 'none', fontSize: 13, fontWeight: 600, boxShadow: '0 6px 20px -6px rgba(139,92,246,0.6)', whiteSpace: 'nowrap' }}>Get started free</a>
+            <a onClick={() => router.push('/signin')} className="ghost-btn" style={{ padding: '9px 18px', borderRadius: 100, background: C.surface, border: `1px solid ${C.border}`, color: C.sub, textDecoration: 'none', fontSize: 13, cursor: 'pointer' }}>Sign in</a>
+            <a onClick={() => router.push('/signup')} className="cta-btn" style={{ padding: '9px 20px', borderRadius: 100, background: 'linear-gradient(135deg,#8b5cf6,#22d3ee)', color: '#fff', textDecoration: 'none', fontSize: 13, fontWeight: 600, boxShadow: '0 6px 20px -6px rgba(139,92,246,0.6)', whiteSpace: 'nowrap', cursor: 'pointer' }}>Get started free</a>
           </div>
         </nav>
 
@@ -164,7 +147,7 @@ export default function LandingPage() {
             No more juggling subscriptions. Scripts &amp; research always free.
           </p>
           <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap', animation: 'slideUp 0.7s 0.2s both' }}>
-            <a href="https://app.omnyra.studio" className="cta-btn" style={{ padding: '15px 32px', borderRadius: 100, background: 'linear-gradient(135deg,#8b5cf6,#22d3ee)', color: '#fff', textDecoration: 'none', fontSize: 15, fontWeight: 600, boxShadow: '0 10px 36px -10px rgba(139,92,246,0.7)' }}>
+            <a onClick={() => router.push('/signup')} className="cta-btn" style={{ padding: '15px 32px', borderRadius: 100, background: 'linear-gradient(135deg,#8b5cf6,#22d3ee)', color: '#fff', textDecoration: 'none', fontSize: 15, fontWeight: 600, boxShadow: '0 10px 36px -10px rgba(139,92,246,0.7)', cursor: 'pointer' }}>
               Start creating free →
             </a>
             <a href="#pricing" className="ghost-btn" style={{ padding: '15px 32px', borderRadius: 100, background: C.surface, border: `1px solid ${C.border}`, color: C.text, textDecoration: 'none', fontSize: 15 }}>
@@ -271,17 +254,20 @@ export default function LandingPage() {
                     ))}
                   </ul>
                   {p.price === 0 ? (
-                    <a href="https://app.omnyra.studio" className="cta-btn" style={{ display: 'block', marginTop: 24, padding: '13px', borderRadius: 14, textAlign: 'center', textDecoration: 'none', fontSize: 14, fontWeight: 600, background: C.surface, border: `1px solid ${C.border}`, color: C.text }}>
+                    <button
+                      onClick={() => router.push('/signup')}
+                      className="cta-btn"
+                      style={{ display: 'block', width: '100%', marginTop: 24, padding: '13px', borderRadius: 14, textAlign: 'center', fontSize: 14, fontWeight: 600, background: C.surface, border: `1px solid ${C.border}`, color: C.text, cursor: 'pointer' }}
+                    >
                       Get started free
-                    </a>
+                    </button>
                   ) : (
                     <button
-                      onClick={() => handleCheckout(p.name, p.priceId)}
-                      disabled={!!loadingPlan}
+                      onClick={() => router.push(`/signup?plan=${p.name.toLowerCase()}`)}
                       className="cta-btn"
-                      style={{ display: 'block', width: '100%', marginTop: 24, padding: '13px', borderRadius: 14, textAlign: 'center', fontSize: 14, fontWeight: 600, background: featured ? 'linear-gradient(135deg,#8b5cf6,#22d3ee)' : C.surface, border: featured ? 'none' : `1px solid ${C.border}`, color: featured ? '#fff' : C.text, boxShadow: featured ? '0 8px 24px -8px rgba(139,92,246,0.5)' : 'none', cursor: loadingPlan ? 'wait' : 'pointer', opacity: loadingPlan && loadingPlan !== p.name ? 0.5 : 1 }}
+                      style={{ display: 'block', width: '100%', marginTop: 24, padding: '13px', borderRadius: 14, textAlign: 'center', fontSize: 14, fontWeight: 600, background: featured ? 'linear-gradient(135deg,#8b5cf6,#22d3ee)' : C.surface, border: featured ? 'none' : `1px solid ${C.border}`, color: featured ? '#fff' : C.text, boxShadow: featured ? '0 8px 24px -8px rgba(139,92,246,0.5)' : 'none', cursor: 'pointer' }}
                     >
-                      {loadingPlan === p.name ? 'Loading…' : `Start ${p.name} →`}
+                      {`Start ${p.name} →`}
                     </button>
                   )}
                 </div>
@@ -339,7 +325,7 @@ export default function LandingPage() {
               <a href="mailto:info@omnyra.studio" style={{ color: C.sub, textDecoration: 'none', fontSize: 14, display: 'flex', alignItems: 'center', gap: 6 }} className="nav-link">
                 ✉ info@omnyra.studio
               </a>
-              <a href="/login" style={{ color: C.sub, textDecoration: 'none', fontSize: 13 }} className="nav-link">Sign in →</a>
+              <a onClick={() => router.push('/signin')} style={{ color: C.sub, textDecoration: 'none', fontSize: 13, cursor: 'pointer' }} className="nav-link">Sign in →</a>
               <div style={{ fontSize: 11, color: 'rgba(245,243,255,0.25)', marginTop: 4 }}>
                 © 2025 Omnyra AI · All rights reserved · Prices in AUD
               </div>
