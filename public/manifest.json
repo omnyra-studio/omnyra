@@ -1,8 +1,8 @@
 {
   "name": "Omnyra AI",
   "short_name": "Omnyra",
-  "description": "AI-powered video and content creation platform",
-  "start_url": "/",
+  "description": "The Creator OS — AI-powered content studio",
+  "start_url": "/dashboard",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
@@ -11,14 +11,20 @@
   "lang": "en",
   "icons": [
     {
-      "src": "/api/pwa-icon/192",
+      "src": "/logo-nav.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/api/pwa-icon/512",
+      "src": "/logo-hero.png",
       "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/api/pwa-icon/192",
+      "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
