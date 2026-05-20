@@ -1,0 +1,305 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=430">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    width: 430px;
+    background: #070710;
+    font-family: 'Instrument Sans','Inter',-apple-system,sans-serif;
+    color: #f5f3ff;
+    min-height: 932px;
+    overflow-x: hidden;
+  }
+  .status {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 24px 0; font-size: 12px; font-weight: 600;
+  }
+  .top-bar {
+    padding: 14px 20px 0;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .back-btn {
+    width: 36px; height: 36px; border-radius: 10px;
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);
+    display: flex; align-items: center; justify-content: center; font-size: 16px;
+  }
+  .page-title { font-size: 18px; font-weight: 700; letter-spacing: -0.4px; }
+  .count-pill {
+    margin-left: auto; padding: 4px 12px; border-radius: 20px;
+    background: rgba(34,211,238,0.12); border: 1px solid rgba(34,211,238,0.25);
+    font-size: 12px; font-weight: 700; color: #22d3ee;
+  }
+
+  /* Search */
+  .search-row {
+    margin: 14px 20px 0;
+    padding: 12px 16px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 14px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .search-icon { font-size: 15px; color: rgba(245,243,255,0.3); }
+  .search-placeholder { font-size: 14px; color: rgba(245,243,255,0.3); }
+
+  /* Category tabs */
+  .cat-tabs {
+    display: flex; gap: 8px; padding: 14px 20px 0;
+    overflow-x: auto; scrollbar-width: none;
+  }
+  .cat-tab {
+    flex-shrink: 0; padding: 7px 14px; border-radius: 20px;
+    font-size: 12px; font-weight: 600;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: rgba(245,243,255,0.5);
+    white-space: nowrap;
+  }
+  .cat-tab.active {
+    background: rgba(139,92,246,0.15);
+    border-color: rgba(139,92,246,0.4);
+    color: #a78bfa;
+  }
+
+  /* Avatar grid */
+  .section-label {
+    padding: 12px 20px 10px;
+    font-size: 11px; font-weight: 700; color: rgba(245,243,255,0.4);
+    letter-spacing: 0.8px; text-transform: uppercase;
+  }
+  .avatar-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 8px; padding: 0 20px;
+  }
+  .av-card {
+    border-radius: 16px; overflow: hidden; position: relative;
+    aspect-ratio: 3/4; cursor: pointer;
+    border: 1.5px solid rgba(255,255,255,0.06);
+  }
+  .av-card.selected {
+    border-color: #8b5cf6;
+    box-shadow: 0 0 0 2px rgba(139,92,246,0.3);
+  }
+  .av-bg {
+    width: 100%; height: 100%;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    position: relative; overflow: hidden;
+  }
+  .av-emoji { font-size: 32px; position: relative; z-index: 1; }
+  .av-glow {
+    position: absolute; bottom: -20px; width: 80px; height: 80px;
+    border-radius: 50%; filter: blur(20px); opacity: 0.5;
+  }
+  .av-info {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    padding: 10px 8px 8px;
+    background: linear-gradient(to top, rgba(7,7,16,0.95), transparent);
+  }
+  .av-name { font-size: 11px; font-weight: 700; color: #f5f3ff; }
+  .av-role { font-size: 9px; color: rgba(245,243,255,0.5); margin-top: 1px; }
+  .av-selected-badge {
+    position: absolute; top: 8px; right: 8px;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: #8b5cf6; display: flex; align-items: center; justify-content: center;
+    font-size: 10px;
+  }
+
+  /* Selected avatar panel */
+  .selected-panel {
+    margin: 14px 20px 0;
+    padding: 16px;
+    background: rgba(139,92,246,0.08);
+    border: 1px solid rgba(139,92,246,0.25);
+    border-radius: 18px;
+    display: flex; gap: 14px; align-items: center;
+  }
+  .sel-avatar {
+    width: 64px; height: 80px; border-radius: 14px; overflow: hidden; flex-shrink: 0;
+    position: relative;
+  }
+  .sel-av-bg {
+    width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .sel-av-emoji { font-size: 34px; position: relative; z-index: 1; }
+  .sel-info { flex: 1; }
+  .sel-name { font-size: 16px; font-weight: 700; }
+  .sel-role { font-size: 12px; color: rgba(245,243,255,0.5); margin-top: 2px; }
+  .sel-desc { font-size: 11px; color: rgba(245,243,255,0.4); margin-top: 4px; line-height: 1.4; }
+  .sel-tags { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  .sel-tag {
+    padding: 3px 10px; border-radius: 6px; font-size: 10px; font-weight: 600;
+    background: rgba(139,92,246,0.15); border: 1px solid rgba(139,92,246,0.25);
+    color: #a78bfa;
+  }
+
+  /* Use button */
+  .use-btn {
+    margin: 14px 20px 0;
+    padding: 16px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #8b5cf6, #22d3ee);
+    text-align: center; font-size: 15px; font-weight: 700; color: white;
+    position: relative; overflow: hidden;
+  }
+  .use-btn::before {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(to bottom, rgba(255,255,255,0.08), transparent);
+  }
+
+  .bottom-nav {
+    margin-top: 18px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    padding: 12px 0 28px;
+    display: flex; justify-content: space-around;
+  }
+  .nav-item {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    font-size: 10px; color: rgba(245,243,255,0.4); font-weight: 500;
+  }
+  .nav-item.active { color: #8b5cf6; }
+  .nav-icon { font-size: 20px; }
+</style>
+</head>
+<body>
+
+<div class="status">
+  <span>9:41</span>
+  <div style="display:flex;gap:6px;align-items:center;font-size:12px;font-weight:600;">
+    <span>WiFi</span><span>🔋</span>
+  </div>
+</div>
+
+<div class="top-bar">
+  <div class="back-btn">←</div>
+  <span class="page-title">👤 Presenter Studio</span>
+  <div class="count-pill">40 Avatars</div>
+</div>
+
+<!-- Search -->
+<div class="search-row">
+  <span class="search-icon">🔍</span>
+  <span class="search-placeholder">Search avatars…</span>
+</div>
+
+<!-- Category tabs -->
+<div class="cat-tabs">
+  <div class="cat-tab active">📸 Realistic</div>
+  <div class="cat-tab">🎨 Cartoon</div>
+  <div class="cat-tab">🌸 Anime</div>
+  <div class="cat-tab">🤖 Futuristic</div>
+  <div class="cat-tab">😂 Meme</div>
+  <div class="cat-tab">🎭 Faceless</div>
+</div>
+
+<!-- Avatar grid -->
+<div class="section-label">Realistic Avatars</div>
+<div class="avatar-grid">
+
+  <!-- Maya -->
+  <div class="av-card selected">
+    <div class="av-bg" style="background:linear-gradient(135deg,#3b1c8c,#1a0a3e);">
+      <div class="av-glow" style="background:#7c3aed;"></div>
+      <div class="av-emoji">👩‍💼</div>
+    </div>
+    <div class="av-info">
+      <div class="av-name">Maya</div>
+      <div class="av-role">Business Woman</div>
+    </div>
+    <div class="av-selected-badge">✓</div>
+  </div>
+
+  <!-- Jordan -->
+  <div class="av-card">
+    <div class="av-bg" style="background:linear-gradient(135deg,#0e3d52,#051a26);">
+      <div class="av-glow" style="background:#0891b2;"></div>
+      <div class="av-emoji">🧑‍🎤</div>
+    </div>
+    <div class="av-info">
+      <div class="av-name">Jordan</div>
+      <div class="av-role">Casual Creator</div>
+    </div>
+  </div>
+
+  <!-- Marcus -->
+  <div class="av-card">
+    <div class="av-bg" style="background:linear-gradient(135deg,#5a2800,#2d1200);">
+      <div class="av-glow" style="background:#b45309;"></div>
+      <div class="av-emoji">🧑‍💼</div>
+    </div>
+    <div class="av-info">
+      <div class="av-name">Marcus</div>
+      <div class="av-role">Speaker</div>
+    </div>
+  </div>
+
+  <!-- Zara -->
+  <div class="av-card">
+    <div class="av-bg" style="background:linear-gradient(135deg,#6b0f3a,#370820);">
+      <div class="av-glow" style="background:#be185d;"></div>
+      <div class="av-emoji">👸</div>
+    </div>
+    <div class="av-info">
+      <div class="av-name">Zara</div>
+      <div class="av-role">Luxury Influencer</div>
+    </div>
+  </div>
+
+  <!-- Alex -->
+  <div class="av-card">
+    <div class="av-bg" style="background:linear-gradient(135deg,#064e2a,#022d17);">
+      <div class="av-glow" style="background:#15803d;"></div>
+      <div class="av-emoji">🎮</div>
+    </div>
+    <div class="av-info">
+      <div class="av-name">Alex</div>
+      <div class="av-role">Gamer</div>
+    </div>
+  </div>
+
+  <!-- Digital Twin -->
+  <div class="av-card" style="border:1.5px dashed rgba(34,211,238,0.3); background:rgba(34,211,238,0.04);">
+    <div class="av-bg" style="background:rgba(34,211,238,0.06);">
+      <div style="font-size:28px;">📷</div>
+      <div style="font-size:9px;color:#22d3ee;font-weight:700;margin-top:6px;text-align:center;padding:0 8px;">Create Your Twin</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Selected panel -->
+<div class="selected-panel">
+  <div class="sel-avatar">
+    <div class="sel-av-bg" style="background:linear-gradient(135deg,#3b1c8c,#1a0a3e);">
+      <div class="sel-av-emoji">👩‍💼</div>
+    </div>
+  </div>
+  <div class="sel-info">
+    <div class="sel-name">Maya</div>
+    <div class="sel-role">Business Woman · 30s · Diverse</div>
+    <div class="sel-desc">Professional presenter for business, finance, and brand content.</div>
+    <div class="sel-tags">
+      <span class="sel-tag">Professional</span>
+      <span class="sel-tag">Diverse</span>
+      <span class="sel-tag">HD Ready</span>
+    </div>
+  </div>
+</div>
+
+<!-- Use button -->
+<div class="use-btn"><span style="position:relative;z-index:1;">▶ Use Maya as Presenter</span></div>
+
+<div class="bottom-nav">
+  <div class="nav-item active"><div class="nav-icon">⚡</div><span>Studio</span></div>
+  <div class="nav-item"><div class="nav-icon">📚</div><span>Library</span></div>
+  <div class="nav-item"><div class="nav-icon">📤</div><span>Publish</span></div>
+  <div class="nav-item"><div class="nav-icon">👤</div><span>Profile</span></div>
+</div>
+
+</body>
+</html>

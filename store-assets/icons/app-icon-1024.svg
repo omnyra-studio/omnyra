@@ -1,0 +1,121 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0e0c22"/>
+      <stop offset="100%" stop-color="#070710"/>
+    </linearGradient>
+    <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#a78bfa"/>
+      <stop offset="45%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#22d3ee"/>
+    </linearGradient>
+    <linearGradient id="sparkGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ede9fe"/>
+      <stop offset="100%" stop-color="#a5f3fc"/>
+    </linearGradient>
+    <radialGradient id="ambientViolet" cx="40%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="ambientCyan" cx="65%" cy="65%" r="55%">
+      <stop offset="0%" stop-color="#22d3ee" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#22d3ee" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="ringGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="18" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="sparkGlow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="10" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="dotGlow" x="-200%" y="-200%" width="500%" height="500%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <clipPath id="iconClip">
+      <rect width="1024" height="1024" rx="230"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#iconClip)">
+    <!-- Background -->
+    <rect width="1024" height="1024" fill="url(#bgGrad)"/>
+
+    <!-- Ambient glow blobs -->
+    <ellipse cx="380" cy="380" rx="340" ry="320" fill="url(#ambientViolet)"/>
+    <ellipse cx="660" cy="660" rx="300" ry="280" fill="url(#ambientCyan)"/>
+
+    <!-- Subtle grid lines -->
+    <line x1="512" y1="100" x2="512" y2="924" stroke="rgba(255,255,255,0.025)" stroke-width="1"/>
+    <line x1="100" y1="512" x2="924" y2="512" stroke="rgba(255,255,255,0.025)" stroke-width="1"/>
+
+    <!-- Main gradient ring -->
+    <circle cx="512" cy="512" r="268" fill="none" stroke="url(#ringGrad)" stroke-width="58" filter="url(#ringGlow)"/>
+
+    <!-- Thin inner accent ring -->
+    <circle cx="512" cy="512" r="232" fill="none" stroke="rgba(167,139,250,0.15)" stroke-width="1"/>
+
+    <!-- 4-pointed sparkle star -->
+    <path d="
+      M 512 372
+      C 516 440 516 440 620 512
+      C 516 584 516 584 512 652
+      C 508 584 508 584 404 512
+      C 508 440 508 440 512 372
+      Z
+    " fill="url(#sparkGrad)" filter="url(#sparkGlow)"/>
+
+    <!-- Center white dot -->
+    <circle cx="512" cy="512" r="18" fill="white" opacity="0.95" filter="url(#dotGlow)"/>
+
+    <!-- Large accent sparkle — top right of ring -->
+    <path d="
+      M 670 308
+      C 671 318 671 318 681 323
+      C 671 328 671 328 670 338
+      C 669 328 669 328 659 323
+      C 669 318 669 318 670 308
+      Z
+    " fill="#22d3ee" opacity="0.92" filter="url(#dotGlow)"/>
+
+    <!-- Medium accent sparkle — bottom left of ring -->
+    <path d="
+      M 350 686
+      C 351 694 351 694 359 698
+      C 351 702 351 702 350 710
+      C 349 702 349 702 341 698
+      C 349 694 349 694 350 686
+      Z
+    " fill="#a78bfa" opacity="0.92" filter="url(#dotGlow)"/>
+
+    <!-- Small accent — top left area -->
+    <path d="
+      M 378 305
+      C 378.5 309 378.5 309 382 311
+      C 378.5 313 378.5 313 378 317
+      C 377.5 313 377.5 313 374 311
+      C 377.5 309 377.5 309 378 305
+      Z
+    " fill="#c4b5fd" opacity="0.8"/>
+
+    <!-- Small accent — bottom right area -->
+    <path d="
+      M 650 718
+      C 650.5 722 650.5 722 654 724
+      C 650.5 726 650.5 726 650 730
+      C 649.5 726 649.5 726 646 724
+      C 649.5 722 649.5 722 650 718
+      Z
+    " fill="#67e8f9" opacity="0.8"/>
+  </g>
+</svg>

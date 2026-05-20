@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=430">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    width: 430px;
+    background: #070710;
+    font-family: 'Instrument Sans','Inter',-apple-system,sans-serif;
+    color: #f5f3ff;
+    min-height: 932px;
+    overflow-x: hidden;
+  }
+
+  /* Status bar */
+  .status {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 24px 0;
+    font-size: 12px; font-weight: 600; color: #f5f3ff;
+  }
+  .status-right { display:flex; gap:6px; align-items:center; }
+  .signal-bar { width:3px; background:#f5f3ff; border-radius:1px; }
+
+  /* Header */
+  .header {
+    padding: 14px 20px 0;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .header-left { display:flex; align-items:center; gap:10px; }
+  .logo-mark {
+    width: 36px; height: 36px; border-radius: 10px;
+    background: #0e0c22;
+    display: flex; align-items: center; justify-content: center;
+    border: 1.5px solid rgba(139,92,246,0.3);
+  }
+  .logo-text { font-size: 18px; font-weight: 700; letter-spacing: -0.4px; }
+  .header-right { display:flex; gap:12px; align-items:center; }
+  .icon-btn {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px;
+  }
+  .avatar-btn {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: linear-gradient(135deg, #8b5cf6, #22d3ee);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700;
+  }
+
+  /* Greeting */
+  .greeting {
+    padding: 22px 20px 0;
+  }
+  .greeting-sub { font-size: 13px; color: rgba(245,243,255,0.5); margin-bottom: 3px; }
+  .greeting-main { font-size: 24px; font-weight: 700; letter-spacing: -0.5px; }
+  .greeting-main span {
+    background: linear-gradient(90deg, #a78bfa, #22d3ee);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  }
+
+  /* Credits strip */
+  .credits-strip {
+    margin: 16px 20px 0;
+    padding: 14px 16px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .credit-item { text-align: center; }
+  .credit-val { font-size: 20px; font-weight: 700; }
+  .credit-val.violet { color: #8b5cf6; }
+  .credit-val.cyan { color: #22d3ee; }
+  .credit-val.gold { color: #fbbf24; }
+  .credit-label { font-size: 10px; color: rgba(245,243,255,0.45); margin-top: 1px; }
+  .credit-divider { width: 1px; height: 30px; background: rgba(255,255,255,0.08); }
+
+  /* Section heading */
+  .section-head {
+    padding: 20px 20px 12px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .section-title { font-size: 16px; font-weight: 700; }
+  .section-link { font-size: 12px; color: #8b5cf6; font-weight: 600; }
+
+  /* Tools grid */
+  .tools-grid {
+    padding: 0 20px;
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .tool-card {
+    padding: 16px 14px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 16px;
+    transition: all 0.2s;
+    position: relative; overflow: hidden;
+  }
+  .tool-card::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.12), transparent);
+  }
+  .tool-icon { font-size: 22px; margin-bottom: 8px; }
+  .tool-name { font-size: 13px; font-weight: 700; color: #f5f3ff; margin-bottom: 3px; }
+  .tool-desc { font-size: 11px; color: rgba(245,243,255,0.45); line-height: 1.4; }
+  .tool-dot {
+    position: absolute; top: 14px; right: 14px;
+    width: 6px; height: 6px; border-radius: 50%;
+  }
+  .dot-v { background: #8b5cf6; box-shadow: 0 0 6px #8b5cf6; }
+  .dot-c { background: #22d3ee; box-shadow: 0 0 6px #22d3ee; }
+  .dot-g { background: #fbbf24; box-shadow: 0 0 6px #fbbf24; }
+
+  /* Think AI banner */
+  .think-banner {
+    margin: 14px 20px 0;
+    padding: 14px 16px;
+    background: linear-gradient(135deg, rgba(139,92,246,0.12), rgba(34,211,238,0.08));
+    border: 1px solid rgba(139,92,246,0.25);
+    border-radius: 16px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .think-icon { font-size: 24px; }
+  .think-text .title { font-size: 13px; font-weight: 700; }
+  .think-text .sub { font-size: 11px; color: rgba(245,243,255,0.5); margin-top: 1px; }
+  .think-arrow { margin-left: auto; color: rgba(245,243,255,0.3); font-size: 16px; }
+
+  /* Bottom nav */
+  .bottom-nav {
+    margin-top: 20px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    padding: 12px 0 28px;
+    display: flex; justify-content: space-around;
+  }
+  .nav-item {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    font-size: 10px; color: rgba(245,243,255,0.4); font-weight: 500;
+  }
+  .nav-item.active { color: #8b5cf6; }
+  .nav-icon { font-size: 20px; }
+</style>
+</head>
+<body>
+
+<!-- Status bar -->
+<div class="status">
+  <span>9:41</span>
+  <div class="status-right">
+    <div style="display:flex;gap:2px;align-items:flex-end;">
+      <div class="signal-bar" style="height:4px;"></div>
+      <div class="signal-bar" style="height:6px;"></div>
+      <div class="signal-bar" style="height:8px;"></div>
+      <div class="signal-bar" style="height:10px;"></div>
+    </div>
+    <span>WiFi</span>
+    <span>🔋</span>
+  </div>
+</div>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-left">
+    <div class="logo-mark">
+      <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+        <circle cx="11" cy="11" r="6.5" fill="none" stroke="url(#lg)" stroke-width="2.2"/>
+        <path d="M11 7.5 C11.3 9.1 11.3 9.1 14 11 C11.3 12.9 11.3 12.9 11 14.5 C10.7 12.9 10.7 12.9 8 11 C10.7 9.1 10.7 9.1 11 7.5Z" fill="url(#lg2)"/>
+        <defs>
+          <linearGradient id="lg" x1="4.5" y1="4.5" x2="17.5" y2="17.5" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#a78bfa"/><stop offset="1" stop-color="#22d3ee"/>
+          </linearGradient>
+          <linearGradient id="lg2" x1="8" y1="7.5" x2="14" y2="14.5" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#ede9fe"/><stop offset="1" stop-color="#a5f3fc"/>
+          </linearGradient>
+        </defs>
+      </svg>
+    </div>
+    <span class="logo-text">Omnyra</span>
+  </div>
+  <div class="header-right">
+    <div class="icon-btn">🔔</div>
+    <div class="avatar-btn">JD</div>
+  </div>
+</div>
+
+<!-- Greeting -->
+<div class="greeting">
+  <div class="greeting-sub">Good morning,</div>
+  <div class="greeting-main">What will you <span>create</span> today?</div>
+</div>
+
+<!-- Credits strip -->
+<div class="credits-strip">
+  <div class="credit-item">
+    <div class="credit-val violet">342</div>
+    <div class="credit-label">Credits Left</div>
+  </div>
+  <div class="credit-divider"></div>
+  <div class="credit-item">
+    <div class="credit-val cyan">28</div>
+    <div class="credit-label">This Month</div>
+  </div>
+  <div class="credit-divider"></div>
+  <div class="credit-item">
+    <div class="credit-val gold">Pro</div>
+    <div class="credit-label">Your Plan</div>
+  </div>
+</div>
+
+<!-- Tools section -->
+<div class="section-head">
+  <span class="section-title">AI Tools</span>
+  <span class="section-link">View all →</span>
+</div>
+
+<div class="tools-grid">
+  <div class="tool-card">
+    <div class="tool-dot dot-v"></div>
+    <div class="tool-icon">🎬</div>
+    <div class="tool-name">AI Video</div>
+    <div class="tool-desc">Idea → finished video</div>
+  </div>
+  <div class="tool-card">
+    <div class="tool-dot dot-c"></div>
+    <div class="tool-icon">👤</div>
+    <div class="tool-name">Presenter Studio</div>
+    <div class="tool-desc">40 AI avatars + Twin</div>
+  </div>
+  <div class="tool-card">
+    <div class="tool-dot dot-v"></div>
+    <div class="tool-icon">🎵</div>
+    <div class="tool-name">AI Voice</div>
+    <div class="tool-desc">Text-to-speech & music</div>
+  </div>
+  <div class="tool-card">
+    <div class="tool-dot dot-v"></div>
+    <div class="tool-icon">🖼</div>
+    <div class="tool-name">AI Image</div>
+    <div class="tool-desc">Anime, logos, portraits</div>
+  </div>
+  <div class="tool-card">
+    <div class="tool-dot dot-v"></div>
+    <div class="tool-icon">📝</div>
+    <div class="tool-name">Script Studio</div>
+    <div class="tool-desc">5 directions · voice-ready</div>
+  </div>
+  <div class="tool-card">
+    <div class="tool-dot dot-g"></div>
+    <div class="tool-icon">⚡</div>
+    <div class="tool-name">Creator Hub</div>
+    <div class="tool-desc">Full content system</div>
+  </div>
+</div>
+
+<!-- Think AI banner -->
+<div class="think-banner">
+  <div class="think-icon">🧠</div>
+  <div class="think-text">
+    <div class="title">Think AI — 7 Modes</div>
+    <div class="sub">Viral · Strategist · Research · Genius…</div>
+  </div>
+  <div class="think-arrow">›</div>
+</div>
+
+<!-- Bottom nav -->
+<div class="bottom-nav">
+  <div class="nav-item active">
+    <div class="nav-icon">⚡</div>
+    <span>Studio</span>
+  </div>
+  <div class="nav-item">
+    <div class="nav-icon">📚</div>
+    <span>Library</span>
+  </div>
+  <div class="nav-item">
+    <div class="nav-icon">📤</div>
+    <span>Publish</span>
+  </div>
+  <div class="nav-item">
+    <div class="nav-icon">👤</div>
+    <span>Profile</span>
+  </div>
+</div>
+
+</body>
+</html>

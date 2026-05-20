@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    width: 1024px; height: 500px; overflow: hidden;
+    background: #070710;
+    font-family: 'Instrument Sans', 'Inter', -apple-system, sans-serif;
+  }
+  @import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap');
+
+  .wrap {
+    position: relative;
+    width: 1024px; height: 500px;
+    background: linear-gradient(135deg, #0e0c22 0%, #070710 60%, #09111a 100%);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 72px 0 80px;
+    overflow: hidden;
+  }
+
+  /* Ambient glow */
+  .glow-v {
+    position: absolute; width: 500px; height: 500px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(139,92,246,0.22) 0%, transparent 70%);
+    top: -100px; left: -80px; pointer-events: none;
+  }
+  .glow-c {
+    position: absolute; width: 420px; height: 420px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(34,211,238,0.14) 0%, transparent 70%);
+    bottom: -80px; right: 280px; pointer-events: none;
+  }
+
+  /* Left: branding */
+  .left {
+    position: relative; z-index: 2;
+    display: flex; flex-direction: column; gap: 20px;
+  }
+
+  .logo-row {
+    display: flex; align-items: center; gap: 14px;
+  }
+  .logo-icon {
+    width: 56px; height: 56px;
+  }
+  .logo-name {
+    font-size: 28px; font-weight: 700; color: #f5f3ff; letter-spacing: -0.5px;
+  }
+
+  .headline {
+    font-size: 48px; font-weight: 700; line-height: 1.1;
+    color: #f5f3ff; letter-spacing: -1.5px;
+    max-width: 480px;
+  }
+  .headline .grad {
+    background: linear-gradient(90deg, #a78bfa, #22d3ee);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .tagline {
+    font-size: 17px; color: rgba(245,243,255,0.6);
+    max-width: 420px; line-height: 1.5; font-weight: 400;
+  }
+
+  .badges {
+    display: flex; gap: 10px; flex-wrap: wrap; margin-top: 4px;
+  }
+  .badge {
+    padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 600;
+    border: 1px solid; letter-spacing: 0.2px;
+  }
+  .badge-v { color: #a78bfa; border-color: rgba(167,139,250,0.35); background: rgba(167,139,250,0.08); }
+  .badge-c { color: #22d3ee; border-color: rgba(34,211,238,0.35); background: rgba(34,211,238,0.08); }
+  .badge-g { color: #fbbf24; border-color: rgba(251,191,36,0.35); background: rgba(251,191,36,0.08); }
+
+  /* Right: phone mockup */
+  .right {
+    position: relative; z-index: 2;
+    flex-shrink: 0;
+  }
+  .phone {
+    width: 200px; height: 400px;
+    background: #0d0d1e;
+    border-radius: 36px;
+    border: 2px solid rgba(255,255,255,0.12);
+    overflow: hidden;
+    box-shadow: 0 32px 80px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.04);
+    position: relative;
+  }
+  .phone-notch {
+    width: 60px; height: 8px; background: #111; border-radius: 4px;
+    margin: 10px auto 0;
+  }
+  .phone-header {
+    margin: 10px 16px 0;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .phone-logo { font-size: 11px; font-weight: 700; color: #f5f3ff; }
+  .phone-avatar { width: 20px; height: 20px; border-radius: 50%; background: linear-gradient(135deg, #8b5cf6, #22d3ee); }
+
+  .phone-tools {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 6px; margin: 12px 12px 0;
+  }
+  .ptool {
+    padding: 10px 8px; border-radius: 10px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.07);
+  }
+  .ptool-icon { font-size: 14px; margin-bottom: 3px; }
+  .ptool-name { font-size: 8px; font-weight: 600; color: #f5f3ff; }
+  .ptool-desc { font-size: 6.5px; color: rgba(245,243,255,0.45); margin-top: 1px; }
+
+  .phone-glow {
+    position: absolute; bottom: 0; left: 0; right: 0; height: 100px;
+    background: linear-gradient(to top, rgba(139,92,246,0.15), transparent);
+    pointer-events: none;
+  }
+
+  /* Second phone, offset */
+  .phone-wrap {
+    position: relative;
+  }
+  .phone-shadow {
+    position: absolute;
+    width: 180px; height: 360px;
+    background: #0a0a18;
+    border-radius: 32px;
+    border: 2px solid rgba(255,255,255,0.06);
+    right: -20px; top: 30px; z-index: 0;
+    opacity: 0.6;
+    overflow: hidden;
+  }
+  .phone-shadow-inner {
+    margin: 50px 12px 0;
+    height: 5px; background: rgba(255,255,255,0.06); border-radius: 3px; margin-bottom: 8px;
+  }
+  .phone-front {
+    position: relative; z-index: 1;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="glow-v"></div>
+  <div class="glow-c"></div>
+
+  <div class="left">
+    <div class="logo-row">
+      <svg class="logo-icon" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect width="56" height="56" rx="14" fill="#0e0c22"/>
+        <circle cx="28" cy="28" r="14" fill="none" stroke="url(#lg1)" stroke-width="3"/>
+        <path d="M28 21 C28.5 24.5 28.5 24.5 33 28 C28.5 31.5 28.5 31.5 28 35 C27.5 31.5 27.5 31.5 23 28 C27.5 24.5 27.5 24.5 28 21Z" fill="url(#lg2)"/>
+        <circle cx="28" cy="28" r="1.5" fill="white" opacity="0.9"/>
+        <defs>
+          <linearGradient id="lg1" x1="14" y1="14" x2="42" y2="42" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#a78bfa"/>
+            <stop offset="1" stop-color="#22d3ee"/>
+          </linearGradient>
+          <linearGradient id="lg2" x1="23" y1="21" x2="33" y2="35" gradientUnits="userSpaceOnUse">
+            <stop stop-color="#ede9fe"/>
+            <stop offset="1" stop-color="#a5f3fc"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      <span class="logo-name">Omnyra AI</span>
+    </div>
+
+    <div class="headline">
+      Create <span class="grad">AI content</span><br>in minutes, not days.
+    </div>
+
+    <div class="tagline">
+      Videos, avatars, voice, images &amp; scripts — your complete AI creative studio.
+    </div>
+
+    <div class="badges">
+      <span class="badge badge-v">AI Video</span>
+      <span class="badge badge-c">AI Voice</span>
+      <span class="badge badge-v">AI Image</span>
+      <span class="badge badge-g">40 Avatars</span>
+      <span class="badge badge-c">Script Studio</span>
+    </div>
+  </div>
+
+  <div class="right">
+    <div class="phone-wrap">
+      <!-- Background phone (shadow) -->
+      <div class="phone-shadow">
+        <div style="margin: 50px 12px 0;">
+          <div style="height:4px; background:rgba(255,255,255,0.05); border-radius:2px; margin-bottom:6px;"></div>
+          <div style="height:4px; background:rgba(255,255,255,0.05); border-radius:2px; width:60%; margin-bottom:20px;"></div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:5px;">
+            <div style="height:60px; background:rgba(255,255,255,0.04); border-radius:8px;"></div>
+            <div style="height:60px; background:rgba(255,255,255,0.04); border-radius:8px;"></div>
+            <div style="height:60px; background:rgba(255,255,255,0.04); border-radius:8px;"></div>
+            <div style="height:60px; background:rgba(255,255,255,0.04); border-radius:8px;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Front phone -->
+      <div class="phone-front">
+        <div class="phone">
+          <div class="phone-notch"></div>
+          <div class="phone-header">
+            <span class="phone-logo">Omnyra</span>
+            <div class="phone-avatar"></div>
+          </div>
+          <div class="phone-tools">
+            <div class="ptool">
+              <div class="ptool-icon">🎬</div>
+              <div class="ptool-name">AI Video</div>
+              <div class="ptool-desc">Idea → video</div>
+            </div>
+            <div class="ptool">
+              <div class="ptool-icon">👤</div>
+              <div class="ptool-name">Presenter</div>
+              <div class="ptool-desc">40 AI avatars</div>
+            </div>
+            <div class="ptool">
+              <div class="ptool-icon">🎵</div>
+              <div class="ptool-name">AI Voice</div>
+              <div class="ptool-desc">100+ voices</div>
+            </div>
+            <div class="ptool">
+              <div class="ptool-icon">🖼</div>
+              <div class="ptool-name">AI Image</div>
+              <div class="ptool-desc">Art & portraits</div>
+            </div>
+            <div class="ptool">
+              <div class="ptool-icon">📝</div>
+              <div class="ptool-name">Scripts</div>
+              <div class="ptool-desc">5 directions</div>
+            </div>
+            <div class="ptool">
+              <div class="ptool-icon">⚡</div>
+              <div class="ptool-name">Creator Hub</div>
+              <div class="ptool-desc">Full system</div>
+            </div>
+          </div>
+          <div class="phone-glow"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

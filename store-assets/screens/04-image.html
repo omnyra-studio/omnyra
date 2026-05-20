@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=430">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    width: 430px;
+    background: #070710;
+    font-family: 'Instrument Sans','Inter',-apple-system,sans-serif;
+    color: #f5f3ff;
+    min-height: 932px;
+    overflow-x: hidden;
+  }
+  .status {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 24px 0; font-size: 12px; font-weight: 600;
+  }
+  .top-bar {
+    padding: 14px 20px 0;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .back-btn {
+    width: 36px; height: 36px; border-radius: 10px;
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);
+    display: flex; align-items: center; justify-content: center; font-size: 16px;
+  }
+  .page-title { font-size: 18px; font-weight: 700; letter-spacing: -0.4px; }
+
+  .section-label {
+    padding: 14px 20px 8px;
+    font-size: 11px; font-weight: 700; color: rgba(245,243,255,0.4);
+    letter-spacing: 0.8px; text-transform: uppercase;
+  }
+
+  /* Style grid */
+  .style-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr);
+    gap: 8px; padding: 0 20px;
+  }
+  .style-btn {
+    padding: 12px 8px; border-radius: 14px; text-align: center;
+    background: rgba(255,255,255,0.04);
+    border: 1.5px solid rgba(255,255,255,0.07);
+  }
+  .style-btn.sel {
+    background: rgba(139,92,246,0.14);
+    border-color: rgba(139,92,246,0.5);
+  }
+  .style-emoji { font-size: 20px; display: block; margin-bottom: 5px; }
+  .style-name { font-size: 12px; font-weight: 600; color: rgba(245,243,255,0.7); }
+  .style-btn.sel .style-name { color: #a78bfa; }
+
+  /* Prompt input */
+  .prompt-input {
+    margin: 0 20px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 16px; padding: 14px 16px;
+    min-height: 80px; position: relative;
+  }
+  .prompt-text {
+    font-size: 14px; line-height: 1.5; color: rgba(245,243,255,0.85);
+  }
+  .prompt-cursor {
+    display: inline-block; width: 2px; height: 14px;
+    background: #8b5cf6; animation: blink 1s step-end infinite;
+    vertical-align: text-bottom; margin-left: 1px;
+  }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+  .prompt-enhance {
+    position: absolute; bottom: 10px; right: 12px;
+    padding: 4px 10px; border-radius: 8px;
+    background: rgba(139,92,246,0.15); border: 1px solid rgba(139,92,246,0.3);
+    font-size: 11px; font-weight: 600; color: #a78bfa;
+  }
+
+  /* Aspect ratio row */
+  .ratio-row {
+    display: flex; gap: 8px; padding: 0 20px;
+  }
+  .ratio-btn {
+    padding: 8px 14px; border-radius: 10px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.07);
+    font-size: 12px; font-weight: 600; color: rgba(245,243,255,0.5);
+  }
+  .ratio-btn.sel {
+    background: rgba(34,211,238,0.12);
+    border-color: rgba(34,211,238,0.35); color: #22d3ee;
+  }
+
+  /* Generate button */
+  .gen-btn {
+    margin: 14px 20px 0;
+    padding: 16px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #8b5cf6, #6366f1 50%, #22d3ee);
+    text-align: center;
+    font-size: 15px; font-weight: 700; color: white;
+    position: relative; overflow: hidden;
+  }
+  .gen-btn::before {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(to bottom, rgba(255,255,255,0.08), transparent);
+  }
+
+  /* Generated image preview */
+  .image-preview {
+    margin: 14px 20px 0;
+    border-radius: 20px; overflow: hidden;
+    position: relative;
+    aspect-ratio: 1;
+    background: linear-gradient(135deg, #1a0a2e 0%, #0a1a2e 40%, #0e1a10 100%);
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+
+  /* Fake image content — cinematic anime landscape -->
+  .img-sky {
+    position: absolute; top: 0; left: 0; right: 0; height: 55%;
+    background: linear-gradient(180deg, #0a0020 0%, #1a0050 40%, #2d0080 70%, #3d1090 100%);
+  }
+  .img-stars {
+    position: absolute; top: 0; left: 0; right: 0; height: 50%;
+  }
+  .star { position: absolute; border-radius: 50%; background: white; }
+  .img-moon {
+    position: absolute; top: 14%; right: 22%; width: 42px; height: 42px;
+    border-radius: 50%; background: radial-gradient(circle at 35% 35%, #fffde7, #ffd54f);
+    box-shadow: 0 0 20px rgba(255,213,79,0.5), 0 0 40px rgba(255,213,79,0.2);
+  }
+  .img-mountain {
+    position: absolute; bottom: 35%; left: 0; right: 0; height: 50%;
+    clip-path: polygon(0% 100%, 15% 40%, 30% 60%, 45% 20%, 60% 55%, 75% 30%, 88% 50%, 100% 35%, 100% 100%);
+    background: linear-gradient(180deg, #1a0050 0%, #0d0030 100%);
+  }
+  .img-ground {
+    position: absolute; bottom: 0; left: 0; right: 0; height: 36%;
+    background: linear-gradient(180deg, #0a1520 0%, #060e18 100%);
+  }
+  .img-river {
+    position: absolute; bottom: 0; left: 30%; right: 30%;
+    height: 36%; background: linear-gradient(180deg, rgba(100,200,255,0.2), rgba(50,150,255,0.1));
+    clip-path: polygon(20% 0%, 80% 0%, 100% 100%, 0% 100%);
+  }
+  .img-glow {
+    position: absolute; bottom: 28%; left: 50%; transform: translateX(-50%);
+    width: 120px; height: 60px;
+    background: radial-gradient(ellipse, rgba(139,92,246,0.4) 0%, transparent 70%);
+  }
+  .img-reflection {
+    position: absolute; bottom: 0; left: 0; right: 0; height: 36%;
+    background: linear-gradient(180deg, rgba(139,92,246,0.05), rgba(34,211,238,0.08));
+  }
+
+  .image-overlay {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    padding: 16px; background: linear-gradient(to top, rgba(7,7,16,0.9), transparent);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .img-meta { font-size: 11px; color: rgba(245,243,255,0.6); }
+  .img-actions { display: flex; gap: 8px; }
+  .img-action {
+    padding: 6px 12px; border-radius: 8px; font-size: 12px; font-weight: 600;
+    background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.15);
+    color: #f5f3ff;
+  }
+  .img-action.primary {
+    background: rgba(139,92,246,0.3); border-color: rgba(139,92,246,0.5); color: #a78bfa;
+  }
+
+  /* Quality & count row */
+  .options-row {
+    display: flex; gap: 8px; padding: 0 20px;
+  }
+  .opt-btn {
+    flex: 1; padding: 10px 8px; border-radius: 12px; text-align: center;
+    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07);
+  }
+  .opt-val { font-size: 13px; font-weight: 700; color: #f5f3ff; }
+  .opt-label { font-size: 9px; color: rgba(245,243,255,0.35); margin-top: 1px; }
+
+  .bottom-nav {
+    margin-top: 16px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    padding: 12px 0 28px;
+    display: flex; justify-content: space-around;
+  }
+  .nav-item {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    font-size: 10px; color: rgba(245,243,255,0.4); font-weight: 500;
+  }
+  .nav-item.active { color: #8b5cf6; }
+  .nav-icon { font-size: 20px; }
+</style>
+</head>
+<body>
+
+<div class="status">
+  <span>9:41</span>
+  <div style="display:flex;gap:6px;align-items:center;font-size:12px;font-weight:600;">
+    <span>WiFi</span><span>🔋</span>
+  </div>
+</div>
+
+<div class="top-bar">
+  <div class="back-btn">←</div>
+  <span class="page-title">🖼 AI Image</span>
+</div>
+
+<!-- Style -->
+<div class="section-label">Style</div>
+<div class="style-grid">
+  <div class="style-btn"><span class="style-emoji">🌍</span><span class="style-name">Realistic</span></div>
+  <div class="style-btn sel"><span class="style-emoji">✨</span><span class="style-name">Anime</span></div>
+  <div class="style-btn"><span class="style-emoji">🎬</span><span class="style-name">Cinematic</span></div>
+  <div class="style-btn"><span class="style-emoji">🎨</span><span class="style-name">Cartoon</span></div>
+  <div class="style-btn"><span class="style-emoji">🔮</span><span class="style-name">Futuristic</span></div>
+  <div class="style-btn"><span class="style-emoji">😂</span><span class="style-name">Meme</span></div>
+</div>
+
+<!-- Prompt -->
+<div class="section-label" style="padding-top:12px;">Prompt</div>
+<div class="prompt-input">
+  <div class="prompt-text">
+    Cinematic anime landscape, glowing purple moonrise over dark mountains, river reflection, studio ghibli style<div class="prompt-cursor"></div>
+  </div>
+  <div class="prompt-enhance">✨ Enhance</div>
+</div>
+
+<!-- Aspect ratio -->
+<div class="section-label" style="padding-top:12px;">Aspect Ratio</div>
+<div class="ratio-row">
+  <div class="ratio-btn">1:1</div>
+  <div class="ratio-btn sel">9:16</div>
+  <div class="ratio-btn">16:9</div>
+  <div class="ratio-btn">4:5</div>
+</div>
+
+<!-- Quality row -->
+<div class="section-label" style="padding-top:12px;">Options</div>
+<div class="options-row">
+  <div class="opt-btn"><div class="opt-val">HD</div><div class="opt-label">Quality</div></div>
+  <div class="opt-btn"><div class="opt-val">1</div><div class="opt-label">Images</div></div>
+  <div class="opt-btn"><div class="opt-val">2 cr</div><div class="opt-label">Cost</div></div>
+</div>
+
+<!-- Generate -->
+<div class="gen-btn"><span style="position:relative;z-index:1;">✨ Generate Image</span></div>
+
+<!-- Preview -->
+<div class="section-label" style="padding-top:14px;">Generated</div>
+<div class="image-preview">
+  <div class="img-sky"></div>
+  <div class="img-moon"></div>
+  <div class="img-mountain"></div>
+  <div class="img-ground"></div>
+  <div class="img-river"></div>
+  <div class="img-glow"></div>
+  <div class="img-reflection"></div>
+
+  <!-- Stars -->
+  <div class="star" style="width:2px;height:2px;top:8%;left:12%;opacity:0.9;"></div>
+  <div class="star" style="width:1px;height:1px;top:15%;left:28%;opacity:0.7;"></div>
+  <div class="star" style="width:2px;height:2px;top:5%;left:55%;opacity:0.8;"></div>
+  <div class="star" style="width:1px;height:1px;top:20%;left:70%;opacity:0.9;"></div>
+  <div class="star" style="width:2px;height:2px;top:10%;left:82%;opacity:0.6;"></div>
+  <div class="star" style="width:1px;height:1px;top:25%;left:45%;opacity:0.8;"></div>
+  <div class="star" style="width:2px;height:2px;top:18%;left:8%;opacity:0.7;"></div>
+  <div class="star" style="width:1px;height:1px;top:12%;left:92%;opacity:0.9;"></div>
+
+  <div class="image-overlay">
+    <div class="img-meta">Anime · 9:16 · HD</div>
+    <div class="img-actions">
+      <div class="img-action">↺ Regen</div>
+      <div class="img-action primary">⬇ Save</div>
+    </div>
+  </div>
+</div>
+
+<div class="bottom-nav">
+  <div class="nav-item active"><div class="nav-icon">⚡</div><span>Studio</span></div>
+  <div class="nav-item"><div class="nav-icon">📚</div><span>Library</span></div>
+  <div class="nav-item"><div class="nav-icon">📤</div><span>Publish</span></div>
+  <div class="nav-item"><div class="nav-icon">👤</div><span>Profile</span></div>
+</div>
+
+</body>
+</html>

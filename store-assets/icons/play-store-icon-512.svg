@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0e0c22"/>
+      <stop offset="100%" stop-color="#070710"/>
+    </linearGradient>
+    <linearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#a78bfa"/>
+      <stop offset="45%" stop-color="#8b5cf6"/>
+      <stop offset="100%" stop-color="#22d3ee"/>
+    </linearGradient>
+    <linearGradient id="sparkGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ede9fe"/>
+      <stop offset="100%" stop-color="#a5f3fc"/>
+    </linearGradient>
+    <radialGradient id="ambientViolet" cx="40%" cy="40%" r="60%">
+      <stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.18"/>
+      <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="ambientCyan" cx="65%" cy="65%" r="55%">
+      <stop offset="0%" stop-color="#22d3ee" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#22d3ee" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="ringGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="9" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="sparkGlow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="dotGlow" x="-200%" y="-200%" width="500%" height="500%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <!-- Play Store uses a plain square, no clip -->
+  </defs>
+
+  <!-- Background (Play Store: plain square) -->
+  <rect width="512" height="512" fill="url(#bgGrad)"/>
+
+  <!-- Ambient glow -->
+  <ellipse cx="190" cy="190" rx="170" ry="160" fill="url(#ambientViolet)"/>
+  <ellipse cx="330" cy="330" rx="150" ry="140" fill="url(#ambientCyan)"/>
+
+  <!-- Main ring -->
+  <circle cx="256" cy="256" r="134" fill="none" stroke="url(#ringGrad)" stroke-width="29" filter="url(#ringGlow)"/>
+
+  <!-- 4-pointed sparkle -->
+  <path d="
+    M 256 186
+    C 258 220 258 220 310 256
+    C 258 292 258 292 256 326
+    C 254 292 254 292 202 256
+    C 254 220 254 220 256 186
+    Z
+  " fill="url(#sparkGrad)" filter="url(#sparkGlow)"/>
+
+  <!-- Center dot -->
+  <circle cx="256" cy="256" r="9" fill="white" opacity="0.95" filter="url(#dotGlow)"/>
+
+  <!-- Accent sparkle — top right -->
+  <path d="
+    M 335 154
+    C 335.5 159 335.5 159 340.5 161.5
+    C 335.5 164 335.5 164 335 169
+    C 334.5 164 334.5 164 329.5 161.5
+    C 334.5 159 334.5 159 335 154
+    Z
+  " fill="#22d3ee" opacity="0.92" filter="url(#dotGlow)"/>
+
+  <!-- Accent sparkle — bottom left -->
+  <path d="
+    M 175 343
+    C 175.5 347 175.5 347 179.5 349
+    C 175.5 351 175.5 351 175 355
+    C 174.5 351 174.5 351 170.5 349
+    C 174.5 347 174.5 347 175 343
+    Z
+  " fill="#a78bfa" opacity="0.92" filter="url(#dotGlow)"/>
+
+  <!-- Tiny accent top left -->
+  <path d="
+    M 189 152
+    C 189.3 154.5 189.3 154.5 191.5 155.5
+    C 189.3 156.5 189.3 156.5 189 159
+    C 188.7 156.5 188.7 156.5 186.5 155.5
+    C 188.7 154.5 188.7 154.5 189 152
+    Z
+  " fill="#c4b5fd" opacity="0.8"/>
+</svg>

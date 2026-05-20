@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=430">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    width: 430px;
+    background: #070710;
+    font-family: 'Instrument Sans','Inter',-apple-system,sans-serif;
+    color: #f5f3ff;
+    min-height: 932px;
+    overflow-x: hidden;
+  }
+
+  .status {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 24px 0; font-size: 12px; font-weight: 600;
+  }
+
+  .top-bar {
+    padding: 14px 20px 0;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .back-btn {
+    width: 36px; height: 36px; border-radius: 10px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+  .page-title { font-size: 18px; font-weight: 700; letter-spacing: -0.4px; }
+  .title-badge {
+    margin-left: auto; padding: 4px 10px; border-radius: 10px;
+    background: rgba(139,92,246,0.15); border: 1px solid rgba(139,92,246,0.3);
+    font-size: 11px; font-weight: 600; color: #a78bfa;
+  }
+
+  /* Section label */
+  .section-label {
+    padding: 16px 20px 8px;
+    font-size: 11px; font-weight: 700; color: rgba(245,243,255,0.4);
+    letter-spacing: 0.8px; text-transform: uppercase;
+  }
+
+  /* Chips row */
+  .chips {
+    display: flex; gap: 8px; padding: 0 20px; overflow-x: auto; scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+  .chip {
+    flex-shrink: 0; padding: 7px 14px; border-radius: 20px;
+    font-size: 13px; font-weight: 600;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.04);
+    color: rgba(245,243,255,0.7);
+    white-space: nowrap;
+  }
+  .chip.selected {
+    background: rgba(139,92,246,0.18);
+    border-color: rgba(139,92,246,0.5);
+    color: #a78bfa;
+  }
+
+  /* Topic input */
+  .input-area {
+    margin: 0 20px;
+    padding: 14px 16px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 16px;
+    position: relative;
+  }
+  .input-label {
+    font-size: 10px; font-weight: 700; color: rgba(245,243,255,0.4);
+    text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 6px;
+  }
+  .input-text {
+    font-size: 15px; color: #f5f3ff; line-height: 1.4;
+  }
+  .input-cursor {
+    display: inline-block; width: 2px; height: 15px;
+    background: #8b5cf6; animation: blink 1s step-end infinite;
+    vertical-align: text-bottom; margin-left: 1px;
+  }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+  .input-hint { font-size: 11px; color: rgba(245,243,255,0.3); margin-top: 4px; }
+
+  /* Length row */
+  .length-row {
+    display: flex; gap: 8px; padding: 0 20px;
+  }
+  .length-btn {
+    flex: 1; padding: 10px 4px; border-radius: 12px; text-align: center;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.07);
+  }
+  .length-btn.sel {
+    background: rgba(139,92,246,0.15);
+    border-color: rgba(139,92,246,0.4);
+  }
+  .length-val { font-size: 14px; font-weight: 700; }
+  .length-val.sel { color: #a78bfa; }
+  .length-sub { font-size: 9px; color: rgba(245,243,255,0.35); margin-top: 1px; }
+
+  /* Generate button */
+  .gen-btn {
+    margin: 14px 20px 0;
+    padding: 16px;
+    border-radius: 16px;
+    background: linear-gradient(135deg, #8b5cf6, #6366f1 50%, #22d3ee);
+    text-align: center;
+    font-size: 15px; font-weight: 700; color: white;
+    position: relative; overflow: hidden;
+  }
+  .gen-btn::before {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(to bottom, rgba(255,255,255,0.08), transparent);
+  }
+  .gen-btn span { position: relative; z-index: 1; }
+
+  /* Output card */
+  .output-card {
+    margin: 14px 20px 0;
+    padding: 16px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+  }
+  .output-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .output-badge {
+    padding: 3px 10px; border-radius: 6px; font-size: 10px; font-weight: 700;
+    background: rgba(34,211,238,0.12); border: 1px solid rgba(34,211,238,0.3);
+    color: #22d3ee; letter-spacing: 0.4px;
+  }
+  .output-actions { display:flex; gap:8px; }
+  .output-action {
+    padding: 4px 10px; border-radius: 8px; font-size: 11px; font-weight: 600;
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);
+    color: rgba(245,243,255,0.6);
+  }
+  .script-text {
+    font-size: 13px; line-height: 1.7; color: rgba(245,243,255,0.8);
+  }
+  .script-hook {
+    font-size: 14px; font-weight: 700; color: #f5f3ff; margin-bottom: 8px;
+  }
+  .script-line { margin-bottom: 6px; }
+  .script-cue {
+    display: inline; font-size: 11px; font-weight: 700;
+    color: #8b5cf6; margin-right: 4px;
+  }
+
+  /* Direction tabs */
+  .dir-tabs {
+    display: flex; gap: 6px; margin: 0 20px 0;
+    overflow-x: auto; scrollbar-width: none;
+  }
+  .dir-tab {
+    flex-shrink: 0; padding: 6px 12px; border-radius: 10px;
+    font-size: 12px; font-weight: 600;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.07);
+    color: rgba(245,243,255,0.5);
+  }
+  .dir-tab.active {
+    background: rgba(139,92,246,0.15);
+    border-color: rgba(139,92,246,0.4);
+    color: #a78bfa;
+  }
+
+  .bottom-nav {
+    margin-top: 18px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    padding: 12px 0 28px;
+    display: flex; justify-content: space-around;
+  }
+  .nav-item {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    font-size: 10px; color: rgba(245,243,255,0.4); font-weight: 500;
+  }
+  .nav-item.active { color: #8b5cf6; }
+  .nav-icon { font-size: 20px; }
+</style>
+</head>
+<body>
+
+<div class="status">
+  <span>9:41</span>
+  <div style="display:flex;gap:6px;align-items:center;font-size:12px;font-weight:600;">
+    <span>WiFi</span><span>🔋</span>
+  </div>
+</div>
+
+<div class="top-bar">
+  <div class="back-btn">←</div>
+  <span class="page-title">📝 Script Studio</span>
+  <div class="title-badge">5 Directions</div>
+</div>
+
+<!-- Platform -->
+<div class="section-label">Platform</div>
+<div class="chips">
+  <div class="chip selected">🎵 TikTok</div>
+  <div class="chip">▶️ YouTube Shorts</div>
+  <div class="chip">📸 Instagram Reel</div>
+  <div class="chip">🎥 YouTube</div>
+  <div class="chip">📣 Ad</div>
+</div>
+
+<!-- Tone -->
+<div class="section-label" style="padding-top:12px;">Tone</div>
+<div class="chips">
+  <div class="chip selected">🔥 Viral</div>
+  <div class="chip">😂 Funny</div>
+  <div class="chip">🎭 Dramatic</div>
+  <div class="chip">✨ Inspirational</div>
+  <div class="chip">💎 Luxury</div>
+</div>
+
+<!-- Topic -->
+<div class="section-label" style="padding-top:12px;">Topic</div>
+<div class="input-area">
+  <div class="input-text">
+    Why you're broke and your mindset is to blame<div class="input-cursor"></div>
+  </div>
+  <div class="input-hint">Be specific for better results</div>
+</div>
+
+<!-- Length -->
+<div class="section-label" style="padding-top:12px;">Length</div>
+<div class="length-row">
+  <div class="length-btn"><div class="length-val">30s</div><div class="length-sub">Free</div></div>
+  <div class="length-btn sel"><div class="length-val sel">1 min</div><div class="length-sub">Creator</div></div>
+  <div class="length-btn"><div class="length-val">3 min</div><div class="length-sub">Pro</div></div>
+  <div class="length-btn"><div class="length-val">5 min</div><div class="length-sub">Studio</div></div>
+</div>
+
+<!-- Generate -->
+<div class="gen-btn"><span>✨ Generate 5 Scripts</span></div>
+
+<!-- Direction tabs -->
+<div class="section-label" style="padding-top:14px;">Generated Scripts</div>
+<div class="dir-tabs">
+  <div class="dir-tab active">Direction 1</div>
+  <div class="dir-tab">Direction 2</div>
+  <div class="dir-tab">Direction 3</div>
+  <div class="dir-tab">Direction 4</div>
+  <div class="dir-tab">Direction 5</div>
+</div>
+
+<!-- Output -->
+<div class="output-card">
+  <div class="output-header">
+    <div class="output-badge">VIRAL · TIKTOK</div>
+    <div class="output-actions">
+      <div class="output-action">📋 Copy</div>
+      <div class="output-action">🎵 Voice</div>
+    </div>
+  </div>
+  <div class="script-hook">
+    "This one mindset shift made me $10k last month — and nobody's talking about it."
+  </div>
+  <div class="script-text">
+    <div class="script-line"><span class="script-cue">[HOOK]</span>Stop blaming the economy. Stop blaming your boss. The reason you're broke is living rent-free in your head.</div>
+    <div class="script-line"><span class="script-cue">[BODY]</span>Most people spend 8 hours working for money and zero hours making money work for them. That's the gap.</div>
+    <div class="script-line"><span class="script-cue">[CTA]</span>Follow for the exact system I used to flip the script — drop a 💸 if you're ready.</div>
+  </div>
+</div>
+
+<div class="bottom-nav">
+  <div class="nav-item active"><div class="nav-icon">⚡</div><span>Studio</span></div>
+  <div class="nav-item"><div class="nav-icon">📚</div><span>Library</span></div>
+  <div class="nav-item"><div class="nav-icon">📤</div><span>Publish</span></div>
+  <div class="nav-item"><div class="nav-icon">👤</div><span>Profile</span></div>
+</div>
+
+</body>
+</html>

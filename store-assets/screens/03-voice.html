@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=430">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    width: 430px;
+    background: #070710;
+    font-family: 'Instrument Sans','Inter',-apple-system,sans-serif;
+    color: #f5f3ff;
+    min-height: 932px;
+    overflow-x: hidden;
+  }
+  .status {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 14px 24px 0; font-size: 12px; font-weight: 600;
+  }
+  .top-bar {
+    padding: 14px 20px 0;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .back-btn {
+    width: 36px; height: 36px; border-radius: 10px;
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);
+    display: flex; align-items: center; justify-content: center; font-size: 16px;
+  }
+  .page-title { font-size: 18px; font-weight: 700; letter-spacing: -0.4px; }
+  .credits-pill {
+    margin-left: auto; padding: 4px 12px; border-radius: 20px;
+    background: rgba(139,92,246,0.12); border: 1px solid rgba(139,92,246,0.25);
+    font-size: 12px; font-weight: 700; color: #a78bfa;
+  }
+
+  .section-label {
+    padding: 16px 20px 8px;
+    font-size: 11px; font-weight: 700; color: rgba(245,243,255,0.4);
+    letter-spacing: 0.8px; text-transform: uppercase;
+  }
+
+  /* Text input */
+  .text-input {
+    margin: 0 20px;
+    padding: 16px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 16px; min-height: 110px; position: relative;
+  }
+  .text-input-content {
+    font-size: 14px; line-height: 1.6; color: rgba(245,243,255,0.85);
+  }
+  .text-input-cursor {
+    display: inline-block; width: 2px; height: 14px;
+    background: #8b5cf6; animation: blink 1s step-end infinite;
+    vertical-align: text-bottom; margin-left: 1px;
+  }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+  .text-counter {
+    position: absolute; bottom: 12px; right: 14px;
+    font-size: 11px; color: rgba(245,243,255,0.3); font-weight: 500;
+  }
+
+  /* Voice style cards */
+  .voice-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 8px; padding: 0 20px;
+  }
+  .voice-card {
+    padding: 14px 12px; border-radius: 14px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.07);
+    display: flex; align-items: center; gap: 10px;
+  }
+  .voice-card.selected {
+    background: rgba(139,92,246,0.12);
+    border-color: rgba(139,92,246,0.4);
+  }
+  .voice-emoji { font-size: 20px; }
+  .voice-info .v-name { font-size: 12px; font-weight: 700; color: #f5f3ff; }
+  .voice-info .v-desc { font-size: 10px; color: rgba(245,243,255,0.4); margin-top: 1px; }
+  .voice-card.selected .v-name { color: #a78bfa; }
+
+  /* Waveform area */
+  .waveform-area {
+    margin: 14px 20px 0;
+    padding: 16px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 16px;
+    position: relative; overflow: hidden;
+  }
+  .waveform-label {
+    font-size: 11px; font-weight: 700; color: rgba(245,243,255,0.4);
+    text-transform: uppercase; letter-spacing: 0.6px; margin-bottom: 10px;
+  }
+  .waveform {
+    display: flex; align-items: center; gap: 3px; height: 48px;
+  }
+  .wf-bar {
+    flex: 1; border-radius: 2px;
+    background: linear-gradient(to top, #8b5cf6, #22d3ee);
+    opacity: 0.7;
+  }
+  .waveform-time {
+    display: flex; justify-content: space-between;
+    margin-top: 8px; font-size: 11px; color: rgba(245,243,255,0.3);
+  }
+  .waveform-bg-glow {
+    position: absolute; bottom: 0; left: 0; right: 0; height: 40px;
+    background: linear-gradient(to top, rgba(139,92,246,0.08), transparent);
+    pointer-events: none;
+  }
+
+  /* Controls */
+  .controls {
+    margin: 14px 20px 0;
+    display: flex; gap: 10px;
+  }
+  .ctrl-btn {
+    flex: 1; padding: 14px;
+    border-radius: 14px; text-align: center;
+    font-size: 14px; font-weight: 700;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: rgba(245,243,255,0.7);
+  }
+  .ctrl-primary {
+    flex: 2;
+    background: linear-gradient(135deg, #8b5cf6, #22d3ee);
+    border: none; color: white;
+    position: relative; overflow: hidden;
+  }
+  .ctrl-primary::before {
+    content: ''; position: absolute; inset: 0;
+    background: linear-gradient(to bottom, rgba(255,255,255,0.1), transparent);
+  }
+  .ctrl-primary span { position: relative; z-index: 1; }
+
+  /* Voice selector at bottom */
+  .voice-select-row {
+    margin: 14px 20px 0;
+    padding: 14px 16px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 16px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .vs-label { font-size: 11px; color: rgba(245,243,255,0.4); margin-bottom: 2px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
+  .vs-name { font-size: 14px; font-weight: 700; color: #22d3ee; }
+  .vs-arrow { margin-left: auto; font-size: 18px; color: rgba(245,243,255,0.3); }
+
+  .bottom-nav {
+    margin-top: 20px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    padding: 12px 0 28px;
+    display: flex; justify-content: space-around;
+  }
+  .nav-item {
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    font-size: 10px; color: rgba(245,243,255,0.4); font-weight: 500;
+  }
+  .nav-item.active { color: #8b5cf6; }
+  .nav-icon { font-size: 20px; }
+</style>
+</head>
+<body>
+
+<div class="status">
+  <span>9:41</span>
+  <div style="display:flex;gap:6px;align-items:center;font-size:12px;font-weight:600;">
+    <span>WiFi</span><span>🔋</span>
+  </div>
+</div>
+
+<div class="top-bar">
+  <div class="back-btn">←</div>
+  <span class="page-title">🎵 AI Voice</span>
+  <div class="credits-pill">342 credits</div>
+</div>
+
+<!-- Text input -->
+<div class="section-label">Your Text</div>
+<div class="text-input">
+  <div class="text-input-content">
+    Welcome to the future of content creation. With Omnyra AI, you can generate studio-quality voiceovers in seconds<div class="text-input-cursor"></div>
+  </div>
+  <div class="text-counter">143 / 5000</div>
+</div>
+
+<!-- Voice styles -->
+<div class="section-label" style="padding-top:14px;">Voice Style</div>
+<div class="voice-grid">
+  <div class="voice-card selected">
+    <div class="voice-emoji">🔥</div>
+    <div class="voice-info">
+      <div class="v-name">Viral Narrator</div>
+      <div class="v-desc">TikTok energy</div>
+    </div>
+  </div>
+  <div class="voice-card">
+    <div class="voice-emoji">🎬</div>
+    <div class="voice-info">
+      <div class="v-name">Cinematic</div>
+      <div class="v-desc">Movie trailer</div>
+    </div>
+  </div>
+  <div class="voice-card">
+    <div class="voice-emoji">😂</div>
+    <div class="voice-info">
+      <div class="v-name">Meme Voice</div>
+      <div class="v-desc">Funny delivery</div>
+    </div>
+  </div>
+  <div class="voice-card">
+    <div class="voice-emoji">🤖</div>
+    <div class="voice-info">
+      <div class="v-name">Futuristic</div>
+      <div class="v-desc">Cyberpunk AI</div>
+    </div>
+  </div>
+</div>
+
+<!-- Voice selector -->
+<div class="voice-select-row">
+  <div style="font-size:28px;">🎙️</div>
+  <div>
+    <div class="vs-label">Selected Voice</div>
+    <div class="vs-name">Rachel — American English</div>
+  </div>
+  <div class="vs-arrow">›</div>
+</div>
+
+<!-- Waveform -->
+<div class="waveform-area">
+  <div class="waveform-label">Preview</div>
+  <div class="waveform">
+    <div class="wf-bar" style="height:20%;"></div>
+    <div class="wf-bar" style="height:45%;"></div>
+    <div class="wf-bar" style="height:70%;"></div>
+    <div class="wf-bar" style="height:90%;"></div>
+    <div class="wf-bar" style="height:60%;"></div>
+    <div class="wf-bar" style="height:85%;"></div>
+    <div class="wf-bar" style="height:40%;"></div>
+    <div class="wf-bar" style="height:95%;"></div>
+    <div class="wf-bar" style="height:75%;"></div>
+    <div class="wf-bar" style="height:55%;"></div>
+    <div class="wf-bar" style="height:80%;"></div>
+    <div class="wf-bar" style="height:35%;"></div>
+    <div class="wf-bar" style="height:65%;"></div>
+    <div class="wf-bar" style="height:50%;"></div>
+    <div class="wf-bar" style="height:88%;"></div>
+    <div class="wf-bar" style="height:42%;"></div>
+    <div class="wf-bar" style="height:72%;"></div>
+    <div class="wf-bar" style="height:30%;"></div>
+    <div class="wf-bar" style="height:58%;"></div>
+    <div class="wf-bar" style="height:82%;"></div>
+    <div class="wf-bar" style="height:25%;"></div>
+    <div class="wf-bar" style="height:48%;"></div>
+    <div class="wf-bar" style="height:67%;"></div>
+    <div class="wf-bar" style="height:93%;"></div>
+    <div class="wf-bar" style="height:38%;"></div>
+    <div class="wf-bar" style="height:76%;"></div>
+    <div class="wf-bar" style="height:52%;"></div>
+    <div class="wf-bar" style="height:84%;"></div>
+    <div class="wf-bar" style="height:44%;"></div>
+    <div class="wf-bar" style="height:62%;"></div>
+  </div>
+  <div class="waveform-time"><span>0:00</span><span>0:12</span></div>
+  <div class="waveform-bg-glow"></div>
+</div>
+
+<!-- Controls -->
+<div class="controls">
+  <div class="ctrl-btn">▶ Play</div>
+  <div class="ctrl-primary"><span>✨ Generate Voice</span></div>
+  <div class="ctrl-btn">⬇ Save</div>
+</div>
+
+<div class="bottom-nav">
+  <div class="nav-item active"><div class="nav-icon">⚡</div><span>Studio</span></div>
+  <div class="nav-item"><div class="nav-icon">📚</div><span>Library</span></div>
+  <div class="nav-item"><div class="nav-icon">📤</div><span>Publish</span></div>
+  <div class="nav-item"><div class="nav-icon">👤</div><span>Profile</span></div>
+</div>
+
+</body>
+</html>
