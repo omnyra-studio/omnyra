@@ -76,10 +76,12 @@ export default function LandingPage() {
   }
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) window.location.replace('/dashboard')
-      else setChecking(false)
-    })
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        if (session) window.location.replace('/dashboard')
+        else setChecking(false)
+      })
+      .catch(() => setChecking(false))
   }, [])
 
   if (checking) return (

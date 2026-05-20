@@ -12,12 +12,14 @@ export default function LoginPage() {
   const [error, setError] = useState(null)
   const [success, setSuccess] = useState(null)
 
-  // Redirect to home if already logged in
+  // Redirect to dashboard if already logged in
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) window.location.replace('/dashboard')
-      else setLoading(false)
-    })
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        if (session) window.location.replace('/dashboard')
+        else setLoading(false)
+      })
+      .catch(() => setLoading(false))
   }, [])
 
   async function handleSubmit(e) {
