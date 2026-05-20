@@ -4128,9 +4128,17 @@ function LoginGate({ onDone }) {
       return err.message;
     };
     if (tab === "signup") {
-      const { error: err } = await supabase.auth.signUp({ email, password });
-      if (err) setError(friendlyErr(err));
-      else setSuccess("Account created! Check your email, then sign in.");
+      // Use the admin API route so the account is auto-confirmed — no email verification step
+      const res = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(friendlyErr({ message: data.error || 'Signup failed' })); setLoading(false); return; }
+      // Immediately sign in so onAuthStateChange fires and advances the stage
+      const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
+      if (signInErr) setError(friendlyErr(signInErr));
     } else {
       const { error: err } = await supabase.auth.signInWithPassword({ email, password });
       if (err) setError(friendlyErr(err));
