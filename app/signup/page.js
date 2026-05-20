@@ -2,6 +2,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, Suspense } from "react";
 import Image from "next/image";
+import { supabase } from "../../lib/supabase";
 
 function SignupForm() {
   const router = useRouter();
@@ -24,6 +25,7 @@ function SignupForm() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Signup failed");
+      await supabase.auth.signInWithPassword({ email, password });
       router.push("/dashboard");
     } catch (err) {
       setError(err.message);
