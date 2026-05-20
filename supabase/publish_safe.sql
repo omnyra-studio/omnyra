@@ -1,0 +1,89 @@
+-- ============================================================
+-- Omnyra AI — Social Publishing Schema (SAFE VERSION)
+-- Safe to run multiple times (idempotent).
+-- Run AFTER: setup.sql and Prisma migrations (npx prisma migrate deploy)
+-- Requires: public.generations must already exist.
+-- ============================================================
+
+-- ── Pre-flight check: fail fast if generations table is missing ──
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'generations'
+  ) THEN
+    RAISE EXCEPTION
+      'STOP: public.generations does not exist. Run Prisma migrations first: npx prisma migrate deploy';
+  END IF;
+END;
+$$;
+
+
+-- ── 1. Social platform OAuth connections ─────────────────────────
+CREATE TABLE IF NOT EXISTS public.social_connections (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id          UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  platform         TEXT NOT NULL,  -- tiktok | instagram | youtube | twitter
+  platform_user_id TEXT,
+  username         TEXT,
+  avatar_url       TEXT,
+  access_token     TEXT NOT NULL,
+  refresh_token    TEXT,
+  token_expires_at TIMESTAMPTZ,
+  scope            TEXT,
+  created_at       TIMESTAMPTZ DEFAULT now(),
+  updated_at       TIMESTAMPTZ DEFAULT now(),
+  CONSTRAINT uq_user_platform UNIQUE (user_id, platform)
+);
+
+ALTER TABLE public.social_connections ENABLE ROW LEVEL SECURITY;
+
+-- Wrapped in a transaction so the table never has RLS enabled with no policy
+BEGIN;
+  DROP POLICY IF EXISTS "Users manage own social connections" ON public.social_connections;
+  CREATE POLICY "Users manage own social connections" ON public.social_connections
+    FOR ALL
+    USING  (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+COMMIT;
+
+
+-- ── 2. Scheduled / published posts ───────────────────────────────
+CREATE TABLE IF NOT EXISTS public.scheduled_posts (
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id           UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  generation_id     UUID REFERENCES public.generations(id) ON DELETE SET NULL,
+  title             TEXT,
+  caption           TEXT,
+  media_url         TEXT,
+  media_type        TEXT,  -- image | video | text
+  thumbnail_url     TEXT,
+  platforms         JSONB NOT NULL DEFAULT '[]',
+  scheduled_for     TIMESTAMPTZ,
+  -- CHECK constraint enforces valid status values (was missing in original)
+  status            TEXT NOT NULL DEFAULT 'draft'
+    CONSTRAINT scheduled_posts_status_check
+    CHECK (status IN ('draft','scheduled','publishing','published','failed')),
+  platform_post_ids JSONB DEFAULT '{}',
+  error_message     TEXT,
+  created_at        TIMESTAMPTZ DEFAULT now(),
+  updated_at        TIMESTAMPTZ DEFAULT now()
+);
+
+ALTER TABLE public.scheduled_posts ENABLE ROW LEVEL SECURITY;
+
+-- Wrapped in a transaction so the table never has RLS enabled with no policy
+BEGIN;
+  DROP POLICY IF EXISTS "Users manage own scheduled posts" ON public.scheduled_posts;
+  CREATE POLICY "Users manage own scheduled posts" ON public.scheduled_posts
+    FOR ALL
+    USING  (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+COMMIT;
+
+
+-- ── 3. Index for cron job — posts due to publish ─────────────────
+-- Partial index: only indexes rows with status='scheduled' (efficient for cron queries)
+CREATE INDEX IF NOT EXISTS idx_scheduled_posts_due
+  ON public.scheduled_posts (scheduled_for, status)
+  WHERE status = 'scheduled';
