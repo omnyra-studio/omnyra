@@ -106,6 +106,8 @@ export default function LandingPage() {
         @keyframes drift2  { 0%,100% { transform: translate(0,0) scale(1) } 50% { transform: translate(-50px,-40px) scale(1.1) } }
         @keyframes drift3  { 0%,100% { transform: translate(0,0) } 50% { transform: translate(-30px,50px) } }
         @keyframes pulse   { 0%,100% { opacity: 1 } 50% { opacity: 0.6 } }
+        .nav-logo { width: 48px; height: 48px; object-fit: contain; display: block; flex-shrink: 0; }
+        @media (min-width: 768px) { .nav-logo { width: 80px; height: 80px; } .nav-brand-text { font-size: 26px !important; } }
         .tool-card:hover { border-color: rgba(139,92,246,0.4) !important; transform: translateY(-2px); }
         .tool-card { transition: border-color 0.2s, transform 0.2s; }
         .plan-card:hover { transform: translateY(-3px); }
@@ -127,20 +129,18 @@ export default function LandingPage() {
 
       <div style={{ position: 'relative', zIndex: 1 }}>
 
-        {/* ── LOGO ── */}
-        <div style={{ display: 'flex', justifyContent: 'center', paddingTop: 20 }}>
-          <img
-            src="/omnyra-logo.png"
-            alt="Omnyra AI"
-            style={{ width: 'clamp(140px, 20vw, 200px)', height: 'auto', display: 'block' }}
-          />
-        </div>
-
         {/* ── NAV ── */}
-        <nav style={{ maxWidth: 1100, margin: '0 auto', padding: '20px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ fontSize: 20, fontWeight: 400, letterSpacing: '-0.02em', flexShrink: 0 }}>
-            Omnyra{' '}
-            <span style={{ background: 'linear-gradient(135deg,#22d3ee,#8b5cf6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', fontWeight: 600 }}>AI</span>
+        <nav style={{ maxWidth: 1100, margin: '0 auto', padding: '12px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
+            <img
+              src="/omnyra-logo.png"
+              alt="Omnyra AI"
+              className="nav-logo"
+            />
+            <div className="nav-brand-text" style={{ fontSize: 20, fontWeight: 400, letterSpacing: '-0.02em' }}>
+              Omnyra{' '}
+              <span style={{ background: 'linear-gradient(135deg,#22d3ee,#8b5cf6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', fontWeight: 600 }}>AI</span>
+            </div>
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             <a href="#features" className="nav-link" style={{ padding: '8px 14px', borderRadius: 100, color: C.sub, textDecoration: 'none', fontSize: 13, display: 'none' }}>Features</a>
