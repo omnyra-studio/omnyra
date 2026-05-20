@@ -311,6 +311,74 @@ export default function LandingPage() {
           </div>
         </section>
 
+        {/* ── PLATFORMS SECTION ── */}
+        <section style={{ padding: '5rem 2rem', textAlign: 'center', borderTop: '0.5px solid #1a1a1a' }}>
+          <p style={{ fontSize: 12, color: '#555', letterSpacing: 3, textTransform: 'uppercase', marginBottom: 16 }}>
+            Available everywhere you create
+          </p>
+          <h2 style={{ fontSize: 32, fontWeight: 700, marginBottom: 48, color: '#fff' }}>
+            One app. Every platform.
+          </h2>
+
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, justifyContent: 'center', alignItems: 'center', maxWidth: 700, margin: '0 auto 48px' }}>
+
+            {/* Apple App Store */}
+            <a href="#" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 24px', borderRadius: 12, border: '0.5px solid #333', background: '#111', color: '#fff', textDecoration: 'none', transition: 'border-color 0.2s' }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = '#7c6fff'}
+              onMouseLeave={e => e.currentTarget.style.borderColor = '#333'}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
+                <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.8-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+              </svg>
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontSize: 10, color: '#888', lineHeight: 1 }}>Download on the</div>
+                <div style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.4 }}>App Store</div>
+              </div>
+            </a>
+
+            {/* Google Play */}
+            <a href="#" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 24px', borderRadius: 12, border: '0.5px solid #333', background: '#111', color: '#fff', textDecoration: 'none', transition: 'border-color 0.2s' }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = '#06b6d4'}
+              onMouseLeave={e => e.currentTarget.style.borderColor = '#333'}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
+                <path d="M3.18 23.76c.3.17.65.19.96.07l11.62-6.71-2.5-2.5-10.08 9.14zM.5 1.4C.19 1.73 0 2.23 0 2.87v18.26c0 .64.19 1.14.5 1.47l.08.07 10.23-10.23v-.24L.58 1.33.5 1.4zm14.74 13.25L12.1 11.5l3.13-3.13 4.1 2.37c1.17.67 1.17 1.77 0 2.44l-4.09 2.47zM3.18.24L13.26 9.4l-2.5 2.5L.14.31C.45.19.8.21 1.1.38l2.08 1.2V.24z"/>
+              </svg>
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontSize: 10, color: '#888', lineHeight: 1 }}>Get it on</div>
+                <div style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.4 }}>Google Play</div>
+              </div>
+            </a>
+
+            {/* Microsoft Store */}
+            <a href="#" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 24px', borderRadius: 12, border: '0.5px solid #333', background: '#111', color: '#fff', textDecoration: 'none', transition: 'border-color 0.2s' }}
+              onMouseEnter={e => e.currentTarget.style.borderColor = '#7c6fff'}
+              onMouseLeave={e => e.currentTarget.style.borderColor = '#333'}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="white">
+                <path d="M0 0h11.377v11.372H0zm12.623 0H24v11.372H12.623zM0 12.623h11.377V24H0zm12.623 0H24V24H12.623z"/>
+              </svg>
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontSize: 10, color: '#888', lineHeight: 1 }}>Get it from</div>
+                <div style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.4 }}>Microsoft Store</div>
+              </div>
+            </a>
+
+            {/* PWA / Web App */}
+            <a href="/dashboard" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '14px 24px', borderRadius: 12, background: 'linear-gradient(135deg, #7c6fff22, #06b6d422)', border: '0.5px solid #7c6fff', color: '#fff', textDecoration: 'none', transition: 'all 0.2s' }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#7c6fff" strokeWidth="2">
+                <path d="M12 2L12 14M12 14L8 10M12 14L16 10"/>
+                <rect x="3" y="16" width="18" height="5" rx="1"/>
+              </svg>
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontSize: 10, color: '#888', lineHeight: 1 }}>Use instantly</div>
+                <div style={{ fontSize: 16, fontWeight: 600, lineHeight: 1.4 }}>Web App</div>
+              </div>
+            </a>
+          </div>
+
+          <p style={{ fontSize: 13, color: '#444' }}>
+            PWA install available now · Native apps coming soon
+          </p>
+        </section>
+
         {/* ── FOOTER ── */}
         <footer style={{ borderTop: `1px solid ${C.border}`, padding: '44px 24px', maxWidth: 1100, margin: '0 auto' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: 24 }}>
