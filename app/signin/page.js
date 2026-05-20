@@ -21,8 +21,17 @@ export default function SigninPage() {
     setLoading(true);
     setError("");
     try {
-      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
-      if (signInError) throw new Error(signInError.message);
+      const normalizedEmail = email.trim().toLowerCase();
+      console.log("[signin] attempting signInWithPassword", { email: normalizedEmail });
+      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+        email: normalizedEmail,
+        password,
+      });
+      if (signInError) {
+        console.error("[signin] signInWithPassword failed", { message: signInError.message, status: signInError.status, code: signInError.code });
+        throw new Error(signInError.message);
+      }
+      console.log("[signin] success", { userId: data.user?.id, emailConfirmed: data.user?.email_confirmed_at != null });
       localStorage.setItem("omnyra_onboarded", "1");
       router.push("/dashboard");
     } catch (err) {

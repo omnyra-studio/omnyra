@@ -38,23 +38,34 @@ export default function LoginPage() {
     setError(null)
     setSuccess(null)
 
+    const normalizedEmail = email.trim().toLowerCase()
     if (mode === 'signup') {
       // Use admin API so account is auto-confirmed — no email verification step
       const res = await fetch('/api/auth/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: normalizedEmail, password }),
       })
       const data = await res.json()
       if (!res.ok) { setError(friendlyErr({ message: data.error || 'Signup failed' })); setLoading(false); return }
-      const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password })
-      if (signInErr) { setError(friendlyErr(signInErr)); setLoading(false); return }
+      console.log('[login/signup] account created, signing in', { email: normalizedEmail })
+      const { error: signInErr } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password })
+      if (signInErr) {
+        console.error('[login/signup] signInWithPassword failed', { message: signInErr.message, code: signInErr.code })
+        setError(friendlyErr(signInErr)); setLoading(false); return
+      }
       localStorage.setItem('omnyra_onboarded', '1')
       router.push('/dashboard')
     } else {
-      const { error } = await supabase.auth.signInWithPassword({ email, password })
-      if (error) { setError(friendlyErr(error)); setLoading(false) }
-      else { localStorage.setItem('omnyra_onboarded', '1'); router.push('/dashboard') }
+      console.log('[login/signin] attempting signInWithPassword', { email: normalizedEmail })
+      const { data, error } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password })
+      if (error) {
+        console.error('[login/signin] failed', { message: error.message, code: error.code, status: error.status })
+        setError(friendlyErr(error)); setLoading(false)
+      } else {
+        console.log('[login/signin] success', { userId: data.user?.id })
+        localStorage.setItem('omnyra_onboarded', '1'); router.push('/dashboard')
+      }
     }
   }
 

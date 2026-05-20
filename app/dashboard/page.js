@@ -340,26 +340,25 @@ export default function OmnyraApp() {
   const [notifOpen,setNotifOpen]   = useState(false);
   const [toast,setToast]           = useState({visible:false,message:""});
 
-  // On mount: show splash, then resolve to the right stage based on session + localStorage
+  // On mount: resolve auth state immediately — no arbitrary delay
   useEffect(() => {
-    const resolve = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+    supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
-        setStage("app");
+        setStage(localStorage.getItem("omnyra_onboarded") ? "app" : "onboard");
       } else {
         setStage("login");
       }
-    };
-    const t = setTimeout(resolve, 1800);
-    return () => clearTimeout(t);
+    });
   }, []);
 
-  // React to auth changes (sign-in from inline form, token refresh, sign-out)
+  // React to auth changes (sign-in, token refresh, sign-out, expiry)
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       if (session) {
         if (!localStorage.getItem("omnyra_onboarded")) setStage("onboard");
         else setStage("app");
+      } else {
+        setStage("login");
       }
     });
     return () => subscription.unsubscribe();
@@ -4127,21 +4126,32 @@ function LoginGate({ onDone }) {
       }
       return err.message;
     };
+    const normalizedEmail = email.trim().toLowerCase();
     if (tab === "signup") {
       // Use the admin API route so the account is auto-confirmed — no email verification step
       const res = await fetch('/api/auth/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email: normalizedEmail, password }),
       });
       const data = await res.json();
       if (!res.ok) { setError(friendlyErr({ message: data.error || 'Signup failed' })); setLoading(false); return; }
       // Immediately sign in so onAuthStateChange fires and advances the stage
-      const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password });
-      if (signInErr) setError(friendlyErr(signInErr));
+      console.log('[logingate/signup] account created, signing in', { email: normalizedEmail });
+      const { error: signInErr } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
+      if (signInErr) {
+        console.error('[logingate/signup] signInWithPassword failed', { message: signInErr.message, code: signInErr.code });
+        setError(friendlyErr(signInErr));
+      }
     } else {
-      const { error: err } = await supabase.auth.signInWithPassword({ email, password });
-      if (err) setError(friendlyErr(err));
+      console.log('[logingate/signin] attempting', { email: normalizedEmail });
+      const { data: signInData, error: err } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password });
+      if (err) {
+        console.error('[logingate/signin] failed', { message: err.message, code: err.code, status: err.status });
+        setError(friendlyErr(err));
+      } else {
+        console.log('[logingate/signin] success', { userId: signInData.user?.id });
+      }
       // onAuthStateChange handles the transition to "app" on success
     }
     setLoading(false);

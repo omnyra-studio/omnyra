@@ -13,17 +13,17 @@ export async function GET(request) {
     }
   );
 
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) {
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) {
     return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
   }
 
   return NextResponse.json({
     user: {
-      id: session.user.id,
-      email: session.user.email,
-      name: session.user.user_metadata?.name || session.user.email.split("@")[0],
-      role: session.user.user_metadata?.role || "free",
+      id: user.id,
+      email: user.email,
+      name: user.user_metadata?.name || user.email.split("@")[0],
+      role: user.user_metadata?.role || "free",
     },
   });
 }
