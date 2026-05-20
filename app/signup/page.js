@@ -35,7 +35,7 @@ function SignupForm() {
       if (!res.ok) throw new Error(data.error || "Signup failed");
 
       // Establish Supabase client session
-      const { error: signInError } = await supabase.auth.signInWithPassword({ email, password });
+      const { error: signInError } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
       if (signInError) throw new Error(signInError.message);
 
       localStorage.setItem("omnyra_onboarded", "1");
