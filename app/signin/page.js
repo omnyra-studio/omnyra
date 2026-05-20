@@ -36,7 +36,7 @@ export default function SigninPage() {
         background: "#111", borderRadius: 20, border: "0.5px solid #222" }}>
         <div style={{ marginBottom: 24 }}>
           <img src="/logo-nav.png" alt="Omnyra AI"
-            style={{ height: 36, width: "auto", objectFit: "contain", display: "block" }} />
+            style={{ height: 64, width: "auto", objectFit: "contain", display: "block" }} />
         </div>
         <h1 style={{ color: "#fff", fontSize: 26, fontWeight: 700, marginBottom: 6 }}>
           Welcome back

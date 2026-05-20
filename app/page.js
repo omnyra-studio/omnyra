@@ -135,7 +135,7 @@ export default function LandingPage() {
         {/* ── HERO ── */}
         <section style={{ textAlign: 'center', padding: 'clamp(60px,10vw,120px) 24px clamp(80px,12vw,140px)', maxWidth: 860, margin: '0 auto' }}>
           <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 32, animation: 'fadeIn 0.6s ease' }}>
-            <Image src="/logo-hero.png" alt="Omnyra AI" width={200} height={200} priority style={{ objectFit: "contain" }} />
+            <Image src="/logo-hero.png" alt="Omnyra AI" width={340} height={340} priority style={{ objectFit: "contain" }} />
           </div>
           <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '6px 16px', borderRadius: 100, background: 'linear-gradient(135deg,rgba(139,92,246,0.2),rgba(34,211,238,0.15))', border: '1px solid rgba(139,92,246,0.3)', fontSize: 12, fontWeight: 500, marginBottom: 32, animation: 'fadeIn 0.6s ease', color: '#c4b5fd' }}>
             ✦ The Creator OS · 12 tools · One platform
