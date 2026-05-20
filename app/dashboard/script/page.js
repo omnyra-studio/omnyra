@@ -1,7 +1,8 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabase";
+import { getBrandProfile } from "../../../lib/brand";
 
 const PLATFORMS = ["TikTok","Instagram Reels","YouTube Shorts","YouTube","LinkedIn","Twitter/X","Podcast"];
 const DURATIONS = ["15 seconds","30 seconds","60 seconds","90 seconds","3 minutes","5 minutes","10 minutes"];
@@ -17,6 +18,9 @@ export default function ScriptStudio() {
   const [loading,  setLoading] = useState(false);
   const [copied,   setCopied]  = useState(false);
   const [error,    setError]   = useState("");
+  const [brand,    setBrand]   = useState(null);
+
+  useEffect(() => { getBrandProfile().then(setBrand).catch(() => {}); }, []);
 
   async function generate() {
     if (!topic.trim()) return;
@@ -38,6 +42,7 @@ Format the script with these clear sections:
 🎯 CALL TO ACTION (what should viewers do next)
 Include stage directions in [brackets] where helpful.
 Make it natural, conversational, and optimised for ${platform}.`,
+          brand,
         }),
       });
       const data = await res.json();

@@ -164,7 +164,8 @@ const TOOLS = [
   { id:"script",   name:"Omnyra Script Studio",desc:"5 directions · voice-ready scripts",icon:FileText,   hue:"violet", category:"Writing" },
   { id:"oneclick", name:"Creator Hub",       desc:"Your full AI content production system", icon:Zap,      hue:"gold",   category:"Writing" },
   { id:"caption",  name:"Captions & Tags",   desc:"5 captions + hashtags instantly",    icon:Hash,         hue:"cyan",   category:"Writing" },
-  { id:"prompt",   name:"Research Studio",   desc:"Your AI study & research partner",   icon:BookOpen,     hue:"violet", category:"Writing" }
+  { id:"prompt",   name:"Research Studio",   desc:"Your AI study & research partner",   icon:BookOpen,     hue:"violet", category:"Writing" },
+  { id:"settings", name:"Brand Memory",      desc:"Save your brand voice · auto-injects into all tools", icon:Building2, hue:"gold", category:"Writing" },
 ];
 
 const PLANS = [
@@ -600,6 +601,7 @@ function AppShell({ screen, setScreen, subScreen, setSubScreen, activeTool, setA
   if (brandPanelOpen) return <BrandPanel onClose={(saved) => { if (saved) setBrand(saved); setBrandPanelOpen(false); }} showToast={showToast}/>;
   if (activeTool?.id==="oneclick") return <OneClickFlow mode={mode} setMode={setMode} onBack={()=>setActiveTool(null)} showToast={showToast} brand={brand} onSave={saveToLibrary}/>;
   if (activeTool?.id==="script")   { router.push('/dashboard/script'); return null; }
+  if (activeTool?.id==="settings") { router.push('/dashboard/settings'); return null; }
   if (activeTool?.id==="avatar")   return <AvatarStudio  mode={mode} onBack={()=>setActiveTool(null)} showToast={showToast} plan={plan}/>;
   if (activeTool?.id==="video")    return <VideoTool    onBack={()=>setActiveTool(null)} showToast={showToast} onGenerated={onGenerated} plan={plan}/>;
   if (activeTool?.id==="lipsync")  return <LipSyncStudio    onBack={()=>setActiveTool(null)} showToast={showToast} onGenerated={onGenerated} plan={plan}/>;
