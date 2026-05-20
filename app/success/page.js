@@ -2,6 +2,7 @@
 import { useEffect } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
+import Link from 'next/link'
 
 const C = {
   bg: '#070710',
@@ -92,7 +93,7 @@ function SuccessContent() {
           ))}
         </div>
 
-        <a
+        <Link
           href="/dashboard"
           style={{
             display: 'block', width: '100%', padding: '15px 20px',
@@ -104,7 +105,7 @@ function SuccessContent() {
           }}
         >
           Start creating →
-        </a>
+        </Link>
 
         <div style={{ marginTop: 16, fontSize: 12, color: C.sub }}>
           A receipt has been sent to your email · Cancel anytime

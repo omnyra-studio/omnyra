@@ -1,10 +1,12 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '../../lib/supabase'
 
 // This page is a fallback for direct /login URL visits.
 // The primary login flow is handled inline within the main SPA (app/page.js).
 export default function LoginPage() {
+  const router = useRouter()
   const [mode, setMode] = useState('signin')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -16,11 +18,11 @@ export default function LoginPage() {
   useEffect(() => {
     supabase.auth.getSession()
       .then(({ data: { session } }) => {
-        if (session) window.location.replace('/dashboard')
+        if (session) router.replace('/dashboard')
         else setLoading(false)
       })
       .catch(() => setLoading(false))
-  }, [])
+  }, [router])
 
   function friendlyErr(err) {
     if (!err) return null
@@ -37,13 +39,22 @@ export default function LoginPage() {
     setSuccess(null)
 
     if (mode === 'signup') {
-      const { error } = await supabase.auth.signUp({ email, password })
-      if (error) { setError(friendlyErr(error)); setLoading(false) }
-      else setSuccess('Account created! Check your email, then sign in.')
+      // Use admin API so account is auto-confirmed — no email verification step
+      const res = await fetch('/api/auth/signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password }),
+      })
+      const data = await res.json()
+      if (!res.ok) { setError(friendlyErr({ message: data.error || 'Signup failed' })); setLoading(false); return }
+      const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password })
+      if (signInErr) { setError(friendlyErr(signInErr)); setLoading(false); return }
+      localStorage.setItem('omnyra_onboarded', '1')
+      router.push('/dashboard')
     } else {
       const { error } = await supabase.auth.signInWithPassword({ email, password })
       if (error) { setError(friendlyErr(error)); setLoading(false) }
-      else window.location.replace('/dashboard')
+      else { localStorage.setItem('omnyra_onboarded', '1'); router.push('/dashboard') }
     }
   }
 
