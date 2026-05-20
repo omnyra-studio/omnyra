@@ -1,6 +1,7 @@
 "use client";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, Suspense } from "react";
+import Image from "next/image";
 
 function SignupForm() {
   const router = useRouter();
@@ -36,6 +37,9 @@ function SignupForm() {
       justifyContent:"center", background:"#0a0a0a" }}>
       <div style={{ width:"100%", maxWidth:420, padding:"2.5rem",
         background:"#111", borderRadius:20, border:"0.5px solid #222" }}>
+        <div style={{ marginBottom:24 }}>
+          <Image src="/logo-nav.png" alt="Omnyra AI" width={140} height={36} style={{ objectFit:"contain" }} />
+        </div>
         <p style={{ fontSize:12, color:"#7c6fff", fontWeight:600,
           letterSpacing:2, textTransform:"uppercase", marginBottom:8 }}>
           {plan === "free" ? "Free Plan" : `${plan.charAt(0).toUpperCase()+plan.slice(1)} Plan`}

@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
+import Image from "next/image";
 import { supabase } from "../../lib/supabase";
 import {
   Sparkles, Video, User, Mic, Image as ImageIcon, Music, Wand2,
@@ -747,6 +748,9 @@ function Home({ onTool, mode, setMode, onSearch, onNotif, credits, brand, onBran
   const brandActive = !!(brand?.brand_name || brand?.niche);
   return (
     <div style={{padding:"56px 20px 0",animation:"fadeIn 0.4s ease"}}>
+      <div style={{marginBottom:16}}>
+        <Image src="/logo-nav.png" alt="Omnyra AI" width={140} height={36} style={{objectFit:"contain"}} />
+      </div>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <div>
           <div style={{fontSize:11,color:C.sub,letterSpacing:"0.1em",textTransform:"uppercase"}}>Welcome back</div>
