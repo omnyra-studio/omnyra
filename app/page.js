@@ -103,14 +103,14 @@ export default function LandingPage() {
       <div style={{ position: 'relative', zIndex: 1 }}>
 
         {/* ── NAV ── */}
-        <nav style={{ maxWidth: 1100, margin: '0 auto', padding: '12px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <nav className="h-16 md:h-20" style={{ maxWidth: 1100, margin: '0 auto', padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0 }}>
             <img
               src="/logo-nav.png"
               alt="Omnyra AI"
-              style={{ height: 40, width: 'auto', objectFit: 'contain', display: 'block' }}
+              className="w-12 h-12 md:w-20 md:h-20 object-contain block"
             />
-            <div className="nav-brand-text" style={{ fontSize: 20, fontWeight: 400, letterSpacing: '-0.02em' }}>
+            <div className="nav-brand-text text-base md:text-xl" style={{ fontWeight: 400, letterSpacing: '-0.02em' }}>
               Omnyra{' '}
               <span style={{ background: 'linear-gradient(135deg,#22d3ee,#8b5cf6)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', fontWeight: 600 }}>AI</span>
             </div>
