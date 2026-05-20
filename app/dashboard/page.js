@@ -2571,6 +2571,9 @@ function VoiceCloneStudio({ mode, setMode, onBack, showToast }) {
   const [voicesLoading,setVLoading]  = useState(true);
   const [consent,setConsent]         = useState(false);
   const [generating,setGen]          = useState(false);
+  const [voiceName,setVoiceName]     = useState("My Cloned Voice");
+  const [clonedVoice,setClonedVoice] = useState(null);
+  const [cloneError,setCloneError]   = useState(null);
   const mediaRec                     = useRef(null);
   const timerRef                     = useRef(null);
   const chunks                       = useRef([]);
@@ -2613,11 +2616,29 @@ function VoiceCloneStudio({ mode, setMode, onBack, showToast }) {
 
   useEffect(()=>()=>{clearInterval(timerRef.current);},[]);
 
-  const generate = () => {
+  const generate = async () => {
     if (!consent){showToast("Please confirm voice consent first");return;}
-    if (!recBlob&&!uploadFile&&!description){showToast("Please record, upload or describe a voice first");return;}
-    setGen(true);
-    setTimeout(()=>{setGen(false);showToast("Voice cloned! Connect ElevenLabs API to use it 🎤");},2000);
+    const audioFile = recBlob || uploadFile;
+    if (!audioFile){showToast("Voice cloning requires audio — record or upload a sample first");return;}
+    setGen(true); setCloneError(null); setClonedVoice(null);
+    try {
+      const { data:{session} } = await supabase.auth.getSession();
+      const fd = new FormData();
+      fd.append("audio", audioFile instanceof Blob && !(audioFile instanceof File)
+        ? new File([audioFile],"recording.webm",{type:"audio/webm"})
+        : audioFile);
+      fd.append("name", voiceName || "My Cloned Voice");
+      const res = await fetch("/api/clone",{
+        method:"POST",
+        headers: session ? {Authorization:`Bearer ${session.access_token}`} : {},
+        body: fd,
+      });
+      const data = await res.json();
+      if (!res.ok||data.error){setCloneError(data.error||"Clone failed");showToast("Clone failed");return;}
+      setClonedVoice(data);
+      showToast("Voice cloned! 🎤");
+    } catch { setCloneError("Network error. Please try again."); }
+    finally { setGen(false); }
   };
 
   return (
@@ -2708,9 +2729,9 @@ function VoiceCloneStudio({ mode, setMode, onBack, showToast }) {
       {/* Voice Style */}
       {method&&(
         <>
-          <label style={labelStyle}>Base voice</label>
-          <div style={{marginTop:8,marginBottom:16}}>
-            <VoicePicker voices={voices} selectedId={voiceId} onSelect={setVoiceId} loading={voicesLoading}/>
+          <label style={labelStyle}>Clone name</label>
+          <div style={{marginTop:8,marginBottom:16,borderRadius:14,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",overflow:"hidden"}}>
+            <input value={voiceName} onChange={e=>setVoiceName(e.target.value)} placeholder="My Cloned Voice" style={{width:"100%",padding:"12px 16px",background:"transparent",border:"none",outline:"none",color:C.text,fontSize:14,fontFamily:"inherit",boxSizing:"border-box"}}/>
           </div>
 
           {/* Consent checkbox — REQUIRED */}
@@ -2727,12 +2748,26 @@ function VoiceCloneStudio({ mode, setMode, onBack, showToast }) {
           {generating?(
             <div style={{padding:20,borderRadius:22,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",display:"flex",alignItems:"center",gap:14}}>
               <div style={{width:36,height:36,borderRadius:12,background:"linear-gradient(135deg,rgba(34,211,238,0.3),rgba(139,92,246,0.2))",display:"flex",alignItems:"center",justifyContent:"center"}}><div style={{width:16,height:16,borderRadius:"50%",border:"2px solid rgba(255,255,255,0.2)",borderTopColor:"#22d3ee",animation:"spin 1s linear infinite"}}/></div>
-              <div><div style={{fontSize:14,fontWeight:500}}>Cloning voice…</div><div style={{fontSize:11,color:C.sub}}>Connect ElevenLabs to complete</div></div>
+              <div><div style={{fontSize:14,fontWeight:500}}>Cloning voice…</div><div style={{fontSize:11,color:C.sub}}>Sending audio to ElevenLabs</div></div>
             </div>
           ):(
             <PressBtn onClick={generate} style={{...primaryBtn,width:"100%",justifyContent:"center",padding:"15px 20px",fontSize:15,opacity:consent?1:0.5}}>
               🎤 Clone Voice
             </PressBtn>
+          )}
+
+          {clonedVoice&&(
+            <div style={{marginTop:14,padding:"16px 18px",borderRadius:18,background:"rgba(34,211,238,0.08)",border:"1px solid rgba(34,211,238,0.3)"}}>
+              <div style={{fontSize:13,fontWeight:600,color:"#22d3ee",marginBottom:4}}>✅ Voice cloned successfully!</div>
+              <div style={{fontSize:12,color:C.sub}}>Name: <span style={{color:C.text}}>{clonedVoice.name}</span></div>
+              <div style={{fontSize:11,color:C.sub,marginTop:2,wordBreak:"break-all"}}>Voice ID: <span style={{color:"#a78bfa"}}>{clonedVoice.voiceId}</span></div>
+              <div style={{fontSize:11,color:C.sub,marginTop:6}}>Your cloned voice is now available in AI Voice &amp; Presenter Studio.</div>
+            </div>
+          )}
+          {cloneError&&(
+            <div style={{marginTop:14,padding:"12px 16px",borderRadius:14,background:"rgba(239,68,68,0.08)",border:"1px solid rgba(239,68,68,0.3)",fontSize:12,color:"#f87171"}}>
+              {cloneError}
+            </div>
           )}
         </>
       )}
