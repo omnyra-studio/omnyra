@@ -13,9 +13,11 @@ function SignupForm() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) router.replace("/dashboard");
-    });
+    try {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session) router.replace("/dashboard");
+      }).catch(() => {});
+    } catch {}
   }, [router]);
 
   async function handleSubmit(e) {
@@ -39,7 +41,8 @@ function SignupForm() {
       localStorage.setItem("omnyra_onboarded", "1");
       router.push("/dashboard");
     } catch (err) {
-      setError(err.message);
+      console.error("[signup] FULL ERROR:", JSON.stringify(err));
+      setError(err.message || err.error_description || JSON.stringify(err));
     } finally {
       setLoading(false);
     }

@@ -2,12 +2,21 @@ import { createServerClient } from '@supabase/ssr'
 import { NextResponse } from 'next/server'
 
 export async function middleware(request) {
+  const isDashboard = request.nextUrl.pathname.startsWith('/dashboard')
   let response = NextResponse.next({ request })
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  if (!url || !key) {
+    console.error('[middleware] Missing Supabase env vars')
+    return isDashboard
+      ? NextResponse.redirect(new URL('/signin', request.url))
+      : response
+  }
+
+  try {
+    const supabase = createServerClient(url, key, {
       cookies: {
         getAll() { return request.cookies.getAll() },
         setAll(cookiesToSet) {
@@ -16,15 +25,20 @@ export async function middleware(request) {
           cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options))
         },
       },
+    })
+
+    // getUser() validates the JWT server-side; getSession() trusts cookie without verification
+    const { data: { user } } = await supabase.auth.getUser()
+
+    if (!user && isDashboard) {
+      return NextResponse.redirect(new URL('/signin', request.url))
     }
-  )
-
-  // getUser() validates the JWT against Supabase's server on every request.
-  // getSession() only reads from the cookie and trusts it without server verification.
-  const { data: { user } } = await supabase.auth.getUser()
-
-  if (!user && request.nextUrl.pathname.startsWith('/dashboard')) {
-    return NextResponse.redirect(new URL('/signin', request.url))
+  } catch (err) {
+    console.error('[middleware] Supabase auth check failed:', err.message)
+    // Fail safe: block dashboard if we cannot verify session
+    if (isDashboard) {
+      return NextResponse.redirect(new URL('/signin', request.url))
+    }
   }
 
   return response

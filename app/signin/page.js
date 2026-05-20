@@ -11,9 +11,11 @@ export default function SigninPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) router.replace("/dashboard");
-    });
+    try {
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (session) router.replace("/dashboard");
+      }).catch(() => {});
+    } catch {}
   }, [router]);
 
   async function handleSubmit(e) {

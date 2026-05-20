@@ -32,6 +32,9 @@ export async function POST(request) {
       email_confirm: true,
     });
 
+    console.error("[signup-api] Supabase error:", JSON.stringify(error));
+    console.error("[signup-api] Supabase data:", JSON.stringify(data));
+
     if (error) {
       const isAlreadyRegistered = error.message.toLowerCase().includes("already");
       log("createUser_failed", { code: error.code, isAlreadyRegistered });
