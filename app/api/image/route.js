@@ -32,6 +32,12 @@ export async function POST(request) {
     return Response.json({ error: credit.error, balance: credit.balance }, { status: 402 })
   }
 
+  // FAL_API_KEY first, FALAI_API_KEY fallback (same service, both point to fal.ai)
+  const falKey = process.env.FAL_API_KEY || process.env.FALAI_API_KEY
+  if (!falKey) {
+    return Response.json({ error: 'Image generation not configured (FAL_API_KEY missing)' }, { status: 500 })
+  }
+
   const fullPrompt = prompt.trim() + (STYLE_SUFFIXES[style] ?? '')
   const model      = FLUX_MODEL[plan] ?? 'fal-ai/flux/schnell'
   const isPro      = model === 'fal-ai/flux-pro'
@@ -50,7 +56,7 @@ export async function POST(request) {
   const response = await fetch(`https://fal.run/${model}`, {
     method: 'POST',
     headers: {
-      'Authorization': `Key ${process.env.FAL_API_KEY}`,
+      'Authorization': `Key ${falKey}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(body),

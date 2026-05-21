@@ -1,24 +1,13 @@
 import { getUserAndPlan } from '../../../lib/auth'
 import { deductCredits } from '../../../lib/credits'
-import {
-  callPika, callKling, callRunway,
-  IMG2VIDEO_PROVIDER,
-} from '../../../lib/providers'
+import { callPika, callRunway } from '../../../lib/providers'
 
 export const maxDuration = 120
 
-// Cinematic background prompt prefix — steers all providers away from people
 const BG_PREFIX = 'Cinematic background scene, no people, no text, no logos, loopable, '
 
-const BG_PROVIDER = {
-  free:    'pika',
-  creator: 'pika',
-  pro:     'kling',
-  studio:  'runway', // runway for img2video when imageUrl provided, else kling
-}
-
 export async function POST(request) {
-  const { user, plan } = await getUserAndPlan(request)
+  const { user } = await getUserAndPlan(request)
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   let body
@@ -41,16 +30,10 @@ export async function POST(request) {
 
   const prompt = BG_PREFIX + description.trim()
 
-  // Provider selection:
-  //   With imageUrl → Runway (img2video) for pro/studio, Pika for free/creator
-  //   Text-only    → Kling for pro/studio, Pika for free/creator
-  let provider = BG_PROVIDER[plan] ?? 'pika'
-  if (provider === 'runway' && !imageUrl) provider = 'kling'
-  if (imageUrl && (plan === 'free' || plan === 'creator')) provider = 'pika'
-
-  try {
-    if (provider === 'runway') {
-      // Async — client must poll /api/background/poll
+  // Runway first (image-to-video only — requires imageUrl)
+  // Pika (FAL_API_KEY → FALAI_API_KEY fallback) for text-only or when Runway fails
+  if (imageUrl && process.env.RUNWAY_API_KEY) {
+    try {
       const data = await callRunway({ imageUrl, prompt, duration })
       return Response.json({
         provider: 'runway',
@@ -58,21 +41,18 @@ export async function POST(request) {
         status: data.status ?? 'processing',
         balance: credit.remaining,
       })
+    } catch (err) {
+      console.warn('[background] Runway failed, falling back to Pika:', err.message)
     }
+  }
 
-    if (provider === 'kling') {
-      const subtype = imageUrl ? 'image2video' : 'text2video'
-      const data    = await callKling({ prompt, imageUrl, duration, quality: 'pro' })
-      return Response.json({
-        provider: 'kling',
-        subtype,
-        jobId: data.data?.task_id,
-        status: data.data?.task_status ?? 'processing',
-        balance: credit.remaining,
-      })
-    }
+  // Pika via FAL_API_KEY — fallback for text-only or Runway failure
+  const falKey = process.env.FAL_API_KEY || process.env.FALAI_API_KEY
+  if (!falKey) {
+    return Response.json({ error: 'No video generation provider configured' }, { status: 500 })
+  }
 
-    // Pika — synchronous via fal.run
+  try {
     const data = await callPika({ prompt, imageUrl, duration })
     return Response.json({
       provider: 'pika',
@@ -81,9 +61,8 @@ export async function POST(request) {
       url: data.url,
       balance: credit.remaining,
     })
-
   } catch (err) {
-    console.error('[background] generation failed:', err.message)
+    console.error('[background] Pika failed:', err.message)
     return Response.json({ error: 'Background generation failed', detail: err.message }, { status: 500 })
   }
 }
