@@ -153,7 +153,7 @@ const MODES = [
 ];
 
 const TOOLS = [
-  { id:"cinematic",name:"Cinematic Studio",  desc:"Real AI person · Runway · Lip sync", icon:Film,         hue:"violet", category:"Video", badge:"NEW" },
+  { id:"creator",  name:"AI Creator Studio", desc:"Photo or AI person · Any scene · Your voice · Full motion", icon:Film, hue:"violet", category:"Video", badge:"NEW" },
   { id:"video",    name:"AI Video",          desc:"Idea → finished video",              icon:Video,        hue:"violet", category:"Video"   },
   { id:"avatar",   name:"Presenter Studio",  desc:"40 AI avatars + Digital Twin",       icon:User,         hue:"cyan",   category:"Video"   },
   { id:"lipsync",  name:"Lip Sync Studio",   desc:"Sync any face to audio",             icon:Mic,          hue:"violet", category:"Video"   },
@@ -602,7 +602,7 @@ function AppShell({ screen, setScreen, subScreen, setSubScreen, activeTool, setA
   // Redirect-capable tools: push in an effect, never during render
   useEffect(() => {
     if (!activeTool) return;
-    const redirectTools = { script:"script", settings:"settings", video:"video", lipsync:"lipsync", image:"image", voice:"voice", caption:"captions", cinematic:"cinematic" };
+    const redirectTools = { script:"script", settings:"settings", video:"video", lipsync:"lipsync", image:"image", voice:"voice", caption:"captions", creator:"creator", cinematic:"cinematic" };
     if (activeTool.id in redirectTools) {
       router.push(`/dashboard/${redirectTools[activeTool.id]}`);
     }
@@ -614,7 +614,7 @@ function AppShell({ screen, setScreen, subScreen, setSubScreen, activeTool, setA
   if (activeTool?.id==="twin")     return <DigitalTwinStudio onBack={()=>setActiveTool(null)} showToast={showToast} onGenerated={onGenerated}/>;
   if (activeTool?.id==="clone")    return <VoiceCloneStudio mode={mode} setMode={setMode} onBack={()=>setActiveTool(null)} showToast={showToast}/>;
   if (activeTool?.id==="motion")   return <MotionStudio  mode={mode} setMode={setMode} onBack={()=>setActiveTool(null)} showToast={showToast} onGenerated={onGenerated} plan={plan}/>;
-  if (activeTool && ["script","settings","video","lipsync","image","voice","caption","cinematic"].includes(activeTool.id)) return null;
+  if (activeTool && ["script","settings","video","lipsync","image","voice","caption","creator","cinematic"].includes(activeTool.id)) return null;
   if (activeTool)                  return <GenericTool   tool={activeTool} mode={mode} setMode={setMode} onBack={()=>setActiveTool(null)} showToast={showToast} brand={brand}/>;
   if (subScreen)                   return <SubScreen     name={subScreen} onBack={()=>setSubScreen(null)} showToast={showToast}/>;
   return (
