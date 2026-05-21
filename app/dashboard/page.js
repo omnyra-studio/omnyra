@@ -332,7 +332,7 @@ function ResultSection({ label, value, color, onRegen, regenLoading }) {
 /* ── ROOT ── */
 export default function OmnyraApp() {
   const router = useRouter();
-  const [stage,setStage] = useState("splash");
+  const [stage,setStage] = useState(null); // null = checking auth, renders nothing
   const [screen,setScreen]         = useState("home");
   const [subScreen,setSubScreen]   = useState(null);
   const [activeTool,setActiveTool] = useState(null);
@@ -341,11 +341,12 @@ export default function OmnyraApp() {
   const [notifOpen,setNotifOpen]   = useState(false);
   const [toast,setToast]           = useState({visible:false,message:""});
 
-  // On mount: resolve auth state immediately — no arbitrary delay
+  // On mount: check auth before rendering anything
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
-        setStage(localStorage.getItem("omnyra_onboarded") ? "app" : "onboard");
+        const onboarded = localStorage.getItem("omnyra_onboarded");
+        setStage(onboarded ? "splash" : "onboard");
       } else {
         router.replace("/signin");
       }
