@@ -1,5 +1,20 @@
 import { NextResponse } from "next/server";
 
+function cleanScriptForSpeech(script) {
+  return script
+    .replace(/\[.*?\]/g, '')
+    .replace(/\(.*?\)/g, '')
+    .replace(/SCENE\s*\d+[:\-\s]*/gi, '')
+    .replace(/HOOK[:\-\s]*/gi, '')
+    .replace(/MAIN CONTENT[:\-\s]*/gi, '')
+    .replace(/CALL TO ACTION[:\-\s]*/gi, '')
+    .replace(/CTA[:\-\s]*/gi, '')
+    .replace(/🎣|📖|🎯|✨|💡|🎬/g, '')
+    .replace(/^\s*[-*#]+\s*/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 export async function POST(request) {
   try {
     const { script, avatarId, voiceId } = await request.json();
@@ -20,7 +35,7 @@ export async function POST(request) {
           },
           voice: {
             type: "text",
-            input_text: script.slice(0, 1500),
+            input_text: cleanScriptForSpeech(script).slice(0, 1500),
             voice_id: voiceId || "1bd001e7e50f421d891986aad5158bc8",
           },
         }],
