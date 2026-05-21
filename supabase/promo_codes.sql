@@ -17,7 +17,9 @@ CREATE POLICY "Anyone can read active promo codes"
   USING (active = true);
 
 INSERT INTO promo_codes (code, discount_percent, duration_months, max_uses, plan)
-VALUES ('OMNYRABETA', 100, 3, 500, 'creator')
+VALUES
+  ('BETAPRO1', 100, 1, 500, 'pro'),
+  ('BETACREATOR2', 100, 2, 500, 'creator')
 ON CONFLICT (code) DO NOTHING;
 
 CREATE TABLE IF NOT EXISTS promo_redemptions (
