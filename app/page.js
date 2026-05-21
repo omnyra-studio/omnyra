@@ -78,6 +78,22 @@ const plans = [
   },
 ];
 
+const features = [
+  { icon: "🎬", title: "Go from idea to video in minutes", desc: "Type a topic. Get a script, voice, avatar, captions, and video — without switching apps." },
+  { icon: "🎙️", title: "Sound exactly like you", desc: "Clone your voice in 30 seconds. Every piece of content sounds authentic, even when you're not recording." },
+  { icon: "📱", title: "Built for TikTok, Reels, and YouTube", desc: "Platform-optimised scripts, aspect ratios, and captions. Stop reformatting everything manually." },
+  { icon: "💸", title: "One subscription. Everything included.", desc: "Cancel ChatGPT, ElevenLabs, HeyGen, and Runway. One login. One bill. One workflow." },
+];
+
+const comparison = [
+  ["ChatGPT — $20/mo", "Scripts & research — included"],
+  ["ElevenLabs — $22/mo", "Voice clone & generation — included"],
+  ["HeyGen — $29/mo", "AI avatar videos — included"],
+  ["CapCut Pro — $10/mo", "Video editing workflow — included"],
+  ["Canva Pro — $20/mo", "Thumbnails & images — included"],
+  ["Runway — $15/mo", "Cinematic backgrounds — included"],
+];
+
 export default function Home() {
   const router = useRouter();
 
@@ -106,34 +122,80 @@ export default function Home() {
           <span style={{ color: "#7c6fff", fontSize: 13, fontWeight: 600 }}>AI-Powered Creative Studio</span>
         </div>
         <h1 style={{ fontSize: "clamp(36px, 6vw, 72px)", fontWeight: 800, lineHeight: 1.1, marginBottom: 24, letterSpacing: "-1px" }}>
-          Create anything.<br />
-          <span style={{ background: "linear-gradient(135deg, #7c6fff, #a78bfa)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
-            In seconds.
-          </span>
+          Stop paying for<br />
+          <span style={{ color: "#7c6fff" }}>7 AI tools.</span>
         </h1>
         <p style={{ fontSize: 18, color: "#888", maxWidth: 560, margin: "0 auto 40px", lineHeight: 1.6 }}>
-          Generate videos, images, voiceovers, and music with the world&apos;s most advanced AI models — all in one place.
+          Scripts. Voice. Avatars. Videos. Captions. All in one workspace.<br />
+          Start free — no credit card.
         </p>
         <div style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
           <button
             onClick={() => router.push("/signup")}
             style={{ padding: "16px 36px", borderRadius: 12, background: "#7c6fff", color: "#fff", border: "none", cursor: "pointer", fontSize: 16, fontWeight: 700, boxShadow: "0 0 32px #7c6fff44" }}>
-            Start for Free →
+            Create my first video free →
           </button>
           <button
-            onClick={() => router.push("/signin")}
+            onClick={() => { const el = document.getElementById("how-it-works"); if (el) el.scrollIntoView({ behavior: "smooth" }); }}
             style={{ padding: "16px 36px", borderRadius: 12, background: "transparent", color: "#aaa", border: "0.5px solid #333", cursor: "pointer", fontSize: 16, fontWeight: 600 }}>
-            Sign In
+            See how it works
           </button>
         </div>
         <p style={{ marginTop: 20, color: "#444", fontSize: 13 }}>No credit card required · 50 free credits</p>
       </section>
 
+      {/* Why Switch comparison table */}
+      <section style={{ padding: "80px 24px", maxWidth: 900, margin: "0 auto" }}>
+        <h2 style={{ textAlign: "center", fontSize: 36, fontWeight: 800, marginBottom: 16 }}>
+          Replace 6 subscriptions with one.
+        </h2>
+        <p style={{ textAlign: "center", color: "#666", marginBottom: 48, fontSize: 16 }}>
+          The average creator spends $180/month across separate tools. Omnyra replaces all of them.
+        </p>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 0, borderRadius: 16, overflow: "hidden", border: "0.5px solid #1e1e2e" }}>
+          <div style={{ background: "#0d0d14", padding: "20px 28px", borderBottom: "0.5px solid #1e1e2e", color: "#666", fontSize: 14, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>
+            Without Omnyra
+          </div>
+          <div style={{ background: "#0f0b2a", padding: "20px 28px", borderBottom: "0.5px solid #1e1e2e", color: "#7c6fff", fontSize: 14, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1 }}>
+            With Omnyra
+          </div>
+          {comparison.map(([without, withOmnyra], i) => (
+            <>
+              <div key={`without-${i}`} style={{ background: "#0d0d14", padding: "16px 28px", borderBottom: "0.5px solid #111", color: "#555", fontSize: 14, textDecoration: "line-through" }}>
+                ❌ {without}
+              </div>
+              <div key={`with-${i}`} style={{ background: "#0f0b2a", padding: "16px 28px", borderBottom: "0.5px solid #111", color: "#bbb", fontSize: 14 }}>
+                ✅ {withOmnyra}
+              </div>
+            </>
+          ))}
+          <div style={{ background: "#0d0d14", padding: "20px 28px", color: "#f87171", fontSize: 16, fontWeight: 700 }}>
+            Total: ~$116/month
+          </div>
+          <div style={{ background: "#0f0b2a", padding: "20px 28px", color: "#7c6fff", fontSize: 16, fontWeight: 700 }}>
+            Omnyra Pro: $69/month AUD
+          </div>
+        </div>
+      </section>
+
+      {/* Features */}
+      <section id="how-it-works" style={{ padding: "80px 24px", maxWidth: 1100, margin: "0 auto" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 24 }}>
+          {features.map((f) => (
+            <div key={f.title} style={{ background: "#0d0d14", border: "0.5px solid #1e1e2e", borderRadius: 16, padding: "28px 24px" }}>
+              <div style={{ fontSize: 32, marginBottom: 16 }}>{f.icon}</div>
+              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 10, lineHeight: 1.3 }}>{f.title}</h3>
+              <p style={{ color: "#666", fontSize: 14, lineHeight: 1.6 }}>{f.desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
       {/* Pricing */}
       <section style={{ padding: "80px 24px", maxWidth: 1100, margin: "0 auto" }} id="pricing">
         <div style={{ textAlign: "center", marginBottom: 56 }}>
-          <h2 style={{ fontSize: 40, fontWeight: 800, marginBottom: 12 }}>Simple pricing</h2>
-          <p style={{ color: "#666", fontSize: 16 }}>Start free, scale when you&apos;re ready</p>
+          <h2 style={{ fontSize: 40, fontWeight: 800, marginBottom: 12 }}>Start free. Cancel what you don&apos;t need.</h2>
+          <p style={{ color: "#666", fontSize: 16 }}>Scripts and research are always free on every plan.</p>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 20 }}>
           {plans.map((plan) => (
@@ -160,9 +222,9 @@ export default function Home() {
               </div>
               <p style={{ color: "#7c6fff", fontWeight: 700, fontSize: 15, margin: "8px 0 12px" }}>⚡ {plan.credits}</p>
               <ul style={{ listStyle: "none", padding: 0, margin: "0 0 28px", display: "flex", flexDirection: "column", gap: 10, flexGrow: 1 }}>
-                {plan.features.map((f) => (
-                  <li key={f} style={{ display: "flex", alignItems: "center", gap: 10, color: "#bbb", fontSize: 14 }}>
-                    <span style={{ color: "#7c6fff", fontWeight: 700 }}>✓</span> {f}
+                {plan.features.map((feat) => (
+                  <li key={feat} style={{ display: "flex", alignItems: "center", gap: 10, color: "#bbb", fontSize: 14 }}>
+                    <span style={{ color: "#7c6fff", fontWeight: 700 }}>✓</span> {feat}
                   </li>
                 ))}
               </ul>
@@ -187,7 +249,7 @@ export default function Home() {
         <button
           onClick={() => router.push("/signup")}
           style={{ padding: "16px 40px", borderRadius: 12, background: "#7c6fff", color: "#fff", border: "none", cursor: "pointer", fontSize: 16, fontWeight: 700, boxShadow: "0 0 32px #7c6fff44" }}>
-          Get Started Free →
+          Create my first video free →
         </button>
       </section>
 
