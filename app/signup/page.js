@@ -11,6 +11,9 @@ function SignupForm() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [promoCode, setPromoCode] = useState("");
+  const [promoMsg, setPromoMsg] = useState("");
+  const [promoValid, setPromoValid] = useState(false);
 
   useEffect(() => {
     try {
@@ -20,12 +23,28 @@ function SignupForm() {
     } catch {}
   }, [router]);
 
+  async function validatePromo() {
+    if (!promoCode.trim()) return;
+    const res = await fetch("/api/promo/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: promoCode })
+    });
+    const data = await res.json();
+    if (data.valid) {
+      setPromoMsg(data.message);
+      setPromoValid(true);
+    } else {
+      setPromoMsg(data.error);
+      setPromoValid(false);
+    }
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setLoading(true);
     setError("");
     try {
-      // Create user server-side (bypasses email confirmation requirement)
       const res = await fetch("/api/auth/signup", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -34,9 +53,20 @@ function SignupForm() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Signup failed");
 
-      // Establish Supabase client session
       const { error: signInError } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
       if (signInError) throw new Error(signInError.message);
+
+      // Redeem promo code if valid
+      if (promoValid && promoCode.trim()) {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user?.id) {
+          await fetch("/api/promo/redeem", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code: promoCode, userId: session.user.id })
+          });
+        }
+      }
 
       localStorage.setItem("omnyra_onboarded", "1");
       router.push("/dashboard");
@@ -82,6 +112,29 @@ function SignupForm() {
             onChange={e => setPassword(e.target.value)} required
             style={{ padding:"12px 16px", borderRadius:10, border:"0.5px solid #2a2a2a",
               background:"#1a1a1a", color:"#fff", fontSize:14, outline:"none" }} />
+          <div style={{ position:"relative" }}>
+            <input
+              value={promoCode}
+              onChange={e => { setPromoCode(e.target.value); setPromoMsg(""); setPromoValid(false); }}
+              placeholder="Promo code (optional)"
+              style={{ padding:"12px 16px", borderRadius:10,
+                border:`0.5px solid ${promoValid ? "#7c6fff" : "#2a2a2a"}`,
+                background:"#1a1a1a", color:"#fff", fontSize:14,
+                width:"100%", boxSizing:"border-box", outline:"none" }}
+            />
+            <button type="button" onClick={validatePromo}
+              style={{ position:"absolute", right:8, top:"50%", transform:"translateY(-50%)",
+                padding:"6px 12px", borderRadius:6, background:"#7c6fff22",
+                border:"0.5px solid #7c6fff", color:"#7c6fff",
+                fontSize:12, fontWeight:600, cursor:"pointer" }}>
+              Apply
+            </button>
+          </div>
+          {promoMsg && (
+            <p style={{ fontSize:13, color: promoValid ? "#7c6fff" : "#f87171", marginTop:-8 }}>
+              {promoMsg}
+            </p>
+          )}
           <button type="submit" disabled={loading}
             style={{ marginTop:8, padding:"14px", borderRadius:10,
               background: loading ? "#333" : "#fff", color: loading ? "#666" : "#000",

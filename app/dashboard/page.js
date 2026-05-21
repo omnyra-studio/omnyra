@@ -602,14 +602,14 @@ function AppShell({ screen, setScreen, subScreen, setSubScreen, activeTool, setA
   if (activeTool?.id==="script")   { router.push('/dashboard/script'); return null; }
   if (activeTool?.id==="settings") { router.push('/dashboard/settings'); return null; }
   if (activeTool?.id==="avatar")   return <AvatarStudio  mode={mode} onBack={()=>setActiveTool(null)} showToast={showToast} plan={plan}/>;
-  if (activeTool?.id==="video")    return <VideoTool    onBack={()=>setActiveTool(null)} showToast={showToast} onGenerated={onGenerated} plan={plan}/>;
-  if (activeTool?.id==="lipsync")  return <LipSyncStudio    onBack={()=>setActiveTool(null)} showToast={showToast} onGenerated={onGenerated} plan={plan}/>;
+  if (activeTool?.id==="video")    { router.push('/dashboard/video');    return null; }
+  if (activeTool?.id==="lipsync")  { router.push('/dashboard/lipsync');  return null; }
   if (activeTool?.id==="twin")     return <DigitalTwinStudio onBack={()=>setActiveTool(null)} showToast={showToast} onGenerated={onGenerated}/>;
-  if (activeTool?.id==="image")    return <ImageTool    onBack={()=>setActiveTool(null)} showToast={showToast} onGenerated={onGenerated} plan={plan}/>;
-  if (activeTool?.id==="voice")    return <VoiceTool onBack={()=>setActiveTool(null)} showToast={showToast} onGenerated={onGenerated}/>;
+  if (activeTool?.id==="image")    { router.push('/dashboard/image');    return null; }
+  if (activeTool?.id==="voice")    { router.push('/dashboard/voice');    return null; }
   if (activeTool?.id==="clone")    return <VoiceCloneStudio mode={mode} setMode={setMode} onBack={()=>setActiveTool(null)} showToast={showToast}/>;
   if (activeTool?.id==="motion")   return <MotionStudio  mode={mode} setMode={setMode} onBack={()=>setActiveTool(null)} showToast={showToast} onGenerated={onGenerated} plan={plan}/>;
-  if (activeTool?.id==="caption")  return <CaptionTool   mode={mode} setMode={setMode} onBack={()=>setActiveTool(null)} showToast={showToast} brand={brand}/>;
+  if (activeTool?.id==="caption")  { router.push('/dashboard/captions'); return null; }
   if (activeTool)                  return <GenericTool   tool={activeTool} mode={mode} setMode={setMode} onBack={()=>setActiveTool(null)} showToast={showToast} brand={brand}/>;
   if (subScreen)                   return <SubScreen     name={subScreen} onBack={()=>setSubScreen(null)} showToast={showToast}/>;
   return (
