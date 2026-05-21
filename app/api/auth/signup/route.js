@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase-admin";
+import { createClient } from "@supabase/supabase-js";
 import { sendWelcomeEmail } from "@/lib/email";
 
 const log = (step, data) =>
@@ -9,7 +9,6 @@ export async function POST(request) {
   try {
     const body = await request.json();
     const { password, name } = body;
-    // Normalize: trim whitespace + lowercase before any comparison or storage
     const email = typeof body.email === "string"
       ? body.email.trim().toLowerCase()
       : null;
@@ -25,24 +24,31 @@ export async function POST(request) {
       return NextResponse.json({ error: "Password must be at least 6 characters" }, { status: 400 });
     }
 
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    if (!url || !key) {
+      console.error("[auth/signup] Missing Supabase env vars");
+      return NextResponse.json({ error: "Server configuration error" }, { status: 500 });
+    }
+
+    const supabase = createClient(url, key);
+
     log("calling_createUser", { email });
-    const { data, error } = await supabaseAdmin.auth.admin.createUser({
+    const { data, error } = await supabase.auth.admin.createUser({
       email,
       password,
       email_confirm: true,
     });
 
-    console.error("[signup-api] Supabase error:", JSON.stringify(error));
-    console.error("[signup-api] Supabase data:", JSON.stringify(data));
+    log("createUser_result", { hasData: !!data, hasError: !!error, errorMsg: error?.message });
 
     if (error) {
       const isAlreadyRegistered = error.message.toLowerCase().includes("already");
-      log("createUser_failed", { code: error.code, isAlreadyRegistered });
       const msg = isAlreadyRegistered ? "Email already registered" : error.message;
       return NextResponse.json({ error: msg }, { status: 400 });
     }
 
-    log("createUser_ok", { userId: data.user.id, emailConfirmed: data.user.email_confirmed_at !== null });
+    log("createUser_ok", { userId: data.user.id });
 
     sendWelcomeEmail(email).catch(err =>
       console.error("[auth/signup] Welcome email failed:", err.message)
