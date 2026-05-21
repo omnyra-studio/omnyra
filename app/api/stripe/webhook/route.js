@@ -74,6 +74,28 @@ async function applyPlan(db, userId, plan, customerId, subscriptionId) {
   });
 }
 
+async function addCreditPack(db, userId, credits) {
+  const { data: current } = await db
+    .from('credits')
+    .select('balance')
+    .eq('user_id', userId)
+    .single();
+
+  const newBalance = (current?.balance ?? 0) + credits;
+
+  await db
+    .from('credits')
+    .update({ balance: newBalance, updated_at: new Date().toISOString() })
+    .eq('user_id', userId);
+
+  await db.from('credit_transactions').insert({
+    user_id: userId,
+    amount: credits,
+    type: 'purchase',
+    description: `Credit pack: +${credits} credits`,
+  });
+}
+
 export async function POST(request) {
   const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
   const body = await request.text();
@@ -95,9 +117,28 @@ export async function POST(request) {
       case 'checkout.session.completed': {
         const session = event.data.object;
         const email   = session.customer_details?.email ?? session.customer_email;
-        const plan    = planKey(session.metadata?.plan ?? '');
 
-        const userId = await findUserIdByEmail(db, email);
+        // Credit pack — one-time payment
+        if (session.mode === 'payment') {
+          const credits = parseInt(session.metadata?.credits ?? '0', 10);
+          const userId  = session.metadata?.userId
+            ?? await findUserIdByEmail(db, email);
+
+          if (!userId || !credits) {
+            console.warn('checkout.session.completed (payment): missing userId or credits', { userId, credits, email });
+            break;
+          }
+
+          await addCreditPack(db, userId, credits);
+          console.log(`[stripe] Added ${credits} credits to user ${userId}`);
+          break;
+        }
+
+        // Subscription checkout
+        const plan   = planKey(session.metadata?.plan ?? session.metadata?.pack ?? '');
+        const userId = session.metadata?.userId
+          ?? await findUserIdByEmail(db, email);
+
         if (userId) {
           await applyPlan(db, userId, plan, session.customer, session.subscription);
           if (email) {
@@ -105,7 +146,7 @@ export async function POST(request) {
               .catch(err => console.error('[email] Subscription confirmation failed:', err.message));
           }
         } else {
-          console.warn('checkout.session.completed: no user found for', email);
+          console.warn('checkout.session.completed (subscription): no user found for', email);
         }
         break;
       }
