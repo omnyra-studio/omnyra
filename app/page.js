@@ -1,4 +1,4 @@
-"use client";
+"use client"; // v2
 import { useRouter } from "next/navigation";
 
 const plans = [
