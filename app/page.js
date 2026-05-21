@@ -1,4 +1,4 @@
-"use client"; // v2
+"use client"; // v3
 import { useRouter } from "next/navigation";
 
 const plans = [
@@ -82,16 +82,18 @@ export default function Home() {
   const router = useRouter();
 
   return (
-    <main style={{ minHeight: "100vh", background: "#06060a", color: "#fff", fontFamily: "var(--font-geist-sans, sans-serif)" }}>
+    <main style={{ minHeight: "100vh", background: "#06060a", color: "#fff", fontFamily: "sans-serif" }}>
       {/* Nav */}
       <nav style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 48px", borderBottom: "0.5px solid #1a1a2e", position: "sticky", top: 0, background: "#06060aee", backdropFilter: "blur(12px)", zIndex: 100 }}>
         <img src="/logo-nav.png" alt="Omnyra AI" style={{ height: 36, width: "auto", objectFit: "contain" }} />
         <div style={{ display: "flex", gap: 16, alignItems: "center" }}>
-          <button onClick={() => router.push("/signin")}
+          <button
+            onClick={() => router.push("/signin")}
             style={{ padding: "8px 20px", borderRadius: 8, background: "transparent", color: "#aaa", border: "0.5px solid #333", cursor: "pointer", fontSize: 14, fontWeight: 600 }}>
             Sign In
           </button>
-          <button onClick={() => router.push("/signup")}
+          <button
+            onClick={() => router.push("/signup")}
             style={{ padding: "8px 20px", borderRadius: 8, background: "#7c6fff", color: "#fff", border: "none", cursor: "pointer", fontSize: 14, fontWeight: 700 }}>
             Get Started Free
           </button>
@@ -113,11 +115,13 @@ export default function Home() {
           Generate videos, images, voiceovers, and music with the world&apos;s most advanced AI models — all in one place.
         </p>
         <div style={{ display: "flex", gap: 16, justifyContent: "center", flexWrap: "wrap" }}>
-          <button onClick={() => router.push("/signup")}
+          <button
+            onClick={() => router.push("/signup")}
             style={{ padding: "16px 36px", borderRadius: 12, background: "#7c6fff", color: "#fff", border: "none", cursor: "pointer", fontSize: 16, fontWeight: 700, boxShadow: "0 0 32px #7c6fff44" }}>
             Start for Free →
           </button>
-          <button onClick={() => router.push("/signin")}
+          <button
+            onClick={() => router.push("/signin")}
             style={{ padding: "16px 36px", borderRadius: 12, background: "transparent", color: "#aaa", border: "0.5px solid #333", cursor: "pointer", fontSize: 16, fontWeight: 600 }}>
             Sign In
           </button>
@@ -162,12 +166,12 @@ export default function Home() {
                   </li>
                 ))}
               </ul>
-              <button onClick={() => router.push(plan.href)}
+              <button
+                onClick={() => router.push(plan.href)}
                 style={{
                   padding: "13px", borderRadius: 10, fontWeight: 700, fontSize: 15, border: "none", cursor: "pointer",
                   background: plan.highlight ? "#7c6fff" : "#1a1a2a",
                   color: plan.highlight ? "#fff" : "#aaa",
-                  transition: "all 0.2s",
                 }}>
                 {plan.cta}
               </button>
@@ -180,7 +184,8 @@ export default function Home() {
       <section style={{ textAlign: "center", padding: "80px 24px 100px" }}>
         <h2 style={{ fontSize: 36, fontWeight: 800, marginBottom: 16 }}>Ready to create?</h2>
         <p style={{ color: "#666", marginBottom: 32, fontSize: 16 }}>Join thousands of creators using Omnyra AI</p>
-        <button onClick={() => router.push("/signup")}
+        <button
+          onClick={() => router.push("/signup")}
           style={{ padding: "16px 40px", borderRadius: 12, background: "#7c6fff", color: "#fff", border: "none", cursor: "pointer", fontSize: 16, fontWeight: 700, boxShadow: "0 0 32px #7c6fff44" }}>
           Get Started Free →
         </button>
