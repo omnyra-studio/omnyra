@@ -23,21 +23,18 @@ export default function SigninPage() {
     setLoading(true);
     setError("");
     try {
-      const normalizedEmail = email.trim().toLowerCase();
-      console.log("[signin] attempting signInWithPassword", { email: normalizedEmail });
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({
-        email: normalizedEmail,
+      // Clear any stale tokens first
+      Object.keys(localStorage).forEach(k => {
+        if (k.startsWith("sb-")) localStorage.removeItem(k);
+      });
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim().toLowerCase(),
         password,
       });
-      if (signInError) {
-        console.error("[signin] signInWithPassword failed", { message: signInError.message, status: signInError.status, code: signInError.code });
-        throw new Error(signInError.message);
-      }
-      console.log("[signin] success", { userId: data.user?.id, emailConfirmed: data.user?.email_confirmed_at != null });
-      localStorage.setItem("omnyra_onboarded", "1");
-      router.push("/dashboard");
+      if (error) throw error;
+      if (data.session) router.push("/dashboard");
     } catch (err) {
-      setError(err.message);
+      setError(err.message || "Sign in failed");
     } finally {
       setLoading(false);
     }

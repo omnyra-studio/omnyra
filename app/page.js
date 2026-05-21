@@ -3,42 +3,77 @@ import { useRouter } from "next/navigation";
 
 const plans = [
   {
-    name: "Free",
-    price: "Free",
+    name: "FREE",
+    price: "$0",
+    period: "forever",
+    tagline: '"Try creation"',
     credits: "50 credits/month",
-    features: ["5 AI generations/month", "720p exports", "Basic tools", "Community support"],
+    href: "/signup",
+    features: [
+      "5 script generations/day",
+      "3 voice previews/week",
+      "1 watermarked video/month",
+      "Lip sync preview only — no export",
+      "Unlimited draft previews",
+    ],
     cta: "Get Started Free",
-    href: "/signup?plan=free",
     highlight: false,
   },
   {
-    name: "Starter",
+    name: "CREATOR",
     price: "$29",
-    period: "/month",
+    period: "/mo AUD",
+    tagline: '"Post occasionally"',
     credits: "200 credits/month",
-    features: ["50 AI generations/month", "1080p exports", "All tools", "Email support"],
-    cta: "Get Started",
-    href: "/signup?plan=starter",
+    href: "/signup?plan=creator",
+    features: [
+      "25 script generations/month",
+      "15 voice generations/month",
+      "6 final video renders/month",
+      "6 lip sync exports/month",
+      "Unlimited draft previews",
+      "720p exports · No watermark",
+    ],
+    cta: "Get Creator",
     highlight: false,
   },
   {
-    name: "Pro",
+    name: "PRO",
     price: "$69",
-    period: "/month",
+    period: "/mo AUD",
+    tagline: '"Post consistently"',
     credits: "500 credits/month",
-    features: ["200 AI generations/month", "4K exports", "Priority queue", "Priority support"],
-    cta: "Get Started",
     href: "/signup?plan=pro",
+    features: [
+      "Unlimited script generations",
+      "50 voice generations/month",
+      "20 final video renders/month",
+      "20 lip sync exports/month",
+      "Unlimited draft previews",
+      "1080p exports · No watermark",
+      "Priority processing",
+    ],
+    cta: "Get Pro",
     highlight: true,
   },
   {
-    name: "Studio",
+    name: "STUDIO",
     price: "$99",
-    period: "/month",
+    period: "/mo AUD",
+    tagline: '"Go full creator"',
     credits: "1,500 credits/month",
-    features: ["Unlimited generations", "4K exports", "API access", "Dedicated support"],
-    cta: "Get Started",
     href: "/signup?plan=studio",
+    features: [
+      "Unlimited everything",
+      "150 voice generations/month",
+      "50 final video renders/month",
+      "50 lip sync exports/month",
+      "Unlimited draft previews",
+      "4K exports · No watermark",
+      "Priority processing",
+      "Dedicated support",
+    ],
+    cta: "Get Studio",
     highlight: false,
   },
 ];
@@ -113,12 +148,13 @@ export default function Home() {
                   Most Popular
                 </div>
               )}
-              <p style={{ color: "#aaa", fontSize: 13, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 12 }}>{plan.name}</p>
+              <p style={{ color: "#aaa", fontSize: 13, fontWeight: 600, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 4 }}>{plan.name}</p>
+              {plan.tagline && <p style={{ color: "#555", fontSize: 12, marginBottom: 10 }}>{plan.tagline}</p>}
               <div style={{ display: "flex", alignItems: "baseline", gap: 4, marginBottom: 4 }}>
                 <span style={{ fontSize: 40, fontWeight: 800, color: "#fff" }}>{plan.price}</span>
                 {plan.period && <span style={{ color: "#555", fontSize: 14 }}>{plan.period}</span>}
               </div>
-              <p style={{ color: "#7c6fff", fontWeight: 700, fontSize: 15, margin: "8px 0 20px" }}>⚡ {plan.credits}</p>
+              <p style={{ color: "#7c6fff", fontWeight: 700, fontSize: 15, margin: "8px 0 12px" }}>⚡ {plan.credits}</p>
               <ul style={{ listStyle: "none", padding: 0, margin: "0 0 28px", display: "flex", flexDirection: "column", gap: 10, flexGrow: 1 }}>
                 {plan.features.map((f) => (
                   <li key={f} style={{ display: "flex", alignItems: "center", gap: 10, color: "#bbb", fontSize: 14 }}>
