@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabase";
 
@@ -24,13 +24,6 @@ const SCENES = [
   { label: "Custom scene...",            value: "" },
 ];
 
-const VOICES = [
-  { id: "JBFqnCBsd6RMkjVDRZzb", name: "George", desc: "Warm · Male" },
-  { id: "EXAVITQu4vr4xnSDxMaL", name: "Bella",  desc: "Soft · Female" },
-  { id: "21m00Tcm4TlvDq8ikWAM", name: "Rachel", desc: "Clear · Female" },
-  { id: "TxGEqnHWrfWFTfGW9XjX", name: "Josh",   desc: "Deep · Male" },
-];
-
 function authHeaders(session) {
   return {
     "Content-Type": "application/json",
@@ -42,7 +35,12 @@ export default function CinematicStudio() {
   const router = useRouter();
   const [step, setStep] = useState(1);
   const [script, setScript] = useState("");
-  const [voiceId, setVoiceId] = useState(VOICES[0].id);
+  const [voices, setVoices] = useState([]);
+  const [voiceSearch, setVoiceSearch] = useState("");
+  const [voiceGender, setVoiceGender] = useState("All");
+  const [voiceId, setVoiceId] = useState("");
+  const previewRef = useRef(null);
+  const [playingId, setPlayingId] = useState(null);
   const [scene, setScene] = useState(SCENES[0]);
   const [customScene, setCustomScene] = useState("");
   const [personStyle, setPersonStyle] = useState(PERSON_STYLES[0].value);
@@ -56,6 +54,47 @@ export default function CinematicStudio() {
   const [credits, setCredits] = useState(null);
 
   const sceneDesc = scene.value || customScene;
+
+  // Load full ElevenLabs voice library on mount
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      fetch("/api/voices", {
+        headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
+      })
+        .then(r => r.json())
+        .then(d => {
+          if (d.voices?.length) {
+            setVoices(d.voices);
+            setVoiceId(d.voices[0].id);
+          }
+        })
+        .catch(() => {});
+    });
+  }, []);
+
+  function playVoicePreview(v) {
+    if (!v.previewUrl) return;
+    if (playingId === v.id) {
+      previewRef.current?.pause();
+      setPlayingId(null);
+      return;
+    }
+    previewRef.current?.pause();
+    const a = new Audio(v.previewUrl);
+    previewRef.current = a;
+    a.play();
+    setPlayingId(v.id);
+    a.onended = () => setPlayingId(null);
+  }
+
+  const filteredVoices = voices.filter(v => {
+    const q = voiceSearch.toLowerCase();
+    const matchQ = !q || v.name.toLowerCase().includes(q) || v.accent?.toLowerCase().includes(q) || v.description?.toLowerCase().includes(q);
+    const matchG = voiceGender === "All" || v.gender === voiceGender;
+    return matchQ && matchG;
+  });
+
+  const selectedVoice = voices.find(v => v.id === voiceId);
 
   async function generateVoice() {
     if (!script.trim()) return;
@@ -213,7 +252,7 @@ export default function CinematicStudio() {
   }
 
   function reset() {
-    setStep(1); setScript(""); setVoiceId(VOICES[0].id);
+    setStep(1); setScript(""); setVoiceId(voices[0]?.id ?? "");
     setScene(SCENES[0]); setCustomScene(""); setPersonStyle(PERSON_STYLES[0].value);
     setAudioBlobUrl(""); setAudioPublicUrl(""); setVideoUrl(""); setFinalUrl("");
     setError(""); setStatus("");
@@ -280,17 +319,44 @@ export default function CinematicStudio() {
             <div style={{ fontSize: 11, color: C.sub, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em" }}>Step 1 — Write your script</div>
 
             <div>
-              <div style={{ fontSize: 11, color: C.sub, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 600 }}>Voice</div>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                {VOICES.map(v => (
-                  <button key={v.id} onClick={() => setVoiceId(v.id)}
-                    style={{ padding: "10px 14px", borderRadius: 10, textAlign: "left", cursor: "pointer", fontFamily: "inherit",
-                      background: voiceId === v.id ? "rgba(124,111,255,0.18)" : "rgba(255,255,255,0.04)",
-                      border: voiceId === v.id ? "1px solid rgba(124,111,255,0.6)" : "1px solid rgba(255,255,255,0.08)",
-                      color: voiceId === v.id ? "#fff" : C.sub }}>
-                    <div style={{ fontWeight: 700, fontSize: 13 }}>{v.name}</div>
-                    <div style={{ fontSize: 11, marginTop: 2, color: C.sub }}>{v.desc}</div>
+              <div style={{ fontSize: 11, color: C.sub, marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 600 }}>
+                Voice {selectedVoice && <span style={{ color: C.violet, textTransform: "none", fontWeight: 700 }}>— {selectedVoice.name}</span>}
+              </div>
+              <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+                <input value={voiceSearch} onChange={e => setVoiceSearch(e.target.value)}
+                  placeholder="Search voices..."
+                  style={{ flex: 1, padding: "7px 12px", borderRadius: 8, border: "1px solid rgba(255,255,255,0.1)", background: "rgba(255,255,255,0.04)", color: C.text, fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+                {["All", "male", "female"].map(g => (
+                  <button key={g} onClick={() => setVoiceGender(g)}
+                    style={{ padding: "6px 10px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 11, fontWeight: 600,
+                      background: voiceGender === g ? C.violet : "rgba(255,255,255,0.05)",
+                      border: voiceGender === g ? "1px solid transparent" : "1px solid rgba(255,255,255,0.1)",
+                      color: voiceGender === g ? "#fff" : C.sub }}>
+                    {g === "All" ? "All" : g === "male" ? "M" : "F"}
                   </button>
+                ))}
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 5, maxHeight: 220, overflowY: "auto" }}>
+                {filteredVoices.length === 0 && voices.length === 0 && (
+                  <div style={{ fontSize: 12, color: C.sub, padding: "12px 0", textAlign: "center" }}>Loading voices...</div>
+                )}
+                {filteredVoices.map(v => (
+                  <div key={v.id}
+                    onClick={() => setVoiceId(v.id)}
+                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", borderRadius: 10, cursor: "pointer",
+                      background: voiceId === v.id ? "rgba(124,111,255,0.18)" : "rgba(255,255,255,0.03)",
+                      border: voiceId === v.id ? "1px solid rgba(124,111,255,0.6)" : "1px solid rgba(255,255,255,0.07)" }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ fontWeight: 700, fontSize: 13, color: voiceId === v.id ? "#fff" : C.text }}>{v.name}</span>
+                      <span style={{ fontSize: 11, color: C.sub, marginLeft: 8, textTransform: "capitalize" }}>{v.gender}{v.accent && v.accent !== "unknown" ? ` · ${v.accent}` : ""}</span>
+                    </div>
+                    {v.previewUrl && (
+                      <button onClick={e => { e.stopPropagation(); playVoicePreview(v); }}
+                        style={{ flexShrink: 0, padding: "3px 8px", borderRadius: 6, border: "1px solid rgba(124,111,255,0.3)", background: playingId === v.id ? "rgba(124,111,255,0.3)" : "rgba(124,111,255,0.1)", color: "#a78bfa", cursor: "pointer", fontSize: 10, fontFamily: "inherit", fontWeight: 700 }}>
+                        {playingId === v.id ? "■" : "▶"}
+                      </button>
+                    )}
+                  </div>
                 ))}
               </div>
             </div>
