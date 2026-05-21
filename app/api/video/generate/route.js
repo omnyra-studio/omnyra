@@ -4,11 +4,11 @@ function cleanScriptForSpeech(script) {
   return script
     .replace(/\[.*?\]/g, '')
     .replace(/\(.*?\)/g, '')
-    .replace(/SCENE\s*\d+[:\-\s]*/gi, '')
-    .replace(/HOOK[:\-\s]*/gi, '')
-    .replace(/MAIN CONTENT[:\-\s]*/gi, '')
-    .replace(/CALL TO ACTION[:\-\s]*/gi, '')
-    .replace(/CTA[:\-\s]*/gi, '')
+    .replace(/SCENE\s*\d+[:\s]*/gi, '')
+    .replace(/HOOK[:\s]*/gi, '')
+    .replace(/MAIN CONTENT[:\s]*/gi, '')
+    .replace(/CALL TO ACTION[:\s]*/gi, '')
+    .replace(/CTA[:\s]*/gi, '')
     .replace(/🎣|📖|🎯|✨|💡|🎬/g, '')
     .replace(/^\s*[-*#]+\s*/gm, '')
     .replace(/\n{3,}/g, '\n\n')
@@ -17,8 +17,14 @@ function cleanScriptForSpeech(script) {
 
 export async function POST(request) {
   try {
-    const { script, avatarId, voiceId } = await request.json();
+    const { script, avatarId, voiceId, backgroundUrl } = await request.json();
     if (!script?.trim()) return NextResponse.json({ error: "Script required" }, { status: 400 });
+
+    const cleanScript = cleanScriptForSpeech(script).slice(0, 1500);
+
+    const background = backgroundUrl
+      ? { type: "image", url: backgroundUrl }
+      : { type: "color", value: "#000000" };
 
     const res = await fetch("https://api.heygen.com/v2/video/generate", {
       method: "POST",
@@ -35,11 +41,14 @@ export async function POST(request) {
           },
           voice: {
             type: "text",
-            input_text: cleanScriptForSpeech(script).slice(0, 1500),
-            voice_id: voiceId || "1bd001e7e50f421d891986aad5158bc8",
+            input_text: cleanScript,
+            voice_id: voiceId || "2d5b0e6cf36f460aa7fc47e3eee4ba54",
+            speed: 1.1,
           },
+          background,
         }],
         dimension: { width: 1280, height: 720 },
+        aspect_ratio: "16:9",
       }),
     });
 
