@@ -331,6 +331,7 @@ function ResultSection({ label, value, color, onRegen, regenLoading }) {
 
 /* ── ROOT ── */
 export default function OmnyraApp() {
+  const router = useRouter();
   const [stage,setStage] = useState("splash");
   const [screen,setScreen]         = useState("home");
   const [subScreen,setSubScreen]   = useState(null);
@@ -346,10 +347,10 @@ export default function OmnyraApp() {
       if (session) {
         setStage(localStorage.getItem("omnyra_onboarded") ? "app" : "onboard");
       } else {
-        setStage("login");
+        router.replace("/signin");
       }
     });
-  }, []);
+  }, [router]);
 
   // React to auth changes (sign-in, token refresh, sign-out, expiry)
   useEffect(() => {
@@ -358,11 +359,11 @@ export default function OmnyraApp() {
         if (!localStorage.getItem("omnyra_onboarded")) setStage("onboard");
         else setStage("app");
       } else {
-        setStage("login");
+        router.replace("/signin");
       }
     });
     return () => subscription.unsubscribe();
-  }, []);
+  }, [router]);
 
   const showToast = msg => { setToast({visible:true,message:msg}); setTimeout(()=>setToast({visible:false,message:""}),2200); };
 
@@ -374,7 +375,6 @@ export default function OmnyraApp() {
         {stage==="splash"  && <Splash/>}
         {stage==="onboard" && <Onboarding onDone={()=>setStage("paywall")}/>}
         {stage==="paywall" && <Paywall onDone={()=>{ localStorage.setItem("omnyra_onboarded","1"); setStage("app"); }} showToast={showToast}/>}
-        {stage==="login"   && <LoginGate onDone={()=>setStage("app")}/>}
         {stage==="app" && (
           <>
             {searchOpen && <SearchOverlay onClose={()=>setSearchOpen(false)} onTool={t=>{setActiveTool(t);setSearchOpen(false);}}/>}
