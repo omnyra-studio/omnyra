@@ -1056,17 +1056,19 @@ function ScriptStudio({ mode, setMode, onBack, showToast, brand, onSave }) {
    Creator Hub POST — Full orchestration flow
 ──────────────────────────────────────────────*/
 function OneClickFlow({ mode, setMode, onBack, showToast, brand, onSave }) {
-  const [step,setStep]       = useState(1);
-  const [platform,setPlatform] = useState(null);
-  const [style,setStyle]     = useState(null);
-  const [tone,setTone]       = useState(null);
-  const [prompt,setPrompt]   = useState("");
-  const [generating,setGen]  = useState(false);
-  const [directions,setDirs] = useState(null);
-  const [selected,setSel]    = useState(null);
-  const [expanded,setExp]    = useState(null);
-  const [regenKey,setRK]     = useState(null);
-  const [error,setError]     = useState(null);
+  const [step,setStep]           = useState(1);
+  const [platform,setPlatform]   = useState(null);
+  const [style,setStyle]         = useState(null);
+  const [tone,setTone]           = useState(null);
+  const [prompt,setPrompt]       = useState("");
+  const [generating,setGen]      = useState(false);
+  const [directions,setDirs]     = useState(null);
+  const [selected,setSel]        = useState(null);
+  const [expanded,setExp]        = useState(null);
+  const [regenKey,setRK]         = useState(null);
+  const [error,setError]         = useState(null);
+  const [videoGenLoading,setVGL] = useState(false);
+  const [videoResult,setVR]      = useState(null);
   const cm = MODES.find(m=>m.id===mode);
 
   const genDirections = async () => {
@@ -1102,6 +1104,30 @@ function OneClickFlow({ mode, setMode, onBack, showToast, brand, onSave }) {
       if (data.result&&expanded){ const k=section.toLowerCase().replace(/\s+/g,''); setExp(p=>({...p,[k]:data.result.trim()})); showToast(`${section} regenerated! ✓`); }
     } catch { showToast("Regen failed"); }
     setRK(null);
+  };
+
+  const createVideo = async () => {
+    const script = expanded?.script;
+    if (!script?.trim()) { showToast("No script found — expand a direction first"); return; }
+    setVGL(true); setVR(null);
+    try {
+      const res = await authFetch("/api/video/generate", { method:"POST", body:JSON.stringify({ script }) });
+      const data = await res.json();
+      if (data.error) { showToast("Video error: " + data.error); setVGL(false); return; }
+      showToast("🎬 Generating video — this takes 1–2 min…");
+      let attempts = 0;
+      const poll = async () => {
+        if (attempts++ > 60) { showToast("Video timed out — check HeyGen dashboard"); setVGL(false); return; }
+        try {
+          const sr = await fetch(`/api/video/status?videoId=${data.videoId}`);
+          const sd = await sr.json();
+          if (sd.status === "completed" && sd.url) { setVR(sd.url); setVGL(false); showToast("Video ready! 🎬"); }
+          else if (sd.status === "failed") { showToast("Video generation failed"); setVGL(false); }
+          else setTimeout(poll, 5000);
+        } catch { setTimeout(poll, 5000); }
+      };
+      poll();
+    } catch (err) { showToast("Failed: " + err.message); setVGL(false); }
   };
 
   const SECTION_CONFIG = [
@@ -1272,11 +1298,17 @@ function OneClickFlow({ mode, setMode, onBack, showToast, brand, onSave }) {
 
           <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:10}}>
             <PressBtn onClick={()=>{const all=SECTION_CONFIG.map(sc=>{const v=expanded[sc.key];if(!v)return"";return`${sc.label}\n${Array.isArray(v)?v.join(' '):v}`;}).filter(Boolean).join('\n\n');navigator.clipboard.writeText(all);showToast("Full package copied! ✓");}} style={{...primaryBtn,width:"100%",justifyContent:"center"}}><Copy size={15}/> Copy full package</PressBtn>
-            <PressBtn onClick={()=>showToast("Create Video — connect Kling · Sync Labs + D-ID in Connected Apps")} style={{padding:"14px 20px",borderRadius:100,background:"linear-gradient(135deg,rgba(251,191,36,0.25),rgba(251,191,36,0.1))",border:"1px solid rgba(251,191,36,0.35)",color:C.gold,fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:8,fontSize:14,fontWeight:600}}>
-              🎬 Create Video from this package
+            <PressBtn onClick={createVideo} disabled={videoGenLoading} style={{padding:"14px 20px",borderRadius:100,background:videoGenLoading?"rgba(251,191,36,0.08)":"linear-gradient(135deg,rgba(251,191,36,0.25),rgba(251,191,36,0.1))",border:"1px solid rgba(251,191,36,0.35)",color:C.gold,fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:8,fontSize:14,fontWeight:600,opacity:videoGenLoading?0.7:1,cursor:videoGenLoading?"not-allowed":"pointer"}}>
+              {videoGenLoading?<><div style={{width:14,height:14,borderRadius:"50%",border:"2px solid rgba(251,191,36,0.3)",borderTopColor:C.gold,animation:"spin 1s linear infinite"}}/>Generating video…</>:<>🎬 Create Video from this package</>}
             </PressBtn>
+            {videoResult&&(
+              <div style={{borderRadius:16,overflow:"hidden",border:"1px solid rgba(251,191,36,0.3)",marginTop:4}}>
+                <video src={videoResult} controls style={{width:"100%",display:"block"}}/>
+                <a href={videoResult} download target="_blank" rel="noreferrer" style={{display:"block",padding:"10px 16px",textAlign:"center",color:C.gold,fontSize:13,fontWeight:600,background:"rgba(251,191,36,0.06)"}}>⬇ Download video</a>
+              </div>
+            )}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              <PressBtn onClick={()=>showToast("Export — connect video APIs")} style={{...ghostBtn,justifyContent:"center"}}>📤 Export Video</PressBtn>
+              <PressBtn onClick={()=>videoResult?window.open(videoResult,"_blank"):showToast("Generate a video first")} style={{...ghostBtn,justifyContent:"center"}}>📤 Export Video</PressBtn>
               <PressBtn onClick={()=>onSave?.('oneclick',{title:prompt,platform:platform?.label,style:style?.label,tone:tone?.id,mode,expanded})} style={{...ghostBtn,justifyContent:"center"}}>💾 Save Project</PressBtn>
             </div>
             <PressBtn onClick={()=>{setStep(5);setExp(null);}} style={{...ghostBtn,width:"100%",justifyContent:"center"}}>← Try different direction</PressBtn>
