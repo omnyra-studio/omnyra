@@ -16,6 +16,8 @@ CREATE POLICY "Anyone can read active promo codes"
   ON promo_codes FOR SELECT
   USING (active = true);
 
+-- BETAPRO1     → 🎉 1 month of pro plan FREE!
+-- BETACREATOR2 → 🎉 2 months of creator plan FREE!
 INSERT INTO promo_codes (code, discount_percent, duration_months, max_uses, plan)
 VALUES
   ('BETAPRO1', 100, 1, 500, 'pro'),

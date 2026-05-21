@@ -1052,12 +1052,13 @@ function ScriptStudio({ mode, setMode, onBack, showToast, brand, onSave }) {
   );
 }
 
-const BACKGROUNDS = [
-  { label:"🌳 Park / Nature",  url:"https://images.unsplash.com/photo-1441974231531-c6227db76b6e?w=1280" },
-  { label:"🏙️ City",           url:"https://images.unsplash.com/photo-1477959858617-67f85cf4f1df?w=1280" },
-  { label:"🏠 Modern Office",  url:"https://images.unsplash.com/photo-1497366216548-37526070297c?w=1280" },
-  { label:"🎨 Studio",         url:"https://images.unsplash.com/photo-1598300042247-d088f8ab3a91?w=1280" },
-  { label:"⬛ Clean Black",    url:null },
+const BG_QUICKPICKS = [
+  "lush forest at golden hour",
+  "futuristic city skyline at night",
+  "modern minimalist studio",
+  "luxury penthouse interior",
+  "tropical beach at sunset",
+  "clean black void",
 ];
 
 /* ─────────────────────────────────────────────
@@ -1077,7 +1078,7 @@ function OneClickFlow({ mode, setMode, onBack, showToast, brand, onSave }) {
   const [error,setError]         = useState(null);
   const [videoGenLoading,setVGL] = useState(false);
   const [videoResult,setVR]      = useState(null);
-  const [bgChoice,setBgChoice]   = useState(BACKGROUNDS[0]);
+  const [bgPrompt,setBgPrompt]   = useState("");
   const cm = MODES.find(m=>m.id===mode);
 
   const genDirections = async () => {
@@ -1120,7 +1121,17 @@ function OneClickFlow({ mode, setMode, onBack, showToast, brand, onSave }) {
     if (!script?.trim()) { showToast("No script found — expand a direction first"); return; }
     setVGL(true); setVR(null);
     try {
-      const res = await authFetch("/api/video/generate", { method:"POST", body:JSON.stringify({ script, backgroundUrl: bgChoice.url }) });
+      let backgroundUrl = null;
+      const bg = bgPrompt.trim();
+      if (bg && bg !== "clean black void") {
+        showToast("🎨 Generating background…");
+        try {
+          const ir = await authFetch("/api/image", { method:"POST", body:JSON.stringify({ prompt: bg + ", wide cinematic background, no people, high quality", style:"cinematic" }) });
+          const id = await ir.json();
+          if (id.url) backgroundUrl = id.url;
+        } catch { /* fall through to black */ }
+      }
+      const res = await authFetch("/api/video/generate", { method:"POST", body:JSON.stringify({ script, backgroundUrl }) });
       const data = await res.json();
       if (data.error) { showToast("Video error: " + data.error); setVGL(false); return; }
       showToast("🎬 Generating video — this takes 1–2 min…");
@@ -1308,11 +1319,24 @@ function OneClickFlow({ mode, setMode, onBack, showToast, brand, onSave }) {
           <div style={{marginTop:8,display:"flex",flexDirection:"column",gap:10}}>
             <PressBtn onClick={()=>{const all=SECTION_CONFIG.map(sc=>{const v=expanded[sc.key];if(!v)return"";return`${sc.label}\n${Array.isArray(v)?v.join(' '):v}`;}).filter(Boolean).join('\n\n');navigator.clipboard.writeText(all);showToast("Full package copied! ✓");}} style={{...primaryBtn,width:"100%",justifyContent:"center"}}><Copy size={15}/> Copy full package</PressBtn>
             <div>
-              <div style={{fontSize:11,color:"#666",marginBottom:6,textTransform:"uppercase",letterSpacing:1.5}}>Background</div>
-              <select value={bgChoice.label} onChange={e=>setBgChoice(BACKGROUNDS.find(b=>b.label===e.target.value))}
-                style={{padding:"10px 14px",borderRadius:8,border:"0.5px solid #2a2a2a",background:"#1a1a1a",color:"#fff",fontSize:14,width:"100%",fontFamily:"inherit"}}>
-                {BACKGROUNDS.map(b=><option key={b.label}>{b.label}</option>)}
-              </select>
+              <div style={{fontSize:11,color:"#666",marginBottom:6,textTransform:"uppercase",letterSpacing:1.5}}>Background — describe it, Omnyra generates it</div>
+              <input
+                value={bgPrompt}
+                onChange={e=>setBgPrompt(e.target.value)}
+                placeholder="e.g. a futuristic city at night, neon lights…"
+                style={{width:"100%",padding:"10px 14px",borderRadius:8,border:"0.5px solid #2a2a2a",background:"#1a1a1a",color:"#fff",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}}
+              />
+              <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:8}}>
+                {BG_QUICKPICKS.map(q=>(
+                  <button key={q} type="button" onClick={()=>setBgPrompt(q)}
+                    style={{padding:"4px 10px",borderRadius:100,fontSize:11,cursor:"pointer",fontFamily:"inherit",
+                      background:bgPrompt===q?"rgba(139,92,246,0.25)":"rgba(255,255,255,0.05)",
+                      border:bgPrompt===q?"0.5px solid #7c6fff":"0.5px solid #2a2a2a",
+                      color:bgPrompt===q?"#a78bfa":"#666"}}>
+                    {q}
+                  </button>
+                ))}
+              </div>
             </div>
             <PressBtn onClick={createVideo} disabled={videoGenLoading} style={{padding:"14px 20px",borderRadius:100,background:videoGenLoading?"rgba(251,191,36,0.08)":"linear-gradient(135deg,rgba(251,191,36,0.25),rgba(251,191,36,0.1))",border:"1px solid rgba(251,191,36,0.35)",color:C.gold,fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:8,fontSize:14,fontWeight:600,opacity:videoGenLoading?0.7:1,cursor:videoGenLoading?"not-allowed":"pointer"}}>
               {videoGenLoading?<><div style={{width:14,height:14,borderRadius:"50%",border:"2px solid rgba(251,191,36,0.3)",borderTopColor:C.gold,animation:"spin 1s linear infinite"}}/>Generating video…</>:<>🎬 Create Video from this package</>}
