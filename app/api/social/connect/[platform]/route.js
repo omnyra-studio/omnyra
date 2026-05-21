@@ -1,7 +1,14 @@
-import { supabaseAdmin } from '../../../../../lib/supabase-admin'
-import { cookies } from 'next/headers'
+import { createClient } from '@supabase/supabase-js';
+import { cookies } from 'next/headers';
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+
+function getDb() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  );
+}
 
 const OAUTH_CONFIGS = {
   tiktok: {
@@ -44,47 +51,44 @@ const OAUTH_CONFIGS = {
       code_challenge_method: 'S256',
     }),
   },
-}
+};
 
 export async function GET(request, context) {
-  const { platform } = await context.params
+  const { platform } = await context.params;
 
-  // Validate user via token query param
-  const token = new URL(request.url).searchParams.get('token')
-  if (!token) return new Response('Missing token', { status: 401 })
-  const { data: { user } } = await supabaseAdmin.auth.getUser(token)
-  if (!user) return new Response('Unauthorized', { status: 401 })
+  const token = new URL(request.url).searchParams.get('token');
+  if (!token) return new Response('Missing token', { status: 401 });
+  const { data: { user } } = await getDb().auth.getUser(token);
+  if (!user) return new Response('Unauthorized', { status: 401 });
 
-  const config = OAUTH_CONFIGS[platform]
-  if (!config) return new Response('Unknown platform', { status: 400 })
+  const config = OAUTH_CONFIGS[platform];
+  if (!config) return new Response('Unknown platform', { status: 400 });
 
-  const redirectUri = `${APP_URL}/api/social/callback/${platform}`
-  const state = crypto.randomUUID()
+  const redirectUri = `${APP_URL}/api/social/callback/${platform}`;
+  const state = crypto.randomUUID();
 
-  // For Twitter PKCE: generate verifier + challenge
-  let codeVerifier = null
-  let challenge = null
+  let codeVerifier = null;
+  let challenge = null;
   if (platform === 'twitter') {
     codeVerifier = Array.from(crypto.getRandomValues(new Uint8Array(32)))
-      .map(b => b.toString(16).padStart(2, '0')).join('')
-    const enc = new TextEncoder()
-    const digest = await crypto.subtle.digest('SHA-256', enc.encode(codeVerifier))
+      .map(b => b.toString(16).padStart(2, '0')).join('');
+    const enc = new TextEncoder();
+    const digest = await crypto.subtle.digest('SHA-256', enc.encode(codeVerifier));
     challenge = btoa(String.fromCharCode(...new Uint8Array(digest)))
-      .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')
+      .replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
   }
 
-  // Store state + userId in cookie (10 min TTL, follows through OAuth redirect)
-  const cookieStore = await cookies()
+  const cookieStore = await cookies();
   cookieStore.set('omnyra_oauth', JSON.stringify({ state, userId: user.id, platform, codeVerifier }), {
     httpOnly: true,
     sameSite: 'lax',
     maxAge: 600,
     path: '/',
-  })
+  });
 
-  const params = config.params(redirectUri, { challenge })
-  const url = new URL(config.authUrl)
-  Object.entries({ ...params, state }).forEach(([k, v]) => v && url.searchParams.set(k, v))
+  const params = config.params(redirectUri, { challenge });
+  const url = new URL(config.authUrl);
+  Object.entries({ ...params, state }).forEach(([k, v]) => v && url.searchParams.set(k, v));
 
-  return Response.redirect(url.toString())
+  return Response.redirect(url.toString());
 }

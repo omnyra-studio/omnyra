@@ -10,7 +10,7 @@
 */
 
 import Stripe from 'stripe';
-import { supabaseAdmin } from '../../../../lib/supabase-admin';
+import { createClient } from '@supabase/supabase-js';
 import { sendSubscriptionConfirmation } from '../../../../lib/email.js';
 
 const PLAN_CREDITS = {
@@ -20,6 +20,13 @@ const PLAN_CREDITS = {
   free:    50,
 };
 
+function getDb() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY
+  );
+}
+
 function planKey(str = '') {
   const s = str.toLowerCase();
   if (s.includes('studio'))  return 'studio';
@@ -28,14 +35,14 @@ function planKey(str = '') {
   return 'free';
 }
 
-async function findUserIdByEmail(email) {
-  const { data, error } = await supabaseAdmin.auth.admin.getUserByEmail(email);
+async function findUserIdByEmail(db, email) {
+  const { data, error } = await db.auth.admin.getUserByEmail(email);
   if (error || !data?.user) return null;
   return data.user.id;
 }
 
-async function findUserIdByCustomerId(customerId) {
-  const { data } = await supabaseAdmin
+async function findUserIdByCustomerId(db, customerId) {
+  const { data } = await db
     .from('profiles')
     .select('id')
     .eq('stripe_customer_id', customerId)
@@ -43,11 +50,10 @@ async function findUserIdByCustomerId(customerId) {
   return data?.id ?? null;
 }
 
-async function applyPlan(userId, plan, customerId, subscriptionId) {
+async function applyPlan(db, userId, plan, customerId, subscriptionId) {
   const balance = PLAN_CREDITS[plan] ?? 50;
 
-  // Update plan + Stripe IDs on profile
-  await supabaseAdmin
+  await db
     .from('profiles')
     .update({
       plan,
@@ -56,12 +62,11 @@ async function applyPlan(userId, plan, customerId, subscriptionId) {
     })
     .eq('id', userId);
 
-  // Reset credit balance + mirror plan in the credits table
-  await supabaseAdmin
+  await db
     .from('credits')
     .upsert({ user_id: userId, balance, plan, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
 
-  await supabaseAdmin.from('credit_transactions').insert({
+  await db.from('credit_transactions').insert({
     user_id: userId,
     amount: balance,
     type: 'subscription',
@@ -82,18 +87,19 @@ export async function POST(request) {
     return new Response(`Webhook Error: ${err.message}`, { status: 400 });
   }
 
+  const db = getDb();
+
   try {
     switch (event.type) {
 
-      // ── Payment completed → activate subscription ──────────────────
       case 'checkout.session.completed': {
         const session = event.data.object;
         const email   = session.customer_details?.email ?? session.customer_email;
         const plan    = planKey(session.metadata?.plan ?? '');
 
-        const userId = await findUserIdByEmail(email);
+        const userId = await findUserIdByEmail(db, email);
         if (userId) {
-          await applyPlan(userId, plan, session.customer, session.subscription);
+          await applyPlan(db, userId, plan, session.customer, session.subscription);
           if (email) {
             sendSubscriptionConfirmation(email, { plan, credits: PLAN_CREDITS[plan] ?? 50 })
               .catch(err => console.error('[email] Subscription confirmation failed:', err.message));
@@ -104,33 +110,30 @@ export async function POST(request) {
         break;
       }
 
-      // ── Subscription changed (upgrade / downgrade / renewal) ───────
       case 'customer.subscription.updated': {
-        const sub    = event.data.object;
-        const plan   = sub.status === 'active'
+        const sub  = event.data.object;
+        const plan = sub.status === 'active'
           ? planKey(sub.metadata?.plan ?? '')
           : 'free';
 
-        const userId = await findUserIdByCustomerId(sub.customer);
+        const userId = await findUserIdByCustomerId(db, sub.customer);
         if (userId) {
-          await applyPlan(userId, plan, sub.customer, sub.id);
+          await applyPlan(db, userId, plan, sub.customer, sub.id);
         } else {
           console.warn('subscription.updated: no user found for customer', sub.customer);
         }
         break;
       }
 
-      // ── Subscription cancelled / expired → free tier ───────────────
       case 'customer.subscription.deleted': {
         const sub    = event.data.object;
-        const userId = await findUserIdByCustomerId(sub.customer);
+        const userId = await findUserIdByCustomerId(db, sub.customer);
         if (userId) {
-          await applyPlan(userId, 'free', sub.customer, null);
+          await applyPlan(db, userId, 'free', sub.customer, null);
         }
         break;
       }
 
-      // ── Payment failed → log (extend here to email the user) ───────
       case 'invoice.payment_failed': {
         const invoice = event.data.object;
         console.error(
@@ -140,7 +143,6 @@ export async function POST(request) {
       }
 
       default:
-        // Unhandled event types are silently ignored
         break;
     }
   } catch (err) {

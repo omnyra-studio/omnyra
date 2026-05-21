@@ -9,6 +9,11 @@ export async function proxy(request) {
   // Root always serves landing page — no redirect
   if (pathname === '/') return response
 
+  // Redirect legacy /login to /signin
+  if (pathname === '/login') {
+    return NextResponse.redirect(new URL('/signin', request.url))
+  }
+
   // Auth pages always accessible
   if (pathname === '/signin' || pathname === '/signup') return response
 
