@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getUserAndPlan } from '../../../../lib/auth'
-import { deductCredits } from '../../../../lib/credits'
+import { checkBalance, deductCredits } from '../../../../lib/credits'
 
 export const maxDuration = 60
 
@@ -38,14 +38,15 @@ export async function POST(request) {
   }
 
   const creditAction = duration <= 30 ? 'avatar_30s' : 'avatar_60s'
-  const credit = await deductCredits(user.id, creditAction)
-  if (!credit.success) {
-    return NextResponse.json({ error: credit.error, balance: credit.balance }, { status: 402 })
+
+  // Balance check before calling HeyGen — do not deduct yet
+  const balCheck = await checkBalance(user.id, creditAction)
+  if (!balCheck.ok) {
+    return NextResponse.json({ error: 'Insufficient credits', balance: balCheck.balance }, { status: 402 })
   }
 
   const cleanScript = cleanScriptForSpeech(script).slice(0, 1500)
 
-  // Support both image and video backgrounds behind the avatar
   let background
   if (backgroundUrl) {
     const isVideo = /\.(mp4|webm|mov)(\?|$)/i.test(backgroundUrl)
@@ -87,7 +88,13 @@ export async function POST(request) {
       return NextResponse.json({ error: data.error?.message || 'HeyGen generation failed' }, { status: 500 })
     }
 
-    return NextResponse.json({ videoId: data.data?.video_id, balance: credit.remaining })
+    const videoId = data.data?.video_id
+    if (!videoId) return NextResponse.json({ error: 'HeyGen returned no video ID' }, { status: 500 })
+
+    // HeyGen confirmed job — deduct now
+    const credit = await deductCredits(user.id, creditAction)
+    return NextResponse.json({ videoId, creditAction, balance: credit.remaining })
+
   } catch (err) {
     console.error('[video/generate] unhandled:', err.message)
     return NextResponse.json({ error: err.message }, { status: 500 })

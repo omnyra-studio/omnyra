@@ -1,5 +1,5 @@
 import { getUserAndPlan } from '../../../lib/auth'
-import { deductCredits } from '../../../lib/credits'
+import { checkBalance, deductCredits } from '../../../lib/credits'
 import {
   VIDEO_PROVIDER, IMG2VIDEO_PROVIDER,
   callPika, callKling, callRunway,
@@ -19,9 +19,10 @@ export async function POST(request) {
     : duration <= 120 ? 'video_2min'
     : 'video_3min'
 
-  const credit = await deductCredits(user.id, creditAction)
-  if (!credit.success) {
-    return Response.json({ error: credit.error, balance: credit.balance }, { status: 402 })
+  // Check balance before calling expensive APIs — but do not deduct yet
+  const balCheck = await checkBalance(user.id, creditAction)
+  if (!balCheck.ok) {
+    return Response.json({ error: 'Insufficient credits', balance: balCheck.balance }, { status: 402 })
   }
 
   const provider = imageUrl
@@ -32,23 +33,31 @@ export async function POST(request) {
 
   try {
     if (provider === 'pika') {
-      // Fal AI is synchronous — video URL comes back immediately
       const data = await callPika({ prompt, imageUrl, duration })
+      if (!data.url) return Response.json({ error: 'Pika returned no video URL' }, { status: 500 })
+      // Sync result — deduct only after confirmed URL
+      const credit = await deductCredits(user.id, creditAction)
       return Response.json({ provider: 'pika', jobId: null, status: 'complete', url: data.url, balance: credit.remaining })
 
     } else if (provider === 'runway') {
       const data = await callRunway({ imageUrl, prompt, duration })
-      return Response.json({ provider: 'runway', jobId: data.id, status: data.status ?? 'processing', balance: credit.remaining })
+      if (!data.id) return Response.json({ error: 'Runway returned no job ID' }, { status: 500 })
+      // Async — deduct on confirmed submission, creditAction returned for refund if job fails
+      const credit = await deductCredits(user.id, creditAction)
+      return Response.json({ provider: 'runway', jobId: data.id, status: data.status ?? 'processing', creditAction, balance: credit.remaining })
 
     } else {
-      // kling — text2video or image2video, need subtype for correct poll endpoint
       const subtype = imageUrl ? 'image2video' : 'text2video'
       const data    = await callKling({ prompt, imageUrl, duration, quality })
-      return Response.json({ provider: 'kling', subtype, jobId: data.data?.task_id, status: data.data?.task_status ?? 'processing', balance: credit.remaining })
+      const taskId  = data.data?.task_id
+      if (!taskId) return Response.json({ error: 'Kling returned no task ID' }, { status: 500 })
+      const credit = await deductCredits(user.id, creditAction)
+      return Response.json({ provider: 'kling', subtype, jobId: taskId, status: data.data?.task_status ?? 'processing', creditAction, balance: credit.remaining })
     }
 
   } catch (err) {
     console.error('Video generation error:', err.message)
+    // No deduction happened — safe to just return the error
     return Response.json({ error: 'Video generation failed', detail: err.message }, { status: 500 })
   }
 }

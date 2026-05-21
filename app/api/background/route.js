@@ -1,5 +1,5 @@
 import { getUserAndPlan } from '../../../lib/auth'
-import { deductCredits } from '../../../lib/credits'
+import { checkBalance, deductCredits } from '../../../lib/credits'
 import { callPika, callRunway } from '../../../lib/providers'
 
 export const maxDuration = 120
@@ -23,30 +23,34 @@ export async function POST(request) {
   }
 
   const creditAction = duration <= 10 ? 'video_30s' : 'video_1min'
-  const credit = await deductCredits(user.id, creditAction)
-  if (!credit.success) {
-    return Response.json({ error: credit.error, balance: credit.balance }, { status: 402 })
+
+  // Balance check before calling expensive APIs
+  const balCheck = await checkBalance(user.id, creditAction)
+  if (!balCheck.ok) {
+    return Response.json({ error: 'Insufficient credits', balance: balCheck.balance }, { status: 402 })
   }
 
   const prompt = BG_PREFIX + description.trim()
 
-  // Runway first (image-to-video only — requires imageUrl)
-  // Pika (FAL_API_KEY → FALAI_API_KEY fallback) for text-only or when Runway fails
   if (imageUrl && process.env.RUNWAY_API_KEY) {
     try {
       const data = await callRunway({ imageUrl, prompt, duration })
-      return Response.json({
-        provider: 'runway',
-        jobId: data.id,
-        status: data.status ?? 'processing',
-        balance: credit.remaining,
-      })
+      if (data.id) {
+        // Async Runway job confirmed — deduct now
+        const credit = await deductCredits(user.id, creditAction)
+        return Response.json({
+          provider: 'runway',
+          jobId: data.id,
+          status: data.status ?? 'processing',
+          creditAction,
+          balance: credit.remaining,
+        })
+      }
     } catch (err) {
       console.warn('[background] Runway failed, falling back to Pika:', err.message)
     }
   }
 
-  // Pika via FAL_API_KEY — fallback for text-only or Runway failure
   const falKey = process.env.FAL_API_KEY || process.env.FALAI_API_KEY
   if (!falKey) {
     return Response.json({ error: 'No video generation provider configured' }, { status: 500 })
@@ -54,6 +58,9 @@ export async function POST(request) {
 
   try {
     const data = await callPika({ prompt, imageUrl, duration })
+    if (!data.url) return Response.json({ error: 'Pika returned no URL' }, { status: 500 })
+    // Sync Pika result confirmed — deduct now
+    const credit = await deductCredits(user.id, creditAction)
     return Response.json({
       provider: 'pika',
       jobId: null,

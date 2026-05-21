@@ -1,7 +1,6 @@
 import { getUserAndPlan } from '../../../lib/auth'
-import { deductCredits } from '../../../lib/credits'
+import { checkBalance, deductCredits } from '../../../lib/credits'
 
-// Pro/Studio get the higher-quality, slower model
 const MODEL_BY_PLAN = {
   free:    'eleven_turbo_v2',
   creator: 'eleven_turbo_v2',
@@ -16,11 +15,12 @@ export async function POST(request) {
   const { text, voiceId = 'JBFqnCBsd6RMkjVDRZzb' } = await request.json()
   if (!text?.trim()) return Response.json({ error: 'No text provided' }, { status: 400 })
 
-  // Longer text → higher credit cost
   const creditAction = text.length > 500 ? 'voice_1min' : 'voice_30s'
-  const credit = await deductCredits(user.id, creditAction)
-  if (!credit.success) {
-    return Response.json({ error: credit.error, balance: credit.balance }, { status: 402 })
+
+  // Balance check before calling ElevenLabs
+  const balCheck = await checkBalance(user.id, creditAction)
+  if (!balCheck.ok) {
+    return Response.json({ error: 'Insufficient credits', balance: balCheck.balance }, { status: 402 })
   }
 
   const model = MODEL_BY_PLAN[plan] ?? 'eleven_turbo_v2'
@@ -45,8 +45,10 @@ export async function POST(request) {
     return Response.json({ error: 'ElevenLabs error' }, { status: 500 })
   }
 
+  // Audio confirmed — deduct only now
+  const credit = await deductCredits(user.id, creditAction)
   const audioBuffer = await response.arrayBuffer()
-  // Return new balance in a header so the client can update the display
+
   return new Response(audioBuffer, {
     headers: {
       'Content-Type': 'audio/mpeg',

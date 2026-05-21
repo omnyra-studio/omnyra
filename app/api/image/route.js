@@ -1,5 +1,5 @@
 import { getUserAndPlan } from '../../../lib/auth'
-import { deductCredits } from '../../../lib/credits'
+import { checkBalance, deductCredits } from '../../../lib/credits'
 
 export const maxDuration = 60
 
@@ -27,12 +27,13 @@ export async function POST(request) {
   if (!prompt?.trim()) return Response.json({ error: 'No prompt provided' }, { status: 400 })
 
   const creditAction = (plan === 'pro' || plan === 'studio') ? 'image_hd' : 'image_standard'
-  const credit = await deductCredits(user.id, creditAction)
-  if (!credit.success) {
-    return Response.json({ error: credit.error, balance: credit.balance }, { status: 402 })
+
+  // Balance check before calling the API
+  const balCheck = await checkBalance(user.id, creditAction)
+  if (!balCheck.ok) {
+    return Response.json({ error: 'Insufficient credits', balance: balCheck.balance }, { status: 402 })
   }
 
-  // FAL_API_KEY first, FALAI_API_KEY fallback (same service, both point to fal.ai)
   const falKey = process.env.FAL_API_KEY || process.env.FALAI_API_KEY
   if (!falKey) {
     return Response.json({ error: 'Image generation not configured (FAL_API_KEY missing)' }, { status: 500 })
@@ -69,8 +70,9 @@ export async function POST(request) {
 
   const data     = await response.json()
   const imageUrl = data.images?.[0]?.url
-
   if (!imageUrl) return Response.json({ error: 'No image returned' }, { status: 500 })
 
+  // Image confirmed — deduct only now
+  const credit = await deductCredits(user.id, creditAction)
   return Response.json({ url: imageUrl, model, balance: credit.remaining })
 }

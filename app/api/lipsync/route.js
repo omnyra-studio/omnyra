@@ -1,5 +1,5 @@
 import { getUserAndPlan } from '../../../lib/auth'
-import { deductCredits } from '../../../lib/credits'
+import { checkBalance, deductCredits } from '../../../lib/credits'
 import { callSyncLabs, callSyncSo } from '../../../lib/providers'
 
 export const maxDuration = 60
@@ -13,26 +13,33 @@ export async function POST(request) {
     return Response.json({ error: 'videoUrl and audioUrl are required' }, { status: 400 })
   }
 
-  const credit = await deductCredits(user.id, 'sync_regen')
-  if (!credit.success) {
-    return Response.json({ error: credit.error, balance: credit.balance }, { status: 402 })
+  const creditAction = 'sync_regen'
+
+  // Balance check before calling lip sync APIs
+  const balCheck = await checkBalance(user.id, creditAction)
+  if (!balCheck.ok) {
+    return Response.json({ error: 'Insufficient credits', balance: balCheck.balance }, { status: 402 })
   }
 
-  // SyncLabs first — SYNCLABS_API_KEY
   if (process.env.SYNCLABS_API_KEY) {
     try {
       const data = await callSyncLabs({ videoUrl, audioUrl })
-      return Response.json({ jobId: data.id, status: data.status ?? 'processing', provider: 'synclabs', balance: credit.remaining })
+      if (data.id) {
+        const credit = await deductCredits(user.id, creditAction)
+        return Response.json({ jobId: data.id, status: data.status ?? 'processing', provider: 'synclabs', creditAction, balance: credit.remaining })
+      }
     } catch (err) {
       console.warn('[lipsync] SyncLabs failed, trying SyncSo:', err.message)
     }
   }
 
-  // SyncSo fallback — SYNCSO_API_KEY
   if (process.env.SYNCSO_API_KEY) {
     try {
       const data = await callSyncSo({ videoUrl, audioUrl })
-      return Response.json({ jobId: data.id, status: data.status ?? 'processing', provider: 'syncso', balance: credit.remaining })
+      if (data.id) {
+        const credit = await deductCredits(user.id, creditAction)
+        return Response.json({ jobId: data.id, status: data.status ?? 'processing', provider: 'syncso', creditAction, balance: credit.remaining })
+      }
     } catch (err) {
       console.error('[lipsync] SyncSo failed:', err.message)
       return Response.json({ error: 'Lip sync failed', detail: err.message }, { status: 500 })

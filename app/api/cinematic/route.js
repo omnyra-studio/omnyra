@@ -1,5 +1,5 @@
 import { getUserAndPlan } from '../../../lib/auth'
-import { deductCredits } from '../../../lib/credits'
+import { checkBalance, deductCredits } from '../../../lib/credits'
 import { callRunwayText, callPika } from '../../../lib/providers'
 
 export const maxDuration = 120
@@ -28,28 +28,31 @@ export async function POST(request) {
   }
 
   const { sceneDescription, personStyle = PERSON_STYLES[0], duration = 8 } = body
-
   if (!sceneDescription?.trim()) {
     return Response.json({ error: 'Scene description required' }, { status: 400 })
   }
 
   const creditAction = duration <= 10 ? 'video_30s' : 'video_1min'
-  const credit = await deductCredits(user.id, creditAction)
-  if (!credit.success) {
-    return Response.json({ error: credit.error, balance: credit.balance }, { status: 402 })
+
+  // Balance check before calling expensive APIs
+  const balCheck = await checkBalance(user.id, creditAction)
+  if (!balCheck.ok) {
+    return Response.json({ error: 'Insufficient credits', balance: balCheck.balance }, { status: 402 })
   }
 
   const prompt = buildCinematicPrompt(sceneDescription.trim(), personStyle)
 
-  // Runway text-to-video — async job, returns ID to poll
   if (process.env.RUNWAY_API_KEY) {
     try {
       const data = await callRunwayText({ prompt, duration })
       if (data.id) {
+        // Async Runway job confirmed — deduct now
+        const credit = await deductCredits(user.id, creditAction)
         return Response.json({
           provider: 'runway',
           jobId: data.id,
           status: data.status ?? 'processing',
+          creditAction,
           balance: credit.remaining,
         })
       }
@@ -58,7 +61,6 @@ export async function POST(request) {
     }
   }
 
-  // Pika via FAL — synchronous fallback
   const falKey = process.env.FAL_API_KEY || process.env.FALAI_API_KEY
   if (!falKey) {
     return Response.json({ error: 'No video generation provider configured' }, { status: 500 })
@@ -66,6 +68,9 @@ export async function POST(request) {
 
   try {
     const data = await callPika({ prompt, duration: Math.min(duration, 10) })
+    if (!data.url) return Response.json({ error: 'Pika returned no URL' }, { status: 500 })
+    // Sync Pika confirmed — deduct now
+    const credit = await deductCredits(user.id, creditAction)
     return Response.json({
       provider: 'pika',
       jobId: null,

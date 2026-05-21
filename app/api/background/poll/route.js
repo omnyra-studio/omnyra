@@ -1,4 +1,5 @@
 import { getUserAndPlan } from '../../../../lib/auth'
+import { refundCredits } from '../../../../lib/credits'
 import { pollRunway, pollKling } from '../../../../lib/providers'
 
 export async function GET(request) {
@@ -6,9 +7,10 @@ export async function GET(request) {
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { searchParams } = new URL(request.url)
-  const provider = searchParams.get('provider')
-  const jobId    = searchParams.get('jobId')
-  const subtype  = searchParams.get('subtype') ?? 'text2video'
+  const provider     = searchParams.get('provider')
+  const jobId        = searchParams.get('jobId')
+  const subtype      = searchParams.get('subtype') ?? 'text2video'
+  const creditAction = searchParams.get('creditAction') ?? null
 
   if (!provider || !jobId) {
     return Response.json({ error: 'provider and jobId are required' }, { status: 400 })
@@ -17,12 +19,14 @@ export async function GET(request) {
   try {
     if (provider === 'runway') {
       const task = await pollRunway(jobId)
-      // Runway statuses: PENDING | RUNNING | SUCCEEDED | FAILED
       if (task.status === 'SUCCEEDED') {
         return Response.json({ status: 'complete', url: task.output?.[0] })
       }
       if (task.status === 'FAILED') {
-        return Response.json({ status: 'failed', error: task.failure ?? 'Runway task failed' })
+        if (creditAction) {
+          await refundCredits(user.id, creditAction, `Runway job ${jobId} failed`)
+        }
+        return Response.json({ status: 'failed', refundedCredits: !!creditAction, error: task.failure ?? 'Runway task failed' })
       }
       return Response.json({ status: 'processing', progress: task.progressRatio ?? null })
     }
@@ -30,13 +34,15 @@ export async function GET(request) {
     if (provider === 'kling') {
       const data = await pollKling(jobId, subtype)
       const task = data.data
-      // Kling statuses: submitted | processing | succeed | failed
       if (task?.task_status === 'succeed') {
         const url = task.task_result?.videos?.[0]?.url
         return Response.json({ status: 'complete', url })
       }
       if (task?.task_status === 'failed') {
-        return Response.json({ status: 'failed', error: task.task_status_msg ?? 'Kling task failed' })
+        if (creditAction) {
+          await refundCredits(user.id, creditAction, `Kling job ${jobId} failed`)
+        }
+        return Response.json({ status: 'failed', refundedCredits: !!creditAction, error: task.task_status_msg ?? 'Kling task failed' })
       }
       return Response.json({ status: 'processing' })
     }

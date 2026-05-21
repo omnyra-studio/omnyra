@@ -1,8 +1,6 @@
 import { getUserAndPlan } from '../../../lib/auth'
+import { refundCredits } from '../../../lib/credits'
 import { pollKling, pollRunway, pollDID, pollHeyGen, pollSyncLabs } from '../../../lib/providers'
-
-// Normalise each provider's response into { status, url }
-// status: 'processing' | 'complete' | 'failed'
 
 function normaliseKling(data) {
   const s = data.data?.task_status
@@ -46,9 +44,12 @@ export async function GET(request) {
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { searchParams } = new URL(request.url)
-  const jobId    = searchParams.get('jobId')
-  const provider = searchParams.get('provider')
-  const subtype  = searchParams.get('subtype') ?? 'text2video'
+  const jobId       = searchParams.get('jobId')
+  const provider    = searchParams.get('provider')
+  const subtype     = searchParams.get('subtype') ?? 'text2video'
+  // creditAction is passed by the client from the original submit response
+  // so failed jobs can be refunded automatically
+  const creditAction = searchParams.get('creditAction') ?? null
 
   if (!jobId || !provider) {
     return Response.json({ error: 'jobId and provider required' }, { status: 400 })
@@ -80,6 +81,13 @@ export async function GET(request) {
         break
       default:
         return Response.json({ error: `Unknown provider: ${provider}` }, { status: 400 })
+    }
+
+    // Auto-refund credits when job fails — client must stop polling after receiving this
+    if (normalised.status === 'failed' && creditAction) {
+      await refundCredits(user.id, creditAction, `${provider} job ${jobId} failed`)
+      normalised.refundedCredits = true
+      normalised.creditAction    = creditAction
     }
 
     return Response.json(normalised)
