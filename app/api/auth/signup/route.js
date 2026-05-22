@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { sendWelcomeEmail } from "@/lib/email";
+import { trackEvent } from "@/lib/events/trackEvent";
 
 const log = (step, data) =>
   console.log(`[auth/signup] ${step}`, JSON.stringify(data));
@@ -49,6 +50,16 @@ export async function POST(request) {
     }
 
     log("createUser_ok", { userId: data.user.id });
+
+    // Canonical signup event. The funnel and activation metrics depend
+    // on this being the FIRST event in a user's timeline.
+    trackEvent(data.user.id, "user_signed_up", {
+      email,
+      name: name || null,
+      signup_source: "password",
+    }).catch(err =>
+      console.error("[auth/signup] event emit failed:", err.message)
+    );
 
     sendWelcomeEmail(email).catch(err =>
       console.error("[auth/signup] Welcome email failed:", err.message)

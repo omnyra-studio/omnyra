@@ -1,9 +1,18 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
-// GET /api/debug/auth — live Supabase connectivity check
-// Returns boolean presence flags and a live auth probe. Never returns key values.
-export async function GET() {
+// GET /api/debug/auth — live Supabase connectivity check.
+// Gated behind CRON_SECRET; returns 404 to anonymous callers so the route
+// is indistinguishable from a missing endpoint.
+export async function GET(request) {
+  const auth = request.headers.get('authorization') ?? ''
+  if (
+    !process.env.CRON_SECRET ||
+    auth !== `Bearer ${process.env.CRON_SECRET}`
+  ) {
+    return new NextResponse('Not Found', { status: 404 })
+  }
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   const service = process.env.SUPABASE_SERVICE_ROLE_KEY

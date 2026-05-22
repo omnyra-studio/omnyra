@@ -1,5 +1,6 @@
 import { getUserAndPlan } from '../../../lib/auth'
 import { checkBalance, deductCredits } from '../../../lib/credits'
+import { enforceRateLimit } from '../../../lib/api-guard'
 import {
   VIDEO_PROVIDER, IMG2VIDEO_PROVIDER,
   callPika, callKling, callRunway,
@@ -10,6 +11,9 @@ export const maxDuration = 120
 export async function POST(request) {
   const { user, plan } = await getUserAndPlan(request)
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const limited = await enforceRateLimit(user.id, '/api/video')
+  if (limited) return Response.json(limited.body, { status: limited.status })
 
   const { prompt, imageUrl, duration = 5 } = await request.json()
   if (!prompt?.trim()) return Response.json({ error: 'Prompt required' }, { status: 400 })

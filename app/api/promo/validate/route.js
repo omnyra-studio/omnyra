@@ -1,52 +1,57 @@
+/* POST /api/promo/validate
+ *
+ * Read-only check against the canonical single-use schema.
+ * Mirrors the REWARDS map and the `used_by` semantics from
+ * /api/promo/redeem/route.ts — single source of truth.
+ */
+
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { supabaseAdmin } from "@/lib/supabase/admin";
+
+// Must stay in sync with REWARDS in app/api/promo/redeem/route.ts
+const REWARDS = {
+  BETAPRO1:     { plan: "pro",     months: 1, bonus_credits: 200 },
+  BETACREATOR2: { plan: "creator", months: 2, bonus_credits: 100 },
+};
 
 export async function POST(request) {
-  const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
-  );
+  let body;
   try {
-    const { code, userId } = await request.json();
-    if (!code) return NextResponse.json({ error: "No code provided" }, { status: 400 });
-
-    const { data: promo, error } = await supabase
-      .from("promo_codes")
-      .select("*")
-      .eq("code", code.toUpperCase().trim())
-      .eq("active", true)
-      .single();
-
-    if (error || !promo) {
-      return NextResponse.json({ error: "Invalid or expired promo code" }, { status: 400 });
-    }
-
-    if (promo.uses_count >= promo.max_uses) {
-      return NextResponse.json({ error: "Promo code has reached its limit" }, { status: 400 });
-    }
-
-    if (userId) {
-      const { data: existing } = await supabase
-        .from("promo_redemptions")
-        .select("id")
-        .eq("user_id", userId)
-        .eq("code", code.toUpperCase().trim())
-        .single();
-
-      if (existing) {
-        return NextResponse.json({ error: "You have already used this code" }, { status: 400 });
-      }
-    }
-
-    return NextResponse.json({
-      valid: true,
-      code: promo.code,
-      discount: promo.discount_percent,
-      months: promo.duration_months,
-      plan: promo.plan,
-      message: `🎉 ${promo.duration_months} months of ${promo.plan} plan FREE!`
-    });
-  } catch (err) {
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ valid: false, error: "invalid_json" }, { status: 400 });
   }
+
+  const raw = typeof body?.code === "string" ? body.code.trim() : "";
+  if (!raw) {
+    return NextResponse.json({ valid: false, error: "no_code" }, { status: 400 });
+  }
+  const code = raw.toUpperCase();
+
+  const reward = REWARDS[code];
+  if (!reward) {
+    return NextResponse.json({ valid: false, error: "invalid_code" }, { status: 404 });
+  }
+
+  const { data: promo } = await supabaseAdmin
+    .from("promo_codes")
+    .select("id, code, used_by")
+    .eq("code", code)
+    .maybeSingle();
+
+  if (!promo) {
+    return NextResponse.json({ valid: false, error: "invalid_code" }, { status: 404 });
+  }
+  if (promo.used_by) {
+    return NextResponse.json({ valid: false, error: "already_used" }, { status: 409 });
+  }
+
+  return NextResponse.json({
+    valid: true,
+    code,
+    plan: reward.plan,
+    months: reward.months,
+    bonus_credits: reward.bonus_credits,
+    message: `🎉 ${reward.months} months of ${reward.plan} plan + ${reward.bonus_credits} credits`,
+  });
 }

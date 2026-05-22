@@ -8,6 +8,38 @@
     {
       "path": "/api/cron/monthly-summary",
       "schedule": "0 1 1 * *"
+    },
+    {
+      "path": "/api/cron/optimize-system",
+      "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/cron/recalculate-scores",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/aggregate-analytics",
+      "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/cron/optimize-funnel",
+      "schedule": "0 */12 * * *"
+    },
+    {
+      "path": "/api/cron/company-strategy",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/generate-marketing-assets",
+      "schedule": "0 4 * * *"
+    },
+    {
+      "path": "/api/cron/product-intelligence",
+      "schedule": "0 5 * * 1"
+    },
+    {
+      "path": "/api/cron/pipeline-worker",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

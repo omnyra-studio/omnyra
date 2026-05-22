@@ -1,5 +1,6 @@
 import { getUserAndPlan } from '../../../lib/auth'
 import { checkBalance, deductCredits } from '../../../lib/credits'
+import { enforceRateLimit } from '../../../lib/api-guard'
 
 const MODEL_BY_PLAN = {
   free:    'eleven_turbo_v2',
@@ -11,6 +12,9 @@ const MODEL_BY_PLAN = {
 export async function POST(request) {
   const { user, plan } = await getUserAndPlan(request)
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const limited = await enforceRateLimit(user.id, '/api/voice')
+  if (limited) return Response.json(limited.body, { status: limited.status })
 
   const { text, voiceId = 'JBFqnCBsd6RMkjVDRZzb' } = await request.json()
   if (!text?.trim()) return Response.json({ error: 'No text provided' }, { status: 400 })

@@ -1,5 +1,6 @@
 import { getUserAndPlan } from '../../../lib/auth'
 import { checkBalance, deductCredits } from '../../../lib/credits'
+import { enforceRateLimit } from '../../../lib/api-guard'
 
 export const maxDuration = 60
 
@@ -22,6 +23,9 @@ const FLUX_MODEL = {
 export async function POST(request) {
   const { user, plan } = await getUserAndPlan(request)
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const limited = await enforceRateLimit(user.id, '/api/image')
+  if (limited) return Response.json(limited.body, { status: limited.status })
 
   const { prompt, style = 'realistic' } = await request.json()
   if (!prompt?.trim()) return Response.json({ error: 'No prompt provided' }, { status: 400 })

@@ -1,17 +1,25 @@
 /*
-  Required Supabase migration — run once in the SQL editor:
+  Stripe webhook handler.
+  ----------------------
+  Credit semantics (post credit_ledger.sql migration):
+    - `credit_transactions` is the ONLY mechanism that mutates balances.
+    - The DB trigger trg_apply_credit_transaction maintains credits.balance
+      as a cache from the ledger.
+    - This handler MUST NOT write credits.balance directly. Doing so
+      double-counts because the trigger applies the ledger row on top
+      of the manual update.
 
-  alter table profiles
-    add column if not exists stripe_customer_id text,
-    add column if not exists stripe_subscription_id text;
-
-  create index if not exists profiles_stripe_customer_id_idx
-    on profiles (stripe_customer_id);
+  Event emission (per Analytics Aggregation spec — "events ONLY"):
+    - subscription_purchased / subscription_renewed / subscription_canceled
+    - topup_purchased
+    - payment_failed
+    These feed the revenue_per_user metric in analytics_snapshots.
 */
 
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
 import { sendSubscriptionConfirmation } from '../../../../lib/email.js';
+import { trackEvent } from '../../../../lib/events/trackEvent';
 
 const PLAN_CREDITS = {
   creator: 200,
@@ -19,6 +27,12 @@ const PLAN_CREDITS = {
   studio:  1500,
   free:    50,
 };
+
+// Approximate USD-per-credit for revenue snapshots. Sourced from env so
+// pricing tweaks don't require a code change.
+function pricePerCredit() {
+  return Number(process.env.REVENUE_PRICE_PER_CREDIT ?? '0.10');
+}
 
 function getDb() {
   return createClient(
@@ -50,8 +64,19 @@ async function findUserIdByCustomerId(db, customerId) {
   return data?.id ?? null;
 }
 
-async function applyPlan(db, userId, plan, customerId, subscriptionId) {
-  const balance = PLAN_CREDITS[plan] ?? 50;
+/**
+ * Apply a plan change. The ledger insert is the SOLE balance mutator;
+ * the trigger updates credits.balance from it. We still write
+ * stripe_customer_id / plan onto profiles and credits.plan (a metadata
+ * column, not the balance).
+ *
+ * Plan-change semantics: credits are ADDITIVE. Upgrading mid-cycle keeps
+ * the user's existing balance and adds the new plan's allotment. This
+ * avoids the destructive "replace balance" path that would otherwise
+ * conflict with the ledger.
+ */
+async function applyPlan(db, userId, plan, customerId, subscriptionId, eventType /* 'subscription_purchased' | 'subscription_renewed' | 'subscription_canceled' */) {
+  const credits = PLAN_CREDITS[plan] ?? 0;
 
   await db
     .from('profiles')
@@ -62,37 +87,56 @@ async function applyPlan(db, userId, plan, customerId, subscriptionId) {
     })
     .eq('id', userId);
 
+  // Keep `plan` column in sync on credits for routes that read it for
+  // plan-limit lookups; do NOT touch `balance` here.
   await db
     .from('credits')
-    .upsert({ user_id: userId, balance, plan, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+    .upsert(
+      { user_id: userId, plan, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id' }
+    );
 
-  await db.from('credit_transactions').insert({
-    user_id: userId,
-    amount: balance,
-    type: 'subscription',
-    description: `${plan} plan activated`,
-  });
+  if (credits > 0) {
+    await db.from('credit_transactions').insert({
+      user_id: userId,
+      amount: credits,
+      type: 'subscription',
+      description: `${plan} plan ${eventType === 'subscription_renewed' ? 'renewed' : 'activated'}`,
+    });
+
+    // Event-stream emission — revenue_per_user reads from here.
+    await trackEvent(userId, eventType, {
+      plan,
+      credits_granted: credits,
+      revenue_usd: credits * pricePerCredit(),
+      stripe_customer_id: customerId ?? null,
+      stripe_subscription_id: subscriptionId ?? null,
+    });
+  } else if (eventType === 'subscription_canceled') {
+    await trackEvent(userId, 'subscription_canceled', {
+      plan,
+      stripe_customer_id: customerId ?? null,
+    });
+  }
 }
 
+/**
+ * One-time credit pack purchase. Single ledger insert; trigger updates
+ * balance. Emits topup_purchased for analytics.
+ */
 async function addCreditPack(db, userId, credits) {
-  const { data: current } = await db
-    .from('credits')
-    .select('balance')
-    .eq('user_id', userId)
-    .single();
-
-  const newBalance = (current?.balance ?? 0) + credits;
-
-  await db
-    .from('credits')
-    .update({ balance: newBalance, updated_at: new Date().toISOString() })
-    .eq('user_id', userId);
+  if (!credits || credits <= 0) return;
 
   await db.from('credit_transactions').insert({
     user_id: userId,
     amount: credits,
-    type: 'purchase',
+    type: 'topup',
     description: `Credit pack: +${credits} credits`,
+  });
+
+  await trackEvent(userId, 'topup_purchased', {
+    credits_granted: credits,
+    revenue_usd: credits * pricePerCredit(),
   });
 }
 
@@ -134,13 +178,13 @@ export async function POST(request) {
           break;
         }
 
-        // Subscription checkout
+        // Subscription checkout — first activation
         const plan   = planKey(session.metadata?.plan ?? session.metadata?.pack ?? '');
         const userId = session.metadata?.userId
           ?? await findUserIdByEmail(db, email);
 
         if (userId) {
-          await applyPlan(db, userId, plan, session.customer, session.subscription);
+          await applyPlan(db, userId, plan, session.customer, session.subscription, 'subscription_purchased');
           if (email) {
             sendSubscriptionConfirmation(email, { plan, credits: PLAN_CREDITS[plan] ?? 50 })
               .catch(err => console.error('[email] Subscription confirmation failed:', err.message));
@@ -153,13 +197,19 @@ export async function POST(request) {
 
       case 'customer.subscription.updated': {
         const sub  = event.data.object;
-        const plan = sub.status === 'active'
-          ? planKey(sub.metadata?.plan ?? '')
-          : 'free';
+        const isActive = sub.status === 'active';
+        const plan = isActive ? planKey(sub.metadata?.plan ?? '') : 'free';
 
         const userId = await findUserIdByCustomerId(db, sub.customer);
         if (userId) {
-          await applyPlan(db, userId, plan, sub.customer, sub.id);
+          await applyPlan(
+            db,
+            userId,
+            plan,
+            sub.customer,
+            sub.id,
+            isActive ? 'subscription_renewed' : 'subscription_canceled',
+          );
         } else {
           console.warn('subscription.updated: no user found for customer', sub.customer);
         }
@@ -170,16 +220,24 @@ export async function POST(request) {
         const sub    = event.data.object;
         const userId = await findUserIdByCustomerId(db, sub.customer);
         if (userId) {
-          await applyPlan(db, userId, 'free', sub.customer, null);
+          await applyPlan(db, userId, 'free', sub.customer, null, 'subscription_canceled');
         }
         break;
       }
 
       case 'invoice.payment_failed': {
         const invoice = event.data.object;
+        const userId = await findUserIdByCustomerId(db, invoice.customer);
         console.error(
           `Payment failed — customer: ${invoice.customer}, email: ${invoice.customer_email}, amount: ${invoice.amount_due}`
         );
+        if (userId) {
+          await trackEvent(userId, 'payment_failed', {
+            stripe_customer_id: invoice.customer ?? null,
+            amount_due: invoice.amount_due ?? null,
+            currency: invoice.currency ?? null,
+          });
+        }
         break;
       }
 

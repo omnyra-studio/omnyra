@@ -68,8 +68,25 @@ function SignupForm() {
         }
       }
 
-      localStorage.setItem("omnyra_onboarded", "1");
-      router.push("/dashboard");
+      // Route based on onboarding state — every new email signup lands on /welcome
+      // unless the profile has already been marked completed (e.g. legacy users).
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user?.id) {
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("has_completed_onboarding")
+            .eq("id", session.user.id)
+            .maybeSingle();
+          if (profile?.has_completed_onboarding === true) {
+            router.push("/dashboard");
+            return;
+          }
+        }
+      } catch {
+        /* fall through to /welcome on any error — safer default */
+      }
+      router.push("/welcome");
     } catch (err) {
       console.error("[signup] FULL ERROR:", JSON.stringify(err));
       setError(err.message || err.error_description || JSON.stringify(err));

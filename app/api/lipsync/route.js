@@ -1,5 +1,6 @@
 import { getUserAndPlan } from '../../../lib/auth'
 import { checkBalance, deductCredits } from '../../../lib/credits'
+import { enforceRateLimit } from '../../../lib/api-guard'
 import { callSyncLabs, callSyncSo } from '../../../lib/providers'
 
 export const maxDuration = 60
@@ -7,6 +8,9 @@ export const maxDuration = 60
 export async function POST(request) {
   const { user } = await getUserAndPlan(request)
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const limited = await enforceRateLimit(user.id, '/api/lipsync')
+  if (limited) return Response.json(limited.body, { status: limited.status })
 
   const { videoUrl, audioUrl } = await request.json()
   if (!videoUrl || !audioUrl) {
