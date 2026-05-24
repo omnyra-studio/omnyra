@@ -6,20 +6,21 @@ export default function Landing() {
     <main className="bg-cream text-softbrown antialiased overflow-x-hidden">
 
       {/* NAV */}
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-cream/80 backdrop-blur-xl border-b border-softgold/10">
+      <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl border-b" style={{ background: 'rgba(13,0,16,0.75)', borderColor: 'rgba(212,168,67,0.12)' }}>
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="gold-text font-display text-2xl font-bold tracking-tight">Omnyra</span>
             <span className="w-2 h-2 rounded-full pulse-dot inline-block"></span>
           </div>
-          <div className="hidden md:flex items-center gap-10 text-sm font-medium text-warmgray">
+          <div className="hidden md:flex items-center gap-10 text-sm font-medium" style={{ color: '#A89BAF' }}>
             <a href="#how-it-works" className="hover:text-deepgold transition-colors duration-300">How It Works</a>
             <a href="#features" className="hover:text-deepgold transition-colors duration-300">Features</a>
             <a href="#pricing" className="hover:text-deepgold transition-colors duration-300">Pricing</a>
           </div>
           <Link
             href="#pricing"
-            className="px-5 py-2.5 bg-softgold/10 border border-softgold/30 text-deepgold text-sm font-semibold rounded-full hover:bg-softgold/20 transition-all duration-300"
+            className="px-5 py-2.5 text-sm font-semibold rounded-full transition-all duration-300"
+            style={{ border: '1px solid rgba(212,168,67,0.3)', color: '#D4A843', background: 'rgba(212,168,67,0.08)' }}
           >
             Get Early Access
           </Link>
@@ -39,17 +40,17 @@ export default function Landing() {
             <span className="text-xs font-bold text-deepgold tracking-[0.2em] uppercase">Adaptive Creative Intelligence</span>
           </div>
 
-          <h1 className="font-display text-5xl md:text-7xl lg:text-8xl font-bold leading-[1.05] mb-8 text-softbrown">
+          <h1 className="font-display text-5xl md:text-7xl lg:text-8xl font-bold leading-[1.05] mb-8" style={{ color: '#F5EFE6' }}>
             <span className="block animate-fade-up">Predict what</span>
             <span className="block text-gold-gradient animate-fade-up" style={{ animationDelay: "0.15s" }}>performs.</span>
             <span className="block animate-fade-up" style={{ animationDelay: "0.3s" }}>Then learn why.</span>
           </h1>
 
-          <p className="text-lg md:text-xl text-warmgray max-w-3xl mx-auto mb-4 leading-relaxed animate-fade-up" style={{ animationDelay: "0.45s" }}>
+          <p className="text-lg md:text-xl max-w-3xl mx-auto mb-4 leading-relaxed animate-fade-up" style={{ color: '#A89BAF', animationDelay: "0.45s" }}>
             Omnyra compares what it predicted to what actually happened — then adjusts. The only creative intelligence system that understands what you should make next and why.
           </p>
 
-          <p className="text-sm text-warmgray mb-12 animate-fade-up" style={{ animationDelay: "0.5s" }}>
+          <p className="text-sm mb-12 animate-fade-up" style={{ color: '#A89BAF', animationDelay: "0.5s" }}>
             Predicts hook strength • Tracks audience behavior • Learns from every post outcome
           </p>
 
@@ -57,22 +58,22 @@ export default function Landing() {
             <Link href="#pricing" className="w-full sm:w-auto px-10 py-5 gold-btn font-bold rounded-full text-lg">
               Understand What Works
             </Link>
-            <a href="#how-it-works" className="w-full sm:w-auto px-10 py-5 btn-ghost font-semibold rounded-full text-lg">
+            <a href="#how-it-works" className="w-full sm:w-auto px-10 py-5 rounded-full text-lg font-semibold" style={{ border: '1px solid rgba(212,175,55,0.3)', color: '#F5EFE6' }}>
               See How It Works →
             </a>
           </div>
 
-          <div className="mt-20 flex flex-wrap items-center justify-center gap-x-10 gap-y-4 text-sm text-warmgray animate-fade-in" style={{ animationDelay: "0.8s" }}>
+          <div className="mt-20 flex flex-wrap items-center justify-center gap-x-10 gap-y-4 text-sm animate-fade-in" style={{ color: '#A89BAF', animationDelay: "0.8s" }}>
             <div className="flex items-center gap-2">
               <span className="text-deepgold text-lg">✦</span>
               <span>Predicts Hook Strength</span>
             </div>
-            <div className="w-1 h-1 rounded-full bg-warmgray/30 hidden md:block"></div>
+            <div className="w-1 h-1 rounded-full hidden md:block" style={{ background: 'rgba(168,155,175,0.3)' }}></div>
             <div className="flex items-center gap-2">
               <span className="text-deepgold text-lg">✦</span>
               <span>Tracks Audience Behavior</span>
             </div>
-            <div className="w-1 h-1 rounded-full bg-warmgray/30 hidden md:block"></div>
+            <div className="w-1 h-1 rounded-full hidden md:block" style={{ background: 'rgba(168,155,175,0.3)' }}></div>
             <div className="flex items-center gap-2">
               <span className="text-deepgold text-lg">✦</span>
               <span>Learns From Every Outcome</span>
