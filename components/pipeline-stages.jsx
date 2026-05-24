@@ -1,5 +1,27 @@
 "use client";
 
+/* DraftStage — pure projection layer over the server-owned pipeline.
+ *
+ * ARCHITECTURAL CONTRACT (per "Force Architectural Consistency" spec):
+ *   1. The client NEVER queries the renders / render_events tables
+ *      directly. It calls GET /api/renders/[id]/events which returns
+ *      events + a derived state snapshot in one round-trip.
+ *   2. Realtime subscription is used only as a TRIGGER. When a new
+ *      render_events row lands, this component refetches the snapshot
+ *      from the server endpoint. The actual data shape lives server-side.
+ *   3. No client-side pipeline logic exists in this file (no provider
+ *      calls, no orchestration, no client-derived status).
+ *   4. UI state = pure projection from server state.
+ *
+ * Why route through the server endpoint rather than reading Supabase
+ * directly:
+ *   - Single auth model (Bearer token, same as the rest of the API).
+ *   - Single derivation rule (lives in lib/pipeline/state.ts).
+ *   - Server can mask + audit + rate-limit reads.
+ *   - The component does not need to know the schema of renders /
+ *     render_events.
+ */
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Loader2,
@@ -14,10 +36,6 @@ import {
   Twitter,
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-
-/* ──────────────────────────────────────────────────────────────────
- *  Constants — render_events vocabulary owned by lib/render-engine.ts
- * ───────────────────────────────────────────────────────────────── */
 
 const GENERATING_MESSAGES = [
   "Analysing your brief...",
@@ -43,29 +61,17 @@ const DIRECTOR_EMOJI = {
 };
 
 /* ──────────────────────────────────────────────────────────────────
- *  Event → UI state derivation (pure)
+ *  Event → UI derivation (pure functions over the events array)
  * ───────────────────────────────────────────────────────────────── */
 
-function lastEvent(events) {
-  return events.length === 0 ? null : events[events.length - 1];
-}
-
-function derivePhase(events, render) {
-  if (!events || events.length === 0) {
-    if (render?.status === "complete") return "complete";
-    if (render?.status === "failed") return "draft";
-    if (render?.script) return "draft";
-    return "generating";
-  }
-  const last = lastEvent(events);
+function derivePhase(events) {
+  if (!events || events.length === 0) return "generating";
+  const last = events[events.length - 1];
   switch (last.event_type) {
     case "render_finalised":
       return "complete";
     case "render_failed":
       return "draft";
-    case "render_created":
-    case "brief_validated":
-      return render?.script ? "draft" : "generating";
     case "script_generated":
       return "draft";
     case "voice_started":
@@ -75,6 +81,9 @@ function derivePhase(events, render) {
     case "lipsync_started":
     case "lipsync_completed":
       return "rendering";
+    case "render_created":
+    case "brief_validated":
+      return "generating";
     default:
       return "generating";
   }
@@ -82,11 +91,11 @@ function derivePhase(events, render) {
 
 function deriveStepStatus(events) {
   const have = new Set(events.map((e) => e.event_type));
-  function statusOf(startEv, doneEv) {
+  const statusOf = (startEv, doneEv) => {
     if (have.has(doneEv)) return "complete";
     if (have.has(startEv)) return "active";
     return "pending";
-  }
+  };
   return {
     script: have.has("script_generated") ? "complete" : "pending",
     voice: statusOf("voice_started", "voice_completed"),
@@ -100,10 +109,10 @@ function deriveStepStatus(events) {
   };
 }
 
-function deriveFailure(events, render) {
+function deriveFailure(events, snapshot) {
   const failure = [...events].reverse().find((e) => e.event_type === "render_failed");
   if (failure) return failure.payload?.message ?? "render failed";
-  if (render?.status === "failed") return render.error_message ?? "render failed";
+  if (snapshot?.derived_status === "failed") return snapshot.error_message ?? "render failed";
   return null;
 }
 
@@ -162,11 +171,12 @@ function DirectorPill({ kind, value }) {
   );
 }
 
-function DraftState({ render, failureMessage, onApprove, onRegenerate, onBack }) {
-  const script = render?.script ?? "";
-  const director = render?.director_settings ?? {};
-  const estimatedCredits = render?.brief?.duration
-    ? Math.round(20 + ((Number(render.brief.duration) || 15) / 15) * 8)
+function DraftState({ snapshot, failureMessage, onApprove, onRegenerate, onBack }) {
+  const script = snapshot?.script ?? "";
+  const director = snapshot?.director_settings ?? {};
+  const briefDuration = Number(snapshot?.brief?.duration ?? 0);
+  const estimatedCredits = briefDuration
+    ? Math.round(20 + (briefDuration / 15) * 8)
     : null;
 
   return (
@@ -376,7 +386,7 @@ function CompleteState({ renderId, videoUrl, onReset }) {
 }
 
 /* ──────────────────────────────────────────────────────────────────
- *  Main — event-driven DraftStage
+ *  DraftStage — event-driven, server-mediated.
  *
  *  Props:
  *    renderId        : string         (REQUIRED)
@@ -385,10 +395,34 @@ function CompleteState({ renderId, videoUrl, onReset }) {
  *    onBack          : () => void
  *    onReset         : () => void
  *
- *  All other state (script, status, scenes, video_url) is sourced from
- *  Supabase realtime via render_events + the renders row. No props for
- *  pipeline state — single source of truth is the database.
+ *  Data flow:
+ *    Mount → fetch /api/renders/[id]/events (snapshot + events)
+ *    On render_events INSERT → refetch the same endpoint
+ *    Render UI from snapshot fields (script, director, brief) and
+ *    events array (phase + step status).
+ *
+ *  The component holds NO independent pipeline state. The server
+ *  endpoint is the projection layer; this component is the renderer.
  * ───────────────────────────────────────────────────────────────── */
+
+const SNAPSHOT_ENDPOINT = (renderId) => `/api/renders/${renderId}/events`;
+
+async function fetchSnapshot(renderId) {
+  const supabase = createClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const token = session?.access_token;
+  if (!token) return null;
+
+  const res = await fetch(SNAPSHOT_ENDPOINT(renderId), {
+    headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
+  });
+  if (!res.ok) return null;
+  const body = await res.json();
+  return body?.state ?? null;
+}
 
 export function DraftStage({
   renderId,
@@ -397,14 +431,16 @@ export function DraftStage({
   onBack,
   onReset,
 }) {
+  // Supabase client is used ONLY for the realtime channel as a trigger.
+  // All data reads go through the server endpoint.
   const supabaseRef = useRef(null);
   if (!supabaseRef.current) supabaseRef.current = createClient();
   const supabase = supabaseRef.current;
 
-  const [render, setRender] = useState(null);
-  const [events, setEvents] = useState([]);
+  const [snapshot, setSnapshot] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  // Initial bootstrap + realtime trigger → server refetch.
   useEffect(() => {
     if (!renderId) {
       setLoading(false);
@@ -412,26 +448,19 @@ export function DraftStage({
     }
 
     let cancelled = false;
+    const refresh = async () => {
+      const snap = await fetchSnapshot(renderId);
+      if (!cancelled) {
+        setSnapshot(snap);
+        setLoading(false);
+      }
+    };
 
-    (async () => {
-      const [{ data: row }, { data: evts }] = await Promise.all([
-        supabase
-          .from("renders")
-          .select("id, status, script, scenes, director_settings, brief, template, video_url, error_message")
-          .eq("id", renderId)
-          .maybeSingle(),
-        supabase
-          .from("render_events")
-          .select("id, event_type, payload, created_at")
-          .eq("render_id", renderId)
-          .order("created_at", { ascending: true }),
-      ]);
-      if (cancelled) return;
-      setRender(row);
-      setEvents(evts ?? []);
-      setLoading(false);
-    })();
+    refresh();
 
+    // Realtime: render_events INSERT is the SOLE signal that pipeline
+    // state has advanced. Payload is intentionally ignored — we refetch
+    // through the server endpoint so derivation stays consistent.
     const channel = supabase
       .channel(`render_events:${renderId}`)
       .on(
@@ -442,20 +471,8 @@ export function DraftStage({
           table: "render_events",
           filter: `render_id=eq.${renderId}`,
         },
-        (payload) => {
-          setEvents((prev) => [...prev, payload.new]);
-          // On any pipeline-affecting event, re-pull the renders row so the
-          // download URL / status / script are fresh. Cheap; one row only.
-          supabase
-            .from("renders")
-            .select(
-              "id, status, script, scenes, director_settings, brief, template, video_url, error_message",
-            )
-            .eq("id", renderId)
-            .maybeSingle()
-            .then(({ data }) => {
-              if (!cancelled && data) setRender(data);
-            });
+        () => {
+          if (!cancelled) void refresh();
         },
       )
       .subscribe();
@@ -466,8 +483,9 @@ export function DraftStage({
     };
   }, [renderId, supabase]);
 
-  const phase = useMemo(() => derivePhase(events, render), [events, render]);
-  const failureMessage = useMemo(() => deriveFailure(events, render), [events, render]);
+  const events = snapshot?.events ?? [];
+  const phase = useMemo(() => derivePhase(events), [events]);
+  const failureMessage = useMemo(() => deriveFailure(events, snapshot), [events, snapshot]);
 
   if (!renderId) {
     return (
@@ -485,14 +503,14 @@ export function DraftStage({
     return (
       <CompleteState
         renderId={renderId}
-        videoUrl={render?.video_url}
+        videoUrl={snapshot?.video_url}
         onReset={onReset}
       />
     );
 
   return (
     <DraftState
-      render={render}
+      snapshot={snapshot}
       failureMessage={failureMessage}
       onApprove={onApprove}
       onRegenerate={onRegenerate}

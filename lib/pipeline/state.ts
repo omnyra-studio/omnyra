@@ -51,6 +51,14 @@ export interface RenderStateSnapshot {
   audio_url: string | null;
   scene_urls: string[] | null;
   error_message: string | null;
+  // Projected from the renders row so the UI doesn't need to query
+  // the data tables directly. The events are still the source of
+  // truth for status; these are descriptive inputs the user supplied.
+  script: string | null;
+  scenes: unknown[] | null;
+  brief: Record<string, unknown> | null;
+  director_settings: Record<string, unknown> | null;
+  template: string | null;
   events: RenderEventRow[];
 }
 
@@ -74,10 +82,13 @@ export async function loadRenderState(
   if (!stateRow) return null;
   if (opts.user_id && (stateRow as { user_id?: string }).user_id !== opts.user_id) return null;
 
-  // Pull the renders row for fields not exposed by the view.
+  // Pull the renders row for fields not exposed by the view. These
+  // are descriptive inputs (script content, brief, director_settings)
+  // that aren't part of the event derivation but the UI needs to
+  // render the draft preview.
   const { data: extra } = await supabaseAdmin
     .from("renders")
-    .select("scene_urls, error_message")
+    .select("scene_urls, error_message, script, scenes, brief, director_settings, template")
     .eq("id", render_id)
     .maybeSingle();
 
@@ -87,6 +98,16 @@ export async function loadRenderState(
     .eq("render_id", render_id)
     .order("created_at", { ascending: true });
 
+  const e = (extra ?? {}) as {
+    scene_urls?: string[] | null;
+    error_message?: string | null;
+    script?: string | null;
+    scenes?: unknown[] | null;
+    brief?: Record<string, unknown> | null;
+    director_settings?: Record<string, unknown> | null;
+    template?: string | null;
+  };
+
   return {
     render_id,
     ui_stage: STAGE_FROM_EVENT[String(stateRow.latest_event_type ?? "")] ?? "idle",
@@ -95,8 +116,13 @@ export async function loadRenderState(
     latest_event_at: stateRow.latest_event_at ?? null,
     video_url: (stateRow.video_url as string) ?? null,
     audio_url: (stateRow.audio_url as string) ?? null,
-    scene_urls: (extra as { scene_urls?: string[] | null } | null)?.scene_urls ?? null,
-    error_message: (extra as { error_message?: string | null } | null)?.error_message ?? null,
+    scene_urls: e.scene_urls ?? null,
+    error_message: e.error_message ?? null,
+    script: e.script ?? null,
+    scenes: e.scenes ?? null,
+    brief: e.brief ?? null,
+    director_settings: e.director_settings ?? null,
+    template: e.template ?? null,
     events: (events ?? []) as RenderEventRow[],
   };
 }

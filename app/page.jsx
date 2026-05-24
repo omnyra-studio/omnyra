@@ -183,7 +183,7 @@ export default function Landing() {
                 {
                   icon: "🧠",
                   title: "Strategy Briefs That Think",
-                  desc: "Not "here's a hook." A full creative brief with objective, audience psychology, trend context, and honest risk assessment. Every recommendation has a reason.",
+                  desc: `Not "here's a hook." A full creative brief with objective, audience psychology, trend context, and honest risk assessment. Every recommendation has a reason.`,
                 },
                 {
                   icon: "🎬",
