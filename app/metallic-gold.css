@@ -1,0 +1,51 @@
+@keyframes metalShimmer {
+  0%   { background-position: 200% center; }
+  100% { background-position: -200% center; }
+}
+
+.gold-text {
+  background: linear-gradient(105deg, #7A4800 0%, #CFA42F 20%, #F7D96B 42%, #FFFBCC 50%, #F7D96B 58%, #CFA42F 80%, #7A4800 100%);
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: metalShimmer 3s linear infinite;
+}
+
+.gold-btn {
+  background: var(--gold-gradient);
+  background-size: 200% auto;
+  animation: metalShimmer 3s linear infinite;
+  color: #0D0010;
+  font-weight: 700;
+  border: none;
+  border-radius: 9999px;
+  padding: 10px 24px;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  transition: opacity 0.2s ease, transform 0.15s ease;
+  display: inline-block;
+  text-decoration: none;
+  text-align: center;
+}
+.gold-btn:hover  { opacity: 0.88; }
+.gold-btn:active { opacity: 0.75; transform: scale(0.98); }
+
+.gold-border {
+  position: relative;
+}
+.gold-border::before {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: var(--gold-gradient);
+  background-size: 200% auto;
+  animation: metalShimmer 3s linear infinite;
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 0;
+}

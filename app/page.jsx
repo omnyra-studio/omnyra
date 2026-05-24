@@ -1,4 +1,5 @@
 import Link from "next/link";
+import AnimatedBackground from "@/components/AnimatedBackground";
 
 export default function Landing() {
   return (
@@ -8,7 +9,7 @@ export default function Landing() {
       <nav className="fixed top-0 left-0 right-0 z-50 bg-cream/80 backdrop-blur-xl border-b border-softgold/10">
         <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <span className="font-display text-2xl font-bold text-softbrown tracking-tight">Omnyra</span>
+            <span className="gold-text font-display text-2xl font-bold tracking-tight">Omnyra</span>
             <span className="w-2 h-2 rounded-full pulse-dot inline-block"></span>
           </div>
           <div className="hidden md:flex items-center gap-10 text-sm font-medium text-warmgray">
@@ -26,12 +27,13 @@ export default function Landing() {
       </nav>
 
       {/* HERO */}
-      <section className="relative min-h-screen flex items-center justify-center overflow-hidden">
-        <div className="ambient-orb w-[600px] h-[600px] bg-softgold/30 top-[-120px] left-[-200px]"></div>
-        <div className="ambient-orb w-[500px] h-[500px] bg-rosegold/25 bottom-[-150px] right-[-150px]"></div>
-        <div className="ambient-orb w-[300px] h-[300px] bg-champagne/40 top-[50%] left-[60%]"></div>
+      <section
+        className="relative min-h-screen flex items-center justify-center overflow-hidden"
+        style={{ background: '#0D0010' }}
+      >
+        <AnimatedBackground />
 
-        <div className="relative z-10 max-w-6xl mx-auto px-6 py-32 text-center">
+        <div className="max-w-6xl mx-auto px-6 py-32 text-center" style={{ position: 'relative', zIndex: 2 }}>
           <div className="inline-flex items-center gap-3 px-5 py-2.5 rounded-full border border-softgold/30 bg-softgold/[0.08] mb-10 animate-fade-in backdrop-blur-md">
             <span className="w-2 h-2 rounded-full pulse-dot inline-block"></span>
             <span className="text-xs font-bold text-deepgold tracking-[0.2em] uppercase">Adaptive Creative Intelligence</span>
@@ -52,7 +54,7 @@ export default function Landing() {
           </p>
 
           <div className="flex flex-col sm:flex-row items-center justify-center gap-5 animate-fade-up" style={{ animationDelay: "0.6s" }}>
-            <Link href="#pricing" className="w-full sm:w-auto px-10 py-5 btn-primary font-bold rounded-full text-lg">
+            <Link href="#pricing" className="w-full sm:w-auto px-10 py-5 gold-btn font-bold rounded-full text-lg">
               Understand What Works
             </Link>
             <a href="#how-it-works" className="w-full sm:w-auto px-10 py-5 btn-ghost font-semibold rounded-full text-lg">
@@ -77,7 +79,7 @@ export default function Landing() {
             </div>
           </div>
         </div>
-        <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-cream to-transparent"></div>
+        <div className="absolute bottom-0 left-0 right-0 h-40" style={{ background: 'linear-gradient(to top, #0D0010, transparent)', zIndex: 2 }}></div>
       </section>
 
       {/* THE STRATEGIC SHIFT */}
@@ -351,7 +353,7 @@ export default function Landing() {
             </div>
 
             {/* Creator (featured) */}
-            <div className="border-golden rounded-3xl p-8 flex flex-col relative md:-translate-y-4 shadow-2xl">
+            <div className="gold-border bg-warmwhite rounded-3xl p-8 flex flex-col relative md:-translate-y-4 shadow-2xl">
               <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-5 py-1.5 bg-gradient-to-r from-softgold to-rosegold text-warmwhite text-xs font-bold rounded-full tracking-wide whitespace-nowrap">
                 Most Popular
               </div>
@@ -367,7 +369,7 @@ export default function Landing() {
                 <li className="flex items-start gap-3"><span className="text-deepgold text-lg">✓</span> Creator memory + learning loop</li>
                 <li className="flex items-start gap-3"><span className="text-deepgold text-lg">✓</span> 200 credits / month</li>
               </ul>
-              <Link href="/signup?plan=creator" className="block text-center w-full py-4 btn-primary font-bold rounded-full text-lg">
+              <Link href="/signup?plan=creator" className="block w-full py-4 gold-btn font-bold rounded-full text-lg">
                 Start Understanding Your Audience
               </Link>
             </div>
@@ -420,7 +422,7 @@ export default function Landing() {
           <p className="text-lg text-warmgray mb-10 max-w-xl mx-auto">
             Join the creators who learn from every post — not just produce more of them.
           </p>
-          <Link href="/signup?plan=creator" className="inline-flex px-10 py-5 btn-primary font-bold rounded-full text-lg">
+          <Link href="/signup?plan=creator" className="inline-flex px-10 py-5 gold-btn font-bold rounded-full text-lg">
             Start Learning What Works — $29/month
           </Link>
           <p className="mt-6 text-sm text-warmgray">Free tier available. No credit card required to start.</p>
@@ -431,7 +433,7 @@ export default function Landing() {
       <footer className="border-t border-softgold/10 py-12 px-6 bg-cream">
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
-            <span className="font-display text-xl font-bold text-softbrown">Omnyra</span>
+            <span className="gold-text font-display text-xl font-bold">Omnyra</span>
             <span className="text-xs text-warmgray">Adaptive Creative Intelligence</span>
           </div>
           <div className="flex items-center gap-6 text-sm text-warmgray">

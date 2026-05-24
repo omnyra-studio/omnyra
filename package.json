@@ -27,9 +27,11 @@
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/react": "19.2.15",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "prisma": "^7.8.0",
-    "tailwindcss": "^4"
+    "tailwindcss": "^4",
+    "typescript": "6.0.3"
   }
 }

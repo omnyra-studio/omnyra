@@ -264,7 +264,7 @@ export default function DashboardHome() {
             <div className="w-10 h-10 lg:w-12 lg:h-12 rounded-xl bg-gradient-to-br from-[var(--accent-gold)] to-[var(--accent-rose)] flex items-center justify-center shadow-[0_0_20px_rgba(212,168,67,0.3)]">
               <Sparkles className="w-5 h-5 lg:w-6 lg:h-6 text-[#1A0E1C]" />
             </div>
-            <span className="text-lg lg:text-xl font-semibold tracking-tight text-[var(--text-primary)]">
+            <span className="gold-text text-lg lg:text-xl font-semibold tracking-tight">
               Omnyra
             </span>
           </Link>
@@ -296,7 +296,7 @@ export default function DashboardHome() {
               <span className="text-[var(--text-secondary)]/60">Loading your studio…</span>
             ) : lowCredits ? (
               <span className="text-[var(--accent-gold)]">
-                {credits} credits remaining ·{" "}
+                <span className="gold-text">{credits}</span> credits remaining ·{" "}
                 <Link
                   href="/dashboard/credits"
                   className="underline underline-offset-4 hover:text-[var(--accent-rose)] transition-colors"
@@ -306,7 +306,7 @@ export default function DashboardHome() {
               </span>
             ) : (
               <span className="text-[var(--text-secondary)]">
-                {credits.toLocaleString()} credits remaining
+                <span className="gold-text">{credits.toLocaleString()}</span> credits remaining
               </span>
             )}
           </div>

@@ -430,7 +430,7 @@ export default function MyVideosPage() {
             <div className="w-12 h-12 lg:w-20 lg:h-20 rounded-xl lg:rounded-2xl bg-gradient-to-br from-violet-500 to-cyan-400 flex items-center justify-center">
               <Sparkles className="w-6 h-6 lg:w-10 lg:h-10 text-white" />
             </div>
-            <span className="text-lg lg:text-3xl font-semibold tracking-tight">Omnyra</span>
+            <span className="gold-text text-lg lg:text-3xl font-semibold tracking-tight">Omnyra</span>
           </Link>
           <nav className="hidden md:flex items-center gap-1 text-sm">
             <Link
@@ -472,8 +472,8 @@ export default function MyVideosPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <span className="border border-violet-500/30 text-violet-300 rounded-full px-3 py-1 text-xs font-medium">
-              {credits.toLocaleString()} credits
+            <span className="gold-border rounded-full px-3 py-1 text-xs font-medium">
+              <span className="gold-text">{credits.toLocaleString()} credits</span>
             </span>
             <Link href="/pricing" className="text-sm text-white/55 hover:text-white">
               Get more →

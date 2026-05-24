@@ -177,7 +177,7 @@ export default function WelcomePage() {
           <div className="w-12 h-12 lg:w-20 lg:h-20 rounded-xl lg:rounded-2xl bg-gradient-to-br from-violet-500 to-cyan-400 flex items-center justify-center">
             <Sparkles className="w-6 h-6 lg:w-10 lg:h-10 text-white" />
           </div>
-          <span className="text-lg lg:text-3xl font-semibold tracking-tight">Omnyra</span>
+          <span className="gold-text text-lg lg:text-3xl font-semibold tracking-tight">Omnyra</span>
         </Link>
         <div className="flex items-center gap-2">
           {[1, 2, 3].map((n) => (
