@@ -1,4 +1,4 @@
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist, Geist_Mono, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import PWARegister from "./pwa-register";
 
@@ -12,9 +12,16 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const playfair = Playfair_Display({
+  variable: "--font-playfair",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700", "800"],
+  style: ["normal", "italic"],
+});
+
 export const metadata = {
-  title: "Omnyra AI",
-  description: "AI-powered video and content creation platform",
+  title: "Omnyra — Adaptive Creative Intelligence | Understand What Works",
+  description: "Predict what performs. Track audience behavior. Learn from every post outcome. The only creative intelligence system that understands what you should make next and why.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
@@ -29,7 +36,7 @@ export const metadata = {
 };
 
 export const viewport = {
-  themeColor: "#8b5cf6",
+  themeColor: "#D4AF37",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -39,7 +46,7 @@ export default function RootLayout({ children }) {
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${playfair.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
         {children}
