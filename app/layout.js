@@ -48,7 +48,8 @@ export default function RootLayout({ children }) {
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} ${playfair.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">
+      <body suppressHydrationWarning className="min-h-full flex flex-col" style={{ backgroundColor: '#0D0010' }}>
+        <script dangerouslySetInnerHTML={{__html: `if('serviceWorker'in navigator){navigator.serviceWorker.getRegistrations().then(function(r){for(let s of r)s.unregister();});}`}} />
         {children}
         <PWARegister />
       </body>

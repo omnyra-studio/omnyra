@@ -59,8 +59,8 @@
 /* ── CSS Variables ── */
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0D0010;
+  --foreground: #F5EFE6;
 
   /* ── App dark theme ── */
   --bg-primary:    #1A0E1C;
@@ -89,17 +89,17 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  /* Landing page palette */
-  --color-cream: #FBF8F4;
-  --color-warmwhite: #FFFDF9;
-  --color-softgold: #D4AF37;
-  --color-deepgold: #B8922E;
-  --color-rosegold: #C4936A;
-  --color-warmgray: #7A7570;
-  --color-softbrown: #5C5248;
-  --color-lightpeach: #FDF3EB;
-  --color-sand: #F5EDE4;
-  --color-champagne: #F3E8D9;
+  /* Landing page palette — unified dark theme */
+  --color-cream:       #0D0010;
+  --color-warmwhite:   #0D0010;
+  --color-softgold:    #D4AF37;
+  --color-deepgold:    #B8922E;
+  --color-rosegold:    #C4936A;
+  --color-warmgray:    #BBA8C8;
+  --color-softbrown:   #F5EFE6;
+  --color-lightpeach:  #1A0E1C;
+  --color-sand:        #1A0E1C;
+  --color-champagne:   #231525;
   /* App dark palette */
   --color-velvet-deep: #1A0E1C;
   --color-velvet-surface: #231525;
@@ -120,37 +120,14 @@
   --animate-float: float 8s ease-in-out infinite;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  background-color: #0D0010;
+  color: #F5EFE6;
 }
-
-@keyframes fadeUp {
-  0% { opacity: 0; transform: translateY(32px); }
-  100% { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes fadeIn {
-  0% { opacity: 0; }
-  100% { opacity: 1; }
-}
-
-@keyframes pulseSoft {
-  0%, 100% { box-shadow: 0 0 20px rgba(212, 175, 55, 0.15); }
-  50% { box-shadow: 0 0 40px rgba(212, 175, 55, 0.4); }
-}
-
-@keyframes float {
-  0%, 100% { transform: translateY(0px); }
-  50% { transform: translateY(-12px); }
-}
-
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: #0D0010;
+  color: #F5EFE6;
   font-family: Arial, Helvetica, sans-serif;
 }
 
@@ -192,8 +169,8 @@ body {
 
 .border-golden {
   background:
-    linear-gradient(rgba(255,253,249,0.95), rgba(255,253,249,0.95)) padding-box,
-    linear-gradient(135deg, rgba(212,175,55,0.5), rgba(196,147,106,0.2), rgba(212,175,55,0.5)) border-box;
+    linear-gradient(rgba(59,39,65,0.8), rgba(59,39,65,0.8)) padding-box,
+    linear-gradient(135deg, rgba(207,164,47,0.5), rgba(196,147,106,0.2), rgba(207,164,47,0.5)) border-box;
   border: 1px solid transparent;
 }
 
@@ -211,7 +188,7 @@ body {
 
 .btn-ghost {
   border: 1px solid rgba(212, 175, 55, 0.3);
-  color: #5C5248;
+  color: #F5EFE6;
   transition: all 0.35s ease;
 }
 .btn-ghost:hover {
@@ -239,18 +216,18 @@ body {
 }
 
 .code-block {
-  background: rgba(255, 253, 249, 0.7);
+  background: rgba(13, 0, 16, 0.8);
   border: 1px solid rgba(212, 175, 55, 0.2);
   border-radius: 16px;
   padding: 24px;
   font-size: 0.8rem;
   line-height: 1.8;
-  color: #5C5248;
+  color: #BBA8C8;
   overflow-x: auto;
 }
-.code-key { color: #B8922E; }
+.code-key { color: #D4AF37; }
 .code-string { color: #C4936A; }
-.code-value { color: #7A7570; }
+.code-value { color: #A89BAF; }
 
 .text-luxury {
   background: linear-gradient(135deg, #D4A843 0%, #E8C96A 30%, #C47A5A 70%, #D4A843 100%);
@@ -284,4 +261,33 @@ body {
   .nav-brand-text {
     font-size: 32px !important;
   }
+}
+
+@keyframes fadeUp {
+  0% { opacity: 0; transform: translateY(32px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes fadeIn {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+@keyframes pulseSoft {
+  0%, 100% { box-shadow: 0 0 20px rgba(212, 175, 55, 0.15); }
+  50% { box-shadow: 0 0 40px rgba(212, 175, 55, 0.4); }
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-12px); }
+}
+
+@keyframes bgBreath {
+  0%   { transform: scale(1.00) translate(0px,   0px);  }
+  20%  { transform: scale(1.06) translate(-8px,  -6px); }
+  40%  { transform: scale(1.10) translate(5px,  -10px); }
+  60%  { transform: scale(1.07) translate(-5px,   8px); }
+  80%  { transform: scale(1.04) translate(8px,    4px); }
+  100% { transform: scale(1.00) translate(0px,   0px);  }
 }

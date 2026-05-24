@@ -3,7 +3,7 @@ import AnimatedBackground from "@/components/AnimatedBackground";
 
 export default function Landing() {
   return (
-    <main className="bg-cream text-softbrown antialiased overflow-x-hidden">
+    <main suppressHydrationWarning style={{ background: 'transparent' }} className="text-softbrown antialiased overflow-x-hidden">
 
       {/* NAV */}
       <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl border-b" style={{ background: 'rgba(13,0,16,0.75)', borderColor: 'rgba(212,168,67,0.12)' }}>
@@ -28,29 +28,31 @@ export default function Landing() {
       </nav>
 
       {/* HERO */}
-      <section
-        className="relative min-h-screen flex items-center justify-center overflow-hidden"
-        style={{ background: '#0D0010' }}
-      >
+      <section style={{
+        position: 'relative',
+        overflow: 'hidden',
+        minHeight: '100vh',
+        background: 'transparent',
+      }}>
         <AnimatedBackground />
-
-        <div className="max-w-6xl mx-auto px-6 py-32 text-center" style={{ position: 'relative', zIndex: 2 }}>
+        <div style={{ position: 'relative', zIndex: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
+        <div className="max-w-6xl mx-auto px-6 py-32 text-center">
           <div className="inline-flex items-center gap-3 px-5 py-2.5 rounded-full border border-softgold/30 bg-softgold/[0.08] mb-10 animate-fade-in backdrop-blur-md">
             <span className="w-2 h-2 rounded-full pulse-dot inline-block"></span>
             <span className="text-xs font-bold text-deepgold tracking-[0.2em] uppercase">Adaptive Creative Intelligence</span>
           </div>
 
-          <h1 className="font-display text-5xl md:text-7xl lg:text-8xl font-bold leading-[1.05] mb-8" style={{ color: '#F5EFE6' }}>
+          <h1 className="font-display text-5xl md:text-7xl lg:text-8xl font-bold leading-[1.05] mb-8" style={{ color: '#F5EFE6', textShadow: '0 2px 20px rgba(0,0,0,0.8), 0 1px 4px rgba(0,0,0,0.9)' }}>
             <span className="block animate-fade-up">Predict what</span>
             <span className="block text-gold-gradient animate-fade-up" style={{ animationDelay: "0.15s" }}>performs.</span>
             <span className="block animate-fade-up" style={{ animationDelay: "0.3s" }}>Then learn why.</span>
           </h1>
 
-          <p className="text-lg md:text-xl max-w-3xl mx-auto mb-4 leading-relaxed animate-fade-up" style={{ color: '#A89BAF', animationDelay: "0.45s" }}>
+          <p className="text-lg md:text-xl max-w-3xl mx-auto mb-4 leading-relaxed animate-fade-up" style={{ color: '#E8DDD0', animationDelay: "0.45s", textShadow: '0 1px 8px rgba(0,0,0,0.9)' }}>
             Omnyra compares what it predicted to what actually happened — then adjusts. The only creative intelligence system that understands what you should make next and why.
           </p>
 
-          <p className="text-sm mb-12 animate-fade-up" style={{ color: '#A89BAF', animationDelay: "0.5s" }}>
+          <p className="text-sm mb-12 animate-fade-up" style={{ color: '#E8DDD0', animationDelay: "0.5s", textShadow: '0 1px 8px rgba(0,0,0,0.9)' }}>
             Predicts hook strength • Tracks audience behavior • Learns from every post outcome
           </p>
 
@@ -80,7 +82,8 @@ export default function Landing() {
             </div>
           </div>
         </div>
-        <div className="absolute bottom-0 left-0 right-0 h-40" style={{ background: 'linear-gradient(to top, #0D0010, transparent)', zIndex: 2 }}></div>
+        </div>
+        <div className="absolute bottom-0 left-0 right-0 h-40" style={{ background: 'linear-gradient(to top, #0D0010, transparent)', zIndex: 3 }}></div>
       </section>
 
       {/* THE STRATEGIC SHIFT */}
@@ -140,7 +143,7 @@ export default function Landing() {
       </section>
 
       {/* WORKFLOW */}
-      <section className="relative py-24 px-6 bg-sand/50">
+      <section className="relative py-24 px-6" style={{ background: '#0D0010' }}>
         <div className="max-w-6xl mx-auto">
           <p className="text-xs font-bold text-deepgold tracking-[0.2em] uppercase mb-4 text-center">The Workflow</p>
           <h2 className="font-display text-4xl md:text-5xl font-bold text-softbrown text-center mb-20">
@@ -251,7 +254,7 @@ export default function Landing() {
       </section>
 
       {/* THE FLYWHEEL */}
-      <section className="relative py-24 px-6 bg-warmwhite">
+      <section className="relative py-24 px-6" style={{ background: '#0D0010' }}>
         <div className="max-w-6xl mx-auto">
           <p className="text-xs font-bold text-deepgold tracking-[0.2em] uppercase mb-4 text-center">The Flywheel</p>
           <h2 className="font-display text-4xl md:text-5xl font-bold text-softbrown text-center mb-6">
@@ -327,7 +330,7 @@ export default function Landing() {
       </section>
 
       {/* PRICING */}
-      <section id="pricing" className="relative py-24 px-6 bg-sand/50 scroll-mt-20">
+      <section id="pricing" className="relative py-24 px-6 scroll-mt-20" style={{ background: '#0D0010' }}>
         <div className="max-w-6xl mx-auto">
           <p className="text-xs font-bold text-deepgold tracking-[0.2em] uppercase mb-4 text-center">Pricing</p>
           <h2 className="font-display text-4xl md:text-5xl font-bold text-softbrown text-center mb-4">
@@ -354,7 +357,7 @@ export default function Landing() {
             </div>
 
             {/* Creator (featured) */}
-            <div className="gold-border bg-warmwhite rounded-3xl p-8 flex flex-col relative md:-translate-y-4 shadow-2xl">
+            <div className="gold-border rounded-3xl p-8 flex flex-col relative md:-translate-y-4 shadow-2xl" style={{ background: 'rgba(82,56,95,0.9)' }}>
               <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-5 py-1.5 bg-gradient-to-r from-softgold to-rosegold text-warmwhite text-xs font-bold rounded-full tracking-wide whitespace-nowrap">
                 Most Popular
               </div>
@@ -414,7 +417,7 @@ export default function Landing() {
       </section>
 
       {/* FINAL CTA */}
-      <section className="relative py-32 px-6 text-center bg-sand/50">
+      <section className="relative py-32 px-6 text-center" style={{ background: '#0D0010' }}>
         <div className="max-w-3xl mx-auto">
           <h2 className="font-display text-4xl md:text-6xl font-bold text-softbrown mb-6">
             Ready to understand<br />
@@ -431,7 +434,7 @@ export default function Landing() {
       </section>
 
       {/* FOOTER */}
-      <footer className="border-t border-softgold/10 py-12 px-6 bg-cream">
+      <footer className="border-t border-softgold/10 py-12 px-6" style={{ background: '#0D0010' }}>
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <span className="gold-text font-display text-xl font-bold">Omnyra</span>
