@@ -1,12 +1,11 @@
 import Anthropic from "@anthropic-ai/sdk";
 
-const client = new Anthropic();
-
 export async function GET() {
   if (!process.env.ANTHROPIC_API_KEY) {
     return Response.json({ error: "ANTHROPIC_API_KEY missing" }, { status: 500 });
   }
 
+  const client = new Anthropic();
   try {
     const response = await client.messages.create({
       model:      "claude-sonnet-4-6",

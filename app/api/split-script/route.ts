@@ -1,7 +1,5 @@
 import OpenAI from "openai";
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
 export async function POST(req: Request) {
   if (!process.env.OPENAI_API_KEY) {
     return Response.json({ error: "OPENAI_API_KEY missing" }, { status: 500 });
@@ -33,6 +31,7 @@ Return ONLY valid JSON. No markdown, no backticks:
   ]
 }`;
 
+  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   try {
     const response = await client.chat.completions.create({
       model: "gpt-4o",

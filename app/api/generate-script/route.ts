@@ -1,7 +1,5 @@
 import OpenAI from "openai";
 
-const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
 export async function POST(req: Request) {
   if (!process.env.OPENAI_API_KEY) {
     return Response.json(
@@ -52,6 +50,7 @@ Write a complete natural-sounding script:
 
 Return only the script. No explanation. No title. Just the script.`;
 
+  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream({
