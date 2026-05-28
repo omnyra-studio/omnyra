@@ -2,9 +2,42 @@
 
 /* ── Metallic Gold System ── */
 
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 @keyframes metalShimmer {
   0%   { background-position: 200% center; }
   100% { background-position: -200% center; }
+}
+
+@keyframes goldPulse {
+  0%, 100% { box-shadow: 0 4px 20px rgba(201,168,76,0.4); }
+  50%       { box-shadow: 0 4px 35px rgba(201,168,76,0.8); }
+}
+
+.metallic-gold {
+  background: linear-gradient(
+    105deg,
+    #7A4800 0%,
+    #CFA42F 20%,
+    #F7D96B 42%,
+    #FFFBCC 50%,
+    #F7D96B 58%,
+    #CFA42F 80%,
+    #7A4800 100%
+  ) !important;
+  background-size: 200% auto !important;
+  -webkit-background-clip: text !important;
+  -webkit-text-fill-color: transparent !important;
+  background-clip: text !important;
+  animation: metalShimmer 3s linear infinite !important;
+  text-shadow: none !important;
+  font-style: italic;
+  display: inline;
+  color: transparent !important;
+  opacity: 1 !important;
+  filter: none !important;
 }
 
 .gold-text {
@@ -16,11 +49,17 @@
   animation: metalShimmer 3s linear infinite;
 }
 
+.page-title {
+  text-align: center;
+  width: 100%;
+  display: block;
+}
+
 .gold-btn {
   background: var(--gold-gradient);
   background-size: 200% auto;
   animation: metalShimmer 3s linear infinite;
-  color: #0D0010;
+  color: #2D0A3E;
   font-weight: 700;
   border: none;
   border-radius: 9999px;
@@ -59,7 +98,7 @@
 /* ── CSS Variables ── */
 
 :root {
-  --background: #0D0010;
+  --background: #2D0A3E;
   --foreground: #F5EFE6;
 
   /* ── App dark theme ── */
@@ -90,13 +129,13 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   /* Landing page palette — unified dark theme */
-  --color-cream:       #0D0010;
-  --color-warmwhite:   #0D0010;
+  --color-cream:       #2D0A3E;
+  --color-warmwhite:   #2D0A3E;
   --color-softgold:    #D4AF37;
   --color-deepgold:    #B8922E;
   --color-rosegold:    #C4936A;
-  --color-warmgray:    #BBA8C8;
-  --color-softbrown:   #F5EFE6;
+  --color-warmgray:    #E8DEFF;
+  --color-softbrown:   #FFFFFF;
   --color-lightpeach:  #1A0E1C;
   --color-sand:        #1A0E1C;
   --color-champagne:   #231525;
@@ -121,15 +160,18 @@
 }
 
 html {
-  background-color: #0D0010;
+  background-color: #2D0A3E;
   color: #F5EFE6;
 }
 
 body {
-  background: #0D0010;
-  color: #F5EFE6;
+  background: #2D0A3E;
+  color: #F0E8FF;
   font-family: Arial, Helvetica, sans-serif;
 }
+
+p, li, span { color: #E8DEFF; }
+h1, h2, h3, h4 { color: #FFFFFF; }
 
 /* ── Dashboard theme variables ── */
 
@@ -150,9 +192,9 @@ body {
 /* ── Landing page custom classes ── */
 
 .glass-card {
-  background: rgba(35, 21, 37, 0.65);
-  backdrop-filter: blur(24px);
-  border: 1px solid rgba(212, 168, 67, 0.12);
+  background: rgba(75,30,130,0.65);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(207,164,47,0.25);
   transition: all 0.35s ease;
 }
 .glass-card:hover {
@@ -169,7 +211,7 @@ body {
 
 .border-golden {
   background:
-    linear-gradient(rgba(59,39,65,0.8), rgba(59,39,65,0.8)) padding-box,
+    linear-gradient(rgba(75,30,130,0.65), rgba(75,30,130,0.65)) padding-box,
     linear-gradient(135deg, rgba(207,164,47,0.5), rgba(196,147,106,0.2), rgba(207,164,47,0.5)) border-box;
   border: 1px solid transparent;
 }
@@ -216,7 +258,7 @@ body {
 }
 
 .code-block {
-  background: rgba(13, 0, 16, 0.8);
+  background: rgba(45, 10, 62, 0.8);
   border: 1px solid rgba(212, 175, 55, 0.2);
   border-radius: 16px;
   padding: 24px;

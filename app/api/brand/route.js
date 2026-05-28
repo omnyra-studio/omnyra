@@ -12,17 +12,17 @@ export async function GET(request) {
   const { user } = await getUserAndPlan(request);
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const { data, error } = await getDb()
-    .from('brand_profiles')
-    .select('*')
-    .eq('user_id', user.id)
-    .single();
+  const db = getDb();
+  const [brandRes, profileRes] = await Promise.all([
+    db.from('brand_profiles').select('*').eq('user_id', user.id).single(),
+    db.from('profiles').select('tiktok_handle,instagram_handle,youtube_url,facebook_url,linkedin_url,twitter_handle,website_url,brand_voice,primary_niche,competitors').eq('id', user.id).single(),
+  ]);
 
-  if (error && error.code !== 'PGRST116') {
-    return Response.json({ error: error.message }, { status: 500 });
+  if (brandRes.error && brandRes.error.code !== 'PGRST116') {
+    return Response.json({ error: brandRes.error.message }, { status: 500 });
   }
 
-  return Response.json(data || {});
+  return Response.json({ ...(brandRes.data || {}), ...(profileRes.data || {}) });
 }
 
 export async function POST(request) {
@@ -30,11 +30,16 @@ export async function POST(request) {
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 });
 
   const body = await request.json();
-  const { brand_name, tagline, colors, tone_of_voice, target_audience, niche, content_style_notes } = body;
+  const {
+    brand_name, tagline, colors, tone_of_voice, target_audience, niche, content_style_notes,
+    tiktok_handle, instagram_handle, youtube_url, facebook_url, linkedin_url, twitter_handle,
+    website_url, brand_voice, primary_niche, competitors,
+  } = body;
 
-  const { data, error } = await getDb()
-    .from('brand_profiles')
-    .upsert({
+  const db = getDb();
+
+  const [brandResult] = await Promise.all([
+    db.from('brand_profiles').upsert({
       user_id: user.id,
       brand_name: brand_name || null,
       tagline: tagline || null,
@@ -44,10 +49,21 @@ export async function POST(request) {
       niche: niche || null,
       content_style_notes: content_style_notes || null,
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'user_id' })
-    .select()
-    .single();
+    }, { onConflict: 'user_id' }).select().single(),
+    db.from('profiles').update({
+      ...(tiktok_handle !== undefined && { tiktok_handle: tiktok_handle || null }),
+      ...(instagram_handle !== undefined && { instagram_handle: instagram_handle || null }),
+      ...(youtube_url !== undefined && { youtube_url: youtube_url || null }),
+      ...(facebook_url !== undefined && { facebook_url: facebook_url || null }),
+      ...(linkedin_url !== undefined && { linkedin_url: linkedin_url || null }),
+      ...(twitter_handle !== undefined && { twitter_handle: twitter_handle || null }),
+      ...(website_url !== undefined && { website_url: website_url || null }),
+      ...(brand_voice !== undefined && { brand_voice: brand_voice || null }),
+      ...(primary_niche !== undefined && { primary_niche: primary_niche || null }),
+      ...(competitors !== undefined && { competitors: competitors || null }),
+    }).eq('id', user.id),
+  ]);
 
-  if (error) return Response.json({ error: error.message }, { status: 500 });
-  return Response.json(data);
+  if (brandResult.error) return Response.json({ error: brandResult.error.message }, { status: 500 });
+  return Response.json(brandResult.data);
 }

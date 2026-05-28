@@ -22,7 +22,7 @@ export default function AnimatedBackground() {
       <div style={{
         position: 'absolute',
         inset: 0,
-        background: 'radial-gradient(ellipse at center, rgba(13,0,16,0.72) 0%, rgba(13,0,16,0.55) 50%, rgba(13,0,16,0.25) 100%)',
+        background: 'radial-gradient(ellipse at center, rgba(45,10,62,0.3) 0%, rgba(30,5,45,0.5) 100%)',
       }} />
     </div>
   )

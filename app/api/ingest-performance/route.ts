@@ -1,4 +1,4 @@
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs";
+import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { ApifyClient } from "apify-client";
@@ -86,7 +86,7 @@ async function scrapePost(url: string, platform: Platform): Promise<ScrapedMetri
   const run = await client.actor(ACTOR_IDS[platform]).call(inputByPlatform[platform], {
     // 90-second timeout — Apify actors typically finish well within this
     timeoutSecs: 90,
-  });
+  } as Parameters<ReturnType<typeof client.actor>["call"]>[1]);
 
   const { items } = await client.dataset(run.defaultDatasetId).listItems({ limit: 1 });
 
@@ -187,7 +187,12 @@ function scoreFromManual(
  * delta in creator_memory to power the "What Omnyra Learned" surface.
  */
 export async function POST(request: Request) {
-  const supabase = createRouteHandlerClient({ cookies });
+  const cookieStore = await cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookies: { getAll: () => cookieStore.getAll(), setAll: () => {} } }
+  );
 
   // ── Auth ─────────────────────────────────────────────────────────────────────
   const {

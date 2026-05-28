@@ -1,28 +1,31 @@
-import withPWAInit from 'next-pwa';
-
-const withPWA = withPWAInit({
-  dest: 'public',
-  disable: true,
-  register: true,
-  skipWaiting: true,
-});
-
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   images: {
-    imageSizes: [16, 32, 48, 64, 96, 128, 140, 160, 200, 256, 384],
+    remotePatterns: [
+      { protocol: 'https', hostname: '**.supabase.co' },
+      { protocol: 'https', hostname: '**.fal.ai' },
+      { protocol: 'https', hostname: '**.fal.run' },
+      { protocol: 'https', hostname: 'fal.media' },
+      { protocol: 'https', hostname: '**.heygen.com' },
+      { protocol: 'https', hostname: '**.klingai.com' },
+      { protocol: 'https', hostname: 'oaidalleapiprodscus.blob.core.windows.net' },
+      { protocol: 'https', hostname: '**.elevenlabs.io' }
+    ]
   },
-  async headers() {
+  serverExternalPackages: ['fluent-ffmpeg', '@ffmpeg-installer/ffmpeg'],
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '10mb'
+    }
+  },
+  async rewrites() {
     return [
-      {
-        source: '/',
-        headers: [
-          { key: 'Cache-Control', value: 'no-store, must-revalidate' },
-          { key: 'Pragma', value: 'no-cache' },
-        ],
-      },
-    ];
+      { source: '/ingest/static/:path*', destination: 'https://us-assets.i.posthog.com/static/:path*' },
+      { source: '/ingest/array/:path*',  destination: 'https://us-assets.i.posthog.com/array/:path*' },
+      { source: '/ingest/:path*',        destination: 'https://us.i.posthog.com/:path*' },
+    ]
   },
-};
+  skipTrailingSlashRedirect: true,
+}
 
-export default withPWA(nextConfig);
+export default nextConfig

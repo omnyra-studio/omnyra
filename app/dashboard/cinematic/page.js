@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabase";
+import AnimatedBackground from "@/components/AnimatedBackground";
 
 const C = {
   bg: "#07070f", text: "#f5f3ff", sub: "rgba(245,243,255,0.5)",
@@ -51,7 +52,6 @@ export default function CinematicStudio() {
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
-  const [credits, setCredits] = useState(null);
 
   const sceneDesc = scene.value || customScene;
 
@@ -266,25 +266,15 @@ export default function CinematicStudio() {
   });
 
   return (
-    <main style={{ minHeight: "100vh", background: C.bg, color: C.text, fontFamily: '"Instrument Sans","Inter",-apple-system,sans-serif', padding: "0 0 80px" }}>
-      <div style={{ maxWidth: 480, margin: "0 auto", padding: "0 20px" }}>
-
-        {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "20px 0 20px" }}>
-          <button onClick={() => router.push("/dashboard")}
-            style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 12, padding: "8px 12px", color: C.text, cursor: "pointer", fontSize: 18 }}>
-            ←
-          </button>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>Cinematic Studio</h1>
-            <p style={{ margin: 0, fontSize: 12, color: C.sub }}>Real AI person · Runway · Your voice synced</p>
-          </div>
-          {credits !== null && (
-            <div style={{ marginLeft: "auto", fontSize: 12, color: C.sub, background: "rgba(255,255,255,0.05)", borderRadius: 8, padding: "4px 10px" }}>
-              ⚡ {credits}
-            </div>
-          )}
+    <main style={{ minHeight: "100vh", background: "transparent", position: "relative", color: C.text, fontFamily: '"Instrument Sans","Inter",-apple-system,sans-serif', padding: "0 0 80px" }}>
+      <AnimatedBackground />
+      <div style={{ position: "relative", zIndex: 1 }}>
+        <div style={{ borderBottom: "1px solid rgba(207,164,47,0.15)", padding: "12px 20px", display: "flex", alignItems: "center", gap: 12, position: "sticky", top: 0, background: "rgba(45,10,62,0.75)", backdropFilter: "blur(16px)", zIndex: 40 }}>
+          <span style={{ fontWeight: 700, fontSize: 18, background: "linear-gradient(90deg,#CFA42F,#E8B84B)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Omnyra</span>
+          <button onClick={() => router.push("/dashboard")} style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 12, padding: "6px 10px", color: C.text, cursor: "pointer", fontSize: 16 }}>←</button>
+          <span style={{ fontWeight: 700, fontSize: 16 }}>Cinematic Studio</span>
         </div>
+        <div style={{ maxWidth: 480, margin: "0 auto", padding: "16px 20px 0" }}>
 
         {/* Step indicator */}
         <div style={{ display: "flex", alignItems: "center", marginBottom: 28 }}>
@@ -381,7 +371,6 @@ export default function CinematicStudio() {
             <button onClick={generateVoice} disabled={loading || !script.trim()} style={btnStyle(loading || !script.trim())}>
               {loading ? status || "Generating..." : "Generate Voice →"}
             </button>
-            <div style={{ fontSize: 11, color: C.sub, textAlign: "center" }}>Voice generation · 1-2 credits</div>
           </div>
         )}
 
@@ -444,7 +433,7 @@ export default function CinematicStudio() {
             <button onClick={generateCinematic} disabled={loading || !sceneDesc} style={btnStyle(loading || !sceneDesc)}>
               {loading ? status || "Generating..." : "🎬 Generate Cinematic Scene →"}
             </button>
-            <div style={{ fontSize: 11, color: C.sub, textAlign: "center" }}>Runway gen takes 60-90 seconds · 20 credits</div>
+            <div style={{ fontSize: 11, color: C.sub, textAlign: "center" }}>Runway gen takes 60-90 seconds</div>
           </div>
         )}
 
@@ -477,7 +466,7 @@ export default function CinematicStudio() {
             <button onClick={generateLipsync} disabled={loading} style={btnStyle(loading)}>
               {loading ? status || "Syncing..." : "👄 Sync Lips to Voice →"}
             </button>
-            <div style={{ fontSize: 11, color: C.sub, textAlign: "center" }}>6 credits · SyncLabs</div>
+            <div style={{ fontSize: 11, color: C.sub, textAlign: "center" }}>SyncLabs lip sync</div>
           </div>
         )}
 
@@ -510,6 +499,7 @@ export default function CinematicStudio() {
           </div>
         )}
 
+        </div>
       </div>
     </main>
   );

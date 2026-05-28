@@ -22,10 +22,11 @@ import { sendSubscriptionConfirmation } from '../../../../lib/email.js';
 import { trackEvent } from '../../../../lib/events/trackEvent';
 
 const PLAN_CREDITS = {
-  creator: 200,
-  pro:     500,
-  studio:  1500,
-  free:    50,
+  free:    30,
+  starter: 100,
+  creator: 350,
+  studio:  900,
+  pro:     350,  // legacy alias
 };
 
 // Approximate USD-per-credit for revenue snapshots. Sourced from env so
@@ -166,11 +167,14 @@ export async function POST(request) {
         if (session.mode === 'payment') {
           const credits = parseInt(session.metadata?.credits ?? '0', 10);
           const userId  = session.metadata?.userId
-            ?? await findUserIdByEmail(db, email);
+            ?? (email ? await findUserIdByEmail(db, email) : null);
 
           if (!userId || !credits) {
-            console.warn('checkout.session.completed (payment): missing userId or credits', { userId, credits, email });
-            break;
+            console.error('checkout.session.completed (payment): missing userId or credits — returning 422', { userId, credits, email });
+            return new Response(
+              JSON.stringify({ error: 'Missing userId or credits metadata' }),
+              { status: 422, headers: { 'Content-Type': 'application/json' } }
+            );
           }
 
           await addCreditPack(db, userId, credits);
@@ -181,7 +185,7 @@ export async function POST(request) {
         // Subscription checkout — first activation
         const plan   = planKey(session.metadata?.plan ?? session.metadata?.pack ?? '');
         const userId = session.metadata?.userId
-          ?? await findUserIdByEmail(db, email);
+          ?? (email ? await findUserIdByEmail(db, email) : null);
 
         if (userId) {
           await applyPlan(db, userId, plan, session.customer, session.subscription, 'subscription_purchased');
@@ -190,7 +194,11 @@ export async function POST(request) {
               .catch(err => console.error('[email] Subscription confirmation failed:', err.message));
           }
         } else {
-          console.warn('checkout.session.completed (subscription): no user found for', email);
+          console.error('checkout.session.completed (subscription): no user found — returning 422', { email });
+          return new Response(
+            JSON.stringify({ error: 'User not found for subscription' }),
+            { status: 422, headers: { 'Content-Type': 'application/json' } }
+          );
         }
         break;
       }
@@ -221,6 +229,41 @@ export async function POST(request) {
         const userId = await findUserIdByCustomerId(db, sub.customer);
         if (userId) {
           await applyPlan(db, userId, 'free', sub.customer, null, 'subscription_canceled');
+        }
+        break;
+      }
+
+      case 'invoice.paid': {
+        // Subscription renewal — grant the plan's credit allotment again
+        const invoice = event.data.object;
+        // Only process subscription invoices, not one-time payments
+        if (!invoice.subscription) break;
+        const userId = await findUserIdByCustomerId(db, invoice.customer);
+        if (!userId) {
+          console.warn('invoice.paid: no user found for customer', invoice.customer);
+          break;
+        }
+        const { data: profile } = await db
+          .from('profiles')
+          .select('plan')
+          .eq('id', userId)
+          .single();
+        const plan = profile?.plan ?? 'free';
+        const credits = PLAN_CREDITS[plan] ?? 0;
+        if (credits > 0) {
+          await db.from('credit_transactions').insert({
+            user_id: userId,
+            amount: credits,
+            type: 'subscription',
+            description: `${plan} plan renewed`,
+          });
+          await trackEvent(userId, 'subscription_renewed', {
+            plan,
+            credits_granted: credits,
+            revenue_usd: credits * pricePerCredit(),
+            stripe_customer_id: invoice.customer ?? null,
+          });
+          console.log(`[stripe] Renewal: +${credits} credits for user ${userId} (${plan})`);
         }
         break;
       }

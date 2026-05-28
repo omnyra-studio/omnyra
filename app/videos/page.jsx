@@ -14,7 +14,10 @@ import {
   Check,
   Film,
 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+import { supabase as supabaseClient } from "@/lib/supabase";
+import * as Q from "@/lib/db/query";
+import { SCHEMA } from "@/lib/db/schema";
+import AnimatedBackground from "@/components/AnimatedBackground";
 
 const TEMPLATE_FILTERS = [
   { id: "all", label: "All" },
@@ -67,7 +70,7 @@ function Toast({ message, kind = "success", onDone }) {
 function ScriptModal({ script, onClose }) {
   if (script == null) return null;
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 bg-[#2D0A3E]/70 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="w-full max-w-2xl bg-[#0c0c14] border border-white/10 rounded-2xl p-6 max-h-[80vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-5">
           <h3 className="text-lg font-semibold text-white">Your Script</h3>
@@ -117,7 +120,7 @@ function VideoCard({
               playsInline
               preload="metadata"
             />
-            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center pointer-events-none">
+            <div className="absolute inset-0 bg-[#2D0A3E]/0 group-hover:bg-[#2D0A3E]/30 transition-colors flex items-center justify-center pointer-events-none">
               <Play className="w-10 h-10 text-white opacity-0 group-hover:opacity-90 transition-opacity" />
             </div>
           </>
@@ -237,8 +240,7 @@ function VideoCard({
 export default function MyVideosPage() {
   const router = useRouter();
   const supabaseRef = useRef(null);
-  if (!supabaseRef.current) supabaseRef.current = createClient();
-  const supabase = supabaseRef.current;
+  const supabase = supabaseClient;
 
   const [videos, setVideos] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -250,8 +252,8 @@ export default function MyVideosPage() {
   const [selectedScript, setSelectedScript] = useState(null);
   const [menuOpen, setMenuOpen] = useState(null);
   const [userId, setUserId] = useState(null);
-  const [credits, setCredits] = useState(0);
   const [toast, setToast] = useState({ kind: "success", message: "" });
+  const [activeTab, setActiveTab] = useState("content");
 
   function showToast(message, kind = "success") {
     setToast({ kind, message });
@@ -271,22 +273,15 @@ export default function MyVideosPage() {
       if (cancelled) return;
       setUserId(user.id);
 
-      const [renders, creditRow] = await Promise.all([
-        supabase
-          .from("renders")
-          .select("*")
-          .eq("user_id", user.id)
-          .order("created_at", { ascending: false })
-          .range(0, PAGE_SIZE - 1),
-        supabase.from("credits").select("balance").eq("user_id", user.id).single(),
-      ]);
+      const renders = await Q.renders(supabase).forUser(user.id)
+        .order(SCHEMA.renders.columns.createdAt, { ascending: false })
+        .range(0, PAGE_SIZE - 1);
 
       if (cancelled) return;
 
       const rows = renders.data ?? [];
       setVideos(rows);
       setHasMore(rows.length === PAGE_SIZE);
-      setCredits(creditRow.data?.balance ?? 0);
       setLoading(false);
     })();
     return () => {
@@ -304,8 +299,8 @@ export default function MyVideosPage() {
         {
           event: "UPDATE",
           schema: "public",
-          table: "renders",
-          filter: `user_id=eq.${userId}`,
+          table: SCHEMA.renders.table,
+          filter: Q.renders(supabase).realtimeFilter(userId),
         },
         (payload) => {
           const next = payload.new;
@@ -322,8 +317,8 @@ export default function MyVideosPage() {
         {
           event: "INSERT",
           schema: "public",
-          table: "renders",
-          filter: `user_id=eq.${userId}`,
+          table: SCHEMA.renders.table,
+          filter: Q.renders(supabase).realtimeFilter(userId),
         },
         (payload) => {
           setVideos((prev) => [payload.new, ...prev]);
@@ -341,11 +336,8 @@ export default function MyVideosPage() {
     setLoadingMore(true);
     const from = page * PAGE_SIZE;
     const to = from + PAGE_SIZE - 1;
-    const { data } = await supabase
-      .from("renders")
-      .select("*")
-      .eq("user_id", userId)
-      .order("created_at", { ascending: false })
+    const { data } = await Q.renders(supabase).forUser(userId)
+      .order(SCHEMA.renders.columns.createdAt, { ascending: false })
       .range(from, to);
     const rows = data ?? [];
     setVideos((prev) => [...prev, ...rows]);
@@ -401,7 +393,7 @@ export default function MyVideosPage() {
   }
 
   async function handleDelete(video) {
-    const { error } = await supabase.from("renders").delete().eq("id", video.id);
+    const { error } = await supabase.from(SCHEMA.renders.table).delete().eq(SCHEMA.renders.columns.id, video.id);
     if (error) {
       showToast("Couldn't delete.", "error");
       return;
@@ -410,73 +402,27 @@ export default function MyVideosPage() {
   }
 
   function handleRecreate(video) {
-    const tmpl = video.template ?? video.director_settings?.template ?? "ugc-ad";
-    router.push(`/create?template=${encodeURIComponent(tmpl)}`);
+    router.push("/dashboard");
   }
 
   return (
-    <div className="min-h-screen bg-[#070710] text-white">
-      <div
-        aria-hidden
-        className="pointer-events-none fixed inset-0 -z-10 overflow-hidden"
-      >
-        <div className="absolute -top-40 -left-40 w-[600px] h-[600px] rounded-full bg-violet-600/10 blur-[120px]" />
-        <div className="absolute top-1/3 -right-40 w-[500px] h-[500px] rounded-full bg-cyan-500/8 blur-[120px]" />
-      </div>
-
-      <header className="sticky top-0 z-30 backdrop-blur-xl bg-[#070710]/70 border-b border-white/5">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-          <Link href="/dashboard" className="flex items-center gap-3 lg:gap-4">
-            <div className="w-12 h-12 lg:w-20 lg:h-20 rounded-xl lg:rounded-2xl bg-gradient-to-br from-violet-500 to-cyan-400 flex items-center justify-center">
-              <Sparkles className="w-6 h-6 lg:w-10 lg:h-10 text-white" />
-            </div>
-            <span className="gold-text text-lg lg:text-3xl font-semibold tracking-tight">Omnyra</span>
-          </Link>
-          <nav className="hidden md:flex items-center gap-1 text-sm">
-            <Link
-              href="/create"
-              className="px-4 py-2 rounded-full text-white/55 hover:text-white hover:bg-white/5 transition-colors"
-            >
-              Create
-            </Link>
-            <Link
-              href="/videos"
-              className="px-4 py-2 rounded-full bg-white/8 text-white"
-            >
-              My Videos
-            </Link>
-            <Link
-              href="/studio"
-              className="px-4 py-2 rounded-full text-white/55 hover:text-white hover:bg-white/5 transition-colors"
-            >
-              Studio
-            </Link>
-            <Link
-              href="/dashboard/settings"
-              className="px-4 py-2 rounded-full text-white/55 hover:text-white hover:bg-white/5 transition-colors"
-            >
-              Account
-            </Link>
-          </nav>
-        </div>
-      </header>
+    <div className="min-h-screen text-white" style={{ position: 'relative', background: 'transparent', color: 'rgba(255,255,255,0.9)' }}>
+      <AnimatedBackground />
+      <div style={{ position: 'relative', zIndex: 1 }}>
 
       <main className="max-w-6xl mx-auto px-6 py-10 md:py-14">
         <section className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4 mb-10">
           <div>
-            <h1 className="text-3xl md:text-4xl font-semibold tracking-tight">
-              My Videos
-            </h1>
-            <p className="text-sm text-white/45 mt-1">
+            <div className="page-title" style={{ fontSize: "2rem", fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: "#C9A84C", marginBottom: "4px" }}>
+              My Library
+            </div>
+            <p style={{ fontSize: '1rem', color: 'rgba(255,255,255,0.85)', marginTop: 4 }}>
               Everything you&apos;ve directed with Omnyra.
             </p>
           </div>
           <div className="flex items-center gap-3">
-            <span className="gold-border rounded-full px-3 py-1 text-xs font-medium">
-              <span className="gold-text">{credits.toLocaleString()} credits</span>
-            </span>
-            <Link href="/pricing" className="text-sm text-white/55 hover:text-white">
-              Get more →
+            <Link href="/dashboard" className="px-4 py-2 rounded-full gold-btn" style={{ fontSize: '1rem', fontWeight: 700 }}>
+              New video →
             </Link>
           </div>
         </section>
@@ -490,11 +436,16 @@ export default function MyVideosPage() {
                   key={f.id}
                   onClick={() => setFilter(f.id)}
                   className={[
-                    "px-4 py-2 rounded-full text-xs font-medium transition-colors",
+                    "px-4 py-2 rounded-full transition-colors",
                     active
-                      ? "bg-violet-500 text-white shadow-[0_0_20px_rgba(139,92,246,0.3)]"
-                      : "border border-white/10 text-white/50 hover:text-white hover:border-white/20",
+                      ? "bg-violet-500 shadow-[0_0_20px_rgba(139,92,246,0.3)]"
+                      : "border border-white/10 hover:border-white/20",
                   ].join(" ")}
+                  style={{
+                    fontSize: '1rem',
+                    fontWeight: active ? 700 : 600,
+                    color: active ? 'white' : 'rgba(255,255,255,0.92)',
+                  }}
                 >
                   {f.label}
                 </button>
@@ -502,7 +453,7 @@ export default function MyVideosPage() {
             })}
           </div>
           <div className="flex items-center justify-between">
-            <p className="text-sm text-white/30">
+            <p style={{ fontSize: '1.1rem', fontWeight: 600, color: 'rgba(255,255,255,0.92)' }}>
               {filteredVideos.length} video{filteredVideos.length === 1 ? "" : "s"} created
             </p>
             <div className="inline-flex items-center gap-1 p-1 rounded-full bg-white/3 border border-white/10">
@@ -511,11 +462,14 @@ export default function MyVideosPage() {
                   key={s}
                   onClick={() => setSort(s)}
                   className={[
-                    "px-3 py-1.5 rounded-full text-xs font-medium capitalize transition-colors",
-                    sort === s
-                      ? "bg-white/10 text-white"
-                      : "text-white/45 hover:text-white",
+                    "px-3 py-1.5 rounded-full capitalize transition-colors",
+                    sort === s ? "bg-white/10" : "",
                   ].join(" ")}
+                  style={{
+                    fontSize: '0.95rem',
+                    fontWeight: sort === s ? 700 : 600,
+                    color: sort === s ? 'white' : 'rgba(255,255,255,0.9)',
+                  }}
                 >
                   {s}
                 </button>
@@ -544,7 +498,7 @@ export default function MyVideosPage() {
               Your AI-generated videos will appear here.
             </p>
             <Link
-              href="/create"
+              href="/dashboard"
               className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-sm font-semibold shadow-[0_0_30px_rgba(139,92,246,0.35)] transition-colors"
             >
               Create your first video →
@@ -598,6 +552,7 @@ export default function MyVideosPage() {
         kind={toast.kind}
         onDone={() => setToast({ ...toast, message: "" })}
       />
+      </div>
     </div>
   );
 }

@@ -2,10 +2,14 @@
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabase";
+import AnimatedBackground from "@/components/AnimatedBackground";
 
 const C = {
-  bg: "#0a0a0a", text: "#fff", sub: "#555",
-  violet: "#7c6fff", cyan: "#06b6d4", border: "#1a1a1a",
+  text: "#E8DEFF",
+  sub: "#BBA8C8",
+  violet: "#C084FC",
+  gold: "#F0C040",
+  border: "rgba(207,164,47,0.2)",
 };
 
 const MOTION_PROMPTS = [
@@ -85,7 +89,6 @@ export default function CreatorStudio() {
   const [loading, setLoading]         = useState(false);
   const [status, setStatus]           = useState("");
   const [error, setError]             = useState("");
-  const [credits, setCredits]         = useState(null);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -366,25 +369,34 @@ HASHTAGS:
     padding: "14px", borderRadius: 10, fontWeight: 700, fontSize: 15,
     border: "none", cursor: disabled ? "not-allowed" : "pointer",
     background: disabled
-      ? "#1a1a1a"
-      : `linear-gradient(135deg, ${C.violet}, ${C.cyan})`,
-    color: disabled ? "#444" : "#fff", width: "100%",
+      ? "rgba(255,255,255,0.06)"
+      : "linear-gradient(105deg, #5A3400, #9A7010, #CFA42F, #E8C84A, #CFA42F, #9A7010, #5A3400)",
+    backgroundSize: disabled ? undefined : "200% auto",
+    animation: disabled ? undefined : "metalShimmer 3s linear infinite",
+    color: disabled ? "#555" : "#0D0010", width: "100%",
     fontFamily: "inherit",
+    boxShadow: disabled ? undefined : "0 0 20px rgba(207,164,47,0.2)",
   });
 
   const inputStyle = {
     padding: "12px 16px", borderRadius: 10,
-    border: `0.5px solid ${C.border}`,
-    background: "#111", color: C.text, fontSize: 14,
-    width: "100%", boxSizing: "border-box", fontFamily: "inherit",
+    border: "1px solid rgba(204,171,175,0.25)",
+    background: "#0D0010", color: "#C084FC", fontSize: 14,
+    width: "100%", boxSizing: "border-box", fontFamily: "inherit", outline: "none",
   };
 
   return (
-    <div style={{ minHeight: "100vh", background: C.bg, color: C.text, fontFamily: '"Instrument Sans","Inter",-apple-system,sans-serif' }}>
+    <div style={{ minHeight: "100vh", background: "transparent", position: "relative", color: C.text, fontFamily: '"Instrument Sans","Inter",-apple-system,sans-serif' }}>
+      <AnimatedBackground />
+      <div style={{ position: "relative", zIndex: 1 }}>
 
       {/* HEADER */}
-      <div style={{ borderBottom: `0.5px solid ${C.border}`, padding: "16px 20px",
-        display: "flex", alignItems: "center", gap: 14 }}>
+      <div style={{ borderBottom: "1px solid rgba(207,164,47,0.15)", padding: "16px 20px",
+        display: "flex", alignItems: "center", gap: 14, position: "sticky", top: 0, zIndex: 40,
+        background: "rgba(45,10,62,0.75)", backdropFilter: "blur(16px)" }}>
+        <span style={{ fontWeight: 700, fontSize: 20, background: "linear-gradient(90deg,#CFA42F,#E8B84B)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>
+          Omnyra
+        </span>
         <button onClick={() => router.push("/dashboard")}
           style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)",
             borderRadius: 10, padding: "8px 12px", color: C.text, cursor: "pointer", fontSize: 18 }}>
@@ -396,24 +408,18 @@ HASHTAGS:
             Photo or AI person · Any scene · Your voice · Full motion
           </p>
         </div>
-        {credits !== null && (
-          <div style={{ fontSize: 12, color: C.sub, background: "rgba(255,255,255,0.05)",
-            borderRadius: 8, padding: "4px 10px" }}>
-            ⚡ {credits}
-          </div>
-        )}
       </div>
 
       {/* STEP INDICATOR */}
-      <div style={{ display: "flex", borderBottom: `0.5px solid ${C.border}`, overflowX: "auto" }}>
+      <div style={{ display: "flex", borderBottom: `1px solid ${C.border}`, overflowX: "auto" }}>
         {STEPS.map(([s, label]) => (
           <div key={s}
             onClick={() => step > s && setStep(s)}
             style={{
               flex: 1, padding: "12px 8px", textAlign: "center",
-              borderRight: `0.5px solid ${C.border}`,
-              background: step === s ? "#0f0b2a" : "transparent",
-              color: step >= s ? C.violet : "#333",
+              borderRight: `1px solid ${C.border}`,
+              background: step === s ? "rgba(192,132,252,0.08)" : "transparent",
+              color: step >= s ? C.violet : "#555",
               fontSize: 12, fontWeight: step === s ? 700 : 400,
               cursor: step > s ? "pointer" : "default",
               minWidth: 80,
@@ -435,9 +441,9 @@ HASHTAGS:
               {[["generate", "✨ AI writes it"], ["paste", "📋 I have a script"]].map(([m, label]) => (
                 <button key={m} onClick={() => setBriefMode(m)}
                   style={{ padding: "8px 20px", borderRadius: 20, fontWeight: 600, fontSize: 13,
-                    border: briefMode === m ? `1.5px solid ${C.violet}` : "0.5px solid #333",
-                    background: briefMode === m ? "#0f0b2a" : "transparent",
-                    color: briefMode === m ? C.violet : "#666", cursor: "pointer", fontFamily: "inherit" }}>
+                    border: briefMode === m ? `1px solid ${C.violet}` : `1px solid ${C.border}`,
+                    background: briefMode === m ? "rgba(192,132,252,0.12)" : "transparent",
+                    color: briefMode === m ? C.violet : C.sub, cursor: "pointer", fontFamily: "inherit" }}>
                   {label}
                 </button>
               ))}
@@ -452,14 +458,16 @@ HASHTAGS:
 
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                   <select value={platform} onChange={e => setPlatform(e.target.value)}
-                    style={{ padding: "10px", borderRadius: 8, border: "0.5px solid #2a2a2a",
-                      background: "#1a1a1a", color: C.text, fontSize: 14, fontFamily: "inherit" }}>
+                    style={{ padding: "10px", borderRadius: 8,
+                      border: "1px solid rgba(204,171,175,0.25)",
+                      background: "#0D0010", color: "#C084FC", fontSize: 14, fontFamily: "inherit" }}>
                     {["TikTok", "Instagram Reels", "YouTube Shorts", "YouTube", "LinkedIn"].map(p =>
                       <option key={p}>{p}</option>)}
                   </select>
                   <select value={duration} onChange={e => setDuration(e.target.value)}
-                    style={{ padding: "10px", borderRadius: 8, border: "0.5px solid #2a2a2a",
-                      background: "#1a1a1a", color: C.text, fontSize: 14, fontFamily: "inherit" }}>
+                    style={{ padding: "10px", borderRadius: 8,
+                      border: "1px solid rgba(204,171,175,0.25)",
+                      background: "#0D0010", color: "#C084FC", fontSize: 14, fontFamily: "inherit" }}>
                     {["15 seconds", "30 seconds", "60 seconds", "90 seconds"].map(d =>
                       <option key={d}>{d}</option>)}
                   </select>
@@ -477,10 +485,10 @@ HASHTAGS:
                 </button>
 
                 {brief && (
-                  <div style={{ background: "#0f0b2a", borderRadius: 12,
-                    border: `0.5px solid ${C.violet}44`, padding: "1.5rem" }}>
+                  <div style={{ background: "rgba(75,30,130,0.65)", backdropFilter: "blur(16px)", borderRadius: 12,
+                    border: `1px solid rgba(192,132,252,0.35)`, padding: "1.5rem" }}>
                     <pre style={{ whiteSpace: "pre-wrap", fontFamily: "inherit", fontSize: 13,
-                      lineHeight: 1.7, color: "#e5e5e5", margin: 0, maxHeight: 300, overflowY: "auto" }}>
+                      lineHeight: 1.7, color: "#E8DEFF", margin: 0, maxHeight: 300, overflowY: "auto" }}>
                       {brief}
                     </pre>
                     <button onClick={() => { setError(""); setStep(1); }}
@@ -542,18 +550,22 @@ HASHTAGS:
               {voices.filter(v => v.name.toLowerCase().includes(voiceSearch.toLowerCase())).map(v => (
                 <div key={v.id} onClick={() => setSelectedVoice(v)}
                   style={{ padding: "10px 12px", borderRadius: 10, cursor: "pointer",
-                    border: selectedVoice?.id === v.id ? `1.5px solid ${C.violet}` : "0.5px solid #222",
-                    background: selectedVoice?.id === v.id ? "#0f0b2a" : "#111",
+                    border: selectedVoice?.id === v.id
+                      ? `1px solid rgba(192,132,252,0.6)`
+                      : `1px solid ${C.border}`,
+                    background: selectedVoice?.id === v.id
+                      ? "rgba(192,132,252,0.1)"
+                      : "rgba(75,30,130,0.4)",
                     display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <div>
-                    <p style={{ margin: 0, fontSize: 13, fontWeight: 600 }}>{v.name}</p>
+                    <p style={{ margin: 0, fontSize: 13, fontWeight: 600, color: C.text }}>{v.name}</p>
                     <p style={{ margin: 0, fontSize: 11, color: C.sub }}>
                       {v.gender}{v.accent && v.accent !== "unknown" ? ` · ${v.accent}` : ""}
                     </p>
                   </div>
                   {v.previewUrl && (
                     <button onClick={e => { e.stopPropagation(); new Audio(v.previewUrl).play(); }}
-                      style={{ background: "transparent", border: `0.5px solid #333`,
+                      style={{ background: "transparent", border: `1px solid ${C.border}`,
                         borderRadius: 6, padding: "3px 8px", color: C.violet,
                         cursor: "pointer", fontSize: 11, fontFamily: "inherit" }}>
                       ▶
@@ -576,7 +588,6 @@ HASHTAGS:
                 ? status || "Generating..."
                 : `Generate Voice with ${selectedVoice?.name || "..."} →`}
             </button>
-            <div style={{ fontSize: 11, color: C.sub, textAlign: "center" }}>1-2 credits</div>
           </div>
         )}
 
@@ -586,21 +597,21 @@ HASHTAGS:
             <h2 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Choose Your Scene</h2>
 
             {/* PHOTO UPLOAD */}
-            <div style={{ background: "#0f0b2a", borderRadius: 12,
-              border: `0.5px solid ${C.violet}44`, padding: "1.25rem" }}>
+            <div style={{ background: "rgba(75,30,130,0.65)", backdropFilter: "blur(16px)",
+              borderRadius: 12, border: `1px solid rgba(192,132,252,0.25)`, padding: "1.25rem" }}>
               <div style={{ display: "flex", alignItems: "center",
                 justifyContent: "space-between", marginBottom: usePhoto ? 14 : 0 }}>
                 <div>
-                  <p style={{ margin: 0, fontWeight: 600, fontSize: 14 }}>📸 Use my photo</p>
+                  <p style={{ margin: 0, fontWeight: 600, fontSize: 14, color: C.text }}>📸 Use my photo</p>
                   <p style={{ margin: 0, fontSize: 12, color: C.sub }}>
                     Upload your photo — AI animates YOU into the scene
                   </p>
                 </div>
                 <button onClick={() => setUsePhoto(!usePhoto)}
                   style={{ padding: "6px 16px", borderRadius: 20, fontWeight: 600,
-                    border: usePhoto ? `1.5px solid ${C.violet}` : "0.5px solid #333",
-                    background: usePhoto ? C.violet : "transparent",
-                    color: usePhoto ? "#fff" : "#666", cursor: "pointer",
+                    border: usePhoto ? `1px solid ${C.violet}` : `1px solid ${C.border}`,
+                    background: usePhoto ? "rgba(192,132,252,0.15)" : "transparent",
+                    color: usePhoto ? C.violet : C.sub, cursor: "pointer",
                     fontSize: 12, fontFamily: "inherit" }}>
                   {usePhoto ? "On" : "Off"}
                 </button>
@@ -609,7 +620,7 @@ HASHTAGS:
                 <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
                   <button onClick={() => fileInputRef.current?.click()}
                     style={{ padding: "10px 20px", borderRadius: 8,
-                      border: `0.5px solid ${C.violet}`, background: `${C.violet}22`,
+                      border: `1px solid rgba(192,132,252,0.4)`, background: `rgba(192,132,252,0.1)`,
                       color: C.violet, cursor: "pointer", fontSize: 13,
                       fontWeight: 600, fontFamily: "inherit" }}>
                     📸 Upload Photo
@@ -637,8 +648,8 @@ HASHTAGS:
                 {MOTION_PROMPTS.map(m => (
                   <button key={m} onClick={() => setMotionPrompt(m)}
                     style={{ padding: "9px 12px", borderRadius: 8, textAlign: "left",
-                      border: motionPrompt === m ? `1.5px solid ${C.violet}` : "0.5px solid #222",
-                      background: motionPrompt === m ? "#0f0b2a" : "#111",
+                      border: motionPrompt === m ? `1px solid rgba(192,132,252,0.6)` : `1px solid ${C.border}`,
+                      background: motionPrompt === m ? "rgba(192,132,252,0.1)" : "rgba(75,30,130,0.4)",
                       color: C.text, cursor: "pointer", fontSize: 12, fontFamily: "inherit" }}>
                     {m}
                   </button>
@@ -656,8 +667,8 @@ HASHTAGS:
                 {SCENES.map(s => (
                   <button key={s.label} onClick={() => setScene(s)}
                     style={{ padding: "10px 8px", borderRadius: 8,
-                      border: scene.label === s.label ? `1.5px solid ${C.violet}` : "0.5px solid #222",
-                      background: scene.label === s.label ? "#0f0b2a" : "#111",
+                      border: scene.label === s.label ? `1px solid rgba(192,132,252,0.6)` : `1px solid ${C.border}`,
+                      background: scene.label === s.label ? "rgba(192,132,252,0.1)" : "rgba(75,30,130,0.4)",
                       color: C.text, cursor: "pointer", fontSize: 12,
                       textAlign: "center", fontFamily: "inherit" }}>
                     {s.label}
@@ -694,7 +705,7 @@ HASHTAGS:
               {loading ? status || "Generating..." : "Generate Video →"}
             </button>
             <div style={{ fontSize: 11, color: C.sub, textAlign: "center" }}>
-              {usePhoto && photoFile ? "Kling image-to-video · 20 credits" : "Runway · 20 credits · 60-90 seconds"}
+              {usePhoto && photoFile ? "Kling image-to-video" : "Runway · 60-90 seconds"}
             </div>
           </div>
         )}
@@ -724,12 +735,12 @@ HASHTAGS:
             </button>
 
             <button onClick={() => { setFinalUrl(videoUrl); setStep(4); }}
-              style={{ padding: "10px", borderRadius: 8, border: "0.5px solid #333",
-                background: "transparent", color: "#666", cursor: "pointer",
+              style={{ padding: "10px", borderRadius: 8, border: `1px solid ${C.border}`,
+                background: "transparent", color: C.sub, cursor: "pointer",
                 fontSize: 13, fontFamily: "inherit" }}>
               Skip lip sync → Download as is
             </button>
-            <div style={{ fontSize: 11, color: C.sub, textAlign: "center" }}>6 credits · SyncLabs</div>
+            <div style={{ fontSize: 11, color: C.sub, textAlign: "center" }}>SyncLabs lip sync</div>
           </div>
         )}
 
@@ -751,20 +762,23 @@ HASHTAGS:
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center", width: "100%" }}>
               <a href={finalUrl || videoUrl} download="omnyra-video.mp4"
                 style={{ flex: 1, minWidth: 160, padding: "14px", borderRadius: 10, fontWeight: 700,
-                  background: `linear-gradient(135deg, ${C.violet}, ${C.cyan})`,
-                  color: "#fff", textDecoration: "none", fontSize: 15, textAlign: "center" }}>
+                  background: "linear-gradient(105deg, #5A3400, #9A7010, #CFA42F, #E8C84A, #CFA42F, #9A7010, #5A3400)",
+                  backgroundSize: "200% auto", animation: "metalShimmer 3s linear infinite",
+                  color: "#0D0010", textDecoration: "none", fontSize: 15, textAlign: "center",
+                  boxShadow: "0 0 20px rgba(207,164,47,0.25)" }}>
                 Download Video ↓
               </a>
               <button onClick={reset}
                 style={{ flex: 1, minWidth: 160, padding: "14px", borderRadius: 10, fontWeight: 700,
-                  border: "0.5px solid #333", background: "transparent",
-                  color: "#aaa", cursor: "pointer", fontSize: 15, fontFamily: "inherit" }}>
+                  border: `1px solid ${C.border}`, background: "transparent",
+                  color: C.sub, cursor: "pointer", fontSize: 15, fontFamily: "inherit" }}>
                 Create Another
               </button>
             </div>
           </div>
         )}
 
+      </div>
       </div>
     </div>
   );

@@ -22,7 +22,7 @@
  *     render_events.
  */
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Loader2,
   Check,
@@ -33,9 +33,8 @@ import {
   Download,
   Share2,
   Link as LinkIcon,
-  Twitter,
 } from "lucide-react";
-import { createClient } from "@/lib/supabase/client";
+import { supabase as supabaseClient } from "@/lib/supabase";
 
 const GENERATING_MESSAGES = [
   "Analysing your brief...",
@@ -221,15 +220,6 @@ function DraftState({ snapshot, failureMessage, onApprove, onRegenerate, onBack 
         <DirectorPill kind="style" value={director.style} />
       </div>
 
-      {estimatedCredits !== null && (
-        <div className="rounded-2xl bg-white/3 border border-white/10 p-5 text-sm text-white/70">
-          Estimated cost:{" "}
-          <span className="text-white font-semibold tabular-nums">
-            {estimatedCredits}
-          </span>{" "}
-          credits
-        </div>
-      )}
 
       <div className="flex gap-3 pt-2">
         <button
@@ -368,7 +358,7 @@ function CompleteState({ renderId, videoUrl, onReset }) {
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white/5 border border-white/10 text-xs text-white/70 hover:text-white hover:bg-white/10 transition-colors"
           >
-            <Twitter className="w-3.5 h-3.5" />
+            <Share2 className="w-3.5 h-3.5" />
             Twitter
           </a>
           <button
@@ -408,10 +398,9 @@ function CompleteState({ renderId, videoUrl, onReset }) {
 const SNAPSHOT_ENDPOINT = (renderId) => `/api/renders/${renderId}/events`;
 
 async function fetchSnapshot(renderId) {
-  const supabase = createClient();
   const {
     data: { session },
-  } = await supabase.auth.getSession();
+  } = await supabaseClient.auth.getSession();
   const token = session?.access_token;
   if (!token) return null;
 
@@ -433,9 +422,7 @@ export function DraftStage({
 }) {
   // Supabase client is used ONLY for the realtime channel as a trigger.
   // All data reads go through the server endpoint.
-  const supabaseRef = useRef(null);
-  if (!supabaseRef.current) supabaseRef.current = createClient();
-  const supabase = supabaseRef.current;
+  const supabase = supabaseClient;
 
   const [snapshot, setSnapshot] = useState(null);
   const [loading, setLoading] = useState(true);

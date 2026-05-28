@@ -86,25 +86,27 @@ export async function GET(request, context) {
   const state = searchParams.get('state');
   const error = searchParams.get('error');
 
-  const fail = (msg) =>
+  // OAuth error path: redirect with query-string error, NOT a JSON contract response.
+  // Named oauthError deliberately to avoid shadowing the contract-layer fail() helper.
+  const oauthError = (msg) =>
     Response.redirect(`${APP_URL}/?social_error=${encodeURIComponent(msg)}`);
 
-  if (error) return fail(error);
-  if (!code || !state) return fail('Missing code or state');
+  if (error) return oauthError(error);
+  if (!code || !state) return oauthError('Missing code or state');
 
   const cookieStore = await cookies();
   const raw = cookieStore.get('omnyra_oauth')?.value;
-  if (!raw) return fail('Session expired — please try again');
+  if (!raw) return oauthError('Session expired — please try again');
 
   let stored;
-  try { stored = JSON.parse(raw); } catch { return fail('Invalid session'); }
+  try { stored = JSON.parse(raw); } catch { return oauthError('Invalid session'); }
 
-  if (stored.state !== state || stored.platform !== platform) return fail('State mismatch');
+  if (stored.state !== state || stored.platform !== platform) return oauthError('State mismatch');
 
   cookieStore.delete('omnyra_oauth');
 
   const cfg = TOKEN_ENDPOINTS[platform];
-  if (!cfg) return fail('Unknown platform');
+  if (!cfg) return oauthError('Unknown platform');
 
   const redirectUri = `${APP_URL}/api/social/callback/${platform}`;
   const tokenBody = cfg.body(code, redirectUri, stored);
@@ -121,7 +123,7 @@ export async function GET(request, context) {
 
   const tokenData = await tokenRes.json();
   if (!tokenRes.ok || tokenData.error) {
-    return fail(tokenData.error_description || tokenData.error || 'Token exchange failed');
+    return oauthError(tokenData.error_description || tokenData.error || 'Token exchange failed');
   }
 
   const accessToken = tokenData.access_token;

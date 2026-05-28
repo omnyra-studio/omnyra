@@ -1,21 +1,20 @@
 import Link from "next/link";
-import AnimatedBackground from "@/components/AnimatedBackground";
 
 export default function Landing() {
   return (
     <main suppressHydrationWarning style={{ background: 'transparent' }} className="text-softbrown antialiased overflow-x-hidden">
 
       {/* NAV */}
-      <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl border-b" style={{ background: 'rgba(13,0,16,0.75)', borderColor: 'rgba(212,168,67,0.12)' }}>
-        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+      <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl border-b" style={{ background: 'rgba(45,10,62,0.75)', borderColor: 'rgba(212,168,67,0.12)' }}>
+        <div className="max-w-7xl mx-auto flex items-center justify-between" style={{ padding: '8px 24px' }}>
           <div className="flex items-center gap-3">
             <span className="gold-text font-display text-2xl font-bold tracking-tight">Omnyra</span>
-            <span className="w-2 h-2 rounded-full pulse-dot inline-block"></span>
+            <span className="w-2 h-2 rounded-full inline-block" style={{ background: '#50B388', animation: 'pulseSoft 2.5s ease-in-out infinite', boxShadow: '0 0 6px rgba(80,179,136,0.6)' }}></span>
           </div>
-          <div className="hidden md:flex items-center gap-10 text-sm font-medium" style={{ color: '#A89BAF' }}>
-            <a href="#how-it-works" className="hover:text-deepgold transition-colors duration-300">How It Works</a>
-            <a href="#features" className="hover:text-deepgold transition-colors duration-300">Features</a>
-            <a href="#pricing" className="hover:text-deepgold transition-colors duration-300">Pricing</a>
+          <div className="hidden md:flex items-center gap-10 text-sm font-medium" style={{ color: '#E8DEFF' }}>
+            <a href="#how-it-works" className="hover:text-[#E879F9] transition-colors duration-300">How It Works</a>
+            <a href="#features" className="hover:text-[#E879F9] transition-colors duration-300">Features</a>
+            <a href="#pricing" className="hover:text-[#E879F9] transition-colors duration-300">Pricing</a>
           </div>
           <Link
             href="#pricing"
@@ -30,66 +29,83 @@ export default function Landing() {
       {/* HERO */}
       <section style={{
         position: 'relative',
-        overflow: 'hidden',
         minHeight: '100vh',
         background: 'transparent',
       }}>
-        <AnimatedBackground />
         <div style={{ position: 'relative', zIndex: 3, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh' }}>
-        <div className="max-w-6xl mx-auto px-6 py-32 text-center">
-          <div className="inline-flex items-center gap-3 px-5 py-2.5 rounded-full border border-softgold/30 bg-softgold/[0.08] mb-10 animate-fade-in backdrop-blur-md">
-            <span className="w-2 h-2 rounded-full pulse-dot inline-block"></span>
-            <span className="text-xs font-bold text-deepgold tracking-[0.2em] uppercase">Adaptive Creative Intelligence</span>
+        <div className="max-w-6xl mx-auto px-6 text-center" style={{ paddingTop: '80px', paddingBottom: '40px' }}>
+
+          {/* 1 — bullet row */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '20px',
+            fontSize: '13px',
+            color: '#BBA8C8',
+            letterSpacing: '0.05em',
+            marginBottom: '16px',
+          }}>
+            <span>✦ Predicts Hook Strength</span>
+            <span style={{ opacity: 0.3 }}>•</span>
+            <span>✦ Tracks Audience Behavior</span>
+            <span style={{ opacity: 0.3 }}>•</span>
+            <span>✦ Learns From Every Outcome</span>
           </div>
 
-          <h1 className="font-display text-5xl md:text-7xl lg:text-8xl font-bold leading-[1.05] mb-8" style={{ color: '#F5EFE6', textShadow: '0 2px 20px rgba(0,0,0,0.8), 0 1px 4px rgba(0,0,0,0.9)' }}>
-            <span className="block animate-fade-up">Predict what</span>
-            <span className="block text-gold-gradient animate-fade-up" style={{ animationDelay: "0.15s" }}>performs.</span>
-            <span className="block animate-fade-up" style={{ animationDelay: "0.3s" }}>Then learn why.</span>
+          {/* 2 — logo */}
+          <img
+            src="/omnyra-logo.png"
+            alt="Omnyra"
+            style={{
+              height: '200px',
+              width: 'auto',
+              mixBlendMode: 'screen',
+              filter: 'drop-shadow(0 0 20px rgba(207,164,47,0.5))',
+              display: 'block',
+              margin: '0 auto',
+              marginBottom: '8px',
+            }}
+          />
+
+          {/* 3 — pill badge */}
+          <div className="inline-flex items-center gap-3 px-5 py-2.5 rounded-full border mt-4 mb-4 animate-fade-in backdrop-blur-md" style={{ borderColor: 'rgba(232,121,249,0.3)', background: 'rgba(232,121,249,0.06)' }}>
+            <span className="w-2 h-2 rounded-full inline-block" style={{ background: '#E879F9', animation: 'pulseSoft 2.5s ease-in-out infinite', boxShadow: '0 0 6px rgba(232,121,249,0.6)' }}></span>
+            <span className="text-xs font-bold tracking-[0.2em] uppercase" style={{ color: '#E879F9' }}>Adaptive Creative Intelligence</span>
+          </div>
+
+          {/* 4 — heading */}
+          <h1 className="font-display text-5xl md:text-7xl lg:text-8xl font-bold leading-[1.05] mb-4" style={{ color: '#F5EFE6' }}>
+            <span className="block animate-fade-up" style={{ textShadow: '0 2px 20px rgba(0,0,0,0.8), 0 1px 4px rgba(0,0,0,0.9)' }}>Predict what</span>
+            <span className="block animate-fade-up" style={{ animationDelay: "0.15s" }}><span className="metallic-gold">performs.</span></span>
+            <span className="block animate-fade-up" style={{ animationDelay: "0.3s", textShadow: '0 2px 20px rgba(0,0,0,0.8), 0 1px 4px rgba(0,0,0,0.9)' }}>Then learn why.</span>
           </h1>
 
-          <p className="text-lg md:text-xl max-w-3xl mx-auto mb-4 leading-relaxed animate-fade-up" style={{ color: '#E8DDD0', animationDelay: "0.45s", textShadow: '0 1px 8px rgba(0,0,0,0.9)' }}>
+          {/* 5 — subtext */}
+          <p className="text-lg md:text-xl max-w-3xl mx-auto mb-10 leading-relaxed animate-fade-up" style={{ color: '#E8DDD0', animationDelay: "0.45s", textShadow: '0 1px 8px rgba(0,0,0,0.9)' }}>
             Omnyra compares what it predicted to what actually happened — then adjusts. The only creative intelligence system that understands what you should make next and why.
           </p>
 
-          <p className="text-sm mb-12 animate-fade-up" style={{ color: '#E8DDD0', animationDelay: "0.5s", textShadow: '0 1px 8px rgba(0,0,0,0.9)' }}>
-            Predicts hook strength • Tracks audience behavior • Learns from every post outcome
-          </p>
-
+          {/* 6 — buttons */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-5 animate-fade-up" style={{ animationDelay: "0.6s" }}>
             <Link href="#pricing" className="w-full sm:w-auto px-10 py-5 gold-btn font-bold rounded-full text-lg">
               Understand What Works
             </Link>
-            <a href="#how-it-works" className="w-full sm:w-auto px-10 py-5 rounded-full text-lg font-semibold" style={{ border: '1px solid rgba(212,175,55,0.3)', color: '#F5EFE6' }}>
+            <a href="#how-it-works" className="w-full sm:w-auto px-10 py-5 rounded-full text-lg font-semibold" style={{ border: '1px solid #E8DEFF', color: '#E8DEFF' }}>
               See How It Works →
             </a>
           </div>
 
-          <div className="mt-20 flex flex-wrap items-center justify-center gap-x-10 gap-y-4 text-sm animate-fade-in" style={{ color: '#A89BAF', animationDelay: "0.8s" }}>
-            <div className="flex items-center gap-2">
-              <span className="text-deepgold text-lg">✦</span>
-              <span>Predicts Hook Strength</span>
-            </div>
-            <div className="w-1 h-1 rounded-full hidden md:block" style={{ background: 'rgba(168,155,175,0.3)' }}></div>
-            <div className="flex items-center gap-2">
-              <span className="text-deepgold text-lg">✦</span>
-              <span>Tracks Audience Behavior</span>
-            </div>
-            <div className="w-1 h-1 rounded-full hidden md:block" style={{ background: 'rgba(168,155,175,0.3)' }}></div>
-            <div className="flex items-center gap-2">
-              <span className="text-deepgold text-lg">✦</span>
-              <span>Learns From Every Outcome</span>
-            </div>
-          </div>
         </div>
         </div>
-        <div className="absolute bottom-0 left-0 right-0 h-40" style={{ background: 'linear-gradient(to top, #0D0010, transparent)', zIndex: 3 }}></div>
       </section>
+
+      <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, rgba(204,171,175,0.4), transparent)' }} />
 
       {/* THE STRATEGIC SHIFT */}
       <section id="how-it-works" className="relative py-24 px-6 scroll-mt-20">
         <div className="max-w-5xl mx-auto text-center">
-          <p className="text-xs font-bold text-deepgold tracking-[0.2em] uppercase mb-4">The Strategic Shift</p>
+          <p className="text-xs font-bold tracking-[0.2em] uppercase mb-4" style={{ color: '#E879F9' }}>The Strategic Shift</p>
           <h2 className="font-display text-4xl md:text-5xl font-bold text-softbrown mb-6">
             AI tools tell creators <em>how</em> to make content.
           </h2>
@@ -101,8 +117,8 @@ export default function Landing() {
 
           <div className="grid md:grid-cols-2 gap-8 max-w-4xl mx-auto">
             <div className="glass-card rounded-3xl p-8 text-left">
-              <p className="text-xs text-warmgray uppercase tracking-widest mb-6">Traditional AI Tools</p>
-              <div className="space-y-5 text-sm text-warmgray">
+              <p className="text-xs uppercase tracking-widest mb-6" style={{ color: '#BBA8C8' }}>Traditional AI Tools</p>
+              <div className="space-y-5 text-sm" style={{ color: '#E0D0FF' }}>
                 {[
                   "Generate random content, hope it works",
                   "No trend awareness or audience insight",
@@ -119,21 +135,21 @@ export default function Landing() {
 
             <div className="border-golden rounded-3xl p-8 text-left">
               <p className="text-xs text-deepgold uppercase tracking-widest mb-6">Omnyra Adaptive Intelligence</p>
-              <div className="space-y-5 text-sm text-warmgray">
+              <div className="space-y-5 text-sm" style={{ color: '#FFFFFF' }}>
                 <div className="flex items-start gap-4">
-                  <span className="text-deepgold text-xl mt-0.5">✓</span>
-                  <span>Predicts what&apos;s likely to perform <span className="text-softbrown font-medium">before</span> you create</span>
+                  <span className="text-xl mt-0.5" style={{ color: '#50B388' }}>✓</span>
+                  <span>Predicts what&apos;s likely to perform <span className="font-medium">before</span> you create</span>
                 </div>
                 <div className="flex items-start gap-4">
-                  <span className="text-deepgold text-xl mt-0.5">✓</span>
+                  <span className="text-xl mt-0.5" style={{ color: '#50B388' }}>✓</span>
                   <span>Real-time trend intelligence + audience psychographics</span>
                 </div>
                 <div className="flex items-start gap-4">
-                  <span className="text-deepgold text-xl mt-0.5">✓</span>
+                  <span className="text-xl mt-0.5" style={{ color: '#50B388' }}>✓</span>
                   <span>Every hook comes with strategic reasoning + risk assessment</span>
                 </div>
                 <div className="flex items-start gap-4">
-                  <span className="text-deepgold text-xl mt-0.5">✓</span>
+                  <span className="text-xl mt-0.5" style={{ color: '#50B388' }}>✓</span>
                   <span>Compares predictions to outcomes — then adjusts automatically</span>
                 </div>
               </div>
@@ -142,10 +158,12 @@ export default function Landing() {
         </div>
       </section>
 
+      <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, rgba(204,171,175,0.4), transparent)' }} />
+
       {/* WORKFLOW */}
-      <section className="relative py-24 px-6" style={{ background: '#0D0010' }}>
+      <section className="relative py-24 px-6" style={{ background: 'rgba(45,10,62,0.55)' }}>
         <div className="max-w-6xl mx-auto">
-          <p className="text-xs font-bold text-deepgold tracking-[0.2em] uppercase mb-4 text-center">The Workflow</p>
+          <p className="text-xs font-bold tracking-[0.2em] uppercase mb-4 text-center" style={{ color: '#E879F9' }}>The Workflow</p>
           <h2 className="font-display text-4xl md:text-5xl font-bold text-softbrown text-center mb-20">
             Strategy → Direction → Execution
           </h2>
@@ -171,10 +189,12 @@ export default function Landing() {
         </div>
       </section>
 
+      <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, rgba(204,171,175,0.4), transparent)' }} />
+
       {/* FEATURES + DEMO */}
       <section id="features" className="relative py-24 px-6 scroll-mt-20">
         <div className="max-w-7xl mx-auto">
-          <p className="text-xs font-bold text-deepgold tracking-[0.2em] uppercase mb-4 text-center">The Omnyra Difference</p>
+          <p className="text-xs font-bold tracking-[0.2em] uppercase mb-4 text-center" style={{ color: '#E879F9' }}>The Omnyra Difference</p>
           <h2 className="font-display text-4xl md:text-5xl font-bold text-softbrown text-center mb-20">
             Not a video factory.{" "}
             <span className="text-gold-gradient">An adaptive intelligence system.</span>
@@ -253,10 +273,12 @@ export default function Landing() {
         </div>
       </section>
 
+      <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, rgba(204,171,175,0.4), transparent)' }} />
+
       {/* THE FLYWHEEL */}
-      <section className="relative py-24 px-6" style={{ background: '#0D0010' }}>
+      <section className="relative py-24 px-6" style={{ background: 'rgba(45,10,62,0.55)' }}>
         <div className="max-w-6xl mx-auto">
-          <p className="text-xs font-bold text-deepgold tracking-[0.2em] uppercase mb-4 text-center">The Flywheel</p>
+          <p className="text-xs font-bold tracking-[0.2em] uppercase mb-4 text-center" style={{ color: '#E879F9' }}>The Flywheel</p>
           <h2 className="font-display text-4xl md:text-5xl font-bold text-softbrown text-center mb-6">
             Every post makes Omnyra smarter.
           </h2>
@@ -329,75 +351,91 @@ export default function Landing() {
         </div>
       </section>
 
+      <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, rgba(204,171,175,0.4), transparent)' }} />
+
       {/* PRICING */}
-      <section id="pricing" className="relative py-24 px-6 scroll-mt-20" style={{ background: '#0D0010' }}>
+      <section id="pricing" className="relative py-24 px-6 scroll-mt-20" style={{ background: 'rgba(45,10,62,0.55)' }}>
         <div className="max-w-6xl mx-auto">
-          <p className="text-xs font-bold text-deepgold tracking-[0.2em] uppercase mb-4 text-center">Pricing</p>
+          <p className="text-xs font-bold tracking-[0.2em] uppercase mb-4 text-center" style={{ color: '#E879F9' }}>Pricing</p>
           <h2 className="font-display text-4xl md:text-5xl font-bold text-softbrown text-center mb-4">
             Start with strategy.
           </h2>
           <p className="text-warmgray text-center mb-16 text-lg">Free to begin. Upgrade when you&apos;re ready to direct and execute.</p>
 
-          <div className="grid md:grid-cols-3 gap-8">
-            {/* Starter */}
-            <div className="glass-card rounded-3xl p-8 flex flex-col">
-              <p className="text-sm font-bold text-softbrown mb-3">Starter</p>
-              <p className="font-display text-5xl font-bold text-softbrown mb-4">Free</p>
-              <p className="text-sm text-warmgray mb-8">For creators testing the waters.</p>
-              <ul className="space-y-4 text-sm text-warmgray mb-10 flex-1">
-                <li className="flex items-start gap-3"><span className="text-deepgold text-lg">✓</span> 3 strategy briefs / month</li>
-                <li className="flex items-start gap-3"><span className="text-deepgold text-lg">✓</span> Basic hook generation</li>
-                <li className="flex items-start gap-3"><span className="text-deepgold text-lg">✓</span> Lightweight scoring</li>
-                <li className="flex items-start gap-3"><span className="text-warmgray/50">—</span> No video generation credits</li>
-                <li className="flex items-start gap-3"><span className="text-warmgray/50">—</span> No creator memory</li>
+          <div className="grid md:grid-cols-4 gap-6">
+            {/* Free */}
+            <div className="glass-card rounded-3xl p-7 flex flex-col">
+              <p className="text-sm font-bold text-softbrown mb-3">Free</p>
+              <p className="font-display text-5xl font-bold text-softbrown mb-1">$0</p>
+              <p className="text-sm mb-8" style={{ color: '#E8DEFF' }}>forever</p>
+              <ul className="space-y-3 text-sm text-warmgray mb-10 flex-1">
+                <li className="flex items-start gap-3"><span style={{ color: '#E879F9' }}>✓</span> 20 scripts &amp; captions / mo</li>
+                <li className="flex items-start gap-3"><span style={{ color: '#E879F9' }}>✓</span> 5 images total</li>
+                <li className="flex items-start gap-3"><span className="text-warmgray/50">—</span> No voice generation</li>
+                <li className="flex items-start gap-3"><span className="text-warmgray/50">—</span> No video / avatar</li>
               </ul>
-              <Link href="/signup" className="block text-center w-full py-4 btn-ghost font-semibold rounded-full">
+              <Link href="/signup" className="block text-center w-full py-3.5 btn-ghost font-semibold rounded-full text-sm">
                 Get Started Free
               </Link>
             </div>
 
+            {/* Starter */}
+            <div className="glass-card rounded-3xl p-7 flex flex-col">
+              <p className="text-sm font-bold text-softbrown mb-3">Starter</p>
+              <p className="font-display text-5xl font-bold text-softbrown mb-1">$19</p>
+              <p className="text-sm mb-8" style={{ color: '#E8DEFF' }}>AUD / month</p>
+              <ul className="space-y-3 text-sm text-warmgray mb-10 flex-1">
+                <li className="flex items-start gap-3"><span style={{ color: '#E879F9' }}>✓</span> Unlimited scripts &amp; captions</li>
+                <li className="flex items-start gap-3"><span style={{ color: '#E879F9' }}>✓</span> 30 images / month</li>
+                <li className="flex items-start gap-3"><span style={{ color: '#E879F9' }}>✓</span> 10 voice clips / month</li>
+                <li className="flex items-start gap-3"><span className="text-warmgray/50">—</span> No video / avatar</li>
+              </ul>
+              <Link href="/signup?plan=starter" className="block text-center w-full py-3.5 btn-ghost font-semibold rounded-full text-sm">
+                Start Creating
+              </Link>
+            </div>
+
             {/* Creator (featured) */}
-            <div className="gold-border rounded-3xl p-8 flex flex-col relative md:-translate-y-4 shadow-2xl" style={{ background: 'rgba(82,56,95,0.9)' }}>
+            <div className="gold-border rounded-3xl p-7 flex flex-col relative shadow-2xl" style={{ background: 'rgba(75,30,130,0.65)' }}>
               <div className="absolute -top-4 left-1/2 -translate-x-1/2 px-5 py-1.5 bg-gradient-to-r from-softgold to-rosegold text-warmwhite text-xs font-bold rounded-full tracking-wide whitespace-nowrap">
                 Most Popular
               </div>
               <p className="text-sm font-bold text-deepgold mb-3">Creator</p>
-              <p className="font-display text-5xl font-bold text-softbrown mb-1">$29</p>
-              <p className="text-sm text-warmgray mb-2">per month</p>
-              <p className="text-xs text-deepgold font-medium mb-6">200 generation credits included</p>
-              <ul className="space-y-4 text-sm text-warmgray mb-10 flex-1">
-                <li className="flex items-start gap-3"><span className="text-deepgold text-lg">✓</span> Unlimited strategy briefs</li>
-                <li className="flex items-start gap-3"><span className="text-deepgold text-lg">✓</span> Advanced hook system + reasoning</li>
-                <li className="flex items-start gap-3"><span className="text-deepgold text-lg">✓</span> Full performance scoring</li>
-                <li className="flex items-start gap-3"><span className="text-deepgold text-lg">✓</span> AI Creative Director (Shot Intel)</li>
-                <li className="flex items-start gap-3"><span className="text-deepgold text-lg">✓</span> Creator memory + learning loop</li>
-                <li className="flex items-start gap-3"><span className="text-deepgold text-lg">✓</span> 200 credits / month</li>
+              <p className="font-display text-5xl font-bold text-softbrown mb-1">$49</p>
+              <p className="text-sm mb-8" style={{ color: '#E8DEFF' }}>AUD / month</p>
+              <ul className="space-y-3 text-sm text-warmgray mb-10 flex-1">
+                <li className="flex items-start gap-3"><span style={{ color: '#E879F9' }}>✓</span> Unlimited scripts &amp; captions</li>
+                <li className="flex items-start gap-3"><span style={{ color: '#E879F9' }}>✓</span> 100 images / month</li>
+                <li className="flex items-start gap-3"><span style={{ color: '#E879F9' }}>✓</span> 40 voice clips / month</li>
+                <li className="flex items-start gap-3"><span style={{ color: '#E879F9' }}>✓</span> 5 videos / month</li>
+                <li className="flex items-start gap-3"><span style={{ color: '#E879F9' }}>✓</span> 2 avatar generations / month</li>
               </ul>
-              <Link href="/signup?plan=creator" className="block w-full py-4 gold-btn font-bold rounded-full text-lg">
-                Start Understanding Your Audience
+              <Link href="/signup?plan=creator" className="block w-full py-3.5 gold-btn font-bold rounded-full text-sm text-center">
+                Start Creating
               </Link>
             </div>
 
-            {/* Pro */}
-            <div className="glass-card rounded-3xl p-8 flex flex-col">
-              <p className="text-sm font-bold text-softbrown mb-3">Pro</p>
-              <p className="font-display text-5xl font-bold text-softbrown mb-1">$69</p>
-              <p className="text-sm text-warmgray mb-2">per month</p>
-              <p className="text-xs text-deepgold font-medium mb-6">500 generation credits included</p>
-              <ul className="space-y-4 text-sm text-warmgray mb-10 flex-1">
-                <li className="flex items-start gap-3"><span className="text-deepgold text-lg">✓</span> Everything in Creator</li>
-                <li className="flex items-start gap-3"><span className="text-deepgold text-lg">✓</span> Trend deep dives & reports</li>
-                <li className="flex items-start gap-3"><span className="text-deepgold text-lg">✓</span> A/B brief comparison</li>
-                <li className="flex items-start gap-3"><span className="text-deepgold text-lg">✓</span> Premium rendering models</li>
-                <li className="flex items-start gap-3"><span className="text-deepgold text-lg">✓</span> 500 credits / month</li>
+            {/* Studio */}
+            <div className="glass-card rounded-3xl p-7 flex flex-col">
+              <p className="text-sm font-bold text-softbrown mb-3">Studio</p>
+              <p className="font-display text-5xl font-bold text-softbrown mb-1">$99</p>
+              <p className="text-sm mb-8" style={{ color: '#E8DEFF' }}>AUD / month</p>
+              <ul className="space-y-3 text-sm text-warmgray mb-10 flex-1">
+                <li className="flex items-start gap-3"><span style={{ color: '#E879F9' }}>✓</span> Unlimited scripts &amp; captions</li>
+                <li className="flex items-start gap-3"><span style={{ color: '#E879F9' }}>✓</span> 300 images / month</li>
+                <li className="flex items-start gap-3"><span style={{ color: '#E879F9' }}>✓</span> 120 voice clips / month</li>
+                <li className="flex items-start gap-3"><span style={{ color: '#E879F9' }}>✓</span> 20 videos / month</li>
+                <li className="flex items-start gap-3"><span style={{ color: '#E879F9' }}>✓</span> 5 avatar generations / month</li>
               </ul>
-              <Link href="/signup?plan=pro" className="block text-center w-full py-4 btn-ghost font-semibold rounded-full">
-                Go Pro
+              <Link href="/signup?plan=studio" className="block text-center w-full py-3.5 btn-ghost font-semibold rounded-full text-sm">
+                Go Studio
               </Link>
             </div>
           </div>
         </div>
       </section>
+
+      <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, rgba(204,171,175,0.4), transparent)' }} />
 
       {/* VISION QUOTE */}
       <section className="relative py-24 px-6">
@@ -416,8 +454,10 @@ export default function Landing() {
         </div>
       </section>
 
+      <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, rgba(204,171,175,0.4), transparent)' }} />
+
       {/* FINAL CTA */}
-      <section className="relative py-32 px-6 text-center" style={{ background: '#0D0010' }}>
+      <section className="relative py-32 px-6 text-center" style={{ background: 'rgba(45,10,62,0.55)' }}>
         <div className="max-w-3xl mx-auto">
           <h2 className="font-display text-4xl md:text-6xl font-bold text-softbrown mb-6">
             Ready to understand<br />
@@ -427,26 +467,25 @@ export default function Landing() {
             Join the creators who learn from every post — not just produce more of them.
           </p>
           <Link href="/signup?plan=creator" className="inline-flex px-10 py-5 gold-btn font-bold rounded-full text-lg">
-            Start Learning What Works — $29/month
+            Start Learning What Works — $49/month
           </Link>
-          <p className="mt-6 text-sm text-warmgray">Free tier available. No credit card required to start.</p>
+          <p className="mt-6 text-sm text-warmgray">Free plan available. No credit card required to start.</p>
         </div>
       </section>
 
       {/* FOOTER */}
-      <footer className="border-t border-softgold/10 py-12 px-6" style={{ background: '#0D0010' }}>
+      <footer className="border-t border-softgold/10 py-12 px-6" style={{ background: 'rgba(45,10,62,0.55)' }}>
         <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <span className="gold-text font-display text-xl font-bold">Omnyra</span>
             <span className="text-xs text-warmgray">Adaptive Creative Intelligence</span>
           </div>
-          <div className="flex items-center gap-6 text-sm text-warmgray">
-            <a href="#" className="hover:text-deepgold transition-colors">Twitter</a>
-            <a href="#" className="hover:text-deepgold transition-colors">Privacy</a>
-            <a href="#" className="hover:text-deepgold transition-colors">Terms</a>
-            <a href="mailto:info@omnyra.studio" className="hover:text-deepgold transition-colors">info@omnyra.studio</a>
+          <div className="flex items-center gap-6 text-sm" style={{ color: '#E8DEFF' }}>
+            <a href="#" className="hover:text-[#E879F9] transition-colors">Privacy</a>
+            <a href="#" className="hover:text-[#E879F9] transition-colors">Terms</a>
+            <a href="mailto:info@omnyra.studio" className="hover:text-[#E879F9] transition-colors" style={{ color: '#E8DEFF' }}>Contact: info@omnyra.studio</a>
           </div>
-          <p className="text-xs text-warmgray">© 2026 Omnyra. All rights reserved.</p>
+          <p className="text-xs" style={{ color: '#E8DEFF' }}>© 2026 Omnyra. All rights reserved.</p>
         </div>
       </footer>
 

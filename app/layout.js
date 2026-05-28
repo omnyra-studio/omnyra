@@ -1,6 +1,11 @@
 import { Geist, Geist_Mono, Playfair_Display } from "next/font/google";
 import "./globals.css";
 import PWARegister from "./pwa-register";
+import AnimatedBackground from "@/components/AnimatedBackground";
+import GlobalNav from "@/components/GlobalNav";
+import { PHProvider } from "@/components/PostHogProvider";
+import { Suspense } from "react";
+import PostHogPageView from "@/components/PostHogPageView";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -48,10 +53,21 @@ export default function RootLayout({ children }) {
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} ${playfair.variable} h-full antialiased`}
     >
-      <body suppressHydrationWarning className="min-h-full flex flex-col" style={{ backgroundColor: '#0D0010' }}>
+      <body suppressHydrationWarning className="min-h-full flex flex-col" style={{ backgroundColor: '#2D0A3E' }}>
         <script dangerouslySetInnerHTML={{__html: `if('serviceWorker'in navigator){navigator.serviceWorker.getRegistrations().then(function(r){for(let s of r)s.unregister();});}`}} />
-        {children}
-        <PWARegister />
+        <PHProvider>
+          <Suspense>
+            <PostHogPageView />
+          </Suspense>
+          <div style={{ position: 'fixed', inset: 0, zIndex: 0, width: '100vw', height: '100vh' }}>
+            <AnimatedBackground />
+          </div>
+          <div style={{ position: 'relative', zIndex: 1 }}>
+            <GlobalNav />
+            {children}
+          </div>
+          <PWARegister />
+        </PHProvider>
       </body>
     </html>
   );

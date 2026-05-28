@@ -1,45 +1,31 @@
 {
   "framework": "nextjs",
+  "buildCommand": "next build",
+  "installCommand": "npm install",
+  "functions": {
+    "app/api/generate-video-sequence/route.ts": { "maxDuration": 300 },
+    "app/api/generate-video-kling/route.ts": { "maxDuration": 300 },
+    "app/api/generate-video-fal/route.ts": { "maxDuration": 300 },
+    "app/api/merge-video-audio/route.ts": { "maxDuration": 300 },
+    "app/api/generate-avatar/route.ts": { "maxDuration": 300 },
+    "app/api/check-video/route.ts": { "maxDuration": 60 },
+    "app/api/check-kling/route.ts": { "maxDuration": 60 },
+    "app/api/clone-voice/route.js": { "maxDuration": 60 },
+    "app/api/enhance-prompt/route.js": { "maxDuration": 30 },
+    "app/api/generate-image/route.js": { "maxDuration": 60 },
+    "app/api/voices/route.js": { "maxDuration": 30 }
+  },
   "crons": [
-    {
-      "path": "/api/social/cron",
-      "schedule": "0 0 * * *"
-    },
-    {
-      "path": "/api/cron/monthly-summary",
-      "schedule": "0 1 1 * *"
-    },
-    {
-      "path": "/api/cron/optimize-system",
-      "schedule": "0 */6 * * *"
-    },
-    {
-      "path": "/api/cron/recalculate-scores",
-      "schedule": "*/15 * * * *"
-    },
-    {
-      "path": "/api/cron/aggregate-analytics",
-      "schedule": "0 */6 * * *"
-    },
-    {
-      "path": "/api/cron/optimize-funnel",
-      "schedule": "0 */12 * * *"
-    },
-    {
-      "path": "/api/cron/company-strategy",
-      "schedule": "0 3 * * *"
-    },
-    {
-      "path": "/api/cron/generate-marketing-assets",
-      "schedule": "0 4 * * *"
-    },
-    {
-      "path": "/api/cron/product-intelligence",
-      "schedule": "0 5 * * 1"
-    },
-    {
-      "path": "/api/cron/pipeline-worker",
-      "schedule": "*/5 * * * *"
-    }
+    { "path": "/api/cron/scrape-trends", "schedule": "0 6 * * *" },
+    { "path": "/api/cron/aggregate-analytics", "schedule": "0 7 * * *" },
+    { "path": "/api/cron/recalculate-scores", "schedule": "0 8 * * *" },
+    { "path": "/api/cron/pipeline-worker", "schedule": "0 9 * * *" },
+    { "path": "/api/cron/optimize-system", "schedule": "0 10 * * *" },
+    { "path": "/api/cron/optimize-funnel", "schedule": "0 11 * * *" },
+    { "path": "/api/cron/company-strategy", "schedule": "0 3 * * *" },
+    { "path": "/api/cron/generate-marketing-assets", "schedule": "0 4 * * *" },
+    { "path": "/api/cron/product-intelligence", "schedule": "0 5 * * 1" },
+    { "path": "/api/cron/monthly-summary", "schedule": "0 1 1 * *" },
+    { "path": "/api/social/cron", "schedule": "0 0 * * *" }
   ]
 }

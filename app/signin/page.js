@@ -2,6 +2,8 @@
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
 import { supabase } from "../../lib/supabase";
+import AnimatedBackground from "@/components/AnimatedBackground";
+import posthog from "posthog-js";
 
 export default function SigninPage() {
   const router = useRouter();
@@ -32,7 +34,11 @@ export default function SigninPage() {
         password,
       });
       if (error) throw error;
-      if (data.session) router.push("/dashboard");
+      if (data.session) {
+        posthog.identify(data.session.user.id, { email: data.session.user.email });
+        posthog.capture('user_signed_in', { email: data.session.user.email });
+        router.push("/dashboard");
+      }
     } catch (err) {
       setError(err.message || "Sign in failed");
     } finally {
@@ -41,10 +47,11 @@ export default function SigninPage() {
   }
 
   return (
-    <main style={{ minHeight: "100vh", display: "flex", alignItems: "center",
-      justifyContent: "center", background: "#0a0a0a" }}>
+    <div style={{ minHeight: "100vh", position: "relative" }}>
+      <AnimatedBackground />
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", position: "relative", zIndex: 10 }}>
       <div style={{ width: "100%", maxWidth: 420, padding: "2.5rem",
-        background: "#111", borderRadius: 20, border: "0.5px solid #222" }}>
+        background: "rgba(45,10,62,0.75)", backdropFilter: "blur(12px)", borderRadius: 20, border: "1px solid rgba(255,255,255,0.1)" }}>
         <div style={{ marginBottom: 24 }}>
           <img src="/logo-nav.png" alt="Omnyra AI"
             style={{ height: 64, width: "auto", objectFit: "contain", display: "block" }} />
@@ -85,6 +92,7 @@ export default function SigninPage() {
             style={{ color: "#7c6fff", cursor: "pointer" }}>Get started free</span>
         </p>
       </div>
-    </main>
+      </div>
+    </div>
   );
 }

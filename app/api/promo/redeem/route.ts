@@ -59,6 +59,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "invalid_code" }, { status: 404 });
   }
 
+  // 0. Global cap — max 50 total promo redemptions across all codes.
+  const { count: redeemedCount } = await supabaseAdmin
+    .from("promo_codes")
+    .select("id", { count: "exact", head: true })
+    .not("used_by", "is", null);
+
+  if ((redeemedCount ?? 0) >= 50) {
+    return NextResponse.json({ error: "promo_limit_reached", message: "Beta promo access is full — email info@omnyra.studio" }, { status: 410 });
+  }
+
   // 1. Fetch promo row (single source of truth for single-use semantics).
   const { data: promo, error: promoErr } = await supabaseAdmin
     .from("promo_codes")

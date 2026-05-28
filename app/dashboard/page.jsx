@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { usePostHog } from "posthog-js/react";
 import {
   Film,
   Smartphone,
@@ -13,8 +14,12 @@ import {
   Play,
   ArrowRight,
   Sparkles,
+  Mic,
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import * as Q from "@/lib/db/query";
+import { SCHEMA } from "@/lib/db/schema";
+import AnimatedBackground from "@/components/AnimatedBackground";
 
 const OUTCOMES = [
   {
@@ -22,7 +27,7 @@ const OUTCOMES = [
     icon: Film,
     emoji: "🎬",
     title: "Viral UGC Ad",
-    desc: "Product → hook → motion → download. 60 seconds.",
+    desc: "Hook-driven ads that stop the scroll. Fast + premium.",
   },
   {
     id: "storytime",
@@ -36,21 +41,29 @@ const OUTCOMES = [
     icon: UserCircle2,
     emoji: "👤",
     title: "AI Influencer Clip",
-    desc: "Your AI persona. Any scene. Any vibe.",
+    desc: "Your AI persona. Any scene. Any vibe. No limits.",
   },
   {
     id: "product-launch",
     icon: ShoppingBag,
     emoji: "🛍️",
     title: "Product Launch Reel",
-    desc: "Turn product into cinematic social content.",
+    desc: "Turn any product into cinematic social content.",
   },
   {
     id: "faceless",
     icon: EyeOff,
     emoji: "😶",
     title: "Faceless Content",
-    desc: "Voice + visuals. No face required.",
+    desc: "Voice + visuals. No face. No limits. Just results.",
+  },
+  {
+    id: "voice-studio",
+    icon: Mic,
+    emoji: "🎙️",
+    title: "Voice Studio",
+    desc: "Choose from 1,000+ voices or clone your own in 30 seconds.",
+    href: "/voice-studio",
   },
 ];
 
@@ -61,14 +74,13 @@ function getGreeting(d = new Date()) {
   return "Good evening";
 }
 
-function deriveFirstName(user) {
-  if (!user) return "there";
-  const meta = user.user_metadata || {};
-  const candidates = [meta.first_name, meta.full_name, meta.name, user.email].filter(Boolean);
-  const raw = candidates[0] || "there";
-  const first = String(raw).split(/[\s@.]/)[0];
+function deriveFirstName(email) {
+  if (!email) return "there";
+  const local = email.split("@")[0];
+  const stripped = local.replace(/[0-9]/g, "");
+  const first = stripped.split(/[._\-]/)[0];
   if (!first) return "there";
-  return first.charAt(0).toUpperCase() + first.slice(1);
+  return first.charAt(0).toUpperCase() + first.slice(1).toLowerCase();
 }
 
 function formatDate(iso) {
@@ -82,56 +94,78 @@ function formatDate(iso) {
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
-function NavLink({ href, label, active }) {
-  return (
-    <Link
-      href={href}
-      className={[
-        "px-4 py-2 rounded-full text-sm font-medium transition-colors",
-        active
-          ? "text-[var(--text-primary)] bg-[var(--border-subtle)]"
-          : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[rgba(212,168,67,0.06)]",
-      ].join(" ")}
-    >
-      {label}
-    </Link>
-  );
-}
 
-function OutcomeCard({ outcome }) {
+function OutcomeCard({ outcome, voiceReady, onSelect }) {
   return (
     <Link
-      href={`/create?template=${outcome.id}`}
-      className="group relative flex flex-col justify-between p-6 rounded-2xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] hover:border-[rgba(212,168,67,0.45)] hover:bg-[rgba(212,168,67,0.04)] hover:shadow-[0_0_40px_-12px_rgba(212,168,67,0.25)] transition-all duration-200 min-h-[200px] overflow-hidden"
+      href={outcome.href ?? `/create?template=${outcome.id}`}
+      onClick={() => onSelect(outcome)}
+      className="group relative flex flex-col justify-between p-6 rounded-2xl border hover:border-[rgba(212,168,67,0.45)] hover:shadow-[0_0_40px_-12px_rgba(212,168,67,0.25)] transition-all duration-200 min-h-[200px] overflow-hidden"
+      style={{ background: 'rgba(75,30,130,0.75)', backdropFilter: 'blur(12px)', border: '1px solid rgba(207,164,47,0.2)' }}
     >
       <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
         <div className="absolute -top-20 -right-20 w-40 h-40 rounded-full bg-[var(--glow-gold)] blur-3xl" />
       </div>
 
       <div className="relative">
-        <div className="w-12 h-12 rounded-xl flex items-center justify-center bg-[rgba(212,168,67,0.1)] border border-[rgba(212,168,67,0.2)] mb-4 text-2xl">
+        <div style={{
+          width: '52px',
+          height: '52px',
+          borderRadius: '12px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          background: 'rgba(207,164,47,0.25)',
+          border: '1px solid rgba(207,164,47,0.5)',
+          marginBottom: '16px',
+          fontSize: '26px',
+          boxShadow: '0 0 12px rgba(207,164,47,0.2)',
+        }}>
           <span aria-hidden>{outcome.emoji}</span>
         </div>
-        <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-1">
-          {outcome.title}
-        </h3>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+          <h3 className="text-lg font-semibold text-[var(--text-primary)]">
+            {outcome.title}
+          </h3>
+          {outcome.id === 'voice-studio' && voiceReady && (
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#4ECB8C', fontWeight: 600 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#4ECB8C', display: 'inline-block' }} />
+              Ready
+            </span>
+          )}
+        </div>
         <p className="text-sm text-[var(--text-secondary)] leading-relaxed">{outcome.desc}</p>
       </div>
 
-      <div className="relative mt-6 flex items-center gap-1.5 text-[var(--accent-gold)] text-sm font-medium">
+      <div style={{
+        marginTop: '24px',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: '6px',
+        padding: '8px 20px',
+        borderRadius: '9999px',
+        background: 'linear-gradient(105deg, #5A3400 0%, #9A7010 20%, #CFA42F 42%, #E8C84A 50%, #CFA42F 58%, #9A7010 80%, #5A3400 100%)',
+        backgroundSize: '200% auto',
+        animation: 'metalShimmer 3s linear infinite',
+        color: '#0D0010',
+        fontSize: '13px',
+        fontWeight: 700,
+        letterSpacing: '0.03em',
+        boxShadow: '0 0 16px rgba(207,164,47,0.4), inset 0 0 0 1px rgba(255,251,204,0.3)',
+      }}>
         <span>Create</span>
-        <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+        <ArrowRight className="w-3.5 h-3.5" />
       </div>
     </Link>
   );
 }
 
-function RenderCard({ render }) {
+function RenderCard({ render, onDownload }) {
   const complete = render.status === "complete" || render.status === "completed";
   const processing = render.status === "processing" || render.status === "pending";
 
   return (
-    <div className="group rounded-2xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] hover:border-[rgba(212,168,67,0.25)] overflow-hidden transition-colors">
+    <div className="group rounded-2xl overflow-hidden transition-colors hover:border-[rgba(212,168,67,0.45)]" style={{ background: 'rgba(75,30,130,0.75)', backdropFilter: 'blur(12px)', border: '1px solid rgba(207,164,47,0.2)' }}>
       <div className="relative aspect-video bg-gradient-to-br from-[#1A0E1C] via-[#231525] to-[#1A0E1C] flex items-center justify-center overflow-hidden">
         {render.video_url ? (
           <video
@@ -170,6 +204,7 @@ function RenderCard({ render }) {
             <a
               href={render.video_url}
               download
+              onClick={() => onDownload?.(render)}
               className="inline-flex items-center gap-1 text-xs font-medium px-3 py-1.5 rounded-full bg-[rgba(212,168,67,0.08)] border border-[var(--border-subtle)] hover:bg-[rgba(212,168,67,0.15)] text-[var(--text-secondary)]"
             >
               <Download className="w-3.5 h-3.5" />
@@ -191,12 +226,14 @@ function RenderCard({ render }) {
 
 export default function DashboardHome() {
   const router = useRouter();
+  const posthog = usePostHog();
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
-  const [credits, setCredits] = useState(0);
+  const [plan, setPlan] = useState(null);
+  const [credits, setCredits] = useState(null);
   const [renders, setRenders] = useState([]);
+  const [voiceReady, setVoiceReady] = useState(false);
   const [greeting, setGreeting] = useState(getGreeting());
-
   useEffect(() => {
     const t = setInterval(() => setGreeting(getGreeting()), 60_000);
     return () => clearInterval(t);
@@ -215,23 +252,45 @@ export default function DashboardHome() {
         if (cancelled) return;
         setUser(session.user);
 
-        const [creditsRes, rendersRes] = await Promise.all([
-          supabase
-            .from("credits")
-            .select("balance")
-            .eq("user_id", session.user.id)
-            .single(),
-          supabase
-            .from("renders")
-            .select("id, video_url, status, created_at")
-            .eq("user_id", session.user.id)
-            .order("created_at", { ascending: false })
-            .limit(4),
+        if (posthog) {
+          posthog.identify(session.user.id, {
+            email: session.user.email,
+            name: session.user.user_metadata?.first_name,
+            created_at: session.user.created_at,
+          });
+        }
+
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('plan, credits, first_name')
+          .eq('id', session.user.id)
+          .single();
+
+        const [rendersRes] = await Promise.allSettled([
+          Q.renders(supabase).recentByUser(session.user.id, 4),
         ]);
 
         if (cancelled) return;
-        setCredits(creditsRes.data?.balance ?? 0);
-        setRenders(rendersRes.data ?? []);
+
+        if (rendersRes.status === "rejected") console.error("[dashboard] renders query failed:", rendersRes.reason);
+        else if (rendersRes.value.error) console.error("[dashboard] renders query error:", rendersRes.value.error.message);
+
+        const rendersData = rendersRes.status === "fulfilled" ? rendersRes.value.data : null;
+
+        const resolvedPlan = profile?.plan?.toLowerCase() ?? null;
+        setPlan(resolvedPlan);
+        setRenders(rendersData ?? []);
+        setCredits(profile?.credits ?? null);
+
+        const { data: voiceProfile } = await supabase
+          .from(SCHEMA.profiles.table)
+          .select("voice_id")
+          .eq(SCHEMA.profiles.columns.id, session.user.id)
+          .single();
+        setVoiceReady(!!voiceProfile?.voice_id);
+        if (posthog) {
+          posthog.identify(session.user.id, { plan: resolvedPlan });
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -240,80 +299,67 @@ export default function DashboardHome() {
     return () => { cancelled = true; };
   }, [router]);
 
-  const firstName = deriveFirstName(user);
-  const lowCredits = credits < 20;
-
-  async function handleSignOut() {
-    await supabase.auth.signOut();
-    router.replace("/signin");
-  }
+  const firstName =
+    user?.user_metadata?.first_name ||
+    (user?.email ? deriveFirstName(user.email) : "there");
 
   return (
-    <div className="min-h-screen">
-      {/* Ambient background */}
-      <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
-        <div className="absolute -top-40 -left-40 w-[600px] h-[600px] rounded-full bg-[var(--accent-gold)]/[0.07] blur-[140px]" />
-        <div className="absolute top-1/3 -right-40 w-[500px] h-[500px] rounded-full bg-[var(--accent-rose)]/[0.06] blur-[140px]" />
-        <div className="absolute bottom-0 left-1/3 w-[400px] h-[400px] rounded-full bg-[#2D1030]/80 blur-[100px]" />
-      </div>
+    <div className="min-h-screen" style={{ position: 'relative', background: 'transparent' }}>
+      <AnimatedBackground />
+      <div style={{ position: 'relative', zIndex: 1 }}>
 
-      {/* Header */}
-      <header className="sticky top-0 z-40 backdrop-blur-xl bg-[var(--bg-primary)]/75 border-b border-[var(--border-subtle)]">
-        <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
-          <Link href="/dashboard" className="flex items-center gap-3 lg:gap-4">
-            <div className="w-10 h-10 lg:w-12 lg:h-12 rounded-xl bg-gradient-to-br from-[var(--accent-gold)] to-[var(--accent-rose)] flex items-center justify-center shadow-[0_0_20px_rgba(212,168,67,0.3)]">
-              <Sparkles className="w-5 h-5 lg:w-6 lg:h-6 text-[#1A0E1C]" />
-            </div>
-            <span className="gold-text text-lg lg:text-xl font-semibold tracking-tight">
-              Omnyra
-            </span>
-          </Link>
-
-          <nav className="hidden md:flex items-center gap-1">
-            <NavLink href="/create" label="Create" />
-            <NavLink href="/dashboard#videos" label="My Videos" />
-            <NavLink href="/studio" label="Studio" />
-            <NavLink href="/dashboard/settings" label="Account" />
-          </nav>
-
-          <button
-            onClick={handleSignOut}
-            className="text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-          >
-            Sign out
-          </button>
+      <main className="max-w-6xl mx-auto px-6 py-6 md:py-8">
+        {/* Page title */}
+        <div className="page-title" style={{ fontSize: "1.5rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", background: "linear-gradient(105deg,#CFA42F,#F7D96B)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", marginBottom: "1.5rem" }}>
+          Dashboard
         </div>
-      </header>
 
-      <main className="max-w-6xl mx-auto px-6 py-12 md:py-16">
         {/* Greeting */}
-        <section className="mb-14">
-          <h1 className="text-3xl md:text-5xl font-semibold tracking-tight text-[var(--text-primary)]">
-            {greeting}, {firstName}.
-          </h1>
-          <div className="mt-3 text-sm md:text-base">
-            {loading ? (
-              <span className="text-[var(--text-secondary)]/60">Loading your studio…</span>
-            ) : lowCredits ? (
-              <span className="text-[var(--accent-gold)]">
-                <span className="gold-text">{credits}</span> credits remaining ·{" "}
-                <Link
-                  href="/dashboard/credits"
-                  className="underline underline-offset-4 hover:text-[var(--accent-rose)] transition-colors"
-                >
-                  Top up credits →
+        <section className="mb-6">
+          <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+            <img
+              src="/omnyra-logo.png"
+              alt="Omnyra"
+              style={{
+                height: '120px',
+                width: 'auto',
+                mixBlendMode: 'screen',
+                filter: 'drop-shadow(0 0 20px rgba(207,164,47,0.5))',
+                display: 'block',
+                margin: '0 auto 16px auto',
+              }}
+            />
+            <h1 style={{
+              fontSize: 'clamp(2rem, 5vw, 3.5rem)',
+              fontWeight: 600,
+              color: '#FFFFFF',
+              textAlign: 'center',
+            }}>
+              {greeting}, {firstName}.
+            </h1>
+            <div style={{ marginTop: '8px', textAlign: 'center' }}>
+              {loading ? (
+                <span style={{ color: 'rgba(224,208,255,0.75)', fontSize: '0.95rem' }}>Loading your studio…</span>
+              ) : (
+                <Link href="/pricing" style={{ textDecoration: 'none' }}>
+                  <span style={{ color: '#BBA8C8', fontSize: '0.95rem', cursor: 'pointer' }}>
+                    <span className="gold-text">{plan ?? '—'}</span>
+                    {plan != null && <span style={{ color: '#FFFFFF' }}> plan</span>}
+                    {credits !== null && (
+                      <span style={{
+                        color: credits === 0 ? '#f87171' : credits < 20 ? '#F59E0B' : '#BBA8C8',
+                        fontWeight: credits < 20 ? 600 : 400,
+                      }}> · {credits} credits left</span>
+                    )}
+                  </span>
                 </Link>
-              </span>
-            ) : (
-              <span className="text-[var(--text-secondary)]">
-                <span className="gold-text">{credits.toLocaleString()}</span> credits remaining
-              </span>
-            )}
+              )}
+            </div>
           </div>
         </section>
 
         {/* Outcome cards */}
-        <section className="mb-20">
+        <section className="mb-6">
           <div className="flex items-end justify-between mb-6">
             <h2 className="text-xl md:text-2xl font-semibold text-[var(--text-primary)] tracking-tight">
               What are you creating today?
@@ -321,7 +367,12 @@ export default function DashboardHome() {
           </div>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-5">
             {OUTCOMES.map((o) => (
-              <OutcomeCard key={o.id} outcome={o} />
+              <OutcomeCard
+                key={o.id}
+                outcome={o}
+                voiceReady={voiceReady}
+                onSelect={(outcome) => posthog?.capture('template_selected', { template_id: outcome.id, template_title: outcome.title })}
+              />
             ))}
           </div>
         </section>
@@ -347,7 +398,8 @@ export default function DashboardHome() {
               {[0, 1, 2, 3].map((i) => (
                 <div
                   key={i}
-                  className="rounded-2xl bg-[var(--bg-surface)] border border-[var(--border-subtle)] overflow-hidden"
+                  className="rounded-2xl overflow-hidden"
+                  style={{ background: 'rgba(75,30,130,0.75)', backdropFilter: 'blur(12px)', border: '1px solid rgba(207,164,47,0.2)' }}
                 >
                   <div className="aspect-video bg-[rgba(212,168,67,0.05)] animate-pulse" />
                   <div className="p-4 h-14 bg-[var(--bg-surface)]" />
@@ -357,11 +409,15 @@ export default function DashboardHome() {
           ) : renders.length > 0 ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               {renders.map((r) => (
-                <RenderCard key={r.id} render={r} />
+                <RenderCard
+                  key={r.id}
+                  render={r}
+                  onDownload={(render) => posthog?.capture('video_downloaded', { render_id: render.id, created_at: render.created_at })}
+                />
               ))}
             </div>
           ) : (
-            <div className="rounded-2xl border border-dashed border-[var(--border-subtle)] bg-[var(--bg-surface)]/50 p-12 text-center">
+            <div className="rounded-2xl border border-dashed p-12 text-center" style={{ background: 'rgba(75,30,130,0.35)', backdropFilter: 'blur(12px)', borderColor: 'rgba(207,164,47,0.2)' }}>
               <p className="text-lg text-[var(--text-secondary)] mb-6">
                 Your first video is one prompt away.
               </p>
@@ -376,25 +432,8 @@ export default function DashboardHome() {
           )}
         </section>
 
-        {/* Studio mode footer */}
-        <section className="border-t border-[var(--border-subtle)] pt-10 pb-4">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-            <div>
-              <p className="text-[var(--text-secondary)] text-sm">Need more control?</p>
-              <p className="text-[var(--text-secondary)]/50 text-xs mt-1">
-                Access individual tools, voice cloning, advanced settings
-              </p>
-            </div>
-            <Link
-              href="/studio"
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[rgba(212,168,67,0.35)] hover:bg-[rgba(212,168,67,0.05)] text-sm font-medium transition-colors self-start sm:self-auto"
-            >
-              Open Studio Mode
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-          </div>
-        </section>
       </main>
+      </div>
     </div>
   );
 }

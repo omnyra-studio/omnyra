@@ -33,6 +33,16 @@ export async function POST(request) {
     return NextResponse.json({ valid: false, error: "invalid_code" }, { status: 404 });
   }
 
+  // Global cap — max 50 total promo redemptions.
+  const { count: redeemedCount } = await supabaseAdmin
+    .from("promo_codes")
+    .select("id", { count: "exact", head: true })
+    .not("used_by", "is", null);
+
+  if ((redeemedCount ?? 0) >= 50) {
+    return NextResponse.json({ valid: false, error: "Beta promo access is full — email info@omnyra.studio" }, { status: 410 });
+  }
+
   const { data: promo } = await supabaseAdmin
     .from("promo_codes")
     .select("id, code, used_by")

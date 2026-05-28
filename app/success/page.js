@@ -13,9 +13,9 @@ const C = {
 }
 
 const PLAN_DETAILS = {
-  Creator: { credits: '200', emoji: '⚡', color: '#8b5cf6' },
-  Pro:     { credits: '500', emoji: '🔥', color: '#22d3ee' },
-  Studio:  { credits: '1,500', emoji: '🚀', color: '#fbbf24' },
+  Starter: { tagline: 'Unlimited scripts, 30 images, 10 voice clips', emoji: '✦', color: '#8b5cf6' },
+  Creator: { tagline: 'Unlimited scripts, 100 images, 40 voice, 5 videos', emoji: '⚡', color: '#CFA42F' },
+  Studio:  { tagline: 'Unlimited scripts, 300 images, 120 voice, 20 videos', emoji: '🚀', color: '#fbbf24' },
 }
 
 function SuccessContent() {
@@ -74,9 +74,9 @@ function SuccessContent() {
           Welcome to {plan}
         </h1>
         <p style={{ fontSize: 15, color: C.sub, margin: '0 0 32px', lineHeight: 1.6 }}>
-          Your subscription is active. You now have{' '}
-          <span style={{ color: C.text, fontWeight: 500 }}>{details.credits} credits/month</span>{' '}
-          and full access to all {plan} features.
+          Your subscription is active.{' '}
+          <span style={{ color: C.text, fontWeight: 500 }}>{details.tagline}.</span>{' '}
+          Full access to all {plan} features is now unlocked.
         </p>
 
         {/* Feature pills */}

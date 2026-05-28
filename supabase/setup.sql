@@ -126,7 +126,80 @@ create policy "Users can manage their own brand profile"
   with check (auth.uid() = user_id);
 
 
--- ── 6. Seed credits for any existing users ───────────────────
+-- ── 6. Renders table ─────────────────────────────────────────
+-- Canonical definition — also exists in migrations/create_renders_table.sql
+-- and migrations/renders_ensure_user_id.sql (repair). This guard ensures
+-- a fresh install from setup.sql alone is fully functional.
+create table if not exists renders (
+  id               uuid        primary key default gen_random_uuid(),
+  user_id          uuid        references auth.users(id) on delete cascade,
+  script           text,
+  audio_url        text,
+  video_url        text,
+  director_settings jsonb,
+  status           text        not null default 'queued',
+  template         text,
+  brief            jsonb,
+  scenes           jsonb,
+  voice_id         text,
+  credits_used     integer,
+  error_message    text,
+  scene_urls       text[],
+  approved_at      timestamptz,
+  completed_at     timestamptz,
+  updated_at       timestamptz default now(),
+  created_at       timestamptz default now()
+);
+
+-- Idempotent column additions for upgrades
+alter table renders add column if not exists user_id          uuid references auth.users(id) on delete cascade;
+alter table renders add column if not exists template         text;
+alter table renders add column if not exists brief            jsonb;
+alter table renders add column if not exists scenes           jsonb;
+alter table renders add column if not exists voice_id         text;
+alter table renders add column if not exists credits_used     integer;
+alter table renders add column if not exists error_message    text;
+alter table renders add column if not exists scene_urls       text[];
+alter table renders add column if not exists approved_at      timestamptz;
+alter table renders add column if not exists completed_at     timestamptz;
+alter table renders add column if not exists updated_at       timestamptz default now();
+
+alter table renders enable row level security;
+
+drop policy if exists "Users see own renders" on renders;
+drop policy if exists "renders_owner_read"    on renders;
+create policy "renders_owner_read"
+  on renders for select
+  using (auth.uid() = user_id);
+
+create index if not exists idx_renders_user_status
+  on renders(user_id, status, created_at desc);
+
+create index if not exists idx_renders_user_updated
+  on renders(user_id, updated_at desc);
+
+
+-- ── 7. Schema registry (version lock) ───────────────────────
+-- Stores the version string that was last applied to this DB.
+-- validate-schema.ts and scripts/check-schema.ts compare against
+-- lib/db/schema.version.ts; mismatch = compile rejection.
+create table if not exists schema_registry (
+  version    text        primary key,
+  applied_at timestamptz default now()
+);
+
+alter table schema_registry enable row level security;
+
+drop policy if exists "schema_registry_public_read" on schema_registry;
+create policy "schema_registry_public_read"
+  on schema_registry for select
+  using (true);
+
+insert into schema_registry (version) values ('2026-05-27-01')
+on conflict (version) do nothing;
+
+
+-- ── 8. Seed credits for any existing users ───────────────────
 insert into credits (user_id, balance, plan)
 select p.id, 50, coalesce(p.plan, 'free')
 from profiles p

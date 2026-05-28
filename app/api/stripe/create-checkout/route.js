@@ -1,15 +1,24 @@
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
+import { getPostHogClient } from '../../../../lib/posthog-server';
 
 // Pack identifier → price env var, checkout mode, credits awarded (null = subscription)
 const PACK_CONFIG = {
-  creator:   { priceEnv: 'STRIPE_PRICE_CREATOR',  mode: 'subscription', credits: null },
-  pro:       { priceEnv: 'STRIPE_PRICE_PRO',       mode: 'subscription', credits: null },
-  studio:    { priceEnv: 'STRIPE_PRICE_STUDIO',    mode: 'subscription', credits: null },
-  pack_100:  { priceEnv: 'STRIPE_PRICE_PACK_100',  mode: 'payment',      credits: 100  },
-  pack_300:  { priceEnv: 'STRIPE_PRICE_PACK_300',  mode: 'payment',      credits: 300  },
-  pack_800:  { priceEnv: 'STRIPE_PRICE_PACK_800',  mode: 'payment',      credits: 800  },
-  pack_2000: { priceEnv: 'STRIPE_PRICE_PACK_2000', mode: 'payment',      credits: 2000 },
+  // Subscription plans
+  starter:   { priceEnv: 'STRIPE_STARTER_PRICE_ID', mode: 'subscription', credits: null },
+  creator:   { priceEnv: 'STRIPE_CREATOR_PRICE_ID', mode: 'subscription', credits: null },
+  studio:    { priceEnv: 'STRIPE_STUDIO_PRICE_ID',  mode: 'subscription', credits: null },
+  // Legacy env var aliases (backwards compat)
+  pro:       { priceEnv: 'STRIPE_PRICE_PRO',         mode: 'subscription', credits: null },
+  // Credit packs
+  small:     { priceEnv: 'STRIPE_SMALL_PACK_PRICE_ID',  mode: 'payment', credits: 100 },
+  medium:    { priceEnv: 'STRIPE_MEDIUM_PACK_PRICE_ID', mode: 'payment', credits: 300 },
+  large:     { priceEnv: 'STRIPE_LARGE_PACK_PRICE_ID',  mode: 'payment', credits: 700 },
+  // Legacy pack IDs (backwards compat)
+  pack_100:  { priceEnv: 'STRIPE_PRICE_PACK_100',  mode: 'payment', credits: 100 },
+  pack_300:  { priceEnv: 'STRIPE_PRICE_PACK_300',  mode: 'payment', credits: 300 },
+  pack_800:  { priceEnv: 'STRIPE_PRICE_PACK_800',  mode: 'payment', credits: 800 },
+  pack_2000: { priceEnv: 'STRIPE_PRICE_PACK_2000', mode: 'payment', credits: 2000 },
 };
 
 export async function POST(request) {
@@ -72,6 +81,18 @@ export async function POST(request) {
     }
 
     const session = await stripe.checkout.sessions.create(sessionParams);
+
+    getPostHogClient().capture({
+      distinctId: userId,
+      event: 'checkout_initiated',
+      properties: {
+        pack,
+        mode: config.mode,
+        credits: config.credits ?? null,
+        stripe_session_id: session.id,
+      },
+    });
+
     return NextResponse.json({ url: session.url });
   } catch (err) {
     console.error('[stripe/create-checkout]', err.message);

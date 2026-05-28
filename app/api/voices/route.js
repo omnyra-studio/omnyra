@@ -1,6 +1,7 @@
 import { getUserAndPlan } from '../../../lib/auth'
 
 export async function GET(request) {
+  console.log('EL key present:', !!process.env.ELEVENLABS_API_KEY)
   const { user } = await getUserAndPlan(request)
   if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -9,8 +10,9 @@ export async function GET(request) {
   })
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({}))
-    return Response.json({ error: err.detail || 'Failed to fetch voices' }, { status: res.status })
+    const errText = await res.text()
+    console.error('[voices] ElevenLabs fetch failed:', res.status, errText)
+    return Response.json({ error: 'Failed to fetch voices', status: res.status }, { status: res.status })
   }
 
   const data = await res.json()

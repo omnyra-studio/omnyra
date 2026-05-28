@@ -26,6 +26,7 @@
 import { NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import { withTrace } from "@/lib/api/autopsy";
 
 // ── System prompt ──────────────────────────────────────────────────────────────
 
@@ -151,7 +152,7 @@ interface TrendRow {
 
 // ── Handler ────────────────────────────────────────────────────────────────────
 
-export async function POST(request: Request) {
+async function handler(request: Request): Promise<NextResponse> {
   // ── Auth — CRON_SECRET only ───────────────────────────────────────────────────
   const authHeader = request.headers.get("authorization") ?? "";
   const cronSecret = process.env.CRON_SECRET;
@@ -201,6 +202,8 @@ export async function POST(request: Request) {
   });
 }
 
+export const POST = withTrace(handler as (req: Request) => Promise<Response>);
+
 // ── Fetch users who posted in the last 7 days ─────────────────────────────────
 
 async function fetchActiveUserIds(): Promise<string[]> {
@@ -217,7 +220,7 @@ async function fetchActiveUserIds(): Promise<string[]> {
 
   const seen = new Set<string>();
   for (const row of data ?? []) {
-    const uid = (row.projects as { user_id: string } | null)?.user_id;
+    const uid = (row.projects as unknown as { user_id: string } | null)?.user_id;
     if (uid) seen.add(uid);
   }
   return [...seen];

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getUserAndPlan } from '../../../../lib/auth'
 import { checkBalance, deductCredits } from '../../../../lib/credits'
+import { getPostHogClient } from '../../../../lib/posthog-server'
 
 export const maxDuration = 60
 
@@ -52,7 +53,7 @@ export async function POST(request) {
     const isVideo = /\.(mp4|webm|mov)(\?|$)/i.test(backgroundUrl)
     background = { type: isVideo ? 'video' : 'image', url: backgroundUrl }
   } else {
-    background = { type: 'color', value: '#000000' }
+    background = { type: 'color', value: '#2D0A3E' }
   }
 
   try {
@@ -93,6 +94,20 @@ export async function POST(request) {
 
     // HeyGen confirmed job — deduct now
     const credit = await deductCredits(user.id, creditAction)
+
+    getPostHogClient().capture({
+      distinctId: user.id,
+      event: 'video_generation_started',
+      properties: {
+        video_id: videoId,
+        credit_action: creditAction,
+        duration,
+        has_custom_avatar: !!avatarId,
+        has_custom_voice: !!voiceId,
+        has_background: !!backgroundUrl,
+      },
+    })
+
     return NextResponse.json({ videoId, creditAction, balance: credit.remaining })
 
   } catch (err) {

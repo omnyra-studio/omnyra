@@ -1,4 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
+import { publishPost } from '../../../../lib/social/post-publisher';
+import { emitAndForget } from '../../../../lib/events/emitter';
 
 function getDb() {
   return createClient(
@@ -60,13 +62,15 @@ export async function POST(request) {
   if (error) return Response.json({ error: error.message }, { status: 500 });
 
   if (!scheduled_for) {
-    try {
-      await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/social/cron`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-cron-secret': process.env.CRON_SECRET || '' },
-        body: JSON.stringify({ post_id: data.id }),
-      });
-    } catch {}
+    emitAndForget({
+      type:          'PUBLISH_REQUESTED',
+      correlationId: data.id,
+      payload:       { postId: data.id, userId: user.id, platforms: data.platforms },
+    });
+    // Direct service call — no internal HTTP.
+    publishPost(data).catch(err =>
+      console.error('[social/posts] Immediate publish failed:', err),
+    );
   }
 
   return Response.json(data);

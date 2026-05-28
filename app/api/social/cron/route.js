@@ -1,62 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
-import {
-  publishTikTok,
-  publishInstagram,
-  publishYouTube,
-  publishTwitter,
-} from '../../../../lib/social-publish';
-
-const PUBLISHERS = { tiktok: publishTikTok, instagram: publishInstagram, youtube: publishYouTube, twitter: publishTwitter };
+import { publishPost } from '../../../../lib/social/post-publisher';
 
 function getDb() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL,
     process.env.SUPABASE_SERVICE_ROLE_KEY
   );
-}
-
-async function publishPost(post) {
-  const db = getDb();
-  const results = {};
-
-  for (const platform of post.platforms) {
-    const { data: conn } = await db
-      .from('social_connections')
-      .select('access_token, platform_user_id')
-      .eq('user_id', post.user_id)
-      .eq('platform', platform)
-      .single();
-
-    if (!conn) {
-      results[platform] = { error: 'Not connected' };
-      continue;
-    }
-
-    try {
-      const fn = PUBLISHERS[platform];
-      if (!fn) throw new Error('Unsupported platform');
-      const result = await fn({
-        token: conn.access_token,
-        platformUserId: conn.platform_user_id,
-        post,
-      });
-      results[platform] = result;
-    } catch (e) {
-      results[platform] = { error: e.message };
-    }
-  }
-
-  const allFailed = Object.values(results).every(r => r.error);
-
-  await db
-    .from('scheduled_posts')
-    .update({
-      status: allFailed ? 'failed' : 'published',
-      platform_post_ids: results,
-      error_message: allFailed ? JSON.stringify(results) : null,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', post.id);
 }
 
 export async function GET(request) {

@@ -1,9 +1,9 @@
 import Stripe from 'stripe';
 
 const PLANS = {
-  Creator: { amount: 2900, label: 'Omnyra Creator', description: '200 credits/month · 1 min video · No watermark' },
-  Pro:     { amount: 6900, label: 'Omnyra Pro',     description: '500 credits/month · 3 min video · 4K exports' },
-  Studio:  { amount: 9900, label: 'Omnyra Studio',  description: '1,500 credits/month · 5 min video · Batch generation' },
+  Starter: { amount: 1900, label: 'Omnyra Starter', description: 'Unlimited scripts · 30 images · 10 voice clips / month' },
+  Creator: { amount: 4900, label: 'Omnyra Creator', description: 'Unlimited scripts · 100 images · 40 voice · 5 videos / month' },
+  Studio:  { amount: 9900, label: 'Omnyra Studio',  description: 'Unlimited scripts · 300 images · 120 voice · 20 videos / month' },
 };
 
 export async function POST(request) {

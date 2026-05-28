@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabase";
+import AnimatedBackground from "@/components/AnimatedBackground";
 
 const C = { bg: "#070710", text: "#f5f3ff", sub: "rgba(245,243,255,0.55)", violet: "#8b5cf6" };
 
@@ -65,19 +66,15 @@ export default function CaptionsPage() {
   }
 
   return (
-    <main style={{ minHeight: "100vh", background: C.bg, color: C.text, fontFamily: '"Instrument Sans","Inter",-apple-system,sans-serif', padding: "0 0 80px" }}>
-      <div style={{ maxWidth: 440, margin: "0 auto", padding: "0 20px" }}>
-        {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "20px 0 24px" }}>
-          <button onClick={() => router.push("/dashboard")}
-            style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 12, padding: "8px 12px", color: C.text, cursor: "pointer", fontSize: 18 }}>
-            ←
-          </button>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>Captions & Tags</h1>
-            <p style={{ margin: 0, fontSize: 12, color: C.sub }}>5 captions + hashtags instantly</p>
-          </div>
+    <main style={{ minHeight: "100vh", background: "transparent", position: "relative", color: C.text, fontFamily: '"Instrument Sans","Inter",-apple-system,sans-serif', padding: "0 0 80px" }}>
+      <AnimatedBackground />
+      <div style={{ position: "relative", zIndex: 1 }}>
+        <div style={{ borderBottom: "1px solid rgba(207,164,47,0.15)", padding: "12px 20px", display: "flex", alignItems: "center", gap: 12, position: "sticky", top: 0, background: "rgba(45,10,62,0.75)", backdropFilter: "blur(16px)", zIndex: 40 }}>
+          <span style={{ fontWeight: 700, fontSize: 18, background: "linear-gradient(90deg,#CFA42F,#E8B84B)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent" }}>Omnyra</span>
+          <button onClick={() => router.push("/dashboard")} style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 12, padding: "6px 10px", color: C.text, cursor: "pointer", fontSize: 16 }}>←</button>
+          <span style={{ fontWeight: 700, fontSize: 16 }}>Captions &amp; Tags</span>
         </div>
+        <div style={{ maxWidth: 440, margin: "0 auto", padding: "16px 20px 0" }}>
 
         {/* Mode selector */}
         <div style={{ marginBottom: 16 }}>
@@ -156,6 +153,7 @@ export default function CaptionsPage() {
             </button>
           </div>
         )}
+        </div>
       </div>
     </main>
   );

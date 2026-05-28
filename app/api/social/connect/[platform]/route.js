@@ -10,6 +10,13 @@ function getDb() {
   );
 }
 
+const REQUIRED_ENV = {
+  tiktok: 'TIKTOK_CLIENT_KEY',
+  instagram: 'INSTAGRAM_APP_ID',
+  youtube: 'GOOGLE_CLIENT_ID',
+  twitter: 'TWITTER_CLIENT_ID',
+};
+
 const OAUTH_CONFIGS = {
   tiktok: {
     authUrl: 'https://www.tiktok.com/v2/auth/authorize',
@@ -63,6 +70,12 @@ export async function GET(request, context) {
 
   const config = OAUTH_CONFIGS[platform];
   if (!config) return new Response('Unknown platform', { status: 400 });
+
+  const requiredKey = REQUIRED_ENV[platform];
+  if (!process.env[requiredKey]) {
+    console.error(`[social/connect] Missing env var: ${requiredKey}`);
+    return new Response('Platform not configured', { status: 503 });
+  }
 
   const redirectUri = `${APP_URL}/api/social/callback/${platform}`;
   const state = crypto.randomUUID();
