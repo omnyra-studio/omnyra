@@ -33,6 +33,7 @@ import {
   Download,
   Share2,
   Link as LinkIcon,
+  X,
 } from "lucide-react";
 import { supabase as supabaseClient } from "@/lib/supabase";
 
@@ -358,8 +359,8 @@ function CompleteState({ renderId, videoUrl, onReset }) {
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-white/5 border border-white/10 text-xs text-white/70 hover:text-white hover:bg-white/10 transition-colors"
           >
-            <Share2 className="w-3.5 h-3.5" />
-            Twitter
+            <X className="w-3.5 h-3.5" />
+            X
           </a>
           <button
             onClick={handleCopy}
