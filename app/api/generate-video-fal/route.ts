@@ -8,9 +8,11 @@ const FAL_MODELS: Record<string, string> = {
 };
 
 export async function POST(req: Request) {
-  const { prompt, image_url, model = "fast", niche } = await req.json();
-
   const falKey = process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY;
+  console.log('FAL key present:', !!falKey, 'key name:', process.env.FAL_API_KEY ? 'FAL_API_KEY' : process.env.FALAI_API_KEY ? 'FALAI_API_KEY' : 'none');
+
+  const { prompt, image_url, model = "fast", niche } = await req.json();
+  console.log('[generate-video-fal] payload:', { model, prompt: prompt?.substring(0, 80), has_image: !!image_url, niche });
   if (!falKey) {
     return Response.json({ error: "FAL_API_KEY not configured" }, { status: 500 });
   }

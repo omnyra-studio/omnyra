@@ -39,11 +39,16 @@ interface UploadedFile {
 }
 
 interface VoiceOption {
-  id: string;
+  voice_id: string;
   name: string;
-  previewUrl?: string;
-  gender?: string;
-  accent?: string;
+  preview_url?: string;
+  labels?: {
+    gender?: string;
+    accent?: string;
+    age?: string;
+    description?: string;
+    use_case?: string;
+  };
 }
 
 // ─── Style constants ──────────────────────────────────────────────────────────
@@ -325,9 +330,9 @@ function CreatePageInner() {
           }
         });
 
-      fetch('/api/voices', { headers: { Authorization: `Bearer ${session.access_token}` } })
+      fetch('/api/voices')
         .then(r => r.json())
-        .then(data => setVoices(data.voices || []))
+        .then(data => setVoices(Array.isArray(data) ? data : []))
         .catch(() => {});
 
       sb
@@ -433,9 +438,9 @@ function CreatePageInner() {
 
   async function handlePreviewVoice() {
     if (!selectedVoiceId) return;
-    const voice = voices.find(v => v.id === selectedVoiceId);
-    if (voice?.previewUrl) {
-      new Audio(voice.previewUrl).play().catch(() => {});
+    const voice = voices.find(v => v.voice_id === selectedVoiceId);
+    if (voice?.preview_url) {
+      new Audio(voice.preview_url).play().catch(() => {});
       return;
     }
     setIsGeneratingVoice(true);
@@ -2039,8 +2044,8 @@ function CreatePageInner() {
                   >
                     <option value="">Select a voice...</option>
                     {voices.map(v => (
-                      <option key={v.id} value={v.id}>
-                        {v.name}{v.gender ? ` · ${v.gender}` : ''}{v.accent ? ` · ${v.accent}` : ''}
+                      <option key={v.voice_id} value={v.voice_id}>
+                        {v.name}{v.labels?.gender ? ` · ${v.labels.gender}` : ''}{v.labels?.accent ? ` · ${v.labels.accent}` : ''}
                       </option>
                     ))}
                   </select>

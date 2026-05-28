@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "../../../lib/supabase";
+import { createClient } from "@/lib/supabase/client";
 import AnimatedBackground from "@/components/AnimatedBackground";
 
 const C = { bg: "#070710", text: "#f5f3ff", sub: "rgba(245,243,255,0.55)", violet: "#8b5cf6" };
@@ -36,14 +36,12 @@ export default function VoicePage() {
   useEffect(() => {
     async function fetchVoices() {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        const res = await fetch("/api/voices", {
-          headers: session ? { Authorization: `Bearer ${session.access_token}` } : {},
-        });
+        const res = await fetch("/api/voices");
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Failed to load voices");
-        setVoices(data.voices ?? []);
-        if (data.voices?.length) setVoiceId(data.voices[0].id);
+        if (!res.ok) throw new Error("Failed to load voices");
+        const list = Array.isArray(data) ? data : [];
+        setVoices(list);
+        if (list.length) setVoiceId(list[0].voice_id);
       } catch (err) {
         setVoicesError(err.message);
       } finally {
@@ -54,8 +52,8 @@ export default function VoicePage() {
   }, []);
 
   function playPreview(voice) {
-    if (!voice.previewUrl) return;
-    if (playingId === voice.id) {
+    if (!voice.preview_url) return;
+    if (playingId === voice.voice_id) {
       audioRef.current?.pause();
       setPlayingId(null);
       return;
@@ -63,32 +61,37 @@ export default function VoicePage() {
     if (audioRef.current) {
       audioRef.current.pause();
     }
-    const a = new Audio(voice.previewUrl);
+    const a = new Audio(voice.preview_url);
     audioRef.current = a;
     a.play();
-    setPlayingId(voice.id);
+    setPlayingId(voice.voice_id);
     a.onended = () => setPlayingId(null);
     a.onerror = () => setPlayingId(null);
   }
 
   const filtered = voices.filter(v => {
     const q = search.toLowerCase();
+    const gender = v.labels?.gender ?? '';
+    const accent = v.labels?.accent ?? '';
+    const description = v.labels?.description ?? '';
+    const useCase = v.labels?.use_case ?? '';
     const matchSearch = !q ||
       v.name.toLowerCase().includes(q) ||
-      v.accent.toLowerCase().includes(q) ||
-      v.description.toLowerCase().includes(q) ||
-      v.useCase.toLowerCase().includes(q);
-    const matchGender = genderFilter === "All" || v.gender === genderFilter;
-    const matchUseCase = useCaseFilter === "All" || v.useCase.toLowerCase().includes(useCaseFilter.toLowerCase());
+      accent.toLowerCase().includes(q) ||
+      description.toLowerCase().includes(q) ||
+      useCase.toLowerCase().includes(q);
+    const matchGender = genderFilter === "All" || gender === genderFilter;
+    const matchUseCase = useCaseFilter === "All" || useCase.toLowerCase().includes(useCaseFilter.toLowerCase());
     return matchSearch && matchGender && matchUseCase;
   });
 
-  const selected = voices.find(v => v.id === voiceId);
+  const selected = voices.find(v => v.voice_id === voiceId);
 
   async function generate() {
     if (!text.trim() || !voiceId) return;
     setGenerating(true); setError(""); setAudioUrl(null);
     try {
+      const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch("/api/voice", {
         method: "POST",
@@ -102,8 +105,6 @@ export default function VoicePage() {
         const d = await res.json();
         throw new Error(d.error || "Voice generation failed");
       }
-      const remaining = res.headers.get("X-Credits-Remaining");
-      if (remaining) setCredits(remaining);
       const blob = await res.blob();
       setAudioUrl(URL.createObjectURL(blob));
     } catch (err) {
@@ -136,11 +137,11 @@ export default function VoicePage() {
           <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderRadius: 12, background: "rgba(139,92,246,0.12)", border: "1px solid rgba(139,92,246,0.3)", marginBottom: 16 }}>
             <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.violet, flexShrink: 0 }} />
             <span style={{ fontWeight: 700, fontSize: 14 }}>{selected.name}</span>
-            <span style={{ fontSize: 12, color: C.sub }}>{selected.gender} · {selected.accent}</span>
-            {selected.description && tag(selected.description)}
+            <span style={{ fontSize: 12, color: C.sub }}>{selected.labels?.gender} · {selected.labels?.accent}</span>
+            {selected.labels?.description && tag(selected.labels.description)}
             <button onClick={() => playPreview(selected)}
               style={{ marginLeft: "auto", background: "rgba(139,92,246,0.2)", border: "1px solid rgba(139,92,246,0.4)", borderRadius: 8, padding: "4px 10px", color: "#a78bfa", cursor: "pointer", fontSize: 12, fontFamily: "inherit", fontWeight: 600 }}>
-              {playingId === selected.id ? "■ Stop" : "▶ Preview"}
+              {playingId === selected.voice_id ? "■ Stop" : "▶ Preview"}
             </button>
           </div>
         )}
@@ -193,31 +194,31 @@ export default function VoicePage() {
             <div style={{ fontSize: 11, color: C.sub, marginBottom: 8, fontWeight: 600 }}>{filtered.length} voices</div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 360, overflowY: "auto", marginBottom: 20, paddingRight: 4 }}>
               {filtered.map(v => (
-                <div key={v.id}
-                  onClick={() => setVoiceId(v.id)}
+                <div key={v.voice_id}
+                  onClick={() => setVoiceId(v.voice_id)}
                   style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 14px", borderRadius: 12, cursor: "pointer",
-                    background: voiceId === v.id ? "rgba(139,92,246,0.15)" : "rgba(255,255,255,0.03)",
-                    border: voiceId === v.id ? "1px solid rgba(139,92,246,0.5)" : "1px solid rgba(255,255,255,0.07)",
+                    background: voiceId === v.voice_id ? "rgba(139,92,246,0.15)" : "rgba(255,255,255,0.03)",
+                    border: voiceId === v.voice_id ? "1px solid rgba(139,92,246,0.5)" : "1px solid rgba(255,255,255,0.07)",
                     transition: "background 0.1s" }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                       <span style={{ fontWeight: 700, fontSize: 14 }}>{v.name}</span>
-                      {v.accent && v.accent !== "unknown" && tag(v.accent)}
-                      {v.description && tag(v.description)}
+                      {v.labels?.accent && v.labels.accent !== "unknown" && tag(v.labels.accent)}
+                      {v.labels?.description && tag(v.labels.description)}
                     </div>
                     <div style={{ fontSize: 11, color: C.sub, marginTop: 3, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      {v.gender !== "unknown" && <span style={{ textTransform: "capitalize" }}>{v.gender}</span>}
-                      {v.age !== "unknown" && <span style={{ textTransform: "capitalize" }}>{v.age}</span>}
-                      {v.useCase && <span style={{ textTransform: "capitalize", color: "#6d28d9" }}>{v.useCase}</span>}
+                      {v.labels?.gender && v.labels.gender !== "unknown" && <span style={{ textTransform: "capitalize" }}>{v.labels.gender}</span>}
+                      {v.labels?.age && v.labels.age !== "unknown" && <span style={{ textTransform: "capitalize" }}>{v.labels.age}</span>}
+                      {v.labels?.use_case && <span style={{ textTransform: "capitalize", color: "#6d28d9" }}>{v.labels.use_case}</span>}
                     </div>
                   </div>
-                  {v.previewUrl && (
+                  {v.preview_url && (
                     <button
                       onClick={e => { e.stopPropagation(); playPreview(v); }}
                       style={{ flexShrink: 0, padding: "5px 10px", borderRadius: 8, border: "1px solid rgba(139,92,246,0.3)",
-                        background: playingId === v.id ? "rgba(139,92,246,0.3)" : "rgba(139,92,246,0.1)",
+                        background: playingId === v.voice_id ? "rgba(139,92,246,0.3)" : "rgba(139,92,246,0.1)",
                         color: "#a78bfa", cursor: "pointer", fontSize: 11, fontFamily: "inherit", fontWeight: 600 }}>
-                      {playingId === v.id ? "■" : "▶"}
+                      {playingId === v.voice_id ? "■" : "▶"}
                     </button>
                   )}
                 </div>

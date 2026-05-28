@@ -16,7 +16,7 @@ import {
   Sparkles,
   Mic,
 } from "lucide-react";
-import { supabase } from "../../lib/supabase";
+import { createClient } from "@/lib/supabase/client";
 import * as Q from "@/lib/db/query";
 import { SCHEMA } from "@/lib/db/schema";
 import AnimatedBackground from "@/components/AnimatedBackground";
@@ -244,6 +244,7 @@ export default function DashboardHome() {
 
     (async () => {
       try {
+        const supabase = createClient();
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
           router.replace("/signin");
