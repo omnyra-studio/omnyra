@@ -1799,7 +1799,7 @@ function CreatePageInner() {
             {/* ── Image generator ───────────────────────────────────────────── */}
             {selectedHookIndex !== null && (
               <ImageGenerator
-                concept={activeVersion.title || activeVersion.hook}
+                concept={activeVersion.script || activeVersion.title || activeVersion.hook}
                 template={template}
                 niche={niche}
                 platforms={selectedPlatforms}
