@@ -332,7 +332,7 @@ function CreatePageInner() {
 
       fetch('/api/voices')
         .then(r => r.json())
-        .then(data => setVoices(Array.isArray(data) ? data : []))
+        .then(data => setVoices(Array.isArray(data.voices) ? data.voices : []))
         .catch(() => {});
 
       sb

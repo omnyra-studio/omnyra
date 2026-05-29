@@ -39,7 +39,7 @@ export default function VoicePage() {
         const res = await fetch("/api/voices");
         const data = await res.json();
         if (!res.ok) throw new Error("Failed to load voices");
-        const list = Array.isArray(data) ? data : [];
+        const list = Array.isArray(data.voices) ? data.voices : [];
         setVoices(list);
         if (list.length) setVoiceId(list[0].voice_id);
       } catch (err) {
