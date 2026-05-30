@@ -66,7 +66,7 @@ export async function POST(request: Request) {
       content_type:        "broll",
       visual_prompt:       prompt.trim(),
       render_assignment:   "fal",
-      fal_model:           "bytedance/seedance-2.0/image-to-video",
+      fal_model:           "fal-ai/kling-video/v1.6/standard/image-to-video",
       transition_in:       "hard_cut",
       transition_after:    "cut",
       transition_duration: 0.3,
