@@ -36,7 +36,7 @@ export async function POST(req) {
   const animationPrefix = isAnimated ? 'anime illustration style, 2D animated, vibrant cel-shaded colors, ' : ''
   const enhancedPrompt = `${animationPrefix}${prompt.trim()}, ${qualityPrompt}`
 
-  const model = quality === 'pro' ? 'fal-ai/flux-pro/v1.1' : 'fal-ai/flux/schnell'
+  const model = quality === 'pro' ? 'fal-ai/flux-pro' : 'fal-ai/flux/schnell'
 
   let imageSize
   if (aspect_ratio === '9:16')       imageSize = { width: 1080, height: 1920 }
