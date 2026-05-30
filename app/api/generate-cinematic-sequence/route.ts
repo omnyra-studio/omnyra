@@ -6,8 +6,10 @@ import { KLING_I2V_MODEL, KLING_T2V_MODEL } from "@/lib/video-models";
 export const maxDuration = 300;
 
 const CLIP_SECONDS = 8;
+const ROUTE_VERSION = "2026-05-30T00:00:00Z-v2";
 
 export async function POST(req: Request) {
+  console.log("SEQUENCE_ROUTE_VERSION", ROUTE_VERSION);
   const cookieStore = await cookies();
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -39,6 +41,8 @@ export async function POST(req: Request) {
   const duration = rawSeconds <= 7 ? "5" : "10";
   const hasImage = typeof imageUrl === "string" && imageUrl.startsWith("https://");
 
+  console.log("SEQUENCE_ROUTE_VERSION", ROUTE_VERSION);
+  console.log("duration_input", clipDuration, "rawSeconds", rawSeconds, "duration_enum", duration);
   console.log(`[generate-cinematic-sequence] clips=${prompts.length} rawSeconds=${rawSeconds} duration=${duration} hasImage=${hasImage} imageUrlPrefix=${typeof imageUrl === "string" ? imageUrl.substring(0, 60) : imageUrl}`);
 
   const clipReports: string[] = [];

@@ -966,9 +966,12 @@ function CreatePageInner() {
         });
 
         const rawText = await seqRes.text();
-        console.log('[cinematic] sequence response:', { status: seqRes.status, text: rawText.substring(0, 300) });
-        let seqData: { stitched_url?: string; clip_urls?: string[]; clips_generated?: number; error?: string } | null = null;
+        let seqData: { stitched_url?: string; clip_urls?: string[]; clips_generated?: number; error?: string; clip_reports?: string[] } | null = null;
         try { seqData = JSON.parse(rawText); } catch { seqData = null; }
+        console.log('[cinematic] sequence response status:', seqRes.status);
+        console.log('[cinematic] sequence error:', seqData?.error);
+        console.log('[cinematic] sequence clip_reports:', seqData?.clip_reports);
+        console.log('[cinematic] sequence raw (first 600):', rawText.substring(0, 600));
 
         if (!seqRes.ok) {
           throw new Error(seqData?.error || rawText || `Cinematic generation failed (${seqRes.status})`);
