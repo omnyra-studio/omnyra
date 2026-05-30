@@ -37,7 +37,7 @@ export async function POST(req: Request) {
       writeFileSync(audioPath, Buffer.from(await audioRes.arrayBuffer()));
     }
 
-    // Merge with FFmpeg
+    // Merge with FFmpeg — no -shortest so full audio plays over stitched video
     await new Promise<void>((resolve, reject) => {
       ffmpeg()
         .input(videoPath)
@@ -47,7 +47,6 @@ export async function POST(req: Request) {
           "-c:a", "aac",
           "-map", "0:v:0",
           "-map", "1:a:0",
-          "-shortest",
         ])
         .output(outputPath)
         .on("end", () => resolve())

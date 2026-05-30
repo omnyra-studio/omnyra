@@ -254,6 +254,7 @@ function CreatePageInner() {
   const [userVoice, setUserVoice] = useState<{ voice_id: string; voice_name: string | null; has_voice_clone: boolean } | null>(null);
   const [isGeneratingVoice, setIsGeneratingVoice] = useState(false);
   const [voiceAudioUrl, setVoiceAudioUrl] = useState<string | null>(null);
+  const [voiceDuration, setVoiceDuration] = useState(0);
 
   // Video generation panel
   const [voiceUrl, setVoiceUrl] = useState<string | null>(null);
@@ -799,6 +800,15 @@ function CreatePageInner() {
       });
       if (!res.ok) throw new Error('Voice generation failed');
       const blob = await res.blob();
+      // Measure actual narration duration for timeline planning
+      const dur = await new Promise<number>((resolve) => {
+        const audio = new Audio();
+        const blobUrl = URL.createObjectURL(blob);
+        audio.onloadedmetadata = () => { URL.revokeObjectURL(blobUrl); resolve(audio.duration); };
+        audio.onerror = () => { URL.revokeObjectURL(blobUrl); resolve(0); };
+        audio.src = blobUrl;
+      });
+      setVoiceDuration(dur);
       // Upload to Supabase so the compose endpoint can download it server-side
       let publicVoiceUrl: string | null = null;
       if (userId) {
@@ -909,64 +919,84 @@ function CreatePageInner() {
 
     if (type === 'cinematic') {
       setIsGeneratingVideo(true);
-      setVideoProgress(20);
+      setVideoProgress(10);
       try {
         const scriptText = v.script || '';
         const hookText = v.hook || '';
-        const sceneMatches = scriptText.match(/\[SCENE:[^\]]+\]/g) || [];
-        const sceneDescriptions = sceneMatches.join(' ');
-        const enhanceRes = await fetch('/api/enhance-prompt', {
+
+        // Build per-clip prompts from [SCENE:] tags; fall back to hook if none
+        const CLIP_SECONDS = 8;
+        const effectiveDuration = voiceDuration > 0 ? voiceDuration : CLIP_SECONDS;
+        const clipCount = Math.max(1, Math.ceil(effectiveDuration / CLIP_SECONDS));
+        console.log(`[cinematic] voiceDuration=${voiceDuration.toFixed(1)}s clipCount=${clipCount}`);
+
+        const tagMatches = [...scriptText.matchAll(/\[SCENE:\s*([^\]]+)\]/gi)].map(m => m[1].trim());
+        const basePrompts: string[] = Array.from({ length: clipCount }, (_, i) =>
+          tagMatches[i % Math.max(tagMatches.length, 1)] || hookText || scriptText.substring(0, 200)
+        );
+
+        setVideoProgress(20);
+
+        // Enhance all prompts in parallel
+        const enhancedPrompts = await Promise.all(
+          basePrompts.map(async (p) => {
+            try {
+              const r = await fetch('/api/enhance-prompt', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ concept: p, template, niche, style: 'lifestyle', platforms: selectedPlatforms }),
+              });
+              const d = r.ok ? await r.json() : null;
+              return (d?.prompt as string | undefined) || p;
+            } catch { return p; }
+          })
+        );
+
+        setVideoProgress(40);
+        console.log('[cinematic] enhanced prompts:', enhancedPrompts.map(p => p.substring(0, 60)));
+
+        const seqRes = await fetch('/api/generate-cinematic-sequence', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            concept: `Hook: "${hookText}". Key scenes from script: ${sceneDescriptions || scriptText.substring(0, 300)}`,
-            template,
-            niche,
-            style: 'lifestyle',
-            platforms: selectedPlatforms,
+            prompts: enhancedPrompts,
+            imageUrl: selectedImage || null,
+            clipDuration: CLIP_SECONDS,
           }),
         });
-        const enhanced = enhanceRes.ok ? await enhanceRes.json() : { prompt: v.hook };
-        const cinemaPrompt = enhanced.prompt || v.hook;
-        setVideoProgress(40);
 
-        const duration = 8;
-        const cinematicPayload = { prompt: cinemaPrompt, imageUrl: selectedImage || null, duration };
-        console.log('[cinematic] OUTGOING PAYLOAD', { promptLength: cinemaPrompt.length, hasImage: !!selectedImage, imageUrlPrefix: selectedImage?.substring(0, 60), duration });
-        const res = await fetch('/api/generate-cinematic', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(cinematicPayload),
-        });
-        const rawText = await res.text();
-        console.log('[cinematic] RAW RESPONSE', { status: res.status, text: rawText });
-        let parsed: { clip_url?: string; error?: string; message?: string } | null = null;
-        try { parsed = JSON.parse(rawText); } catch { parsed = null; }
-        if (!res.ok) {
-          throw new Error(parsed?.error || parsed?.message || rawText || `Cinematic generation failed (${res.status})`);
+        const rawText = await seqRes.text();
+        console.log('[cinematic] sequence response:', { status: seqRes.status, text: rawText.substring(0, 300) });
+        let seqData: { stitched_url?: string; clip_urls?: string[]; clips_generated?: number; error?: string } | null = null;
+        try { seqData = JSON.parse(rawText); } catch { seqData = null; }
+
+        if (!seqRes.ok) {
+          throw new Error(seqData?.error || rawText || `Cinematic generation failed (${seqRes.status})`);
         }
-        const clip_url = parsed?.clip_url ?? '';
+
+        const stitchedUrl = seqData?.stitched_url ?? '';
+        if (!stitchedUrl) throw new Error('No stitched video URL returned');
         setVideoProgress(80);
 
-        // Compose with voiceover if one was uploaded (public URL, not a local blob:)
+        // Merge with voiceover if available (public URL only — blob: URLs can't be fetched server-side)
         if (voiceAudioUrl && !voiceAudioUrl.startsWith('blob:')) {
           try {
             const composeRes = await fetch('/api/compose-video', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ videoUrl: clip_url, voiceoverUrl: voiceAudioUrl }),
+              body: JSON.stringify({ videoUrl: stitchedUrl, voiceoverUrl: voiceAudioUrl }),
             });
             if (composeRes.ok) {
               const composeData = await composeRes.json();
-              setVideoUrl(composeData.video_url ?? clip_url);
+              setVideoUrl(composeData.video_url ?? stitchedUrl);
             } else {
-              setVideoUrl(clip_url); // compose failed — show raw clip
+              setVideoUrl(stitchedUrl);
             }
           } catch {
-            setVideoUrl(clip_url); // network error — show raw clip
+            setVideoUrl(stitchedUrl);
           }
         } else {
-          setVideoUrl(clip_url);
+          setVideoUrl(stitchedUrl);
         }
         setVideoProgress(100);
       } catch (err) {

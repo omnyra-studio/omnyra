@@ -28,6 +28,14 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
+import ffmpeg from "fluent-ffmpeg";
+import { tmpdir } from "os";
+import { join } from "path";
+import { writeFileSync, readFileSync, unlinkSync } from "fs";
+import { randomUUID } from "crypto";
+
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 import { buildRenderContract, assertContractRenderable, RenderContractError, type ShotAssetInput, type ValidRenderContract } from "@/lib/timeline/build-contract";
 import { rebuildRender } from "@/lib/render/incremental-engine";
 import { processShardJob } from "@/lib/workers/shard-worker";
@@ -104,7 +112,141 @@ export async function POST(request: Request) {
 
   const { projectId, shotPlanId, voiceoverUrl: bodyVoiceoverUrl } = body;
 
-  // projectId is required in shot-plan mode (single-clip mode already returned above)
+  // ── Single-clip mode — checked FIRST, no projectId required ─────────────────
+  // Used by the cinematic preview flow: { videoUrl, voiceoverUrl? }
+  // Uses local FFmpeg when COMPOSER_SERVICE_URL is absent (always works in dev/prod).
+  // Falls back to external composer when COMPOSER_SERVICE_URL is configured.
+  if (body.videoUrl?.trim()) {
+    const singleClipUrl = body.videoUrl.trim();
+    const singleVoiceUrl = body.voiceoverUrl?.trim() ?? null;
+
+    console.log(`[compose-video:single] videoUrl=${singleClipUrl.substring(0, 80)}, hasVoiceover=${!!singleVoiceUrl}`);
+
+    const composerUrl = process.env.COMPOSER_SERVICE_URL;
+    const composerKey = process.env.COMPOSER_API_KEY;
+
+    if (composerUrl) {
+      // External composer path
+      let clipBlob: Blob;
+      let voiceBlob: Blob | null = null;
+      try {
+        clipBlob = await fetchBlob(singleClipUrl, "single clip");
+        if (singleVoiceUrl) voiceBlob = await fetchBlob(singleVoiceUrl, "voiceover");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Failed to download media";
+        return NextResponse.json({ success: false, error: msg }, { status: 502 });
+      }
+
+      const form = new FormData();
+      form.append("clips", clipBlob!, "shot_1.mp4");
+      if (voiceBlob) form.append("voiceover", voiceBlob, "voiceover.mp3");
+      form.append("shot_plan", JSON.stringify({
+        shots: [{ duration: 8, energy_curve: "sustain", transition_in: "hard_cut", transition_duration: 0, zoom_effect: false }],
+      }));
+
+      let composeRes: Response;
+      try {
+        composeRes = await fetchWithTimeout(
+          `${composerUrl}/compose`,
+          { method: "POST", headers: { "x-api-key": composerKey ?? "" }, body: form },
+          120_000,
+        );
+      } catch (err) {
+        const isTimeout = err instanceof Error && err.name === "AbortError";
+        return NextResponse.json(
+          { success: false, error: isTimeout ? "Composition timed out" : "Composer unavailable" },
+          { status: 504 },
+        );
+      }
+
+      if (!composeRes.ok) {
+        let msg = `Composer HTTP ${composeRes.status}`;
+        try { const b = await composeRes.json() as { error?: string }; if (b.error) msg = b.error; } catch { /* ignore */ }
+        return NextResponse.json({ success: false, error: msg }, { status: 502 });
+      }
+
+      const composeResult = await composeRes.json() as { success: boolean; video_url: string; error?: string };
+      if (!composeResult.success || !composeResult.video_url) {
+        return NextResponse.json({ success: false, error: composeResult.error ?? "Compose failed" }, { status: 500 });
+      }
+
+      const composedVideoBlob = await fetchBlob(
+        composeResult.video_url.startsWith("http") ? composeResult.video_url : `${composerUrl}${composeResult.video_url}`,
+        "composed video",
+      );
+      const storagePath = `renders/${user.id}/${Date.now()}/preview.mp4`;
+      const { error: uploadErr } = await supabase.storage
+        .from("videos")
+        .upload(storagePath, await composedVideoBlob.arrayBuffer(), { contentType: "video/mp4", upsert: true });
+
+      if (uploadErr) {
+        console.error("[compose-video:single] Storage upload failed:", uploadErr.message);
+        return NextResponse.json({ success: false, error: "Assembled but storage upload failed" }, { status: 500 });
+      }
+
+      const { data: { publicUrl } } = supabase.storage.from("videos").getPublicUrl(storagePath);
+      return NextResponse.json({ success: true, video_url: publicUrl, has_audio: !!voiceBlob });
+
+    } else {
+      // Local FFmpeg path — works without COMPOSER_SERVICE_URL
+      console.log("[compose-video:single] COMPOSER_SERVICE_URL absent — using local FFmpeg");
+      const id = randomUUID();
+      const tmpDir = tmpdir();
+      const videoPath = join(tmpDir, `cv-video-${id}.mp4`);
+      const audioPath = join(tmpDir, `cv-audio-${id}.mp3`);
+      const outputPath = join(tmpDir, `cv-output-${id}.mp4`);
+      const paths = [videoPath, audioPath, outputPath];
+
+      try {
+        const videoRes = await fetch(singleClipUrl);
+        if (!videoRes.ok) throw new Error(`Failed to fetch video: ${videoRes.status}`);
+        writeFileSync(videoPath, Buffer.from(await videoRes.arrayBuffer()));
+
+        if (singleVoiceUrl) {
+          const audioRes = await fetch(singleVoiceUrl);
+          if (!audioRes.ok) throw new Error(`Failed to fetch audio: ${audioRes.status}`);
+          writeFileSync(audioPath, Buffer.from(await audioRes.arrayBuffer()));
+
+          await new Promise<void>((resolve, reject) => {
+            ffmpeg()
+              .input(videoPath)
+              .input(audioPath)
+              .outputOptions(["-c:v", "copy", "-c:a", "aac", "-map", "0:v:0", "-map", "1:a:0"])
+              .output(outputPath)
+              .on("end", () => resolve())
+              .on("error", (err: Error) => reject(err))
+              .run();
+          });
+        } else {
+          // No audio — just copy the video
+          writeFileSync(outputPath, readFileSync(videoPath));
+        }
+
+        const videoBuffer = readFileSync(outputPath);
+        const storagePath = `renders/${user.id}/${Date.now()}/preview.mp4`;
+        const { error: uploadErr } = await supabase.storage
+          .from("videos")
+          .upload(storagePath, videoBuffer, { contentType: "video/mp4", upsert: true });
+
+        if (uploadErr) {
+          console.error("[compose-video:single:local] Storage upload failed:", uploadErr.message);
+          return NextResponse.json({ success: false, error: "Assembled but storage upload failed" }, { status: 500 });
+        }
+
+        const { data: { publicUrl } } = supabase.storage.from("videos").getPublicUrl(storagePath);
+        return NextResponse.json({ success: true, video_url: publicUrl, has_audio: !!singleVoiceUrl });
+
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Local compose failed";
+        console.error("[compose-video:single:local]", msg);
+        return NextResponse.json({ success: false, error: msg }, { status: 500 });
+      } finally {
+        for (const p of paths) { try { unlinkSync(p); } catch { /* already gone */ } }
+      }
+    }
+  }
+
+  // ── Multi-clip (shot-plan) mode — projectId required ────────────────────────
   if (!projectId?.trim()) {
     return NextResponse.json({ success: false, error: "Missing required field: projectId" }, { status: 400 });
   }
@@ -119,75 +261,6 @@ export async function POST(request: Request) {
       { success: false, error: "Video assembly service is not configured. Please contact support." },
       { status: 503 },
     );
-  }
-
-  // ── Single-clip mode ─────────────────────────────────────────────────────────
-  // When videoUrl is supplied directly (e.g. cinematic quick preview), bypass DB
-  // shot lookup and compose the single clip with optional voiceover immediately.
-  if (body.videoUrl?.trim()) {
-    const { videoUrl: singleClipUrl, voiceoverUrl: singleVoiceUrl } = body;
-
-    console.log(`[compose-video:single] videoUrl=${singleClipUrl}, hasVoiceover=${!!singleVoiceUrl}`);
-
-    let clipBlob: Blob;
-    let voiceBlob: Blob | null = null;
-    try {
-      clipBlob = await fetchBlob(singleClipUrl!, "single clip");
-      if (singleVoiceUrl) voiceBlob = await fetchBlob(singleVoiceUrl, "voiceover");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to download media";
-      return NextResponse.json({ success: false, error: msg }, { status: 502 });
-    }
-
-    const form = new FormData();
-    form.append("clips", clipBlob, "shot_1.mp4");
-    if (voiceBlob) form.append("voiceover", voiceBlob, "voiceover.mp3");
-    form.append("shot_plan", JSON.stringify({
-      shots: [{ duration: 8, energy_curve: "sustain", transition_in: "hard_cut", transition_duration: 0, zoom_effect: false }],
-    }));
-
-    let composeRes: Response;
-    try {
-      composeRes = await fetchWithTimeout(
-        `${composerUrl}/compose`,
-        { method: "POST", headers: { "x-api-key": composerKey ?? "" }, body: form },
-        120_000,
-      );
-    } catch (err) {
-      const isTimeout = err instanceof Error && err.name === "AbortError";
-      return NextResponse.json(
-        { success: false, error: isTimeout ? "Composition timed out" : "Composer unavailable" },
-        { status: 504 },
-      );
-    }
-
-    if (!composeRes.ok) {
-      let msg = `Composer HTTP ${composeRes.status}`;
-      try { const b = await composeRes.json() as { error?: string }; if (b.error) msg = b.error; } catch { /* ignore */ }
-      return NextResponse.json({ success: false, error: msg }, { status: 502 });
-    }
-
-    const composeResult = await composeRes.json() as { success: boolean; video_url: string; error?: string };
-    if (!composeResult.success || !composeResult.video_url) {
-      return NextResponse.json({ success: false, error: composeResult.error ?? "Compose failed" }, { status: 500 });
-    }
-
-    const videoBlob = await fetchBlob(
-      composeResult.video_url.startsWith("http") ? composeResult.video_url : `${composerUrl}${composeResult.video_url}`,
-      "composed video",
-    );
-    const storagePath = `renders/${user.id}/${Date.now()}/preview.mp4`;
-    const { error: uploadErr } = await supabase.storage
-      .from("videos")
-      .upload(storagePath, await videoBlob.arrayBuffer(), { contentType: "video/mp4", upsert: true });
-
-    if (uploadErr) {
-      console.error("[compose-video:single] Storage upload failed:", uploadErr.message);
-      return NextResponse.json({ success: false, error: "Assembled but storage upload failed" }, { status: 500 });
-    }
-
-    const { data: { publicUrl } } = supabase.storage.from("videos").getPublicUrl(storagePath);
-    return NextResponse.json({ success: true, video_url: publicUrl, has_audio: !!voiceBlob });
   }
 
   // ── Load shots (no DB ordering — compile stage owns ordering) ────────────
