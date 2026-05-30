@@ -117,21 +117,37 @@ export async function POST(req: Request) {
   );
 
   const clip_urls: string[] = [];
+  const extractedUrls: Array<string | null> = [];
   for (const r of results) {
     if (r.status === "fulfilled") {
       clip_urls.push(r.value);
+      extractedUrls.push(r.value);
     } else {
+      extractedUrls.push(null);
       console.error("[cinematic-sequence] settled rejection:", r.reason instanceof Error ? r.reason.message : r.reason);
     }
   }
 
-  console.log(`[cinematic-sequence] SUMMARY clips_ok=${clip_urls.length}/${prompts.length}`, clipReports.join(" | "));
+  const successfulClips = clip_urls.length;
+  const failedClips = prompts.length - successfulClips;
+  const clipsAttempted = prompts.length;
+
+  console.log(`[cinematic-sequence] SUMMARY clipsAttempted=${clipsAttempted} successfulClips=${successfulClips} failedClips=${failedClips}`);
+  console.log(`[cinematic-sequence] extractedUrls=${JSON.stringify(extractedUrls)}`);
+  console.log(`[cinematic-sequence] clip_urls.length === 0: ${clip_urls.length === 0}`);
 
   if (!clip_urls.length) {
-    return Response.json({
+    const errorPayload = {
       error: "All clips failed to generate",
-      clip_reports: clipReports,
-    }, { status: 500 });
+      SEQUENCE_ROUTE_VERSION,
+      clipsAttempted,
+      successfulClips,
+      failedClips,
+      extractedUrls,
+      clipReports,
+    };
+    console.error("[cinematic-sequence] FATAL PAYLOAD", JSON.stringify(errorPayload, null, 2));
+    return Response.json(errorPayload, { status: 500 });
   }
 
   let stitched_url = clip_urls[0];
