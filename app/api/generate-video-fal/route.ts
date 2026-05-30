@@ -9,7 +9,9 @@ const FAL_MODELS: Record<string, string> = {
 
 export async function POST(req: Request) {
   const falKey = process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY;
-  console.log('FAL key present:', !!falKey, 'key name:', process.env.FAL_API_KEY ? 'FAL_API_KEY' : process.env.FALAI_API_KEY ? 'FALAI_API_KEY' : 'none');
+  console.log('[generate-video-fal] === REQUEST START ===');
+  console.log('[generate-video-fal] FAL_API_KEY present:', !!process.env.FAL_API_KEY, '| FALAI_API_KEY present:', !!process.env.FALAI_API_KEY);
+  console.log('[generate-video-fal] key length:', falKey?.length ?? 0, '| last4:', falKey ? falKey.slice(-4) : 'none');
 
   const { prompt, image_url, model = "fast", niche } = await req.json();
   console.log('[generate-video-fal] payload:', { model, prompt: prompt?.substring(0, 80), has_image: !!image_url, niche });
@@ -38,13 +40,12 @@ export async function POST(req: Request) {
       console.log('Using image-to-video with:', image_url.substring(0, 80));
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const result = await (fal as any).subscribe("fal-ai/kling-video/v1.6/pro/image-to-video", {
+        const result = await (fal as any).subscribe("fal-ai/kling-video/v1.6/standard/image-to-video", {
           input: {
             image_url,
             prompt: cinemaPrompt,
-            duration: "3",
+            duration: "5",
             aspect_ratio: "9:16",
-            cfg_scale: 0.5,
           },
           onQueueUpdate: (update: unknown) => {
             console.log("Kling i2v status:", (update as { status?: string })?.status);
@@ -63,30 +64,29 @@ export async function POST(req: Request) {
 
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        console.error("Kling i2v failed, falling back to text-to-video:", msg);
-        // Fall through to minimax text-to-video below
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const errBody = (err as any)?.body;
+        console.error("[generate-video-fal] Kling i2v FAILED — status:", (err as any)?.status, "| msg:", msg, "| body:", JSON.stringify(errBody ?? null));
+        // Fall through to fast-animatediff below
       }
     }
 
-    // No image or image-to-video failed → fast-animatediff text-to-video
-    console.log('Using text-to-video (fast-animatediff)');
+    // No image or image-to-video failed → Kling standard text-to-video
+    console.log('[generate-video-fal] Using text-to-video (Kling v1.6 standard)');
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result = await (fal as any).subscribe("fal-ai/fast-animatediff/turbo/text-to-video", {
+      const result = await (fal as any).subscribe("fal-ai/kling-video/v1.6/standard/text-to-video", {
         input: {
           prompt: cinemaPrompt,
-          num_frames: 16,
-          num_inference_steps: 4,
-          fps: 8,
-          width: 512,
-          height: 896,
+          duration: "5",
+          aspect_ratio: "9:16",
         },
         onQueueUpdate: (update: unknown) => {
-          console.log("fast-animatediff status:", (update as { status?: string })?.status);
+          console.log("[generate-video-fal] Kling t2v status:", (update as { status?: string })?.status);
         },
       });
 
-      console.log("fast-animatediff result:", JSON.stringify(result).slice(0, 300));
+      console.log("[generate-video-fal] Kling t2v result:", JSON.stringify(result).slice(0, 300));
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const r = result as any;
@@ -98,20 +98,26 @@ export async function POST(req: Request) {
 
     } catch (minimaxErr) {
       const minimaxMsg = minimaxErr instanceof Error ? minimaxErr.message : String(minimaxErr);
-      console.log("fast-animatediff failed, trying svd-lcm fallback:", minimaxMsg);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const animBody = (minimaxErr as any)?.body;
+      console.error("[generate-video-fal] fast-animatediff FAILED — status:", (minimaxErr as any)?.status, "| msg:", minimaxMsg, "| body:", JSON.stringify(animBody ?? null));
 
-      // Last resort: fast-svd-lcm
+      // Last resort: Kling standard image-to-video (if image present) or t2v retry
       try {
+        const fallbackModel = hasImage
+          ? "fal-ai/kling-video/v1.6/standard/image-to-video"
+          : "fal-ai/kling-video/v1.6/standard/text-to-video";
+        console.log("[generate-video-fal] fallback model:", fallbackModel);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const fallback = await (fal as any).subscribe("fal-ai/fast-svd-lcm", {
+        const fallback = await (fal as any).subscribe(fallbackModel, {
           input: {
+            prompt: cinemaPrompt,
             ...(hasImage ? { image_url } : {}),
-            motion_bucket_id: 127,
-            cond_aug: 0.02,
-            steps: 4,
+            duration: "5",
+            aspect_ratio: "9:16",
           },
           onQueueUpdate: (update: unknown) => {
-            console.log("svd-lcm status:", (update as { status?: string })?.status);
+            console.log("[generate-video-fal] fallback status:", (update as { status?: string })?.status);
           },
         });
 
@@ -123,7 +129,10 @@ export async function POST(req: Request) {
 
       } catch (fallbackErr) {
         const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
-        console.error("all fast models failed:", { minimaxMsg, fallbackMsg });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const svdBody = (fallbackErr as any)?.body;
+        console.error("[generate-video-fal] fast-svd-lcm FAILED — status:", (fallbackErr as any)?.status, "| msg:", fallbackMsg, "| body:", JSON.stringify(svdBody ?? null));
+        console.error("[generate-video-fal] ALL MODELS FAILED:", { minimaxMsg, fallbackMsg });
         return Response.json({ error: `Video generation failed: ${minimaxMsg}` }, { status: 500 });
       }
     }
