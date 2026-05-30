@@ -14,6 +14,7 @@
 
 import { fal } from "@fal-ai/client";
 import type { ShotPacket } from "./types/shot";
+import { extractVideoUrl } from "./video-models";
 
 // ── fal.ai config ─────────────────────────────────────────────────────────────
 
@@ -216,16 +217,8 @@ export function seedanceDuration(seconds: number): string {
   return String(Math.max(5, Math.min(10, Math.round(seconds || 5))));
 }
 
-// Extract video URL from any fal.ai response shape
-export function extractVideoUrl(result: unknown): string | undefined {
-  const r = result as Record<string, unknown> | null | undefined;
-  return (
-    (r?.video as { url?: string })?.url ??
-    (r?.data as { video?: { url?: string } })?.video?.url ??
-    (r?.output as { video_url?: string })?.video_url ??
-    undefined
-  );
-}
+// Re-exported for callers that imported extractVideoUrl from this module.
+export { extractVideoUrl };
 
 async function executeFalShot(shot: ShotPacket): Promise<ShotExecutionResult> {
   const prompt = augmentPrompt(shot);

@@ -1,5 +1,5 @@
 import { fal } from "@fal-ai/client";
-import { KLING_I2V_MODEL, KLING_T2V_MODEL, RUNWAY_MODEL } from "@/lib/video-models";
+import { KLING_I2V_MODEL, KLING_T2V_MODEL, RUNWAY_MODEL, extractVideoUrl } from "@/lib/video-models";
 
 export const maxDuration = 300;
 
@@ -55,8 +55,7 @@ export async function POST(req: Request) {
         });
         console.log('[generate-video-fal] i2v result:', JSON.stringify(result).slice(0, 200));
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const r = result as any;
-        const videoUrl: string | undefined = r?.video?.url ?? r?.video_url ?? r?.url ?? r?.output?.[0];
+        const videoUrl = extractVideoUrl(result);
         if (!videoUrl) throw new Error(`${activeModel} returned no video URL`);
         return Response.json({ video_url: videoUrl, status: "completed" });
       } catch (err) {
@@ -78,8 +77,7 @@ export async function POST(req: Request) {
       });
       console.log('[generate-video-fal] t2v result:', JSON.stringify(result).slice(0, 300));
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const r = result as any;
-      const videoUrl: string | undefined = r?.video?.url ?? r?.output?.[0] ?? r?.video_url ?? r?.url;
+      const videoUrl = extractVideoUrl(result);
       if (!videoUrl) throw new Error(`${activeModel} returned no video URL`);
       return Response.json({ video_url: videoUrl, status: "completed" });
     } catch (err) {

@@ -26,3 +26,20 @@ for (const m of ACTIVE_MODELS) {
 }
 
 console.log("[video-models] active models:", ACTIVE_MODELS.join(", "));
+
+// ── Shared response URL extractor ─────────────────────────────────────────────
+// fal.ai wraps results differently depending on the SDK version and model.
+// Confirmed response shapes:
+//   { data: { video: { url } } }   ← Kling v1.6 via fal.subscribe()
+//   { video: { url } }             ← some older models
+//   { output: { video_url } }      ← Runway and others
+// Use this function everywhere — never write inline r?.video?.url extraction.
+export function extractVideoUrl(result: unknown): string | undefined {
+  const r = result as Record<string, unknown> | null | undefined;
+  return (
+    (r?.data  as { video?: { url?: string } })?.video?.url ??
+    (r?.video as { url?: string })?.url ??
+    (r?.output as { video_url?: string })?.video_url ??
+    undefined
+  );
+}

@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { fal } from "@fal-ai/client";
-import { KLING_I2V_MODEL, KLING_T2V_MODEL } from "@/lib/video-models";
+import { KLING_I2V_MODEL, KLING_T2V_MODEL, extractVideoUrl } from "@/lib/video-models";
 
 export const maxDuration = 300;
 
@@ -62,17 +62,23 @@ export async function POST(req: Request) {
             logs: false,
             pollInterval: 5000,
           });
+          const url = extractVideoUrl(result);
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const r = result as any;
-          console.log(`${label} i2v raw result keys=${Object.keys(r ?? {}).join(",")}`);
-          const url: string | undefined = r?.video?.url ?? r?.video_url ?? r?.url;
+          console.log(`${label} i2v raw result keys=${Object.keys(r ?? {}).join(",")} extractedUrl=${url}`);
           if (!url) {
+            console.error(`${label} i2v URL extraction failed`, {
+              responseKeys: Object.keys(r ?? {}),
+              hasData: !!r?.data,
+              hasVideo: !!r?.data?.video,
+              rawResult: JSON.stringify(result).substring(0, 300),
+            });
             const msg = `clip ${i + 1}: no video URL from i2v — result=${JSON.stringify(result).substring(0, 300)}`;
             clipReports.push(`Clip ${i + 1} | i2v | FAIL (no url) | ${msg}`);
             throw new Error(msg);
           }
           clipReports.push(`Clip ${i + 1} | ${KLING_I2V_MODEL} | OK | ${url.substring(0, 80)}`);
-          console.log(`${label} i2v OK url=${url.substring(0, 80)}`);
+          console.log(`${label} i2v OK clip=${i + 1} extractedUrl=${url.substring(0, 80)}`);
           return url;
         } catch (err) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -93,17 +99,23 @@ export async function POST(req: Request) {
           logs: false,
           pollInterval: 5000,
         });
+        const url = extractVideoUrl(result);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const r = result as any;
-        console.log(`${label} t2v raw result keys=${Object.keys(r ?? {}).join(",")}`);
-        const url: string | undefined = r?.video?.url ?? r?.video_url ?? r?.url;
+        console.log(`${label} t2v raw result keys=${Object.keys(r ?? {}).join(",")} extractedUrl=${url}`);
         if (!url) {
+          console.error(`${label} t2v URL extraction failed`, {
+            responseKeys: Object.keys(r ?? {}),
+            hasData: !!r?.data,
+            hasVideo: !!r?.data?.video,
+            rawResult: JSON.stringify(result).substring(0, 300),
+          });
           const msg = `clip ${i + 1}: no video URL from t2v — result=${JSON.stringify(result).substring(0, 300)}`;
           clipReports.push(`Clip ${i + 1} | t2v | FAIL (no url) | ${msg}`);
           throw new Error(msg);
         }
         clipReports.push(`Clip ${i + 1} | ${KLING_T2V_MODEL} | OK | ${url.substring(0, 80)}`);
-        console.log(`${label} t2v OK url=${url.substring(0, 80)}`);
+        console.log(`${label} t2v OK clip=${i + 1} extractedUrl=${url.substring(0, 80)}`);
         return url;
       } catch (err) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
