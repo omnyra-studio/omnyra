@@ -178,7 +178,7 @@ async function executeHeyGenShot(
 export const SEEDANCE_T2V_MODEL = "fal-ai/kling-video/v1.6/standard/text-to-video";
 export const SEEDANCE_I2V_MODEL = "fal-ai/kling-video/v1.6/standard/image-to-video";
 // Kling v3 Pro — fallback for image-to-video if Seedance 2 fails
-export const KLING_I2V_MODEL    = "fal-ai/kling-video/v3/pro/image-to-video";
+export const KLING_I2V_MODEL    = "fal-ai/kling-video/v1.6/standard/image-to-video";
 
 /**
  * Injects camera direction into the visual prompt so fal models follow it.

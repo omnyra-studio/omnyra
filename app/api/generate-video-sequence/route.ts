@@ -1,4 +1,5 @@
 import { fal } from "@fal-ai/client";
+import { KLING_I2V_MODEL } from "@/lib/video-models";
 
 export const maxDuration = 300;
 
@@ -37,14 +38,13 @@ export async function POST(req: Request) {
       } else {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const result = await (fal as any).subscribe(
-          "fal-ai/kling-video/v1.6/pro/image-to-video",
+          KLING_I2V_MODEL,
           {
             input: {
               image_url,
               prompt: `${prompt}, cinematic motion, smooth movement`,
               duration: "5",
               aspect_ratio: "9:16",
-              cfg_scale: 0.5,
             },
           }
         );

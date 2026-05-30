@@ -1,11 +1,21 @@
 import { fal } from "@fal-ai/client";
+import { KLING_I2V_MODEL, KLING_T2V_MODEL, RUNWAY_MODEL } from "@/lib/video-models";
 
 export const maxDuration = 300;
 
+// Named model map for non-fast (explicit model) requests
 const FAL_MODELS: Record<string, string> = {
-  runway: "fal-ai/runway-gen4/turbo",
-  kling:  "fal-ai/kling-video/v1.6/pro/text-to-video",
+  runway: RUNWAY_MODEL,
+  kling:  KLING_T2V_MODEL,
 };
+
+function falError(model: string, status: number | undefined, msg: string, body: unknown): Response {
+  const detail = body ? JSON.stringify(body).slice(0, 400) : msg;
+  return Response.json(
+    { error: `Provider: fal.ai | Model: ${model} | Status: ${status ?? "unknown"} | Message: ${detail}` },
+    { status: 500 },
+  );
+}
 
 export async function POST(req: Request) {
   const falKey = process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY;
@@ -15,6 +25,7 @@ export async function POST(req: Request) {
 
   const { prompt, image_url, model = "fast", niche } = await req.json();
   console.log('[generate-video-fal] payload:', { model, prompt: prompt?.substring(0, 80), has_image: !!image_url, niche });
+
   if (!falKey) {
     return Response.json({ error: "FAL_API_KEY not configured" }, { status: 500 });
   }
@@ -30,122 +41,64 @@ export async function POST(req: Request) {
 
   if (model === "fast") {
     const hasImage = image_url && typeof image_url === 'string' && image_url.startsWith('https://');
+    console.log('[generate-video-fal] hasImage:', hasImage, '| image_url prefix:', image_url?.substring(0, 60));
 
-    console.log('Video generation — image_url:', image_url?.substring(0, 80));
-    console.log('Video generation — prompt:', prompt?.substring(0, 120));
-    console.log('Video generation — hasImage:', hasImage);
-
-    // Image provided → use Kling image-to-video (matches the selected scene)
     if (hasImage) {
-      console.log('Using image-to-video with:', image_url.substring(0, 80));
+      // Path A: image-to-video
+      const activeModel = KLING_I2V_MODEL;
+      console.log('[generate-video-fal] model=', activeModel);
       try {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const result = await (fal as any).subscribe("fal-ai/kling-video/v1.6/standard/image-to-video", {
-          input: {
-            image_url,
-            prompt: cinemaPrompt,
-            duration: "5",
-            aspect_ratio: "9:16",
-          },
-          onQueueUpdate: (update: unknown) => {
-            console.log("Kling i2v status:", (update as { status?: string })?.status);
-          },
+        const result = await (fal as any).subscribe(activeModel, {
+          input: { image_url, prompt: cinemaPrompt, duration: "5", aspect_ratio: "9:16" },
+          onQueueUpdate: (u: unknown) => console.log('[generate-video-fal] i2v status:', (u as { status?: string })?.status),
         });
-
-        console.log("Kling i2v result:", JSON.stringify(result).slice(0, 200));
-
+        console.log('[generate-video-fal] i2v result:', JSON.stringify(result).slice(0, 200));
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const r = result as any;
-        const videoUrl: string | undefined =
-          r?.video?.url ?? r?.video_url ?? r?.url ?? r?.output?.[0];
-
-        if (!videoUrl) throw new Error("Kling i2v returned no video URL");
+        const videoUrl: string | undefined = r?.video?.url ?? r?.video_url ?? r?.url ?? r?.output?.[0];
+        if (!videoUrl) throw new Error(`${activeModel} returned no video URL`);
         return Response.json({ video_url: videoUrl, status: "completed" });
-
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const errBody = (err as any)?.body;
-        console.error("[generate-video-fal] Kling i2v FAILED — status:", (err as any)?.status, "| msg:", msg, "| body:", JSON.stringify(errBody ?? null));
-        // Fall through to fast-animatediff below
+        const e = err as any;
+        console.error('[generate-video-fal] i2v FAILED — model:', activeModel, '| status:', e?.status, '| msg:', e?.message, '| body:', JSON.stringify(e?.body ?? null));
+        // Fall through to text-to-video
       }
     }
 
-    // No image or image-to-video failed → Kling standard text-to-video
-    console.log('[generate-video-fal] Using text-to-video (Kling v1.6 standard)');
+    // Path B: text-to-video (primary or i2v fallback)
+    const activeModel = KLING_T2V_MODEL;
+    console.log('[generate-video-fal] model=', activeModel);
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result = await (fal as any).subscribe("fal-ai/kling-video/v1.6/standard/text-to-video", {
-        input: {
-          prompt: cinemaPrompt,
-          duration: "5",
-          aspect_ratio: "9:16",
-        },
-        onQueueUpdate: (update: unknown) => {
-          console.log("[generate-video-fal] Kling t2v status:", (update as { status?: string })?.status);
-        },
+      const result = await (fal as any).subscribe(activeModel, {
+        input: { prompt: cinemaPrompt, duration: "5", aspect_ratio: "9:16" },
+        onQueueUpdate: (u: unknown) => console.log('[generate-video-fal] t2v status:', (u as { status?: string })?.status),
       });
-
-      console.log("[generate-video-fal] Kling t2v result:", JSON.stringify(result).slice(0, 300));
-
+      console.log('[generate-video-fal] t2v result:', JSON.stringify(result).slice(0, 300));
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const r = result as any;
-      const videoUrl: string | undefined =
-        r?.video?.url ?? r?.output?.[0] ?? r?.video_url ?? r?.url;
-
-      if (!videoUrl) throw new Error("fast-animatediff returned no video URL");
+      const videoUrl: string | undefined = r?.video?.url ?? r?.output?.[0] ?? r?.video_url ?? r?.url;
+      if (!videoUrl) throw new Error(`${activeModel} returned no video URL`);
       return Response.json({ video_url: videoUrl, status: "completed" });
-
-    } catch (minimaxErr) {
-      const minimaxMsg = minimaxErr instanceof Error ? minimaxErr.message : String(minimaxErr);
+    } catch (err) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const animBody = (minimaxErr as any)?.body;
-      console.error("[generate-video-fal] fast-animatediff FAILED — status:", (minimaxErr as any)?.status, "| msg:", minimaxMsg, "| body:", JSON.stringify(animBody ?? null));
-
-      // Last resort: Kling standard image-to-video (if image present) or t2v retry
-      try {
-        const fallbackModel = hasImage
-          ? "fal-ai/kling-video/v1.6/standard/image-to-video"
-          : "fal-ai/kling-video/v1.6/standard/text-to-video";
-        console.log("[generate-video-fal] fallback model:", fallbackModel);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const fallback = await (fal as any).subscribe(fallbackModel, {
-          input: {
-            prompt: cinemaPrompt,
-            ...(hasImage ? { image_url } : {}),
-            duration: "5",
-            aspect_ratio: "9:16",
-          },
-          onQueueUpdate: (update: unknown) => {
-            console.log("[generate-video-fal] fallback status:", (update as { status?: string })?.status);
-          },
-        });
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const f = fallback as any;
-        const fallbackUrl: string | undefined = f?.video?.url ?? f?.output?.[0] ?? f?.url;
-        if (!fallbackUrl) throw new Error("svd-lcm returned no video URL");
-        return Response.json({ video_url: fallbackUrl, status: "completed" });
-
-      } catch (fallbackErr) {
-        const fallbackMsg = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const svdBody = (fallbackErr as any)?.body;
-        console.error("[generate-video-fal] fast-svd-lcm FAILED — status:", (fallbackErr as any)?.status, "| msg:", fallbackMsg, "| body:", JSON.stringify(svdBody ?? null));
-        console.error("[generate-video-fal] ALL MODELS FAILED:", { minimaxMsg, fallbackMsg });
-        return Response.json({ error: `Video generation failed: ${minimaxMsg}` }, { status: 500 });
-      }
+      const e = err as any;
+      console.error('[generate-video-fal] t2v FAILED — model:', activeModel, '| status:', e?.status, '| msg:', e?.message, '| body:', JSON.stringify(e?.body ?? null));
+      return falError(activeModel, e?.status, e?.message ?? String(err), e?.body);
     }
   }
 
-  // Non-fast models (runway, kling text-to-video)
+  // Non-fast: explicit model selection (runway / kling)
   const selectedModel = FAL_MODELS[model] ?? FAL_MODELS.runway;
+  console.log('[generate-video-fal] explicit model=', selectedModel);
+
   const timeout = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error("Generation timed out after 240s")), 240000)
+    setTimeout(() => reject(new Error("Generation timed out after 240s")), 240_000)
   );
 
   try {
-    console.log("fal.ai model used:", selectedModel);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await Promise.race([
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -153,22 +106,15 @@ export async function POST(req: Request) {
         input: {
           prompt: cinemaPrompt,
           ...(image_url ? { image_url } : {}),
-          num_frames: 97,
-          frame_rate: 24,
-          height: 480,
-          width: 272,
-          guidance_scale: 3,
-          num_inference_steps: 30,
+          duration: "5",
+          aspect_ratio: "9:16",
         },
-        onQueueUpdate: (update: unknown) => {
-          console.log("fal.ai update:", JSON.stringify(update));
-        },
+        onQueueUpdate: (u: unknown) => console.log('[generate-video-fal] explicit model status:', JSON.stringify(u)),
       }),
       timeout,
     ]);
 
-    console.log("fal.ai result:", JSON.stringify(result).slice(0, 300));
-
+    console.log('[generate-video-fal] explicit model result:', JSON.stringify(result).slice(0, 300));
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const r = result as any;
     const videoUrl: string | undefined =
@@ -176,16 +122,15 @@ export async function POST(req: Request) {
       r?.output?.video?.url ?? r?.videos?.[0]?.url;
 
     if (!videoUrl) {
-      console.error("fal.ai no video URL:", JSON.stringify(result).slice(0, 500));
-      return Response.json({ error: "fal.ai returned no video URL" }, { status: 500 });
+      console.error('[generate-video-fal] no video URL in result:', JSON.stringify(result).slice(0, 500));
+      return falError(selectedModel, undefined, "no video URL in response", result);
     }
 
     return Response.json({ video_url: videoUrl, status: "completed" });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const body = (err as any)?.body;
-    console.error("fal.ai error:", msg, body ? JSON.stringify(body).slice(0, 400) : "");
-    return Response.json({ error: msg }, { status: 500 });
+    const e = err as any;
+    console.error('[generate-video-fal] explicit model FAILED — model:', selectedModel, '| status:', e?.status, '| msg:', e?.message);
+    return falError(selectedModel, e?.status, e?.message ?? String(err), e?.body);
   }
 }
