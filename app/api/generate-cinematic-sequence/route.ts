@@ -33,42 +33,82 @@ export async function POST(req: Request) {
     return Response.json({ error: "prompts required" }, { status: 400 });
   }
 
-  const duration = String(Math.max(5, Math.min(10, Math.round(clipDuration ?? CLIP_SECONDS))));
+  // Kling v1.6 standard duration is an enum: "5" | "10" only.
+  // Any other integer (e.g. "8") is rejected with a 422 validation error.
+  const rawSeconds = Math.round(clipDuration ?? CLIP_SECONDS);
+  const duration = rawSeconds <= 7 ? "5" : "10";
   const hasImage = typeof imageUrl === "string" && imageUrl.startsWith("https://");
 
-  console.log(`[generate-cinematic-sequence] clips=${prompts.length} duration=${duration} hasImage=${hasImage}`);
+  console.log(`[generate-cinematic-sequence] clips=${prompts.length} rawSeconds=${rawSeconds} duration=${duration} hasImage=${hasImage} imageUrlPrefix=${typeof imageUrl === "string" ? imageUrl.substring(0, 60) : imageUrl}`);
+
+  const clipReports: string[] = [];
 
   const results = await Promise.allSettled(
     prompts.map(async (prompt, i) => {
+      const label = `[clip ${i + 1}/${prompts.length}]`;
+      console.log(`${label} prompt="${prompt.substring(0, 100)}" hasImage=${hasImage}`);
+
       if (hasImage) {
+        const i2vInput = { prompt, image_url: imageUrl, duration, aspect_ratio: "9:16", generate_audio: false };
+        console.log(`${label} → ${KLING_I2V_MODEL} payload=${JSON.stringify({ ...i2vInput, image_url: imageUrl!.substring(0, 60), prompt: prompt.substring(0, 80) })}`);
         try {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const result = await (fal as any).subscribe(KLING_I2V_MODEL, {
-            input: { prompt, image_url: imageUrl, duration, aspect_ratio: "9:16", generate_audio: false },
+            input: i2vInput,
             logs: false,
             pollInterval: 5000,
           });
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const r = result as any;
+          console.log(`${label} i2v raw result keys=${Object.keys(r ?? {}).join(",")}`);
           const url: string | undefined = r?.video?.url ?? r?.video_url ?? r?.url;
-          if (!url) throw new Error(`clip ${i + 1}: no video URL from i2v`);
+          if (!url) {
+            const msg = `clip ${i + 1}: no video URL from i2v — result=${JSON.stringify(result).substring(0, 300)}`;
+            clipReports.push(`Clip ${i + 1} | i2v | FAIL (no url) | ${msg}`);
+            throw new Error(msg);
+          }
+          clipReports.push(`Clip ${i + 1} | ${KLING_I2V_MODEL} | OK | ${url.substring(0, 80)}`);
+          console.log(`${label} i2v OK url=${url.substring(0, 80)}`);
           return url;
         } catch (err) {
-          console.warn(`[cinematic-sequence] i2v failed for clip ${i + 1}, falling back to t2v:`, err instanceof Error ? err.message : err);
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const e = err as any;
+          const detail = `status=${e?.status ?? "?"} message=${e?.message ?? String(err)} body=${JSON.stringify(e?.body ?? null).substring(0, 300)}`;
+          console.warn(`${label} i2v FAILED — ${detail} — falling back to t2v`);
+          clipReports.push(`Clip ${i + 1} | ${KLING_I2V_MODEL} | FAIL | ${detail}`);
         }
       }
-      // text-to-video path (primary when no image, or i2v fallback)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result = await (fal as any).subscribe(KLING_T2V_MODEL, {
-        input: { prompt, duration, aspect_ratio: "9:16", generate_audio: false },
-        logs: false,
-        pollInterval: 5000,
-      });
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const r = result as any;
-      const url: string | undefined = r?.video?.url ?? r?.video_url ?? r?.url;
-      if (!url) throw new Error(`clip ${i + 1}: no video URL from t2v`);
-      return url;
+
+      // text-to-video path
+      const t2vInput = { prompt, duration, aspect_ratio: "9:16", generate_audio: false };
+      console.log(`${label} → ${KLING_T2V_MODEL} payload=${JSON.stringify({ ...t2vInput, prompt: prompt.substring(0, 80) })}`);
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await (fal as any).subscribe(KLING_T2V_MODEL, {
+          input: t2vInput,
+          logs: false,
+          pollInterval: 5000,
+        });
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const r = result as any;
+        console.log(`${label} t2v raw result keys=${Object.keys(r ?? {}).join(",")}`);
+        const url: string | undefined = r?.video?.url ?? r?.video_url ?? r?.url;
+        if (!url) {
+          const msg = `clip ${i + 1}: no video URL from t2v — result=${JSON.stringify(result).substring(0, 300)}`;
+          clipReports.push(`Clip ${i + 1} | t2v | FAIL (no url) | ${msg}`);
+          throw new Error(msg);
+        }
+        clipReports.push(`Clip ${i + 1} | ${KLING_T2V_MODEL} | OK | ${url.substring(0, 80)}`);
+        console.log(`${label} t2v OK url=${url.substring(0, 80)}`);
+        return url;
+      } catch (err) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const e = err as any;
+        const detail = `status=${e?.status ?? "?"} message=${e?.message ?? String(err)} body=${JSON.stringify(e?.body ?? null).substring(0, 300)}`;
+        console.error(`${label} t2v FAILED — ${detail}`);
+        clipReports.push(`Clip ${i + 1} | ${KLING_T2V_MODEL} | FAIL | ${detail}`);
+        throw new Error(detail);
+      }
     }),
   );
 
@@ -77,12 +117,17 @@ export async function POST(req: Request) {
     if (r.status === "fulfilled") {
       clip_urls.push(r.value);
     } else {
-      console.error("[cinematic-sequence] clip failed:", r.reason);
+      console.error("[cinematic-sequence] settled rejection:", r.reason instanceof Error ? r.reason.message : r.reason);
     }
   }
 
+  console.log(`[cinematic-sequence] SUMMARY clips_ok=${clip_urls.length}/${prompts.length}`, clipReports.join(" | "));
+
   if (!clip_urls.length) {
-    return Response.json({ error: "All clips failed to generate" }, { status: 500 });
+    return Response.json({
+      error: "All clips failed to generate",
+      clip_reports: clipReports,
+    }, { status: 500 });
   }
 
   let stitched_url = clip_urls[0];
