@@ -73,13 +73,19 @@ export async function POST(req: Request) {
   const { jobId } = body;
   if (!jobId) return Response.json({ error: "jobId required" }, { status: 400 });
 
+  console.log(`[WORKER_RECEIVED] jobId=${jobId}`);
+
   // ── LAYER 1: Atomic lease acquisition ─────────────────────────────────────
   const workerId = crypto.randomUUID();
   const job = await claimStage(jobId, workerId);
 
   if (!job) {
+    console.log(`[WORKER_RECEIVED] jobId=${jobId} claimStage=null (already claimed or not queued) — skipping`);
     return Response.json({ acknowledged: true, skipped: true });
   }
+
+  console.log(`[CLAIM_SUCCESS] jobId=${jobId} stage=${job.stage} workerId=${workerId.slice(0, 8)}`);
+
 
   const origin = new URL(req.url).origin;
 
@@ -235,6 +241,7 @@ async function executeTtsStage(
   // Commit: cost first, then ledger — ordering ensures cost is always recorded
   await markCostCharged(job.id, "tts", reqHash, audioUrl);
   await completeLedgerEntry(job.id, "tts", workerId, audioUrl);
+  log(`[TTS_COMPLETE] audioUrl=${audioUrl.substring(0, 80)}`);
   await advanceFromTts(job, workerId, audioUrl, origin, log);
 }
 
@@ -247,6 +254,7 @@ async function advanceFromTts(
 ): Promise<void> {
   const stageOutputs = { ...(job.stage_outputs ?? {}), audio_url: audioUrl };
   const advanced = await advanceToNextStage(job.id, workerId, "animate", stageOutputs);
+  log(`[ADVANCE_TO_ANIMATE] advanced=${advanced} audio_url_present=${!!stageOutputs.audio_url}`);
   if (!advanced) { log("lock_lost during transition — abandoning"); return; }
   log("advanced → animate");
   await retrigger(origin, job.id, log);
@@ -261,6 +269,7 @@ async function executeAnimateStage(
   log: (msg: string) => void,
 ): Promise<void> {
   const audioUrl = job.stage_outputs?.audio_url;
+  log(`[ANIMATE_START] audio_url_present=${!!audioUrl} image_url=${job.input.image_url.substring(0, 60)}`);
   if (!audioUrl) {
     const msg = "audio_url missing from stage_outputs — TTS stage did not persist output";
     log(`ERROR: ${msg}`);
@@ -291,13 +300,13 @@ async function executeAnimateStage(
 
   // ── Kling animate ──────────────────────────────────────────────────────────
   await registerCostIntent(job.id, "animate", "kling", reqHash, dagNode.creditEstimate);
-  log(`kling START imageUrl=${job.input.image_url.substring(0, 60)}`);
+  log(`[FAL_REQUEST] kling imageUrl=${job.input.image_url.substring(0, 80)} fal_key_set=${!!(process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY)}`);
 
   let animatedVideoUrl: string;
   try {
     const t0 = Date.now();
     animatedVideoUrl = await animateImage(job.input.image_url);
-    log(`kling SUCCESS animatedUrl=${animatedVideoUrl.substring(0, 60)} elapsed=${Date.now() - t0}ms`);
+    log(`[FAL_RESPONSE] kling SUCCESS animatedUrl=${animatedVideoUrl.substring(0, 60)} elapsed=${Date.now() - t0}ms`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     log(`kling ERROR: ${msg}`);
@@ -405,8 +414,10 @@ async function executeLipsyncStage(
 // ── Internal ──────────────────────────────────────────────────────────────────
 
 async function retrigger(origin: string, jobId: string, log: (msg: string) => void): Promise<void> {
+  const url = `${origin}/api/avatar-worker`;
+  log(`[RETRIGGER_START] url=${url} jobId=${jobId} secret_set=${!!process.env.CRON_SECRET}`);
   try {
-    await fetch(`${origin}/api/avatar-worker`, {
+    const res = await fetch(url, {
       method:  "POST",
       headers: {
         "Content-Type":    "application/json",
@@ -414,7 +425,9 @@ async function retrigger(origin: string, jobId: string, log: (msg: string) => vo
       },
       body: JSON.stringify({ jobId }),
     });
+    const body = await res.text().catch(() => "");
+    log(`[RETRIGGER_RESPONSE] status=${res.status} ok=${res.ok} body=${body.substring(0, 200)}`);
   } catch (e) {
-    log(`retrigger failed: ${(e as Error)?.message}`);
+    log(`[RETRIGGER_RESPONSE] fetch_threw: ${(e as Error)?.message}`);
   }
 }
