@@ -64,6 +64,19 @@ export async function upsertBrandProfile(
   return row as BrandProfile;
 }
 
+export async function saveBrandProfile(profile: Partial<BrandProfile>): Promise<BrandProfile> {
+  const res = await fetch('/api/brand/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(profile),
+  })
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({})) as { error?: string }
+    throw new Error(err.error ?? 'Save failed')
+  }
+  return res.json() as Promise<BrandProfile>
+}
+
 export function getBrandSystemPrompt(brand: BrandProfile | null): string {
   if (!brand) return "";
   const parts: string[] = [];
