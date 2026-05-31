@@ -44,6 +44,8 @@ If you haven't already, run `setup.sql` once before any migration below.
 | 24 | `pipeline_observability.sql` | `render_pipeline_jobs`, `render_state_derived` view, `render_stage_timings` view | renders, render_events |
 | 25 | `product_intelligence.sql` | `product_behavior_graph`, `feature_lifecycle`, `generated_prds`, `feature_flags`, `ui_flow_proposals` | events |
 | 26 | `offer_throttling.sql` | `offer_log` + `can_show_offer` + `log_offer_shown` RPCs | revenue_events, user_revenue_state |
+| 27 | `avatar_pipeline_tables.sql` | `avatar_jobs`, `avatar_stage_ledger`, `external_api_cost_ledger` | auth.users |
+| 28 | `rename_heygen_shots_column.sql` | rename `shot_plans.heygen_shots` → `avatar_shots` | shot_plans |
 
 ## Notes
 

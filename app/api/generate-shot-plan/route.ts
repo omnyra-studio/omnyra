@@ -73,7 +73,7 @@ async function handler(request: Request): Promise<Response> {
         mode:                  result.meta.mode,
         shot_count:            result.meta.shot_count,
         total_duration_seconds: result.meta.total_duration,
-        heygen_shots:          result.meta.avatar_shots,
+        avatar_shots:          result.meta.avatar_shots,
         fal_shots:             result.meta.fal_shots,
         input_tokens:          result.meta.input_tokens,
         output_tokens:         result.meta.output_tokens,

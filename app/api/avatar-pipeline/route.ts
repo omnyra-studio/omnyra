@@ -387,7 +387,7 @@ export async function POST(request: Request) {
         },
       },
       // Force every motion parameter to natural maximum.
-      // These are the equivalent of the motion_settings block in the HeyGen spec.
+      // Motion parameters for Kling avatar animation.
       config: {
         motion_factor: 0.8,   // 0–1: head sway, micro-shifts, natural weight transfer
         sharpen:       true,  // compensates for motion blur
