@@ -1,4 +1,8 @@
 import OpenAI from "openai";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
+import { getBrandProfile, getBrandSystemPrompt } from "@/lib/brand";
+import { logUsageEvent } from "@/lib/cache";
 
 export async function POST(req: Request) {
   if (!process.env.OPENAI_API_KEY) {
@@ -11,7 +15,25 @@ export async function POST(req: Request) {
     return Response.json({ error: "script and num_segments required" }, { status: 400 });
   }
 
-  const prompt = `Split this script into exactly ${num_segments} visual scene segments for a cinematic video.
+  // Brand context — graceful fallback if unauthenticated
+  let brandContext = "";
+  let userId: string | null = null;
+  try {
+    const cookieStore = await cookies();
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { cookies: { getAll: () => cookieStore.getAll(), setAll: () => {} } },
+    );
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      userId = user.id;
+      const brand = await getBrandProfile(user.id);
+      brandContext = getBrandSystemPrompt(brand);
+    }
+  } catch { /* brand injection is optional */ }
+
+  const prompt = `Split this script into exactly ${num_segments} visual scene segments for a cinematic video.${brandContext}
 
 Script: ${script}
 Hook: ${hook ?? ""}
@@ -36,7 +58,10 @@ Return ONLY valid JSON. No markdown, no backticks:
     const response = await client.chat.completions.create({
       model: "gpt-4o",
       max_tokens: 1000,
-      messages: [{ role: "user", content: prompt }],
+      messages: [
+        ...(brandContext ? [{ role: "system" as const, content: `You are a cinematic scriptwriter.${brandContext}` }] : []),
+        { role: "user", content: prompt },
+      ],
       response_format: { type: "json_object" },
     });
 
@@ -45,6 +70,10 @@ Return ONLY valid JSON. No markdown, no backticks:
 
     if (!parsed.segments?.length) {
       return Response.json({ error: "No segments returned" }, { status: 500 });
+    }
+
+    if (userId) {
+      logUsageEvent(userId, "split-script", "generate", 1, { num_segments, niche });
     }
 
     return Response.json(parsed);

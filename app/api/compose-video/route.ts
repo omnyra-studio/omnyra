@@ -1,30 +1,17 @@
 /**
  * POST /api/compose-video
  *
- * Assembles executed shot clips + voiceover into a final video by calling the
- * omnyra-composer FFmpeg microservice on Railway/Render.
+ * Three dispatch modes (checked in order):
+ *   1. Cinematic multi-clip  — body.clipUrls[]   (Kling clips from generate-cinematic-sequence)
+ *   2. Single-clip preview   — body.videoUrl     (legacy / fast path)
+ *   3. Shot-plan DB          — body.projectId    (full render engine path)
  *
- * Pre-conditions (caller's responsibility):
- *   - All shots for the plan have been executed — each row in `shots` table
- *     has a non-null `clip_url` and `render_status = 'completed'`
- *   - A voiceover has been generated and is reachable at a URL
- *
- * Flow:
- *   1. Auth + parse body { projectId, shotPlanId?, voiceoverUrl? }
- *   2. Load shots from DB, ordered by shot_number
- *   3. Resolve voiceover URL (from body, or latest render_job, or renders table)
- *   4. Download clips + voiceover into memory as Blobs
- *   5. POST multipart/form-data to composer microservice
- *   6. Download composed video from composer
- *   7. Upload final MP4 to Supabase Storage (renders bucket)
- *   8. Update render_jobs row → completed + video_url
- *   9. Return { success, video_url, duration_seconds }
- *
- * Env vars required:
- *   COMPOSER_SERVICE_URL   e.g. https://omnyra-composer.up.railway.app
- *   COMPOSER_API_KEY       same value set on the microservice
+ * Env vars:
+ *   COMPOSER_SERVICE_URL   Railway composer endpoint
+ *   COMPOSER_API_KEY       Shared secret for Railway composer
  */
 
+// ── Imports (all static imports MUST precede side-effect statements) ───────────
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
@@ -32,11 +19,15 @@ import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
 import ffmpeg from "fluent-ffmpeg";
 import { tmpdir } from "os";
 import { join } from "path";
-import { writeFileSync, readFileSync, unlinkSync } from "fs";
+import { writeFileSync, readFileSync, unlinkSync, existsSync } from "fs";
 import { randomUUID } from "crypto";
-
-ffmpeg.setFfmpegPath(ffmpegInstaller.path);
-import { buildRenderContract, assertContractRenderable, RenderContractError, type ShotAssetInput, type ValidRenderContract } from "@/lib/timeline/build-contract";
+import {
+  buildRenderContract,
+  assertContractRenderable,
+  RenderContractError,
+  type ShotAssetInput,
+  type ValidRenderContract,
+} from "@/lib/timeline/build-contract";
 import { rebuildRender } from "@/lib/render/incremental-engine";
 import { processShardJob } from "@/lib/workers/shard-worker";
 import { getShardCache } from "@/lib/render/shard-cache";
@@ -44,52 +35,155 @@ import { mergeShards } from "@/lib/render/merge";
 import type { RenderShard, MergeResult } from "@/lib/render/types";
 import type { WorkerResult } from "@/lib/workers/types";
 
-export const maxDuration = 300; // Vercel Fluid Compute — 5 minute ceiling
+// Side-effect AFTER all imports — ffmpeg binary path resolution
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+
+export const maxDuration = 300; // Vercel Fluid Compute — 5-minute ceiling
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-interface ShotRow {
-  shot_id: string;
-  shot_number: number;
-  duration_seconds: number;
-  energy_curve: string;
-  transition_in: string | null;
-  transition_after: string | null;
-  transition_duration: number | null;
-  zoom_effect: boolean | null;
-  clip_url: string | null;
-  render_status: string | null;
-}
-
 interface ComposeBody {
-  projectId?: string;     // required for shot-plan mode; omit for single-clip mode
-  shotPlanId?: string;
-  voiceoverUrl?: string;  // optional — route will look it up in DB if absent
-  videoUrl?: string;      // single-clip mode: skip DB shot lookup, use URL directly
+  projectId?:    string;   // shot-plan mode
+  shotPlanId?:   string;
+  voiceoverUrl?: string;
+  videoUrl?:     string;   // single-clip mode
+  clipUrls?:     string[]; // cinematic multi-clip mode
+  clipDuration?: number;   // seconds per clip (default 10)
 }
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Private helpers ───────────────────────────────────────────────────────────
 
-async function fetchBlob(url: string, label: string): Promise<Blob> {
-  const res = await fetch(url, { cache: "no-store" });
-  if (!res.ok) {
-    throw new Error(`Failed to download ${label}: HTTP ${res.status} — ${url}`);
+/**
+ * ffprobe with hard timeout.
+ * Without a timeout, a corrupt or truncated MP4 can hang ffprobe indefinitely,
+ * blocking the entire route until Vercel's maxDuration kills it.
+ */
+function probeWithTimeout(
+  filePath: string,
+  label: string,
+  timeoutMs = 15_000,
+): Promise<ffmpeg.FfprobeData | null> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      console.warn(`[ffprobe] TIMEOUT probing ${label} after ${timeoutMs}ms`);
+      resolve(null);
+    }, timeoutMs);
+    ffmpeg.ffprobe(filePath, (err, data) => {
+      clearTimeout(timer);
+      if (err) {
+        console.warn(`[ffprobe] ERROR probing ${label}: ${err.message}`);
+        resolve(null);
+      } else {
+        resolve(data);
+      }
+    });
+  });
+}
+
+/**
+ * Download a URL to a Node.js Buffer with:
+ *   - AbortController timeout (prevents hanging on slow CDNs)
+ *   - Non-200 HTTP error surfacing
+ *   - Zero-byte guard (expired fal.ai URLs return 0 bytes)
+ */
+async function downloadToBuffer(url: string, label: string, timeoutMs = 60_000): Promise<Buffer> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { cache: "no-store", signal: controller.signal });
+    if (!res.ok) {
+      throw new Error(`${label}: HTTP ${res.status} — ${url.substring(0, 120)}`);
+    }
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (!buf.length) {
+      throw new Error(`${label}: 0 bytes received — URL may be expired or empty: ${url.substring(0, 120)}`);
+    }
+    return buf;
+  } catch (err) {
+    if (err instanceof Error && err.name === "AbortError") {
+      throw new Error(`${label}: download timed out after ${timeoutMs / 1000}s — ${url.substring(0, 80)}`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
-  return res.blob();
 }
 
-// Wraps fetch with an AbortController timeout so the overall route stays within
-// Vercel's maxDuration. 120 s for composition is generous — adjust if needed.
+/**
+ * Upload a Buffer to Supabase "videos" bucket.
+ * Validates buffer is non-empty before uploading.
+ * Returns the public URL on success; throws on any failure.
+ */
+async function uploadToStorage(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  buffer: Buffer,
+  storagePath: string,
+  label: string,
+): Promise<string> {
+  if (!buffer.length) {
+    throw new Error(`[STORAGE] ${label}: refusing to upload 0-byte buffer → ${storagePath}`);
+  }
+  console.log(`[STORAGE] ${label}: uploading ${buffer.length}bytes → ${storagePath}`);
+  const { error } = await supabase.storage
+    .from("videos")
+    .upload(storagePath, buffer, { contentType: "video/mp4", upsert: true });
+  if (error) {
+    throw new Error(`[STORAGE] ${label}: upload failed — ${error.message}`);
+  }
+  const { data: { publicUrl } } = supabase.storage.from("videos").getPublicUrl(storagePath);
+  if (!publicUrl) {
+    throw new Error(`[STORAGE] ${label}: getPublicUrl returned empty string — is the 'videos' bucket set to public?`);
+  }
+  console.log(`[STORAGE] ${label}: done → ${publicUrl.substring(0, 100)}`);
+  return publicUrl;
+}
+
+/** Fetch with AbortController timeout */
 function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: number): Promise<Response> {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeoutMs);
   return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(id));
 }
 
+/** Wrap Railway Composer call — returns parsed JSON or throws with detail */
+async function callComposer(
+  composerUrl: string,
+  composerKey: string,
+  form: FormData,
+  timeoutMs: number,
+  label: string,
+): Promise<{ success: boolean; video_url: string; duration_seconds?: number | null; error?: string }> {
+  let res: Response;
+  try {
+    res = await fetchWithTimeout(
+      `${composerUrl}/compose`,
+      { method: "POST", headers: { "x-api-key": composerKey }, body: form },
+      timeoutMs,
+    );
+  } catch (err) {
+    const isTimeout = err instanceof Error && err.name === "AbortError";
+    throw new Error(`${label}: ${isTimeout ? `composer timed out after ${timeoutMs / 1000}s` : `composer unreachable — ${err instanceof Error ? err.message : err}`}`);
+  }
+
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try { const b = await res.json() as { error?: string }; if (b.error) detail = b.error; } catch { /* */ }
+    throw new Error(`${label}: composer error — ${detail}`);
+  }
+
+  const result = await res.json() as { success: boolean; video_url: string; duration_seconds?: number | null; error?: string };
+  if (!result.success || !result.video_url) {
+    throw new Error(`${label}: composer reported failure — ${result.error ?? "no reason"}`);
+  }
+  return result;
+}
+
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 export async function POST(request: Request) {
-  // ── Auth ────────────────────────────────────────────────────────────────────
+
+  // ── Auth ─────────────────────────────────────────────────────────────────────
   const cookieStore = await cookies();
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -102,7 +196,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
-  // ── Parse body ───────────────────────────────────────────────────────────────
+  // ── Parse body ────────────────────────────────────────────────────────────────
   let body: ComposeBody;
   try {
     body = await request.json();
@@ -111,194 +205,475 @@ export async function POST(request: Request) {
   }
 
   const { projectId, shotPlanId, voiceoverUrl: bodyVoiceoverUrl } = body;
+  const composerUrl = process.env.COMPOSER_SERVICE_URL ?? null;
+  const composerKey = process.env.COMPOSER_API_KEY ?? "";
+  if (composerUrl && !composerKey) {
+    console.warn("[compose-video] COMPOSER_API_KEY not set — Railway requests will use empty x-api-key");
+  }
 
-  // ── Single-clip mode — checked FIRST, no projectId required ─────────────────
-  // Used by the cinematic preview flow: { videoUrl, voiceoverUrl? }
-  // Uses local FFmpeg when COMPOSER_SERVICE_URL is absent (always works in dev/prod).
-  // Falls back to external composer when COMPOSER_SERVICE_URL is configured.
-  if (body.videoUrl?.trim()) {
-    const singleClipUrl = body.videoUrl.trim();
-    const singleVoiceUrl = body.voiceoverUrl?.trim() ?? null;
+  // ══════════════════════════════════════════════════════════════════════════════
+  // MODE 1 — CINEMATIC MULTI-CLIP  (body.clipUrls[])
+  // ══════════════════════════════════════════════════════════════════════════════
+  if (body.clipUrls?.length) {
+    const routeT0     = Date.now();
+    const clipUrls    = body.clipUrls.filter((u): u is string => typeof u === "string" && u.trim().length > 0);
+    if (!clipUrls.length) {
+      return NextResponse.json({ success: false, error: "All clip URLs were empty after filtering" }, { status: 400 });
+    }
+    const clipDuration = typeof body.clipDuration === "number" ? body.clipDuration : 10;
+    const voiceUrl    = body.voiceoverUrl?.trim() ?? null;
+    const id          = randomUUID();
+    const tmpDirBase  = tmpdir();
 
-    console.log(`[compose-video:single] videoUrl=${singleClipUrl.substring(0, 80)}, hasVoiceover=${!!singleVoiceUrl}`);
+    console.log("[TIMING] compose-video start mode=cinematic");
+    console.log("[PHASE1] cinematic mode=multi_clip");
+    console.log(`[PHASE1] clipCount=${clipUrls.length} clipDuration=${clipDuration}s hasVoiceover=${!!voiceUrl} composerAvailable=${!!composerUrl}`);
 
-    const composerUrl = process.env.COMPOSER_SERVICE_URL;
-    const composerKey = process.env.COMPOSER_API_KEY;
+    // PHASE 2: download all clips + voiceover in parallel with timeout + size validation
+    // Timeout reduced 90s→30s: 10s Kling clips are ~2–5 MB, download in <5s on normal CDN.
+    console.log("[TIMING] PHASE2 DOWNLOAD start");
+    const phase2T0 = Date.now();
+    let clipBuffers: Buffer[];
+    let voiceBuffer: Buffer | null = null;
+    try {
+      [clipBuffers, voiceBuffer] = await Promise.all([
+        Promise.all(clipUrls.map((url, i) => downloadToBuffer(url, `clip[${i + 1}/${clipUrls.length}]`, 30_000))),
+        voiceUrl ? downloadToBuffer(voiceUrl, "voiceover", 30_000) : Promise.resolve(null),
+      ]);
+    } catch (err) {
+      const msg  = err instanceof Error ? err.message : "Media download failed";
+      const stack = err instanceof Error ? err.stack : undefined;
+      console.error(`[TIMING] PHASE2 DOWNLOAD FAILED ${Date.now() - phase2T0}ms:`, msg);
+      return NextResponse.json({ success: false, phase: "DOWNLOAD", error: msg, stack }, { status: 502 });
+    }
+    console.log(`[TIMING] PHASE2 DOWNLOAD complete ${Date.now() - phase2T0}ms`);
+
+    // PHASE 3: verify download sizes
+    console.log(`[PHASE3] DOWNLOADED_CLIPS=${clipBuffers.length} sizes=${clipBuffers.map((b, i) => `clip${i + 1}:${b.length}bytes`).join(" ")}`);
+    if (voiceBuffer) console.log(`[PHASE3] DOWNLOADED_VOICE size=${voiceBuffer.length}bytes`);
+    else console.log("[PHASE3] NO_VOICE");
+
+    const emptyClip = clipBuffers.findIndex(b => !b.length);
+    if (emptyClip !== -1) {
+      return NextResponse.json({ success: false, phase: "DOWNLOAD", error: `clip[${emptyClip + 1}] is 0 bytes — URL expired` }, { status: 502 });
+    }
 
     if (composerUrl) {
-      // External composer path
-      let clipBlob: Blob;
-      let voiceBlob: Blob | null = null;
+      // ── Railway Composer path ──────────────────────────────────────────────────
+      const shotPlanShots = clipUrls.map(() => ({
+        duration:            clipDuration,
+        energy_curve:        "sustain",
+        transition_in:       "hard_cut",
+        transition_after:    null,
+        transition_duration: 0,
+        zoom_effect:         false,
+      }));
+
+      // PHASE 4: build + log form payload before sending
+      console.log("[PHASE4] RAILWAY_REQUEST", JSON.stringify({
+        composerUrl,
+        clipCount:     clipBuffers.length,
+        clipSizes:     clipBuffers.map((b, i) => ({ clip: i + 1, bytes: b.length })),
+        hasVoiceover:  !!voiceBuffer,
+        voiceBytes:    voiceBuffer?.length ?? 0,
+        shot_plan:     { shots: shotPlanShots },
+      }, null, 2));
+
+      const form = new FormData();
+      for (let i = 0; i < clipBuffers.length; i++) {
+        form.append("clips", new Blob([new Uint8Array(clipBuffers[i])], { type: "video/mp4" }), `clip_${i}.mp4`);
+      }
+      if (voiceBuffer) {
+        form.append("voiceover", new Blob([new Uint8Array(voiceBuffer)], { type: "audio/mpeg" }), "voiceover.mp3");
+      }
+      form.append("shot_plan", JSON.stringify({ shots: shotPlanShots }));
+
+      // Composer timeout reduced 160s→90s: stitching 3×10s clips should complete in <30s.
+      // If Railway is unreachable or takes >90s, it's a infrastructure fault — fail fast.
+      console.log("[TIMING] PHASE4 COMPOSER start");
+      const phase4T0 = Date.now();
+      let composeResult: { success: boolean; video_url: string; duration_seconds?: number | null };
       try {
-        clipBlob = await fetchBlob(singleClipUrl, "single clip");
-        if (singleVoiceUrl) voiceBlob = await fetchBlob(singleVoiceUrl, "voiceover");
+        composeResult = await callComposer(composerUrl, composerKey, form, 90_000, "[PHASE4:cinematic]");
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Failed to download media";
-        return NextResponse.json({ success: false, error: msg }, { status: 502 });
+        const msg   = err instanceof Error ? err.message : "Composer call failed";
+        const stack = err instanceof Error ? err.stack : undefined;
+        console.error(`[TIMING] PHASE4 COMPOSER FAILED ${Date.now() - phase4T0}ms:`, msg);
+        return NextResponse.json({ success: false, phase: "COMPOSER", error: msg, stack }, { status: 502 });
+      }
+      console.log(`[TIMING] PHASE4 COMPOSER complete ${Date.now() - phase4T0}ms`);
+
+      // PHASE 4: log Railway response
+      console.log("[PHASE4] RAILWAY_RESPONSE", JSON.stringify(composeResult, null, 2));
+      console.log(`[PHASE4] RAILWAY_REPORTED_DURATION=${composeResult.duration_seconds}s expected=${clipUrls.length * clipDuration}s`);
+
+      // PHASE 5: download + ffprobe composer output
+      const composedUrl = composeResult.video_url.startsWith("http")
+        ? composeResult.video_url
+        : `${composerUrl}${composeResult.video_url}`;
+
+      // Output download timeout reduced 50s→30s: 30s video = ~15 MB, should download in <5s.
+      console.log("[TIMING] PHASE5 OUTPUT_DOWNLOAD start");
+      const phase5T0 = Date.now();
+      let composedBuffer: Buffer;
+      try {
+        composedBuffer = await downloadToBuffer(composedUrl, "composer output", 30_000);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Composer output download failed";
+        console.error(`[TIMING] PHASE5 OUTPUT_DOWNLOAD FAILED ${Date.now() - phase5T0}ms:`, msg);
+        return NextResponse.json({ success: false, phase: "COMPOSER_DOWNLOAD", error: msg }, { status: 502 });
+      }
+      console.log(`[TIMING] PHASE5 OUTPUT_DOWNLOAD complete ${Date.now() - phase5T0}ms bytes=${composedBuffer.length}`);
+
+      const probePath = join(tmpDirBase, `cv-cin-probe-${id}.mp4`);
+      try {
+        writeFileSync(probePath, composedBuffer);
+        const meta = await probeWithTimeout(probePath, "cinematic composer output", 15_000);
+        if (meta) {
+          const dur      = meta.format?.duration ?? "unknown";
+          const vStreams = (meta.streams ?? []).filter(s => s.codec_type === "video");
+          const aStreams = (meta.streams ?? []).filter(s => s.codec_type === "audio");
+          console.log(`[PHASE5] COMPOSER_DURATION=${dur}s expected=${clipUrls.length * clipDuration}s clips=${clipUrls.length}`);
+          console.log(`[PHASE5] VIDEO_STREAMS=${vStreams.length} AUDIO_STREAMS=${aStreams.length} SIZE_BYTES=${composedBuffer.length}`);
+          if (vStreams[0]) console.log(`[PHASE5] VIDEO_STREAM codec=${vStreams[0].codec_name} duration=${vStreams[0].duration}s`);
+        } else {
+          console.warn("[PHASE5] ffprobe returned no metadata — continuing with upload");
+        }
+      } finally {
+        try { unlinkSync(probePath); } catch { /* temp cleanup */ }
+      }
+
+      // PHASE 6: upload to Supabase
+      console.log("[TIMING] PHASE6 UPLOAD start");
+      const phase6T0 = Date.now();
+      const storagePath = `renders/${user.id}/${Date.now()}/cinematic.mp4`;
+      let publicUrl: string;
+      try {
+        publicUrl = await uploadToStorage(supabase, composedBuffer, storagePath, "cinematic");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Storage upload failed";
+        console.error(`[TIMING] PHASE6 UPLOAD FAILED ${Date.now() - phase6T0}ms:`, msg);
+        return NextResponse.json({ success: false, phase: "UPLOAD_TO_SUPABASE", error: msg }, { status: 500 });
+      }
+      console.log(`[TIMING] PHASE6 UPLOAD complete ${Date.now() - phase6T0}ms`);
+      console.log(`[TIMING] compose-video TOTAL ${Date.now() - routeT0}ms clips=${clipUrls.length}`);
+      console.log(`[PHASE6] cinematic done → ${publicUrl.substring(0, 80)}`);
+      return NextResponse.json({
+        success:          true,
+        video_url:        publicUrl,
+        has_audio:        !!voiceBuffer,
+        duration_seconds: composeResult.duration_seconds ?? null,
+        timing_ms:        { download: Date.now() - phase2T0, total: Date.now() - routeT0 },
+      });
+
+    } else {
+      // ── Local FFmpeg concat path (no COMPOSER_SERVICE_URL) ─────────────────────
+      const clipPaths       = clipUrls.map((_, i) => join(tmpDirBase, `cv-cin-${id}-clip${i}.mp4`));
+      const concatListPath  = join(tmpDirBase, `cv-cin-${id}-concat.txt`);
+      const stitchedPath    = join(tmpDirBase, `cv-cin-${id}-stitched.mp4`);
+      const audioPath       = join(tmpDirBase, `cv-cin-${id}-audio.mp3`);
+      const outputPath      = join(tmpDirBase, `cv-cin-${id}-output.mp4`);
+      const cleanupPaths    = [...clipPaths, concatListPath, stitchedPath, audioPath, outputPath];
+
+      console.log("[PHASE4:local] COMPOSER_SERVICE_URL absent — local FFmpeg concat");
+
+      try {
+        // Write clips to disk
+        for (let i = 0; i < clipBuffers.length; i++) {
+          writeFileSync(clipPaths[i], clipBuffers[i]);
+        }
+
+        let finalVideoPath: string;
+
+        if (clipBuffers.length === 1) {
+          finalVideoPath = clipPaths[0];
+        } else {
+          const concatContent = clipPaths.map(p => `file '${p.replace(/\\/g, "/")}'`).join("\n");
+          writeFileSync(concatListPath, concatContent);
+          console.log(`[PHASE4:local] concat list (${clipPaths.length} entries):\n${concatContent}`);
+
+          await new Promise<void>((resolve, reject) => {
+            ffmpeg()
+              .input(concatListPath)
+              .inputOptions(["-f", "concat", "-safe", "0"])
+              .outputOptions(["-c", "copy"])
+              .output(stitchedPath)
+              .on("stderr", (line: string) => console.log("[PHASE4:local:ffmpeg:stderr]", line))
+              .on("end", () => resolve())
+              .on("error", (err: Error) => reject(new Error(`FFmpeg concat failed: ${err.message}`)))
+              .run();
+          });
+
+          if (!existsSync(stitchedPath)) {
+            throw new Error("FFmpeg concat completed but produced no output file");
+          }
+          finalVideoPath = stitchedPath;
+        }
+
+        if (voiceBuffer) {
+          writeFileSync(audioPath, voiceBuffer);
+          await new Promise<void>((resolve, reject) => {
+            ffmpeg()
+              .input(finalVideoPath)
+              .input(audioPath)
+              .outputOptions(["-c:v", "copy", "-c:a", "aac", "-map", "0:v:0", "-map", "1:a:0"])
+              .output(outputPath)
+              .on("stderr", (line: string) => console.log("[PHASE4:local:merge:stderr]", line))
+              .on("end", () => resolve())
+              .on("error", (err: Error) => reject(new Error(`FFmpeg audio merge failed: ${err.message}`)))
+              .run();
+          });
+
+          if (!existsSync(outputPath)) {
+            throw new Error("FFmpeg audio merge completed but produced no output file");
+          }
+          finalVideoPath = outputPath;
+        }
+
+        // PHASE 5: probe final output
+        const meta = await probeWithTimeout(finalVideoPath, "cinematic local output", 15_000);
+        if (meta) {
+          const dur      = meta.format?.duration ?? "unknown";
+          const vStreams = (meta.streams ?? []).filter(s => s.codec_type === "video");
+          const aStreams = (meta.streams ?? []).filter(s => s.codec_type === "audio");
+          console.log(`[PHASE5:local] STITCH_DURATION=${dur}s expected=${clipBuffers.length * clipDuration}s clips=${clipBuffers.length}`);
+          console.log(`[PHASE5:local] VIDEO_STREAMS=${vStreams.length} AUDIO_STREAMS=${aStreams.length}`);
+          if (vStreams[0]) console.log(`[PHASE5:local] VIDEO codec=${vStreams[0].codec_name} duration=${vStreams[0].duration}s`);
+        }
+
+        // PHASE 6: upload
+        const finalBuffer = readFileSync(finalVideoPath);
+        if (!finalBuffer.length) throw new Error("Final stitched file is 0 bytes");
+
+        const storagePath = `renders/${user.id}/${Date.now()}/cinematic.mp4`;
+        let publicUrl: string;
+        try {
+          publicUrl = await uploadToStorage(supabase, finalBuffer, storagePath, "cinematic:local");
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Storage upload failed";
+          return NextResponse.json({ success: false, phase: "UPLOAD_TO_SUPABASE", error: msg }, { status: 500 });
+        }
+
+        console.log(`[PHASE6:local] done → ${publicUrl.substring(0, 80)}`);
+        return NextResponse.json({ success: true, video_url: publicUrl, has_audio: !!voiceBuffer });
+
+      } catch (err) {
+        const msg   = err instanceof Error ? err.message : "Local cinematic compose failed";
+        const stack = err instanceof Error ? err.stack : undefined;
+        console.error("[compose-video:cinematic:local] FAILED:", msg, stack);
+        return NextResponse.json({ success: false, phase: "LOCAL_FFMPEG", error: msg }, { status: 500 });
+      } finally {
+        for (const p of cleanupPaths) { try { unlinkSync(p); } catch { /* already gone */ } }
+      }
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════════
+  // MODE 2 — SINGLE-CLIP PREVIEW  (body.videoUrl)
+  // ══════════════════════════════════════════════════════════════════════════════
+  if (body.videoUrl?.trim()) {
+    const singleClipUrl  = body.videoUrl.trim();
+    const singleVoiceUrl = body.voiceoverUrl?.trim() ?? null;
+
+    if (composerUrl) {
+      // ── Railway Composer path ──────────────────────────────────────────────────
+      console.log("[PHASE1:single] mode=railway_single_clip");
+      console.log(`[PHASE1:single] videoUrl=${singleClipUrl.substring(0, 80)} hasVoiceover=${!!singleVoiceUrl}`);
+
+      let clipBuffer: Buffer;
+      let voiceBufferSingle: Buffer | null = null;
+      try {
+        console.log("[PHASE2:single] downloading clip and voiceover");
+        [clipBuffer, voiceBufferSingle] = await Promise.all([
+          downloadToBuffer(singleClipUrl, "single clip", 90_000),
+          singleVoiceUrl ? downloadToBuffer(singleVoiceUrl, "voiceover", 60_000) : Promise.resolve(null),
+        ]);
+        console.log(`[PHASE2:single] clip=${clipBuffer.length}bytes voice=${voiceBufferSingle?.length ?? 0}bytes`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Download failed";
+        console.error("[PHASE2:single] FAILED:", msg);
+        return NextResponse.json({ success: false, phase: "DOWNLOAD", error: msg }, { status: 502 });
+      }
+
+      // Use the actual clip duration from ffprobe rather than hardcoded 8s
+      const id = randomUUID();
+      const tmpDirBase = tmpdir();
+      const tmpClipPath = join(tmpDirBase, `cv-sc-probe-${id}.mp4`);
+      let probedDuration = 8;
+      try {
+        writeFileSync(tmpClipPath, clipBuffer);
+        const meta = await probeWithTimeout(tmpClipPath, "single clip", 15_000);
+        if (meta?.format?.duration) {
+          probedDuration = typeof meta.format.duration === "number"
+            ? meta.format.duration
+            : parseFloat(String(meta.format.duration)) || 8;
+        }
+        console.log(`[PHASE3:single] VIDEO_DURATION=${probedDuration}s size=${clipBuffer.length}bytes`);
+      } finally {
+        try { unlinkSync(tmpClipPath); } catch { /* */ }
       }
 
       const form = new FormData();
-      form.append("clips", clipBlob!, "shot_1.mp4");
-      if (voiceBlob) form.append("voiceover", voiceBlob, "voiceover.mp3");
+      form.append("clips", new Blob([new Uint8Array(clipBuffer)], { type: "video/mp4" }), "shot_1.mp4");
+      if (voiceBufferSingle) form.append("voiceover", new Blob([new Uint8Array(voiceBufferSingle)], { type: "audio/mpeg" }), "voiceover.mp3");
       form.append("shot_plan", JSON.stringify({
-        shots: [{ duration: 8, energy_curve: "sustain", transition_in: "hard_cut", transition_duration: 0, zoom_effect: false }],
+        shots: [{ duration: Math.round(probedDuration), energy_curve: "sustain", transition_in: "hard_cut", transition_after: null, transition_duration: 0, zoom_effect: false }],
       }));
 
-      let composeRes: Response;
+      console.log(`[PHASE4:single] → Railway clips=1 duration=${Math.round(probedDuration)}s hasVoiceover=${!!voiceBufferSingle}`);
+
+      let composeResult: { success: boolean; video_url: string; duration_seconds?: number | null };
       try {
-        composeRes = await fetchWithTimeout(
-          `${composerUrl}/compose`,
-          { method: "POST", headers: { "x-api-key": composerKey ?? "" }, body: form },
-          120_000,
-        );
+        composeResult = await callComposer(composerUrl, composerKey, form, 120_000, "[PHASE4:single]");
       } catch (err) {
-        const isTimeout = err instanceof Error && err.name === "AbortError";
-        return NextResponse.json(
-          { success: false, error: isTimeout ? "Composition timed out" : "Composer unavailable" },
-          { status: 504 },
-        );
+        const msg = err instanceof Error ? err.message : "Composer call failed";
+        console.error("[PHASE4:single] FAILED:", msg);
+        return NextResponse.json({ success: false, phase: "COMPOSER", error: msg }, { status: 502 });
+      }
+      console.log("[PHASE4:single] RAILWAY_RESPONSE", JSON.stringify(composeResult, null, 2));
+
+      const composedUrl = composeResult.video_url.startsWith("http")
+        ? composeResult.video_url
+        : `${composerUrl}${composeResult.video_url}`;
+
+      let composedBuffer: Buffer;
+      try {
+        composedBuffer = await downloadToBuffer(composedUrl, "single-clip composer output", 120_000);
+        console.log(`[PHASE5:single] COMPOSER_DURATION=${composeResult.duration_seconds}s SIZE_BYTES=${composedBuffer.length}`);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Composer output download failed";
+        console.error("[PHASE5:single] FAILED:", msg);
+        return NextResponse.json({ success: false, phase: "COMPOSER_DOWNLOAD", error: msg }, { status: 502 });
       }
 
-      if (!composeRes.ok) {
-        let msg = `Composer HTTP ${composeRes.status}`;
-        try { const b = await composeRes.json() as { error?: string }; if (b.error) msg = b.error; } catch { /* ignore */ }
-        return NextResponse.json({ success: false, error: msg }, { status: 502 });
-      }
-
-      const composeResult = await composeRes.json() as { success: boolean; video_url: string; error?: string };
-      if (!composeResult.success || !composeResult.video_url) {
-        return NextResponse.json({ success: false, error: composeResult.error ?? "Compose failed" }, { status: 500 });
-      }
-
-      const composedVideoBlob = await fetchBlob(
-        composeResult.video_url.startsWith("http") ? composeResult.video_url : `${composerUrl}${composeResult.video_url}`,
-        "composed video",
-      );
       const storagePath = `renders/${user.id}/${Date.now()}/preview.mp4`;
-      const { error: uploadErr } = await supabase.storage
-        .from("videos")
-        .upload(storagePath, await composedVideoBlob.arrayBuffer(), { contentType: "video/mp4", upsert: true });
-
-      if (uploadErr) {
-        console.error("[compose-video:single] Storage upload failed:", uploadErr.message);
-        return NextResponse.json({ success: false, error: "Assembled but storage upload failed" }, { status: 500 });
+      let publicUrl: string;
+      try {
+        publicUrl = await uploadToStorage(supabase, composedBuffer, storagePath, "single:railway");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Storage upload failed";
+        console.error("[PHASE6:single] FAILED:", msg);
+        return NextResponse.json({ success: false, phase: "UPLOAD_TO_SUPABASE", error: msg }, { status: 500 });
       }
 
-      const { data: { publicUrl } } = supabase.storage.from("videos").getPublicUrl(storagePath);
-      return NextResponse.json({ success: true, video_url: publicUrl, has_audio: !!voiceBlob });
+      console.log(`[PHASE6:single] done → ${publicUrl.substring(0, 80)}`);
+      return NextResponse.json({ success: true, video_url: publicUrl, has_audio: !!voiceBufferSingle });
 
     } else {
-      // Local FFmpeg path — works without COMPOSER_SERVICE_URL
-      console.log("[compose-video:single] COMPOSER_SERVICE_URL absent — using local FFmpeg");
-      console.log(`[compose-video:single] videoUrl=${singleClipUrl.substring(0, 80)}`);
-      const id = randomUUID();
-      const tmpDir = tmpdir();
-      const videoPath = join(tmpDir, `cv-video-${id}.mp4`);
-      const audioPath = join(tmpDir, `cv-audio-${id}.mp3`);
+      // ── Local FFmpeg path ──────────────────────────────────────────────────────
+      const id         = randomUUID();
+      const tmpDir     = tmpdir();
+      const videoPath  = join(tmpDir, `cv-video-${id}.mp4`);
+      const audioPath  = join(tmpDir, `cv-audio-${id}.mp3`);
       const outputPath = join(tmpDir, `cv-output-${id}.mp4`);
-      const paths = [videoPath, audioPath, outputPath];
+      const paths      = [videoPath, audioPath, outputPath];
+
+      console.log("[PHASE1:single] mode=local_ffmpeg");
+      console.log(`[PHASE1:single] videoUrl=${singleClipUrl.substring(0, 80)} hasVoiceover=${!!singleVoiceUrl}`);
 
       try {
-        const videoRes = await fetch(singleClipUrl);
-        if (!videoRes.ok) throw new Error(`Failed to fetch video: ${videoRes.status}`);
-        const videoBuffer = Buffer.from(await videoRes.arrayBuffer());
-        writeFileSync(videoPath, videoBuffer);
+        // PHASE 2: download video
+        const inputVideoBytes = await downloadToBuffer(singleClipUrl, "single clip", 90_000);
+        writeFileSync(videoPath, inputVideoBytes);
+        console.log(`[PHASE2:single] video downloaded size=${inputVideoBytes.length}bytes`);
 
-        // Probe video duration before merge
-        const videoDuration = await new Promise<number>((resolve) => {
-          ffmpeg.ffprobe(videoPath, (err, metadata) => {
-            const dur = metadata?.format?.duration ?? 0;
-            console.log(`[compose-video:single] VIDEO DURATION=${dur}s size=${videoBuffer.length} err=${err?.message ?? null}`);
-            resolve(typeof dur === "number" ? dur : parseFloat(String(dur)) || 0);
-          });
-        });
-        console.log(`[compose-video:single] video_duration=${videoDuration}s`);
+        // PHASE 3: probe video duration
+        const videoMeta = await probeWithTimeout(videoPath, "input video", 15_000);
+        const rawDur    = videoMeta?.format?.duration ?? 0;
+        const videoDuration = typeof rawDur === "number" ? rawDur : parseFloat(String(rawDur)) || 0;
+        console.log(`[PHASE3:single] VIDEO_DURATION=${videoDuration}s size=${inputVideoBytes.length}bytes`);
 
         if (singleVoiceUrl) {
-          const audioRes = await fetch(singleVoiceUrl);
-          if (!audioRes.ok) throw new Error(`Failed to fetch audio: ${audioRes.status}`);
-          const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
-          writeFileSync(audioPath, audioBuffer);
+          // PHASE 3: download + probe audio
+          const inputAudioBytes = await downloadToBuffer(singleVoiceUrl, "voiceover", 60_000);
+          writeFileSync(audioPath, inputAudioBytes);
+          console.log(`[PHASE3:single] audio downloaded size=${inputAudioBytes.length}bytes`);
 
-          // Probe audio duration before merge
-          const audioDuration = await new Promise<number>((resolve) => {
-            ffmpeg.ffprobe(audioPath, (err, metadata) => {
-              const dur = metadata?.format?.duration ?? 0;
-              console.log(`[compose-video:single] AUDIO DURATION=${dur}s size=${audioBuffer.length} err=${err?.message ?? null}`);
-              resolve(typeof dur === "number" ? dur : parseFloat(String(dur)) || 0);
-            });
-          });
-          console.log(`[compose-video:single] audio_duration=${audioDuration}s — video_shorter_than_audio=${videoDuration < audioDuration}`);
+          const audioMeta = await probeWithTimeout(audioPath, "input audio", 15_000);
+          const rawADur   = audioMeta?.format?.duration ?? 0;
+          const audioDuration = typeof rawADur === "number" ? rawADur : parseFloat(String(rawADur)) || 0;
+          console.log(`[PHASE3:single] AUDIO_DURATION=${audioDuration}s video_shorter=${videoDuration < audioDuration} delta=${(audioDuration - videoDuration).toFixed(2)}s`);
 
+          // PHASE 4: FFmpeg merge
+          console.log("[PHASE4:single] starting FFmpeg merge");
           await new Promise<void>((resolve, reject) => {
             ffmpeg()
               .input(videoPath)
               .input(audioPath)
               .outputOptions(["-c:v", "copy", "-c:a", "aac", "-map", "0:v:0", "-map", "1:a:0"])
               .output(outputPath)
+              .on("stderr", (line: string) => console.log("[PHASE4:single:ffmpeg:stderr]", line))
               .on("end", () => resolve())
-              .on("error", (err: Error) => reject(err))
+              .on("error", (err: Error) => reject(new Error(`FFmpeg merge failed: ${err.message}`)))
               .run();
           });
 
-          // Probe output duration after merge
-          await new Promise<void>((resolve) => {
-            ffmpeg.ffprobe(outputPath, (err, metadata) => {
-              const dur = metadata?.format?.duration ?? 0;
-              console.log(`[compose-video:single] OUTPUT DURATION=${dur}s video_was=${videoDuration}s audio_was=${audioDuration}s err=${err?.message ?? null}`);
-              resolve();
-            });
-          });
+          if (!existsSync(outputPath)) {
+            throw new Error("FFmpeg merge completed but produced no output file");
+          }
+          console.log("[PHASE4:single] FFmpeg merge complete");
+
+          // PHASE 5: probe merged output
+          const outMeta = await probeWithTimeout(outputPath, "merged output", 15_000);
+          if (outMeta) {
+            const dur = outMeta.format?.duration ?? "unknown";
+            console.log(`[PHASE5:single] OUTPUT_DURATION=${dur}s video_was=${videoDuration}s audio_was=${audioDuration}s`);
+          }
+
         } else {
-          // No audio — just copy the video
-          writeFileSync(outputPath, readFileSync(videoPath));
+          // No audio — write input bytes directly to output slot
+          console.log("[PHASE4:single] no audio — copying video as output");
+          writeFileSync(outputPath, inputVideoBytes);
         }
 
-        const videoBuffer = readFileSync(outputPath);
+        // PHASE 6: read, validate, upload
+        const outputBuffer = readFileSync(outputPath);
+        if (!outputBuffer.length) throw new Error("FFmpeg produced a 0-byte output file");
+        console.log(`[PHASE6:single] uploading size=${outputBuffer.length}bytes`);
+
         const storagePath = `renders/${user.id}/${Date.now()}/preview.mp4`;
-        const { error: uploadErr } = await supabase.storage
-          .from("videos")
-          .upload(storagePath, videoBuffer, { contentType: "video/mp4", upsert: true });
-
-        if (uploadErr) {
-          console.error("[compose-video:single:local] Storage upload failed:", uploadErr.message);
-          return NextResponse.json({ success: false, error: "Assembled but storage upload failed" }, { status: 500 });
+        let publicUrl: string;
+        try {
+          publicUrl = await uploadToStorage(supabase, outputBuffer, storagePath, "single:local");
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Storage upload failed";
+          console.error("[PHASE6:single] FAILED:", msg);
+          return NextResponse.json({ success: false, phase: "UPLOAD_TO_SUPABASE", error: msg }, { status: 500 });
         }
 
-        const { data: { publicUrl } } = supabase.storage.from("videos").getPublicUrl(storagePath);
+        console.log(`[PHASE6:single] done → ${publicUrl.substring(0, 80)}`);
         return NextResponse.json({ success: true, video_url: publicUrl, has_audio: !!singleVoiceUrl });
 
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Local compose failed";
-        console.error("[compose-video:single:local]", msg);
-        return NextResponse.json({ success: false, error: msg }, { status: 500 });
+        const msg   = err instanceof Error ? err.message : "Local single-clip compose failed";
+        const stack = err instanceof Error ? err.stack : undefined;
+        console.error("[compose-video:single:local] FAILED:", msg);
+        return NextResponse.json({ success: false, phase: "LOCAL_FFMPEG", error: msg, stack }, { status: 500 });
       } finally {
         for (const p of paths) { try { unlinkSync(p); } catch { /* already gone */ } }
       }
     }
   }
 
-  // ── Multi-clip (shot-plan) mode — projectId required ────────────────────────
+  // ══════════════════════════════════════════════════════════════════════════════
+  // MODE 3 — SHOT-PLAN DB MODE  (body.projectId)
+  // ══════════════════════════════════════════════════════════════════════════════
   if (!projectId?.trim()) {
-    return NextResponse.json({ success: false, error: "Missing required field: projectId" }, { status: 400 });
+    return NextResponse.json(
+      { success: false, error: "Missing required field: one of clipUrls, videoUrl, or projectId" },
+      { status: 400 },
+    );
   }
 
-  // ── Validate environment ──────────────────────────────────────────────────────
-  const composerUrl = process.env.COMPOSER_SERVICE_URL;
-  const composerKey = process.env.COMPOSER_API_KEY;
-
   if (!composerUrl) {
-    console.error("[compose-video] COMPOSER_SERVICE_URL not configured");
+    console.error("[compose-video:shotplan] COMPOSER_SERVICE_URL not configured");
     return NextResponse.json(
-      { success: false, error: "Video assembly service is not configured. Please contact support." },
+      { success: false, error: "Video assembly service not configured. Contact support." },
       { status: 503 },
     );
   }
 
-  // ── Load shots (no DB ordering — compile stage owns ordering) ────────────
-  // Intentionally no .order() here. Shot_number ordering is the compiler's
-  // responsibility, not the DB query's. Any DB sort is an ordering side-channel
-  // that can diverge from the compiled timeline.
+  // ── Load shots ────────────────────────────────────────────────────────────────
   let shotsQuery = supabase
     .from("shots")
     .select(
@@ -315,34 +690,32 @@ export async function POST(request: Request) {
   const { data: shots, error: shotsErr } = await shotsQuery;
 
   if (shotsErr) {
-    console.error("[compose-video] DB error loading shots:", shotsErr.message);
+    console.error("[compose-video:shotplan] DB error loading shots:", shotsErr.message);
     return NextResponse.json({ success: false, error: "Failed to load shot plan" }, { status: 500 });
   }
-
   if (!shots?.length) {
     return NextResponse.json(
-      { success: false, error: "No shots found for this project. Run shot generation first." },
+      { success: false, error: "No shots found. Run shot generation first." },
       { status: 404 },
     );
   }
 
-  // No runtime filtering here. The compiler rejects incomplete assets explicitly.
-  // Partial graphs must not render — a missing clip is a compile error, not a warning.
-
-  // ── Resolve voiceover URL ─────────────────────────────────────────────────
+  // ── Resolve voiceover URL ─────────────────────────────────────────────────────
   let voiceoverUrl = bodyVoiceoverUrl?.trim() ?? null;
 
   if (!voiceoverUrl && shotPlanId) {
-    const { data: planRow } = await supabase
+    const { data: planRow, error: planErr } = await supabase
       .from("shot_plans")
       .select("voiceover_url")
       .eq("id", shotPlanId)
-      .single();
+      .maybeSingle();
+    if (planErr) console.warn("[compose-video:shotplan] shot_plans voiceover lookup error:", planErr.message);
     if (planRow?.voiceover_url) voiceoverUrl = planRow.voiceover_url as string;
   }
 
   if (!voiceoverUrl) {
-    const { data: renderJob } = await supabase
+    // .maybeSingle() avoids throwing when multiple rows exist — .single() throws with PGRST116
+    const { data: renderJob, error: rjErr } = await supabase
       .from("render_jobs")
       .select("voiceover_url, id")
       .eq("user_id", user.id)
@@ -350,18 +723,19 @@ export async function POST(request: Request) {
       .not("voiceover_url", "is", null)
       .order("created_at", { ascending: false })
       .limit(1)
-      .single();
-    if (renderJob?.voiceover_url) voiceoverUrl = renderJob.voiceover_url;
+      .maybeSingle();
+
+    if (rjErr) {
+      console.warn("[compose-video:shotplan] voiceover lookup error:", rjErr.message);
+    }
+    if (renderJob?.voiceover_url) voiceoverUrl = renderJob.voiceover_url as string;
   }
 
   if (!voiceoverUrl) {
-    console.warn("[compose-video] No voiceover found — audioAssetId will be 'silent' for all clips");
+    console.warn("[compose-video:shotplan] No voiceover found — rendering silent");
   }
 
-  // ── BUILD RENDER CONTRACT — single frozen source of truth ────────────────
-  // All pipeline stages (sort, frame math, URL reachability, validation) run
-  // inside buildRenderContract. The returned contract is the only authority.
-  // This route performs zero computation after this call.
+  // ── Build render contract ─────────────────────────────────────────────────────
   let contract: ValidRenderContract;
   try {
     const raw = await buildRenderContract(
@@ -373,7 +747,7 @@ export async function POST(request: Request) {
     contract = raw;
   } catch (err) {
     if (err instanceof RenderContractError) {
-      console.error("[compose-video] Contract rejected:", err.violations);
+      console.error("[compose-video:shotplan] Contract rejected:", err.violations);
       return NextResponse.json(
         { success: false, error: "Render contract failed", violations: err.violations },
         { status: 422 },
@@ -384,12 +758,12 @@ export async function POST(request: Request) {
 
   const hasVoiceover = contract.clips[0]?.audioAssetId !== "silent";
   console.log(
-    `[compose-video] Contract built — ${contract.clips.length} clips, ` +
-    `${contract.totalDurationFrames / contract.fps}s, ` +
-    `audio=${hasVoiceover ? "voiceover" : "silent"}, compiledAt=${contract.compiledAt}`,
+    `[compose-video:shotplan] Contract built — clips=${contract.clips.length} ` +
+    `duration=${(contract.totalDurationFrames / contract.fps).toFixed(1)}s ` +
+    `audio=${hasVoiceover ? "voiceover" : "silent"} compiledAt=${contract.compiledAt}`,
   );
 
-  // ── Create/update render job row ─────────────────────────────────────────
+  // ── Create render job row ─────────────────────────────────────────────────────
   const { data: job, error: jobErr } = await supabase
     .from("render_jobs")
     .upsert(
@@ -408,23 +782,17 @@ export async function POST(request: Request) {
     .single();
 
   const jobId: string | null = jobErr ? null : (job?.id ?? null);
-  if (jobErr) console.warn("[compose-video] Could not create render_job row:", jobErr.message);
+  if (jobErr) console.warn("[compose-video:shotplan] Could not create render_job row:", jobErr.message);
 
-  // ── INCREMENTAL RENDER ENGINE ─────────────────────────────────────────────
-  // Plans execution, batch-checks shard cache, splits into cached + pending.
-  // Identical contracts → all shards hit cache → zero composer calls.
+  // ── Incremental render engine ─────────────────────────────────────────────────
   const renderPlan = await rebuildRender(contract, projectId);
   const { plan, cachedShards, pendingShards } = renderPlan;
 
   console.log(
-    `[compose-video] ExecutionPlan: ${plan.totalShards} shards — ` +
+    `[compose-video:shotplan] ExecutionPlan: ${plan.totalShards} shards — ` +
     `${pendingShards.length} pending, ${cachedShards.length} cached, job=${jobId ?? "untracked"}`,
   );
 
-  // ── Execute pending shards in parallel ────────────────────────────────────
-  // Inline execution on Fluid Compute (300 s budget). Each shard:
-  //   downloads its clips → calls composer → uploads to storage → writes to cache.
-  // Workers are stateless — they execute precompiled shard instructions only.
   if (pendingShards.length > 0) {
     const shardResults = await Promise.allSettled(
       pendingShards.map(shard =>
@@ -445,7 +813,7 @@ export async function POST(request: Request) {
           ? `${shard.shardId}: ${(r as PromiseRejectedResult).reason}`
           : `${shard.shardId}: ${(r as PromiseFulfilledResult<WorkerResult>).value.error}`,
       );
-      console.error("[compose-video] Shard failure(s):", errors);
+      console.error("[compose-video:shotplan] Shard failure(s):", errors);
       await markJobFailed(supabase, jobId, errors.join("; "));
       return NextResponse.json(
         { success: false, error: "One or more shards failed to render", errors },
@@ -454,10 +822,7 @@ export async function POST(request: Request) {
     }
   }
 
-  // ── Collect all shard outputs from cache ──────────────────────────────────
-  // processShardJob writes every executed shard to the cache.
-  // Cached shards were already in the cache before execution.
-  // Both sets are retrieved here in one batch call.
+  // ── Collect shard outputs ─────────────────────────────────────────────────────
   const allCacheHits = await getShardCache().getBatch(plan.shards.map(s => s.cacheKey));
 
   const shardsWithOutputs = plan.shards
@@ -469,119 +834,106 @@ export async function POST(request: Request) {
 
   if (shardsWithOutputs.length !== plan.totalShards) {
     const missing = plan.shards.filter(s => !allCacheHits.has(s.cacheKey)).map(s => s.shardId);
-    const msg = `Internal: shard outputs missing after execution — ${missing.join(", ")}`;
-    console.error("[compose-video]", msg);
+    const msg = `Internal: shard outputs missing — ${missing.join(", ")}`;
+    console.error("[compose-video:shotplan]", msg);
     await markJobFailed(supabase, jobId, msg);
     return NextResponse.json({ success: false, error: "Internal assembly error" }, { status: 500 });
   }
 
-  // ── MERGE LAYER — deterministic final assembly ────────────────────────────
-  // Stitches all shard outputs in index order, applies voiceover across full
-  // timeline. Stateless and purely compositional — no per-clip logic.
+  // ── Merge layer ───────────────────────────────────────────────────────────────
   let mergeResult: MergeResult;
   try {
     mergeResult = await mergeShards(shardsWithOutputs, {
-      composerUrl:  composerUrl!,
-      composerKey:  composerKey ?? "",
+      composerUrl:  composerUrl,
+      composerKey:  composerKey,
       voiceoverUrl,
       fps:          contract.fps,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Merge failed";
-    console.error("[compose-video] Merge error:", msg);
+    console.error("[compose-video:shotplan] Merge error:", msg);
     await markJobFailed(supabase, jobId, msg);
     return NextResponse.json({ success: false, error: msg }, { status: 502 });
   }
 
-  console.log(`[compose-video] Merge done — ${mergeResult.durationSeconds}s — downloading result`);
+  console.log(`[compose-video:shotplan] Merge done — ${mergeResult.durationSeconds}s`);
 
-  // ── Download final video from composer ────────────────────────────────────
+  // ── Download final video from composer ────────────────────────────────────────
   const videoDownloadUrl = mergeResult.videoUrl.startsWith("http")
     ? mergeResult.videoUrl
     : `${composerUrl}${mergeResult.videoUrl}`;
 
-  let videoBlob: Blob;
+  let finalVideoBuffer: Buffer;
   try {
-    videoBlob = await fetchBlob(videoDownloadUrl, "composed video");
+    finalVideoBuffer = await downloadToBuffer(videoDownloadUrl, "final composed video", 120_000);
+    console.log(`[compose-video:shotplan] final video downloaded size=${finalVideoBuffer.length}bytes`);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Failed to retrieve composed video from microservice";
-    console.error("[compose-video] Video download error:", msg);
+    const msg = err instanceof Error ? err.message : "Failed to download final video";
+    console.error("[compose-video:shotplan] Video download error:", msg);
     await markJobFailed(supabase, jobId, msg);
-    return NextResponse.json(
-      { success: false, error: "Video assembled but could not be retrieved. Please contact support." },
-      { status: 502 },
-    );
+    return NextResponse.json({ success: false, phase: "FINAL_DOWNLOAD", error: msg }, { status: 502 });
   }
 
-  // ── Upload to Supabase Storage ─────────────────────────────────────────────────
+  // ── Upload to Supabase ────────────────────────────────────────────────────────
   const storagePath = jobId
     ? `renders/${jobId}/final.mp4`
     : `renders/${user.id}/${Date.now()}/final.mp4`;
 
-  const videoBuffer = await videoBlob.arrayBuffer();
-
-  const { error: uploadErr } = await supabase.storage
-    .from("videos")
-    .upload(storagePath, videoBuffer, {
-      contentType: "video/mp4",
-      upsert: true,
-    });
-
-  if (uploadErr) {
-    console.error("[compose-video] Storage upload failed:", uploadErr.message);
-    await markJobFailed(supabase, jobId, `Storage upload failed: ${uploadErr.message}`);
-    return NextResponse.json(
-      {
-        success: false,
-        error: "Video assembled but failed to upload to storage. Please contact support.",
-      },
-      { status: 500 },
-    );
+  let publicUrl: string;
+  try {
+    publicUrl = await uploadToStorage(supabase, finalVideoBuffer, storagePath, "final");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Storage upload failed";
+    console.error("[compose-video:shotplan] Upload error:", msg);
+    await markJobFailed(supabase, jobId, msg);
+    return NextResponse.json({ success: false, phase: "UPLOAD_TO_SUPABASE", error: msg }, { status: 500 });
   }
 
-  const { data: { publicUrl } } = supabase.storage.from("videos").getPublicUrl(storagePath);
-
-  // ── Persist final result to DB ─────────────────────────────────────────────────
+  // ── Persist result to DB ──────────────────────────────────────────────────────
   if (jobId) {
     const { error: updateErr } = await supabase
       .from("render_jobs")
       .update({
-        status: "completed",
-        video_url: publicUrl,
+        status:       "completed",
+        video_url:    publicUrl,
         completed_at: new Date().toISOString(),
       })
       .eq("id", jobId);
 
     if (updateErr) {
-      // Non-fatal — video is uploaded, just log the tracking failure
-      console.warn("[compose-video] Failed to update render_job:", updateErr.message);
+      console.warn("[compose-video:shotplan] render_job update failed (non-fatal):", updateErr.message);
+    } else {
+      console.log(`[compose-video:shotplan] render_job ${jobId} marked completed`);
     }
   }
 
-  // Update project status so the dashboard can reflect completion
-  await supabase
+  const { error: projectUpdateErr } = await supabase
     .from("projects")
     .update({ status: "video_complete", video_url: publicUrl })
     .eq("id", projectId)
-    .eq("user_id", user.id); // ownership guard
+    .eq("user_id", user.id);
 
-  console.log(`[compose-video] Complete — ${mergeResult.durationSeconds}s — ${plan.totalClips} clips → ${publicUrl}`);
+  if (projectUpdateErr) {
+    console.warn("[compose-video:shotplan] project status update failed (non-fatal):", projectUpdateErr.message);
+  }
+
+  console.log(`[compose-video:shotplan] Complete — ${mergeResult.durationSeconds}s — ${plan.totalClips} clips → ${publicUrl}`);
 
   return NextResponse.json({
-    success:          true,
-    video_url:        publicUrl,
-    duration_seconds: mergeResult.durationSeconds,
-    shots_used:       plan.totalClips,
-    total_shots:      plan.totalClips,
-    has_audio:        hasVoiceover,
-    job_id:           jobId,
+    success:              true,
+    video_url:            publicUrl,
+    duration_seconds:     mergeResult.durationSeconds,
+    shots_used:           plan.totalClips,
+    total_shots:          plan.totalClips,
+    has_audio:            hasVoiceover,
+    job_id:               jobId,
     contract_compiled_at: contract.compiledAt,
-    shards_total:     plan.totalShards,
-    shards_cached:    cachedShards.length,
+    shards_total:         plan.totalShards,
+    shards_cached:        cachedShards.length,
   });
 }
 
-// ── Utility ───────────────────────────────────────────────────────────────────
+// ── Utilities ─────────────────────────────────────────────────────────────────
 
 async function markJobFailed(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

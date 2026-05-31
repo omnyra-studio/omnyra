@@ -1,105 +1,110 @@
-export const maxDuration = 60
+/**
+ * POST /api/generate-avatar  (request layer)
+ *
+ * Validates input, creates a queued avatar_jobs record, triggers the worker,
+ * and returns { jobId } immediately — never calls external AI APIs directly.
+ *
+ * The worker at /api/avatar-worker handles ElevenLabs → Storage → Kling → SyncLabs.
+ * Poll /api/job-status?id=<jobId> for progress.
+ *
+ * Body:    { script: string; voice_id?: string; background_image: string }
+ * Returns: { jobId, status }  — or { jobId, status: "completed", result_url, animated_video_url }
+ *          when idempotency hits an already-finished job.
+ */
+
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
+import { after } from "next/server";
+import { createOrFindJob } from "@/lib/avatar-queue";
+
+export const maxDuration = 30;
 
 export async function POST(req: Request) {
-  const { script, voice_id, avatar_id, background_image } = await req.json()
-
-  if (!process.env.HEYGEN_API_KEY) {
-    return Response.json({ error: 'HEYGEN_API_KEY not configured' }, { status: 500 })
+  const cookieStore = await cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookies: { getAll: () => cookieStore.getAll(), setAll: () => {} } },
+  );
+  const { data: { user }, error: authErr } = await supabase.auth.getUser();
+  if (authErr || !user) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Step 1 — Generate voiceover via ElevenLabs
-  const elevenVoiceId = voice_id || 'EXAVITQu4vr4xnSDxMaL'
-  const voiceRes = await fetch(
-    `https://api.elevenlabs.io/v1/text-to-speech/${elevenVoiceId}`,
-    {
-      method: 'POST',
-      headers: {
-        'xi-api-key': process.env.ELEVENLABS_API_KEY!,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        text: script,
-        model_id: 'eleven_turbo_v2',
-        voice_settings: { stability: 0.35, similarity_boost: 0.75, style: 0.65, speed: 1.08 },
-      }),
-    }
-  )
-
-  if (!voiceRes.ok) {
-    const err = await voiceRes.text()
-    console.error('ElevenLabs error:', err)
-    return Response.json({ error: 'Voice generation failed' }, { status: 500 })
+  let body: { script?: string; voice_id?: string; background_image?: string };
+  try {
+    body = await req.json();
+  } catch {
+    return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  // Step 2 — Upload audio to HeyGen asset store
-  const audioBuffer = await voiceRes.arrayBuffer()
-  const audioBase64 = Buffer.from(audioBuffer).toString('base64')
+  const { script, voice_id, background_image } = body;
 
-  const uploadRes = await fetch('https://upload.heygen.com/v1/asset', {
-    method: 'POST',
-    headers: {
-      'X-Api-Key': process.env.HEYGEN_API_KEY,
-      'Content-Type': 'audio/mpeg',
-    },
-    body: Buffer.from(audioBuffer),
-  })
-
-  let audioAssetId: string | null = null
-  if (uploadRes.ok) {
-    const uploadData = await uploadRes.json()
-    audioAssetId = uploadData.data?.id ?? null
+  if (!script?.trim()) {
+    return Response.json({ error: "script is required" }, { status: 400 });
+  }
+  if (!background_image?.startsWith("https://")) {
+    return Response.json({
+      error: "A character image is required. Generate or upload an image first.",
+      missing: "background_image",
+    }, { status: 400 });
   }
 
-  // Step 3 — Submit to HeyGen video generation
-  const voiceConfig = audioAssetId
-    ? { type: 'audio', audio_asset_id: audioAssetId }
-    : { type: 'text', input_text: script.slice(0, 1500), voice_id: elevenVoiceId }
-
-  const heygenRes = await fetch('https://api.heygen.com/v2/video/generate', {
-    method: 'POST',
-    headers: {
-      'X-Api-Key': process.env.HEYGEN_API_KEY,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      video_inputs: [
-        {
-          character: {
-            type: 'avatar',
-            avatar_id: avatar_id || 'Daisy-inskirt-20220818',
-            avatar_style: 'normal',
-            // Force maximum natural motion — never let these default to "none" or "minimal"
-            motion_config: {
-              idle_motion:             'micro_movements',  // NEVER "none" — kills all life
-              gesture_intensity:        0.7,               // hand/body movement 0–1
-              expression_amplification: 0.6,               // makes emotion readable on camera
-              head_movement:           'natural',          // NOT "minimal"
-              auto_gesture_alignment:   true,              // matches gestures to script emotion
-              eye_contact_variance:     0.2,               // slight natural looking away
-            },
-            camera_config: {
-              framing:       'medium_close_up',
-              zoom_pattern:  'slow_push_in',  // NEVER "static" — kills forward momentum
-              depth_of_field: 0.3,            // subtle background blur
-            },
-          },
-          voice: voiceConfig,
-          background: background_image
-            ? { type: 'image', url: background_image }
-            : { type: 'color', value: '#1a0a2e' },
-        },
-      ],
-      dimension: { width: 1080, height: 1920 },
-      aspect_ratio: '9:16',
-    }),
-  })
-
-  if (!heygenRes.ok) {
-    const err = await heygenRes.json()
-    console.error('HeyGen error:', err)
-    return Response.json({ error: 'Video submission failed', detail: err }, { status: 500 })
+  if (!process.env.ELEVENLABS_API_KEY) {
+    return Response.json({ error: "ELEVENLABS_API_KEY not configured" }, { status: 500 });
+  }
+  if (!process.env.FAL_API_KEY && !process.env.FALAI_API_KEY) {
+    return Response.json({ error: "FAL_API_KEY not configured" }, { status: 500 });
+  }
+  if (!process.env.SYNCLABS_API_KEY) {
+    return Response.json({ error: "SYNCLABS_API_KEY not configured" }, { status: 500 });
   }
 
-  const { data } = await heygenRes.json()
-  return Response.json({ video_id: data.video_id })
+  const input = {
+    script: script.trim(),
+    voice_id: voice_id || null,
+    image_url: background_image,
+  };
+
+  let job;
+  try {
+    job = await createOrFindJob(user.id, input);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[generate-avatar] createOrFindJob failed:", msg);
+    return Response.json({ error: "Failed to queue avatar job" }, { status: 500 });
+  }
+
+  // Already done — return result immediately (idempotency hit)
+  if (job.status === "completed") {
+    return Response.json({
+      jobId: job.id,
+      status: "completed",
+      result_url: job.result_url,
+      animated_video_url: job.animated_video_url,
+    });
+  }
+
+  // Already running — just return the jobId so caller can poll
+  if (job.status === "processing") {
+    return Response.json({ jobId: job.id, status: "processing" });
+  }
+
+  // Queued (new or reset) — fire the worker after this response is sent
+  const origin = new URL(req.url).origin;
+  const workerUrl = `${origin}/api/avatar-worker`;
+  const secret = process.env.CRON_SECRET ?? "";
+  const jobId = job.id;
+
+  after(() =>
+    fetch(workerUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-worker-secret": secret },
+      body: JSON.stringify({ jobId }),
+    }).catch((e) =>
+      console.error("[generate-avatar] worker trigger failed:", e?.message)
+    )
+  );
+
+  return Response.json({ jobId, status: "queued" });
 }

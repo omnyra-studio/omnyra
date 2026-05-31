@@ -16,6 +16,7 @@
     "app/api/voices/route.js": { "maxDuration": 30 }
   },
   "crons": [
+    { "path": "/api/avatar-worker/recover", "schedule": "*/10 * * * *" },
     { "path": "/api/cron/scrape-trends", "schedule": "0 6 * * *" },
     { "path": "/api/cron/aggregate-analytics", "schedule": "0 7 * * *" },
     { "path": "/api/cron/recalculate-scores", "schedule": "0 8 * * *" },

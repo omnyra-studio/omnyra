@@ -1,3 +1,8 @@
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
+import { getBrandProfile, getBrandSystemPrompt } from "../../../lib/brand";
+import { checkCache, saveCache, logUsageEvent } from "../../../lib/cache";
+
 export const maxDuration = 60
 
 const QUALITY_PROMPTS = {
@@ -31,10 +36,38 @@ export async function POST(req) {
     return Response.json({ error: 'FAL_API_KEY not configured' }, { status: 500 })
   }
 
+  // Optional auth — brand/cache only when user is available
+  let userId = null
+  let brandSuffix = ''
+  try {
+    const cookieStore = await cookies()
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      { cookies: { getAll: () => cookieStore.getAll(), setAll: () => {} } },
+    )
+    const { data: { user } } = await supabase.auth.getUser()
+    if (user) {
+      userId = user.id
+      const brand = await getBrandProfile(userId)
+      const ctx = getBrandSystemPrompt(brand)
+      if (ctx && brand?.style_preset) brandSuffix = `, ${brand.style_preset} visual style`
+      else if (ctx && brand?.niche) brandSuffix = `, aligned with ${brand.niche} brand aesthetic`
+    }
+  } catch { /* brand injection is optional */ }
+
+  const cacheInput = JSON.stringify({ prompt, niche, style, quality, aspect_ratio, num_images })
+  if (userId) {
+    const cached = await checkCache(userId, 'generate-image', cacheInput)
+    if (cached) {
+      try { return Response.json({ ...JSON.parse(cached), cached: true }) } catch { /* regenerate */ }
+    }
+  }
+
   const isAnimated = ['Animation', 'Motion Content'].includes(niche ?? '')
   const qualityPrompt = QUALITY_PROMPTS[style] ?? QUALITY_PROMPTS.lifestyle
   const animationPrefix = isAnimated ? 'anime illustration style, 2D animated, vibrant cel-shaded colors, ' : ''
-  const enhancedPrompt = `${animationPrefix}${prompt.trim()}, ${qualityPrompt}`
+  const enhancedPrompt = `${animationPrefix}${prompt.trim()}, ${qualityPrompt}${brandSuffix}`
 
   const model = quality === 'pro' ? 'fal-ai/flux-pro' : 'fal-ai/flux/schnell'
 
@@ -76,7 +109,12 @@ export async function POST(req) {
     const data = await res.json()
     const images = (data.images ?? []).map(img => img.url)
 
-    return Response.json({ images, seed: data.seed ?? null })
+    const result = { images, seed: data.seed ?? null }
+    if (userId) {
+      saveCache(userId, 'generate-image', cacheInput, JSON.stringify(result))
+      logUsageEvent(userId, 'generate-image', 'generate', 2 * num_images, { style, quality, niche })
+    }
+    return Response.json(result)
   } catch (err) {
     console.error('[generate-image]', err)
     return Response.json({ error: err.message }, { status: 500 })

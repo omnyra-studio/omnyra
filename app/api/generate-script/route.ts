@@ -1,4 +1,8 @@
 import OpenAI from "openai";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
+import { getBrandProfile, getBrandSystemPrompt } from "@/lib/brand";
+import { logUsageEvent } from "@/lib/cache";
 
 export async function POST(req: Request) {
   if (!process.env.OPENAI_API_KEY) {
@@ -27,7 +31,25 @@ export async function POST(req: Request) {
   const audienceText = targetAudience || "general audience";
   const platformText = Array.isArray(platforms) ? platforms.join(", ") : "TikTok";
 
-  const prompt = `You are an expert scriptwriter for short-form social content.
+  // Brand context — graceful fallback if unauthenticated
+  let brandSystemPrompt = "";
+  let userId: string | null = null;
+  try {
+    const cookieStore = await cookies();
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { cookies: { getAll: () => cookieStore.getAll(), setAll: () => {} } },
+    );
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      userId = user.id;
+      const brand = await getBrandProfile(user.id);
+      brandSystemPrompt = getBrandSystemPrompt(brand);
+    }
+  } catch { /* brand injection is optional */ }
+
+  const userPrompt = `You are an expert scriptwriter for short-form social content.
 
 Expand this content brief into a full ready-to-record script.
 
@@ -48,10 +70,14 @@ Write a complete natural-sounding script:
 - Conversational, not corporate
 - End with the CTA naturally woven in
 
-Return only the script. No explanation. No title. Just the script.`;
+Return only the script. No explanation. No title. Just the script.${brandSystemPrompt}`;
 
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const encoder = new TextEncoder();
+
+  if (userId) {
+    logUsageEvent(userId, "generate-script", "generate", 1, { template: templateText, niche: nicheText });
+  }
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -60,7 +86,12 @@ Return only the script. No explanation. No title. Just the script.`;
           model:      "gpt-4o",
           max_tokens: 1500,
           stream:     true,
-          messages:   [{ role: "user", content: prompt }],
+          messages:   [
+            ...(brandSystemPrompt
+              ? [{ role: "system" as const, content: `You are a brand-aligned scriptwriter.${brandSystemPrompt}` }]
+              : []),
+            { role: "user", content: userPrompt },
+          ],
         });
 
         for await (const chunk of openaiStream) {

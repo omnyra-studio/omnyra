@@ -14,6 +14,8 @@ import { cookies } from "next/headers";
 import { executeShot } from "@/lib/shot-executor";
 import { ok, fail } from "@/lib/api/response";
 import type { ShotPacket } from "@/lib/types/shot";
+import { getBrandProfile, getBrandSystemPrompt } from "@/lib/brand";
+import { checkCache, saveCache, logUsageEvent } from "@/lib/cache";
 
 export const maxDuration = 300;
 
@@ -53,6 +55,21 @@ export async function POST(request: Request) {
       return fail("Missing required field: prompt", 400, "VALIDATION_ERROR");
     }
 
+    let brandSuffix = "";
+    try {
+      const brand = await getBrandProfile(user.id);
+      const ctx = getBrandSystemPrompt(brand);
+      if (ctx && brand?.style_preset) brandSuffix = `, ${brand.style_preset} visual style`;
+    } catch { /* brand injection is optional */ }
+
+    const cacheInput = JSON.stringify({ prompt, imageUrl, duration });
+    const cached = await checkCache(user.id, "generate-cinematic", cacheInput);
+    if (cached) {
+      try { return ok({ ...JSON.parse(cached), cached: true }); } catch { /* regenerate */ }
+    }
+
+    const visualPrompt = brandSuffix ? `${prompt.trim()}${brandSuffix}` : prompt.trim();
+
     const shot: ShotPacket = {
       shot_id:             crypto.randomUUID(),
       shot_number:         1,
@@ -64,7 +81,7 @@ export async function POST(request: Request) {
       motion_intensity:    0.7,
       framing:             "medium",
       content_type:        "broll",
-      visual_prompt:       prompt.trim(),
+      visual_prompt:       visualPrompt,
       render_assignment:   "fal",
       fal_model:           "fal-ai/kling-video/v1.6/standard/image-to-video",
       transition_in:       "hard_cut",
@@ -86,7 +103,10 @@ export async function POST(request: Request) {
       return fail("Cinematic generation failed after retries. Please try again.", 500);
     }
 
-    return ok({ clip_url: result.videoUrl });
+    const payload = { clip_url: result.videoUrl };
+    saveCache(user.id, "generate-cinematic", cacheInput, JSON.stringify(payload));
+    logUsageEvent(user.id, "generate-cinematic", "generate", 8, { duration });
+    return ok(payload);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (error: any) {
     console.error("[generate-cinematic] RAW ERROR:", error);

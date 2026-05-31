@@ -18,6 +18,7 @@ import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { logUsageEvent } from "@/lib/cache";
 
 export const maxDuration = 60;
 
@@ -223,6 +224,7 @@ export async function POST(request: Request) {
   }
 
   console.log(`[generate-voiceover] plan=${planId} — ${wordCount} words → ${actualDuration}s → ${publicUrl}`);
+  logUsageEvent(user.id, "generate-voiceover", "generate", 3, { planId, wordCount, shotCount: shots.length });
 
   return NextResponse.json({
     success:          true,

@@ -1,6 +1,10 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@supabase/supabase-js";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 import { withTrace } from "@/lib/api/autopsy";
+import { getBrandProfile, getBrandSystemPrompt } from "@/lib/brand";
+import { checkCache, saveCache, logUsageEvent } from "@/lib/cache";
 
 export interface BriefData {
   situation_analysis: string;
@@ -50,7 +54,37 @@ async function handler(req: Request): Promise<Response> {
     );
   }
 
-  const prompt = `You are a world-class short-form video content strategist. Produce a strategic creative brief for the following goal.
+  // Brand context + user identity
+  let brandContext = "";
+  let userId: string | null = null;
+  try {
+    const cookieStore = await cookies();
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { cookies: { getAll: () => cookieStore.getAll(), setAll: () => {} } },
+    );
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      userId = user.id;
+      const brand = await getBrandProfile(user.id);
+      brandContext = getBrandSystemPrompt(brand);
+    }
+  } catch { /* brand injection is optional */ }
+
+  // Cache check
+  const cacheInput = JSON.stringify({ goal, template, niche, targetAudience, platforms });
+  if (userId) {
+    const cached = await checkCache(userId, "generate-brief", cacheInput);
+    if (cached) {
+      try {
+        const briefData = JSON.parse(cached) as BriefData;
+        return Response.json({ briefId: null, briefData, cached: true });
+      } catch { /* parse failed — fall through to regenerate */ }
+    }
+  }
+
+  const prompt = `You are a world-class short-form video content strategist. Produce a strategic creative brief for the following goal.${brandContext}
 
 Goal: ${goal}
 Template: ${template || "ugc-ad"}
@@ -99,7 +133,13 @@ Return ONLY valid JSON. No markdown. No backticks. No explanation. Exactly this 
     return Response.json({ error: "brief_generation_failed", message }, { status: 500 });
   }
 
-  // Persist to DB — non-blocking, failure still returns briefData inline
+  // Save to cache + log usage
+  if (userId) {
+    saveCache(userId, "generate-brief", cacheInput, JSON.stringify(briefData));
+    logUsageEvent(userId, "generate-brief", "generate", 2, { template, niche });
+  }
+
+  // Persist to DB — non-blocking
   let briefId: string | null = null;
   if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
     try {

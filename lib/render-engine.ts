@@ -247,45 +247,40 @@ async function generateSceneVideo(scene: Scene): Promise<string> {
 }
 
 /* ────────────────────────────────────────────────────────────────
- *  Lip-sync — Sync.so
+ *  Lip-sync — SyncLabs
  * ─────────────────────────────────────────────────────────────── */
 
 async function runLipsync(videoUrl: string, audioUrl: string): Promise<string> {
-  const submitRes = await fetch("https://api.sync.so/v2/generate", {
+  const apiKey = process.env.SYNCLABS_API_KEY;
+  if (!apiKey) throw new Error("SYNCLABS_API_KEY not configured");
+
+  const submitRes = await fetch("https://api.synclabs.so/video", {
     method: "POST",
-    headers: {
-      "x-api-key": process.env.SYNCSO_API_KEY!,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "lipsync-2",
-      input: [
-        { type: "video", url: videoUrl },
-        { type: "audio", url: audioUrl },
-      ],
-      options: { output_format: "mp4", active_speaker: true },
-    }),
+    headers: { "x-api-key": apiKey, "Content-Type": "application/json" },
+    body: JSON.stringify({ videoUrl, audioUrl, synergize: true, maxCredits: 120, webhookUrl: null }),
   });
-  if (!submitRes.ok) throw new Error(`syncso submit ${submitRes.status}`);
+  if (!submitRes.ok) throw new Error(`synclabs submit ${submitRes.status}`);
   const submitData = await submitRes.json();
   const jobId = submitData.id;
-  if (!jobId) throw new Error("syncso: no job id");
+  if (!jobId) throw new Error("synclabs: no job id");
 
-  for (let i = 0; i < 36; i++) {
-    await sleep(5000);
-    const pollRes = await fetch(`https://api.sync.so/v2/generate/${jobId}`, {
-      headers: { "x-api-key": process.env.SYNCSO_API_KEY! },
+  for (let i = 0; i < 30; i++) {
+    await sleep(4000);
+    const pollRes = await fetch(`https://api.synclabs.so/video/${jobId}`, {
+      headers: { "x-api-key": apiKey },
     });
     if (!pollRes.ok) continue;
     const pollData = await pollRes.json();
-    if (pollData.status === "completed" || pollData.status === "complete") {
-      const url = pollData.outputUrl ?? pollData.output_url ?? pollData.url;
-      if (!url) throw new Error("syncso: no output url");
+    if (pollData.status === "completed") {
+      const url = pollData.url ?? pollData.videoUrl;
+      if (!url) throw new Error("synclabs: no output url");
       return url;
     }
-    if (pollData.status === "failed") throw new Error("syncso: failed");
+    if (pollData.status === "failed" || pollData.status === "error") {
+      throw new Error(`synclabs: ${pollData.error ?? pollData.status}`);
+    }
   }
-  throw new Error("syncso: timed out");
+  throw new Error("synclabs: timed out");
 }
 
 /* ────────────────────────────────────────────────────────────────
@@ -391,7 +386,7 @@ export async function runPipeline(input: RunPipelineInput): Promise<void> {
     // ── Lipsync ───────────────────────────────────────────────────
     let finalUrl: string;
     const lipsyncJob = await openJob({
-      render_id: renderId, user_id: userId, step: "generate_lipsync", provider: "syncso",
+      render_id: renderId, user_id: userId, step: "generate_lipsync", provider: "synclabs",
     });
     if (existing.video_url) {
       finalUrl = existing.video_url;
@@ -402,7 +397,7 @@ export async function runPipeline(input: RunPipelineInput): Promise<void> {
       if (lipsyncJob.id) await skipJob(lipsyncJob.id, "video_url_already_present");
     } else {
       try {
-        await emitEvent(renderId, "lipsync_started", { provider: "syncso" });
+        await emitEvent(renderId, "lipsync_started", { provider: "synclabs" });
         finalUrl = await runLipsync(sceneUrls[0], audioUrl);
         await emitEvent(renderId, "lipsync_completed", { video_url: finalUrl });
         if (lipsyncJob.id) await completeJob(lipsyncJob.id, { video_url: finalUrl });

@@ -2,6 +2,8 @@ import { getUserAndPlan } from "../../../../lib/auth";
 import { buildMasterPrompt } from "../../../../lib/prompt-engine";
 import { buildScenePrompts } from "../../../../lib/scene-engine";
 import { guardPipelineRequest } from "../../../../lib/api-guard";
+import { getBrandProfile, getBrandSystemPrompt } from "../../../../lib/brand";
+import { checkCache, saveCache, logUsageEvent } from "../../../../lib/cache";
 
 export async function POST(request) {
   const { user } = await getUserAndPlan(request);
@@ -26,6 +28,20 @@ export async function POST(request) {
     );
   }
 
+  const userId = user.id;
+
+  let brandContext = "";
+  try {
+    const brand = await getBrandProfile(userId);
+    brandContext = getBrandSystemPrompt(brand);
+  } catch { /* brand injection is optional */ }
+
+  const cacheInput = JSON.stringify({ product, audience, platform, goal, energy, camera, style, duration });
+  const cached = await checkCache(userId, "pipeline-draft", cacheInput);
+  if (cached) {
+    try { return Response.json({ ...JSON.parse(cached), cached: true }); } catch { /* regenerate */ }
+  }
+
   const systemPrompt = buildMasterPrompt({
     product: product.trim(),
     audience: audience.trim(),
@@ -35,7 +51,7 @@ export async function POST(request) {
     camera: camera ?? "ugc",
     style: style ?? "founder",
     duration: Number(duration),
-  });
+  }) + brandContext;
 
   const anthropicRes = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -70,5 +86,9 @@ export async function POST(request) {
     Number(duration)
   );
 
-  return Response.json({ script, scenes });
+  const payload = { script, scenes };
+  saveCache(userId, "pipeline-draft", cacheInput, JSON.stringify(payload));
+  logUsageEvent(userId, "pipeline-draft", "generate", 3, { platform, duration });
+
+  return Response.json(payload);
 }

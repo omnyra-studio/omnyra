@@ -78,7 +78,7 @@ If you haven't already, run `setup.sql` once before any migration below.
 | `ELEVENLABS_API_KEY` | Pipeline voice | Yes |
 | `KLING_ACCESS_KEY` / `KLING_SECRET_KEY` | Pipeline motion (Kling) | Yes |
 | `RUNWAY_API_KEY` / `PIKA_API_KEY` | Pipeline motion (alt) | Optional |
-| `SYNCSO_API_KEY` | Pipeline lipsync | Yes |
+| `SYNCLABS_API_KEY` | Pipeline lipsync | Yes |
 | `DEFAULT_VOICE_ID` | Pipeline fallback voice | Optional |
 | `STRIPE_SECRET_KEY` / `STRIPE_WEBHOOK_SECRET` | Stripe webhook | Yes |
 | `OMNYRA_ADMIN_USER_IDS` | `/api/admin/render/[id]/inspect` | Optional (comma-separated user IDs allowed to inspect any render) |

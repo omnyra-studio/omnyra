@@ -1,5 +1,9 @@
 import { fal } from "@fal-ai/client";
 import { KLING_I2V_MODEL, KLING_T2V_MODEL, RUNWAY_MODEL, extractVideoUrl } from "@/lib/video-models";
+import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
+import { getBrandProfile, getBrandSystemPrompt } from "@/lib/brand";
+import { checkCache, saveCache, logUsageEvent } from "@/lib/cache";
 
 export const maxDuration = 300;
 
@@ -32,12 +36,39 @@ export async function POST(req: Request) {
 
   fal.config({ credentials: falKey });
 
+  // Optional auth — brand/cache only when user is available
+  let userId: string | null = null;
+  let brandSuffix = "";
+  try {
+    const cookieStore = await cookies();
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { cookies: { getAll: () => cookieStore.getAll(), setAll: () => {} } },
+    );
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      userId = user.id;
+      const brand = await getBrandProfile(userId);
+      const ctx = getBrandSystemPrompt(brand);
+      if (ctx && brand?.style_preset) brandSuffix = `, ${brand.style_preset} visual style`;
+    }
+  } catch { /* brand injection is optional */ }
+
+  const cacheInput = JSON.stringify({ prompt, image_url: !!image_url, model, niche });
+  if (userId) {
+    const cached = await checkCache(userId, "generate-video-fal", cacheInput);
+    if (cached) {
+      try { return Response.json({ ...JSON.parse(cached), cached: true }); } catch { /* regenerate */ }
+    }
+  }
+
   const isAnimated = ['Animation', 'Motion Content'].includes(niche ?? '') ||
     prompt?.toLowerCase().includes('anime') ||
     prompt?.toLowerCase().includes('animated');
 
   const animationPrefix = isAnimated ? 'anime style, 2D animated, vibrant cel-shaded, ' : '';
-  const cinemaPrompt = `${animationPrefix}${prompt}, cinematic motion, smooth natural movement, high quality`;
+  const cinemaPrompt = `${animationPrefix}${prompt}, cinematic motion, smooth natural movement, high quality${brandSuffix}`;
 
   if (model === "fast") {
     const hasImage = image_url && typeof image_url === 'string' && image_url.startsWith('https://');
@@ -57,6 +88,7 @@ export async function POST(req: Request) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const videoUrl = extractVideoUrl(result);
         if (!videoUrl) throw new Error(`${activeModel} returned no video URL`);
+        if (userId) { saveCache(userId, "generate-video-fal", cacheInput, JSON.stringify({ video_url: videoUrl, status: "completed" })); logUsageEvent(userId, "generate-video-fal", "generate", 8, { model: "i2v" }); }
         return Response.json({ video_url: videoUrl, status: "completed" });
       } catch (err) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -79,6 +111,7 @@ export async function POST(req: Request) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const videoUrl = extractVideoUrl(result);
       if (!videoUrl) throw new Error(`${activeModel} returned no video URL`);
+      if (userId) { saveCache(userId, "generate-video-fal", cacheInput, JSON.stringify({ video_url: videoUrl, status: "completed" })); logUsageEvent(userId, "generate-video-fal", "generate", 8, { model: "t2v" }); }
       return Response.json({ video_url: videoUrl, status: "completed" });
     } catch (err) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -124,6 +157,7 @@ export async function POST(req: Request) {
       return falError(selectedModel, undefined, "no video URL in response", result);
     }
 
+    if (userId) { saveCache(userId, "generate-video-fal", cacheInput, JSON.stringify({ video_url: videoUrl, status: "completed" })); logUsageEvent(userId, "generate-video-fal", "generate", 10, { model }); }
     return Response.json({ video_url: videoUrl, status: "completed" });
   } catch (err) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

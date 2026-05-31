@@ -20,6 +20,7 @@ import { createClient } from "@/lib/supabase/client";
 import * as Q from "@/lib/db/query";
 import { SCHEMA } from "@/lib/db/schema";
 import AnimatedBackground from "@/components/AnimatedBackground";
+import AnalyticsWidget from "@/components/AnalyticsWidget";
 
 const OUTCOMES = [
   {
@@ -377,6 +378,13 @@ export default function DashboardHome() {
             ))}
           </div>
         </section>
+
+        {/* Analytics */}
+        {!loading && (
+          <section className="mb-8">
+            <AnalyticsWidget />
+          </section>
+        )}
 
         {/* Recent videos */}
         <section id="videos" className="mb-20 scroll-mt-24">

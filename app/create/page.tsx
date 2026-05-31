@@ -854,10 +854,19 @@ function CreatePageInner() {
     }
   }
 
-  async function handleGenerateVideoHeyGen() {
+  async function handleGenerateVideoAvatar() {
     if (!briefResponse) return;
+
+    if (!selectedImage) {
+      setError('An image is required for Avatar mode — generate or upload a character image first.');
+      return;
+    }
+
+    if (pollRef.current) clearInterval(pollRef.current);
+
     setIsGeneratingVideo(true);
     setVideoProgress(10);
+
     try {
       const script = briefResponse.versions[selectedVersion].script;
       const res = await fetch('/api/generate-avatar', {
@@ -866,44 +875,77 @@ function CreatePageInner() {
         body: JSON.stringify({
           script,
           voice_id: selectedVoiceId || userVoice?.voice_id || null,
-          avatar_id: 'Daisy-inskirt-20220818',
-          background_image: selectedImage || null,
+          background_image: selectedImage,
         }),
       });
-      if (!res.ok) throw new Error('Video submission failed');
-      const { video_id } = await res.json();
-      setVideoProgress(40);
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data?.error || 'Failed to queue avatar job');
+      }
+
+      // Idempotency hit — job already completed
+      if (data.status === 'completed' && data.result_url) {
+        setVideoUrl(data.result_url);
+        setMergedVideoUrl(data.result_url);
+        setVideoProgress(100);
+        setIsGeneratingVideo(false);
+        return;
+      }
+
+      const jobId: string = data.jobId;
+      if (!jobId) throw new Error('No jobId returned from avatar queue');
+
+      setVideoProgress(20);
+
+      // Poll /api/job-status every 5 s — up to 60 polls (5 minutes)
       let pollCount = 0;
-      if (pollRef.current) clearInterval(pollRef.current);
+      const MAX_POLLS = 60;
+
       pollRef.current = setInterval(async () => {
-        pollCount++;
-        if (pollCount > 60) {
-          if (pollRef.current) clearInterval(pollRef.current);
-          setIsGeneratingVideo(false);
-          setError('Video generation timed out — please try again');
-          return;
-        }
         try {
-          const check = await fetch(`/api/check-video?video_id=${video_id}`);
-          const { status, video_url } = await check.json();
-          if (status === 'completed' && video_url) {
-            if (pollRef.current) clearInterval(pollRef.current);
-            setVideoUrl(video_url);
+          pollCount++;
+          if (pollCount > MAX_POLLS) {
+            clearInterval(pollRef.current!);
+            pollRef.current = null;
+            setError('Avatar generation timed out. Please try again.');
+            setIsGeneratingVideo(false);
+            return;
+          }
+
+          const statusRes = await fetch(`/api/job-status?id=${jobId}`);
+          if (!statusRes.ok) return; // transient error — keep polling
+
+          const status = await statusRes.json();
+          console.log(`[generate-avatar] poll ${pollCount} status=${status.status} stage=${status.stage}`);
+
+          // Advance progress bar proportionally (20–95 % during processing)
+          const progressEstimate = Math.min(20 + Math.round((pollCount / MAX_POLLS) * 75), 95);
+          setVideoProgress(progressEstimate);
+
+          if (status.status === 'completed') {
+            clearInterval(pollRef.current!);
+            pollRef.current = null;
+            setVideoUrl(status.result_url);
+            setMergedVideoUrl(status.result_url);
             setVideoProgress(100);
             setIsGeneratingVideo(false);
-          } else if (status === 'failed') {
-            if (pollRef.current) clearInterval(pollRef.current);
+          } else if (status.status === 'failed') {
+            clearInterval(pollRef.current!);
+            pollRef.current = null;
+            const stageLabel = status.stage ? ` [stage: ${status.stage}]` : '';
+            setError(`${status.error || 'Avatar generation failed'}${stageLabel}`);
             setIsGeneratingVideo(false);
-          } else {
-            setVideoProgress(p => Math.min(p + 5, 90));
           }
-        } catch {
-          if (pollRef.current) clearInterval(pollRef.current);
-          setIsGeneratingVideo(false);
+        } catch (pollErr) {
+          console.error('[generate-avatar] poll error:', pollErr);
+          // keep polling on network errors
         }
       }, 5000);
+
     } catch (err) {
-      console.error('Video error:', err);
+      const msg = err instanceof Error ? err.message : 'Avatar generation failed';
+      console.error('[generate-avatar] error:', msg);
+      setError(msg);
       setIsGeneratingVideo(false);
     }
   }
@@ -913,7 +955,34 @@ function CreatePageInner() {
     const v = briefResponse.versions[selectedVersion];
 
     if (type === 'avatar') {
-      await handleGenerateVideoHeyGen();
+      // If the user has a selected/generated image and a voiceover, use the
+      // image-to-talking-character lipsync pipeline (Kling animate → SyncLabs).
+      if (selectedImage && voiceAudioUrl && !voiceAudioUrl.startsWith('blob:')) {
+        setIsGeneratingVideo(true);
+        setVideoProgress(10);
+        try {
+          console.log('[avatar-lipsync] starting image→lipsync pipeline');
+          const lipsyncRes = await fetch('/api/avatar-lipsync', {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ imageUrl: selectedImage, audioUrl: voiceAudioUrl }),
+          });
+          const lipsyncData = await lipsyncRes.json();
+          if (!lipsyncRes.ok) throw new Error(lipsyncData.error || 'Lipsync failed');
+          if (!lipsyncData.video_url) throw new Error('No video URL from lipsync');
+          setVideoUrl(lipsyncData.video_url);
+          setMergedVideoUrl(lipsyncData.video_url); // audio already embedded
+          setVideoProgress(100);
+          console.log(`[avatar-lipsync] done timing_ms=${JSON.stringify(lipsyncData.timing_ms)}`);
+        } catch (err) {
+          console.error('[avatar-lipsync] error:', err);
+          setError(err instanceof Error ? err.message : 'Avatar lipsync failed');
+        } finally {
+          setIsGeneratingVideo(false);
+        }
+        return;
+      }
+      await handleGenerateVideoAvatar();
       return;
     }
 
@@ -924,11 +993,17 @@ function CreatePageInner() {
         const scriptText = v.script || '';
         const hookText = v.hook || '';
 
-        // Build per-clip prompts from [SCENE:] tags; fall back to hook if none
-        const CLIP_SECONDS = 8;
-        const effectiveDuration = voiceDuration > 0 ? voiceDuration : CLIP_SECONDS;
-        const clipCount = Math.max(1, Math.ceil(effectiveDuration / CLIP_SECONDS));
-        console.log(`[cinematic] voiceDuration=${voiceDuration.toFixed(1)}s clipCount=${clipCount}`);
+        // Build per-clip prompts from [SCENE:] tags; fall back to hook if none.
+        // Kling v1.6 standard produces exactly 10s clips (enum "5"|"10").
+        // Minimum 3 clips guarantees ≥30s cinematic output even for short voiceovers.
+        const TARGET_SCENE_SECONDS = 30;
+        const CLIP_SECONDS = 10; // matches Kling's actual output
+        const effectiveDuration = Math.max(
+          voiceDuration > 0 ? voiceDuration : TARGET_SCENE_SECONDS,
+          TARGET_SCENE_SECONDS,
+        );
+        const clipCount = Math.ceil(effectiveDuration / CLIP_SECONDS); // always ≥ 3
+        console.log(`[cinematic] voiceDuration=${voiceDuration.toFixed(1)}s effectiveDuration=${effectiveDuration}s clipCount=${clipCount} TARGET_SCENE=${TARGET_SCENE_SECONDS}s`);
 
         const tagMatches = [...scriptText.matchAll(/\[SCENE:\s*([^\]]+)\]/gi)].map(m => m[1].trim());
         const basePrompts: string[] = Array.from({ length: clipCount }, (_, i) =>
@@ -971,6 +1046,7 @@ function CreatePageInner() {
           stitch_source?: string;
           clip_urls?: string[];
           clips_generated?: number;
+          clip_duration?: number;
           total_duration?: number;
           error?: string;
           SEQUENCE_ROUTE_VERSION?: string;
@@ -982,7 +1058,7 @@ function CreatePageInner() {
         } | null = null;
         try { seqData = JSON.parse(rawText); } catch { seqData = null; }
 
-        console.error('FULL SEQUENCE RESPONSE', JSON.stringify(seqData, null, 2));
+        console.log('FULL SEQUENCE RESPONSE', JSON.stringify(seqData, null, 2));
         console.log('[cinematic] stitch_source:', seqData?.stitch_source);
         console.log('[cinematic] clips_generated:', seqData?.clips_generated, 'total_duration:', seqData?.total_duration);
         console.log('[cinematic] clip_urls:', seqData?.clip_urls?.map(u => u.substring(0, 60)));
@@ -992,29 +1068,52 @@ function CreatePageInner() {
           throw new Error(seqData?.error || rawText || `Cinematic generation failed (${seqRes.status})`);
         }
 
-        const stitchedUrl = seqData?.stitched_url ?? '';
-        if (!stitchedUrl) throw new Error('No stitched video URL returned');
+        const fallbackUrl = seqData?.clip_urls?.[0] ?? seqData?.stitched_url ?? '';
+        if (!seqData?.clip_urls?.length) throw new Error('No clip URLs returned from sequence generation');
         setVideoProgress(80);
 
-        // Merge with voiceover if available (public URL only — blob: URLs can't be fetched server-side)
-        if (voiceAudioUrl && !voiceAudioUrl.startsWith('blob:')) {
-          try {
-            const composeRes = await fetch('/api/compose-video', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ videoUrl: stitchedUrl, voiceoverUrl: voiceAudioUrl }),
-            });
-            if (composeRes.ok) {
-              const composeData = await composeRes.json();
-              setVideoUrl(composeData.video_url ?? stitchedUrl);
-            } else {
-              setVideoUrl(stitchedUrl);
+        // Compose all clips + voiceover via compose-video (passes clip array, not single stitched URL)
+        console.log('[PHASE2] PRE_COMPOSE', JSON.stringify({
+          clipCount: seqData.clip_urls?.length,
+          clipUrls: seqData.clip_urls,
+          clipDuration: CLIP_SECONDS,
+          seqClipDuration: seqData.clip_duration,
+          voiceDuration,
+          hasVoiceAudioUrl: !!voiceAudioUrl,
+          voiceAudioUrlPrefix: voiceAudioUrl?.substring(0, 80),
+        }, null, 2));
+        try {
+          // Use actual clip duration returned by the sequence route (Kling forces "5"|"10"),
+          // not the CLIP_SECONDS constant — avoids Railway Composer trimming clips short.
+          const actualClipDuration = seqData.clip_duration ?? CLIP_SECONDS;
+          const voiceoverSent = !!(voiceAudioUrl && !voiceAudioUrl.startsWith('blob:'));
+          const composeRes = await fetch('/api/compose-video', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              clipUrls: seqData.clip_urls,
+              clipDuration: actualClipDuration,
+              voiceoverUrl: voiceoverSent ? voiceAudioUrl : undefined,
+            }),
+          });
+          if (composeRes.ok) {
+            const composeData = await composeRes.json();
+            console.log('[cinematic] compose-video result:', JSON.stringify(composeData).substring(0, 200));
+            const finalUrl = composeData.video_url ?? fallbackUrl;
+            setVideoUrl(finalUrl);
+            // If compose-video already merged audio, mark as merged so the useEffect
+            // does not re-trigger handleMergeVideoAudio on the already-composed video.
+            if (voiceoverSent && composeData.has_audio) {
+              setMergedVideoUrl(finalUrl);
             }
-          } catch {
-            setVideoUrl(stitchedUrl);
+          } else {
+            const errText = await composeRes.text();
+            console.error('[cinematic] compose-video failed:', composeRes.status, errText.substring(0, 200));
+            setVideoUrl(fallbackUrl);
           }
-        } else {
-          setVideoUrl(stitchedUrl);
+        } catch (composeErr) {
+          console.error('[cinematic] compose-video threw:', composeErr);
+          setVideoUrl(fallbackUrl);
         }
         setVideoProgress(100);
       } catch (err) {
@@ -1936,7 +2035,7 @@ function CreatePageInner() {
                   >
                     <div style={{ fontSize: '1.5rem', marginBottom: 6 }}>👤</div>
                     <div style={{ fontWeight: 700, marginBottom: 4 }}>Avatar Video</div>
-                    <div style={{ fontSize: '0.75rem', opacity: 0.6 }}>Talking head · HeyGen</div>
+                    <div style={{ fontSize: '0.75rem', opacity: 0.6 }}>Talking head · Avatar</div>
                     <div style={{ fontSize: '0.75rem', color: '#C9A84C', marginTop: 4 }}>40 credits</div>
                     {!['creator', 'studio'].includes(userTier) && (
                       <div style={{

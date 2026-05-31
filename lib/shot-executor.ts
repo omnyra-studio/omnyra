@@ -1,13 +1,8 @@
 /**
  * Shot Executor — dispatches a single ShotPacket to the correct render API.
  *
- * PATH A — avatar + user has HeyGen avatar ID:
- *   → HeyGen talking head, scene_image_url as background
- *
- * PATH B — avatar without HeyGen avatar (or any non-avatar shot):
- *   → fal.ai Kling image-to-video; scene_image_url is the entire frame
- *
- * text_overlay — fal.ai Flux still-image card held for duration
+ * avatar shots:   fal.ai Kling image-to-video; scene_image_url is the entire frame
+ * text_overlay:   fal.ai Flux still-image card held for duration
  *
  * All paths retry once on failure before returning null.
  */
@@ -23,10 +18,8 @@ fal.config({ credentials: process.env.FAL_API_KEY });
 // ── Public types ──────────────────────────────────────────────────────────────
 
 export interface ShotAssets {
-  heygenAvatarId?: string | null;         // HeyGen avatar ID created from the reference video
-  avatarReferenceVideoUrl?: string | null; // public URL of the uploaded reference video
   voiceId?: string;
-  voiceText?: string;                      // spoken words for this shot
+  voiceText?: string;
 }
 
 export interface ShotExecutionResult {
@@ -34,146 +27,6 @@ export interface ShotExecutionResult {
   duration: number;
 }
 
-// ── HeyGen ────────────────────────────────────────────────────────────────────
-
-const HEYGEN_BASE = "https://api.heygen.com";
-
-/**
- * Maps a shot's attention function to a HeyGen avatar emotion.
- * HeyGen v2 supports: excited, friendly, serious, soothing, broadcaster
- */
-function attentionToEmotion(
-  fn: ShotPacket["attention_function"],
-): string {
-  const map: Record<ShotPacket["attention_function"], string> = {
-    pattern_interrupt:   "excited",
-    curiosity_spike:     "friendly",
-    trust_grounding:     "serious",
-    tension_escalation:  "broadcaster",
-    emotional_release:   "soothing",
-    desire_activation:   "friendly",
-    urgency_trigger:     "excited",
-    pacing_reset:        "soothing",
-  };
-  return map[fn] ?? "friendly";
-}
-
-/**
- * Maps a shot's camera_behavior to a HeyGen zoom_pattern.
- */
-function cameraToZoom(behavior: ShotPacket["camera_behavior"]): string {
-  const map: Partial<Record<ShotPacket["camera_behavior"], string>> = {
-    slow_push_in: "slow_push_in",
-    dolly_in:     "zoom_in",
-    static:       "static",
-    crane_up:     "zoom_in",
-    dolly_out:    "zoom_out",
-  } as Record<string, string>;
-  return (map as Record<string, string>)[behavior] ?? "slow_push_in";
-}
-
-async function submitHeyGen(
-  shot: ShotPacket,
-  assets: ShotAssets,
-): Promise<string> {
-  const apiKey = process.env.HEYGEN_API_KEY;
-  if (!apiKey) throw new Error("HEYGEN_API_KEY not set");
-
-  const text = (assets.voiceText ?? "").slice(0, 1500) || "...";
-
-  const res = await fetch(`${HEYGEN_BASE}/v2/video/generate`, {
-    method: "POST",
-    headers: {
-      "X-Api-Key": apiKey,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      video_inputs: [
-        {
-          character: {
-            type: "avatar",
-            avatar_id: assets.heygenAvatarId!,
-            avatar_style: "normal",
-            // Motion forcing — maps AVATAR_MOTION constants to HeyGen fields
-            motion_config: {
-              idle_motion: "micro_movements",
-              zoom_pattern: cameraToZoom(shot.camera_behavior),
-              gesture_intensity: shot.motion_intensity,
-              emotion: attentionToEmotion(shot.attention_function),
-              motion_extraction: {
-                capture_micro_expressions: true,
-                capture_gestures: true,
-                motion_variance: 0.7,
-              },
-            },
-          },
-          voice: {
-            type: "text",
-            input_text: text,
-            voice_id: assets.voiceId ?? "2d5b0e6cf36f460aa7fc47e3eee4ba54",
-            speed: 1.08,
-          },
-          background: shot.scene_image_url
-            ? { type: "image", url: shot.scene_image_url }
-            : { type: "color", value: "#0a0a0a" },
-        },
-      ],
-      dimension: { width: 1080, height: 1920 },
-      aspect_ratio: "9:16",
-    }),
-  });
-
-  const data = await res.json();
-  if (!res.ok || data.error) {
-    throw new Error(data.error?.message ?? `HeyGen API error ${res.status}`);
-  }
-
-  const videoId: string = data.data?.video_id;
-  if (!videoId) throw new Error("HeyGen returned no video_id");
-  return videoId;
-}
-
-async function pollHeyGen(
-  videoId: string,
-  timeoutMs = 180_000,
-): Promise<string> {
-  const apiKey = process.env.HEYGEN_API_KEY!;
-  const deadline = Date.now() + timeoutMs;
-
-  while (Date.now() < deadline) {
-    await sleep(4000);
-
-    const res = await fetch(
-      `${HEYGEN_BASE}/v1/video_status.get?video_id=${videoId}`,
-      { headers: { "X-Api-Key": apiKey } },
-    );
-    const data = await res.json();
-    const status: string = data.data?.status;
-
-    if (status === "completed") {
-      const url = data.data?.video_url as string | undefined;
-      if (!url) throw new Error("HeyGen completed but returned no video_url");
-      return url;
-    }
-
-    if (status === "failed") {
-      throw new Error(`HeyGen render failed: ${data.data?.error ?? "unknown"}`);
-    }
-  }
-
-  throw new Error(`HeyGen timed out after ${timeoutMs / 1000}s (video_id: ${videoId})`);
-}
-
-async function executeHeyGenShot(
-  shot: ShotPacket,
-  assets: ShotAssets,
-): Promise<ShotExecutionResult> {
-  const videoId = await submitHeyGen(shot, assets);
-  const videoUrl = await pollHeyGen(videoId);
-  return { videoUrl, duration: shot.duration_seconds };
-}
-
-// ── fal.ai ────────────────────────────────────────────────────────────────────
 
 // Seedance 2 — primary model for both text-to-video and image-to-video
 export const SEEDANCE_T2V_MODEL = "fal-ai/kling-video/v1.6/standard/text-to-video";
@@ -328,20 +181,7 @@ export async function executeShot(
       return executeTextOverlay(shot);
     }
 
-    if (shot.content_type !== "avatar") {
-      // broll, transition — animate the scene image
-      return executeFalShot(shot);
-    }
-
-    // Avatar shot: route on whether the user has a personal HeyGen avatar
-    if (assets.avatarReferenceVideoUrl && assets.heygenAvatarId) {
-      // PATH A — personal avatar: HeyGen talking head, scene image as background
-      console.log(`[Shot ${shot.shot_number}] Routing to HeyGen — user has personal avatar`);
-      return executeHeyGenShot(shot, assets);
-    }
-
-    // PATH B — no personal avatar: scene image IS the persona, animate it directly
-    console.log(`[Shot ${shot.shot_number}] No personal avatar — animating scene image via fal.ai`);
+    // avatar, broll, transition — all animate via fal.ai
     return executeFalShot(shot);
   };
 

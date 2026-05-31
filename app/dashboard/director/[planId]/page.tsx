@@ -239,8 +239,8 @@ function ShotCard({
 
         {/* Render badge */}
         <div style={{ display: "flex", alignItems: "center" }}>
-          <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4, background: shot.render_assignment === "heygen" ? `${C.cyan}18` : `${C.violet}18`, color: shot.render_assignment === "heygen" ? C.cyan : C.violet, letterSpacing: "0.04em" }}>
-            {shot.render_assignment === "heygen" ? "HEYGEN" : (shot.fal_model?.split("/").pop()?.toUpperCase() ?? "FAL")}
+          <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4, background: `${C.violet}18`, color: C.violet, letterSpacing: "0.04em" }}>
+            {shot.fal_model?.split("/").pop()?.toUpperCase() ?? "FAL"}
           </span>
         </div>
 

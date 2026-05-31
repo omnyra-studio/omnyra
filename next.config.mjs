@@ -6,7 +6,7 @@ const nextConfig = {
       { protocol: 'https', hostname: '**.fal.ai' },
       { protocol: 'https', hostname: '**.fal.run' },
       { protocol: 'https', hostname: 'fal.media' },
-      { protocol: 'https', hostname: '**.heygen.com' },
+
       { protocol: 'https', hostname: '**.klingai.com' },
       { protocol: 'https', hostname: 'oaidalleapiprodscus.blob.core.windows.net' },
       { protocol: 'https', hostname: '**.elevenlabs.io' }

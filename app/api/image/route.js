@@ -1,6 +1,8 @@
 import { getUserAndPlan } from '../../../lib/auth'
 import { checkBalance, deductCredits } from '../../../lib/credits'
 import { enforceRateLimit } from '../../../lib/api-guard'
+import { getBrandProfile, getBrandSystemPrompt } from '../../../lib/brand'
+import { checkCache, saveCache, logUsageEvent } from '../../../lib/cache'
 
 export const maxDuration = 60
 
@@ -43,7 +45,21 @@ export async function POST(request) {
     return Response.json({ error: 'Image generation not configured (FAL_API_KEY missing)' }, { status: 500 })
   }
 
-  const fullPrompt = prompt.trim() + (STYLE_SUFFIXES[style] ?? '')
+  let brandSuffix = ''
+  try {
+    const brand = await getBrandProfile(user.id)
+    const ctx = getBrandSystemPrompt(brand)
+    if (ctx && brand?.style_preset) brandSuffix = `, ${brand.style_preset} style`
+    else if (ctx && brand?.colors?.length) brandSuffix = `, brand palette: ${brand.colors.filter(Boolean).join(' ')}`
+  } catch { /* brand injection is optional */ }
+
+  const cacheInput = JSON.stringify({ prompt, style, plan })
+  const cached = await checkCache(user.id, 'image', cacheInput)
+  if (cached) {
+    try { return Response.json({ ...JSON.parse(cached), cached: true }) } catch { /* regenerate */ }
+  }
+
+  const fullPrompt = prompt.trim() + (STYLE_SUFFIXES[style] ?? '') + brandSuffix
   const model      = FLUX_MODEL[plan] ?? 'fal-ai/flux/schnell'
   const isPro      = model === 'fal-ai/flux-pro'
   const isSchnell  = model === 'fal-ai/flux/schnell'
@@ -78,5 +94,8 @@ export async function POST(request) {
 
   // Image confirmed — deduct only now
   const credit = await deductCredits(user.id, creditAction)
-  return Response.json({ url: imageUrl, model, balance: credit.remaining })
+  const result = { url: imageUrl, model, balance: credit.remaining }
+  saveCache(user.id, 'image', cacheInput, JSON.stringify(result))
+  logUsageEvent(user.id, 'image', 'generate', 2, { style, model })
+  return Response.json(result)
 }

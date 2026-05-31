@@ -1,6 +1,6 @@
 import { getUserAndPlan } from '../../../lib/auth'
 import { refundCredits } from '../../../lib/credits'
-import { pollKling, pollRunway, pollDID, pollHeyGen, pollSyncLabs } from '../../../lib/providers'
+import { pollKling, pollRunway, pollDID, pollSyncLabs } from '../../../lib/providers'
 
 function normaliseKling(data) {
   const s = data.data?.task_status
@@ -21,14 +21,6 @@ function normaliseDID(data) {
   return {
     status: data.status === 'done' ? 'complete' : data.status === 'error' ? 'failed' : 'processing',
     url: data.result_url ?? null,
-  }
-}
-
-function normaliseHeyGen(data) {
-  const s = data.data?.status
-  return {
-    status: s === 'completed' ? 'complete' : s === 'failed' ? 'failed' : 'processing',
-    url: data.data?.video_url ?? null,
   }
 }
 
@@ -70,10 +62,6 @@ export async function GET(request) {
       case 'did':
         raw = await pollDID(jobId)
         normalised = normaliseDID(raw)
-        break
-      case 'heygen':
-        raw = await pollHeyGen(jobId)
-        normalised = normaliseHeyGen(raw)
         break
       case 'synclabs':
         raw = await pollSyncLabs(jobId)

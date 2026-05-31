@@ -79,24 +79,17 @@ export async function POST(request: Request) {
   // ── Load avatar assets ────────────────────────────────────────────────────────
   const { data: profile } = await supabase
     .from("profiles")
-    .select("avatar_reference_video_url, heygen_avatar_id")
+    .select("voice_id")
     .eq("id", user.id)
     .single();
 
   const assets: ShotAssets = {
-    voiceId,
-    voiceText,
-    avatarReferenceVideoUrl: profile?.avatar_reference_video_url ?? null,
-    heygenAvatarId:          profile?.heygen_avatar_id          ?? null,
+    voiceId:   voiceId  ?? profile?.voice_id ?? undefined,
+    voiceText: voiceText ?? undefined,
   };
 
   // ── Scene image gate ─────────────────────────────────────────────────────────
-  const goingToHeyGen =
-    shot.content_type === "avatar" &&
-    !!assets.avatarReferenceVideoUrl &&
-    !!assets.heygenAvatarId;
-
-  if (!goingToHeyGen && shot.content_type !== "text_overlay" && !shot.scene_image_url) {
+  if (shot.content_type !== "text_overlay" && !shot.scene_image_url) {
     return NextResponse.json(
       { error: `No scene image for shot ${shot.shot_number}. Generate scene images first.` },
       { status: 400 },
@@ -104,8 +97,8 @@ export async function POST(request: Request) {
   }
 
   // ── Route decision ────────────────────────────────────────────────────────────
-  // text_overlay (Flux) and HeyGen avatar are synchronous; everything else is async fal queue
-  const isAsyncFal = !goingToHeyGen && shot.content_type !== "text_overlay";
+  // text_overlay (Flux) is synchronous; everything else is async fal queue
+  const isAsyncFal = shot.content_type !== "text_overlay";
 
   // ── Mark as rendering ────────────────────────────────────────────────────────
   await supabase
@@ -153,7 +146,7 @@ export async function POST(request: Request) {
     });
   }
 
-  // ── Sync path (HeyGen or text_overlay) ───────────────────────────────────────
+  // ── Sync path (text_overlay only) ────────────────────────────────────────────
   let result;
   try {
     result = await executeShot(shot as ShotPacket, assets);

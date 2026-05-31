@@ -34,7 +34,6 @@ export interface CreditBreakdown {
   runway: number;
   pika: number;
   synclabs: number;
-  syncso: number;
   heygen: number;
   did: number;
   falai: number;
@@ -76,7 +75,6 @@ const API_KEYS: readonly ApiKey[] = [
   "runway",
   "pika",
   "synclabs",
-  "syncso",
   "heygen",
   "did",
   "falai",
@@ -90,7 +88,6 @@ function emptyBreakdown(): CreditBreakdown {
     runway: 0,
     pika: 0,
     synclabs: 0,
-    syncso: 0,
     heygen: 0,
     did: 0,
     falai: 0,
@@ -122,8 +119,6 @@ function costForApi(
     case "pika":
       return scenes * 5;
     case "synclabs":
-      return blocks30s(duration) * 6;
-    case "syncso":
       return blocks30s(duration) * 6;
     case "heygen":
       return blocks30s(duration) * 15;

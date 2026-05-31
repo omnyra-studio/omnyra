@@ -1,0 +1,91 @@
+import { createClient } from "@supabase/supabase-js";
+
+// Columns required beyond base migration:
+// ALTER TABLE brand_profiles ADD COLUMN IF NOT EXISTS logo_url text;
+// ALTER TABLE brand_profiles ADD COLUMN IF NOT EXISTS tone_tags text[];
+// ALTER TABLE brand_profiles ADD COLUMN IF NOT EXISTS products jsonb;
+// ALTER TABLE brand_profiles ADD COLUMN IF NOT EXISTS style_preset text;
+
+export interface BrandProfile {
+  id?: string;
+  user_id?: string;
+  brand_name?: string | null;
+  tagline?: string | null;
+  colors?: string[] | null;
+  tone_of_voice?: string | null;
+  target_audience?: string | null;
+  niche?: string | null;
+  content_style_notes?: string | null;
+  logo_url?: string | null;
+  tone_tags?: string[] | null;
+  products?: Array<{ name: string; description: string }> | null;
+  style_preset?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+function adminClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+}
+
+export async function getBrandProfile(userId: string): Promise<BrandProfile | null> {
+  const db = adminClient();
+  const { data, error } = await db
+    .from("brand_profiles")
+    .select("*")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (error) {
+    console.warn("[brand] getBrandProfile error:", error.message);
+    return null;
+  }
+  return data as BrandProfile | null;
+}
+
+export async function upsertBrandProfile(
+  userId: string,
+  data: Partial<BrandProfile>,
+): Promise<BrandProfile> {
+  const db = adminClient();
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { id: _id, user_id: _uid, created_at: _ca, ...rest } = data as Record<string, unknown>;
+  const { data: row, error } = await db
+    .from("brand_profiles")
+    .upsert(
+      { ...rest, user_id: userId, updated_at: new Date().toISOString() },
+      { onConflict: "user_id" },
+    )
+    .select()
+    .single();
+  if (error) throw new Error(`upsertBrandProfile: ${error.message}`);
+  return row as BrandProfile;
+}
+
+export function getBrandSystemPrompt(brand: BrandProfile | null): string {
+  if (!brand) return "";
+  const parts: string[] = [];
+  if (brand.brand_name)    parts.push(`Workspace/Brand: ${brand.brand_name}`);
+  if (brand.tone_of_voice) parts.push(`Tone of Voice: ${brand.tone_of_voice}`);
+  const colors = Array.isArray(brand.colors) ? brand.colors.filter(Boolean) : [];
+  if (colors.length)       parts.push(`Brand Colors: ${colors.join(", ")}`);
+  if (Array.isArray(brand.products) && brand.products.length) {
+    const list = brand.products.map((p) => `${p.name}: ${p.description}`).join("; ");
+    parts.push(`Products/Services: ${list}`);
+  }
+  if (Array.isArray(brand.tone_tags) && brand.tone_tags.length) {
+    parts.push(`Brand Voice Tags: ${brand.tone_tags.join(", ")}`);
+  }
+  if (brand.style_preset)         parts.push(`Visual Style Preset: ${brand.style_preset}`);
+  if (brand.target_audience)      parts.push(`Target Audience: ${brand.target_audience}`);
+  if (brand.niche)                parts.push(`Industry/Niche: ${brand.niche}`);
+  if (brand.content_style_notes)  parts.push(`Content Style Notes: ${brand.content_style_notes}`);
+  if (!parts.length) return "";
+  return [
+    "\n\n— BRAND IDENTITY (align ALL content to this brand) —",
+    ...parts,
+    "— END BRAND IDENTITY —",
+  ].join("\n");
+}

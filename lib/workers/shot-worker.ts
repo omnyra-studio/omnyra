@@ -53,27 +53,20 @@ export async function processShotJob(job: RenderShotJob): Promise<WorkerResult> 
     return { success: true };
   }
 
-  // ── Load avatar assets ────────────────────────────────────────────────────────
+  // ── Load voice assets ─────────────────────────────────────────────────────────
   const { data: profile } = await supabase
     .from("profiles")
-    .select("avatar_reference_video_url, heygen_avatar_id, voice_id")
+    .select("voice_id")
     .eq("id", userId)
     .single();
 
   const assets: ShotAssets = {
-    voiceId:                 profile?.voice_id                    ?? undefined,
-    voiceText:               (shot.narration_text as string)      ?? "",
-    avatarReferenceVideoUrl: profile?.avatar_reference_video_url  ?? null,
-    heygenAvatarId:          profile?.heygen_avatar_id            ?? null,
+    voiceId:   profile?.voice_id               ?? undefined,
+    voiceText: (shot.narration_text as string) ?? "",
   };
 
-  const goingToHeyGen =
-    shot.content_type === "avatar" &&
-    !!assets.avatarReferenceVideoUrl &&
-    !!assets.heygenAvatarId;
-
-  // ── Guard: scene image required for non-HeyGen, non-text_overlay shots ────────
-  if (!goingToHeyGen && shot.content_type !== "text_overlay" && !shot.scene_image_url) {
+  // ── Guard: scene image required for non-text_overlay shots ───────────────────
+  if (shot.content_type !== "text_overlay" && !shot.scene_image_url) {
     await markFailed(supabase, shotId, "No scene image — generate scene images first", planId, shot.shot_number as number);
     return { success: false, error: "No scene image" };
   }
@@ -90,11 +83,11 @@ export async function processShotJob(job: RenderShotJob): Promise<WorkerResult> 
       planId,
       shotId,
       shotNumber: shot.shot_number as number,
-      renderer:   goingToHeyGen ? "heygen" : shot.content_type === "text_overlay" ? "flux" : "fal",
+      renderer:   shot.content_type === "text_overlay" ? "flux" : "fal",
     },
   });
 
-  const isAsyncFal = !goingToHeyGen && shot.content_type !== "text_overlay";
+  const isAsyncFal = shot.content_type !== "text_overlay";
 
   // ── Async fal path ────────────────────────────────────────────────────────────
   if (isAsyncFal) {
@@ -122,7 +115,7 @@ export async function processShotJob(job: RenderShotJob): Promise<WorkerResult> 
     }
   }
 
-  // ── Sync path (HeyGen or text_overlay) ───────────────────────────────────────
+  // ── Sync path (text_overlay only) ────────────────────────────────────────────
   try {
     const result = await executeShot(shot as ShotPacket, assets);
     if (!result) throw new Error("Shot execution returned null after retries");

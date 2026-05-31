@@ -1,9 +1,12 @@
 // ── Canonical fal.ai video model slugs ───────────────────────────────────────
 // All video generation routes must import from here — no hardcoded strings elsewhere.
 
-export const KLING_I2V_MODEL = "fal-ai/kling-video/v1.6/standard/image-to-video";
-export const KLING_T2V_MODEL = "fal-ai/kling-video/v1.6/standard/text-to-video";
-export const RUNWAY_MODEL    = "fal-ai/runway-gen4/turbo";
+export const KLING_I2V_MODEL   = "fal-ai/kling-video/v1.6/standard/image-to-video";
+export const KLING_T2V_MODEL   = "fal-ai/kling-video/v1.6/standard/text-to-video";
+export const KLING_I2V_PRO     = "fal-ai/kling-video/v2.1/pro/image-to-video";  // used by avatar-lipsync stage 1
+export const RUNWAY_MODEL      = "fal-ai/runway-gen4/turbo";
+// Hedra Character-1: static image + audio → lip-synced talking character video
+export const HEDRA_MODEL       = "fal-ai/hedra/character-1";
 
 // Models that have been removed from fal.ai and must never be used.
 const DEPRECATED_MODELS = [
@@ -15,7 +18,7 @@ const DEPRECATED_MODELS = [
 ];
 
 // Startup validation — called once at module load.
-const ACTIVE_MODELS = [KLING_I2V_MODEL, KLING_T2V_MODEL, RUNWAY_MODEL];
+const ACTIVE_MODELS = [KLING_I2V_MODEL, KLING_T2V_MODEL, KLING_I2V_PRO, RUNWAY_MODEL, HEDRA_MODEL];
 
 for (const m of ACTIVE_MODELS) {
   if (DEPRECATED_MODELS.includes(m)) {

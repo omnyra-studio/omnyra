@@ -36,8 +36,7 @@
 | `PIKA_API_KEY`         | Server   | Pika motion. Server-only.                            |
 | `DID_API_KEY`          | Server   | D-ID presenter. Server-only.                         |
 | `HEYGEN_API_KEY`       | Server   | HeyGen presenter. Server-only.                       |
-| `SYNCLABS_API_KEY`     | Server   | Lip-sync. Server-only.                               |
-| `SYNCSO_API_KEY`       | Server   | Sync.so lip-sync. Server-only.                       |
+| `SYNCLABS_API_KEY`     | Server   | Lip-sync (SyncLabs). Server-only.                    |
 
 ## Stripe
 

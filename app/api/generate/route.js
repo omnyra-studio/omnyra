@@ -3,6 +3,8 @@
 // Claude writes · Pika/Kling animates · ElevenLabs voices · D-ID avatars
 
 import { getUserAndPlan } from '../../../lib/auth'
+import { getBrandProfile, getBrandSystemPrompt } from '../../../lib/brand'
+import { checkCache, saveCache, logUsageEvent } from '../../../lib/cache'
 
 const MODE_CONTEXTS = {
   viral:      "VIRAL MODE: Write for maximum engagement, FYP hooks, emotional triggers. Short punchy sentences. Open loops. Power words.",
@@ -207,23 +209,6 @@ No character limit — give as complete an answer as the question deserves.`;
 }
 
 // ============================================================
-// BRAND CONTEXT INJECTION
-// ============================================================
-function buildBrandContext(brand) {
-  if (!brand) return "";
-  const parts = [];
-  if (brand.brand_name)          parts.push(`Brand Name: ${brand.brand_name}`);
-  if (brand.tagline)             parts.push(`Tagline: ${brand.tagline}`);
-  if (brand.niche)               parts.push(`Niche / Industry: ${brand.niche}`);
-  if (brand.target_audience)     parts.push(`Target Audience: ${brand.target_audience}`);
-  if (brand.tone_of_voice)       parts.push(`Tone of Voice: ${brand.tone_of_voice}`);
-  if (brand.colors?.length)      parts.push(`Brand Colors: ${brand.colors.join(", ")}`);
-  if (brand.content_style_notes) parts.push(`Content Style Notes: ${brand.content_style_notes}`);
-  if (!parts.length) return "";
-  return `\n\nBRAND IDENTITY (always align ALL content — scripts, captions, hashtags, CTAs — to this brand):\n${parts.join("\n")}`;
-}
-
-// ============================================================
 // MAIN API ROUTE
 // ============================================================
 export async function POST(request) {
@@ -232,8 +217,19 @@ export async function POST(request) {
     if (!user) return Response.json({ error: 'Unauthorized' }, { status: 401 })
 
     const body = await request.json();
-    const { tool, prompt, mode, phase, platform, style, tone, length, direction, section, context, brand } = body;
-    const brandCtx = buildBrandContext(brand);
+    const { tool, prompt, mode, phase, platform, style, tone, length, direction, section, context } = body;
+
+    let brandCtx = "";
+    try {
+      const brand = await getBrandProfile(user.id);
+      brandCtx = getBrandSystemPrompt(brand);
+    } catch { /* brand injection is optional */ }
+
+    const cacheInput = JSON.stringify({ tool, prompt, mode, phase, platform, style, tone, length, direction: direction?.id ?? null, section });
+    const cached = await checkCache(user.id, "generate", cacheInput);
+    if (cached) {
+      try { return Response.json({ ...JSON.parse(cached), cached: true }); } catch { /* regenerate */ }
+    }
 
     if (!prompt && !direction && phase !== "regenerate") {
       return Response.json({ error: "Please enter a topic or idea first." }, { status: 400 });
@@ -321,16 +317,21 @@ export async function POST(request) {
 
     const rawText = data.content?.[0]?.text || "";
 
+    logUsageEvent(user.id, "generate", tool ?? "generic", 2, { tool, phase, platform });
+
     if (expectJSON) {
       try {
         const clean  = rawText.replace(/```json|```/g, "").trim();
         const parsed = JSON.parse(clean);
-        return Response.json({ result: rawText, parsed });
+        const payload = { result: rawText, parsed };
+        saveCache(user.id, "generate", cacheInput, JSON.stringify(payload));
+        return Response.json(payload);
       } catch {
         return Response.json({ result: rawText });
       }
     }
 
+    saveCache(user.id, "generate", cacheInput, JSON.stringify({ result: rawText }));
     return Response.json({ result: rawText });
 
   } catch (error) {
