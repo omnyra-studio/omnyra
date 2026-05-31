@@ -35,7 +35,6 @@
 | `RUNWAY_API_KEY`       | Server   | Runway motion. Server-only.                          |
 | `PIKA_API_KEY`         | Server   | Pika motion. Server-only.                            |
 | `DID_API_KEY`          | Server   | D-ID presenter. Server-only.                         |
-| `HEYGEN_API_KEY`       | Server   | HeyGen presenter. Server-only.                       |
 | `SYNCLABS_API_KEY`     | Server   | Lip-sync (SyncLabs). Server-only.                    |
 
 ## Stripe

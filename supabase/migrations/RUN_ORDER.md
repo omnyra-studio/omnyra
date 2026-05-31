@@ -46,6 +46,7 @@ If you haven't already, run `setup.sql` once before any migration below.
 | 26 | `offer_throttling.sql` | `offer_log` + `can_show_offer` + `log_offer_shown` RPCs | revenue_events, user_revenue_state |
 | 27 | `avatar_pipeline_tables.sql` | `avatar_jobs`, `avatar_stage_ledger`, `external_api_cost_ledger` | auth.users |
 | 28 | `rename_heygen_shots_column.sql` | rename `shot_plans.heygen_shots` → `avatar_shots` | shot_plans |
+| 29 | `fix_render_assignment_constraint.sql` | drop `shots.render_assignment CHECK IN ('heygen','fal')`, re-add with `('avatar','fal')` | shots |
 
 ## Notes
 

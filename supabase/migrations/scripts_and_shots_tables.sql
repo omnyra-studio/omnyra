@@ -88,7 +88,7 @@ CREATE TABLE IF NOT EXISTS shots (
   content_type        TEXT NOT NULL
                         CHECK (content_type IN ('avatar','broll','text_overlay','transition')),
   visual_prompt       TEXT NOT NULL,
-  render_assignment   TEXT NOT NULL CHECK (render_assignment IN ('heygen','fal')),
+  render_assignment   TEXT NOT NULL CHECK (render_assignment IN ('avatar','fal')),
   fal_model           TEXT,
   transition_in       TEXT NOT NULL
                         CHECK (transition_in IN (
