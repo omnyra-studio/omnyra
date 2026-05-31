@@ -190,6 +190,7 @@ export async function POST(request: Request) {
     } else {
       // Local FFmpeg path — works without COMPOSER_SERVICE_URL
       console.log("[compose-video:single] COMPOSER_SERVICE_URL absent — using local FFmpeg");
+      console.log(`[compose-video:single] videoUrl=${singleClipUrl.substring(0, 80)}`);
       const id = randomUUID();
       const tmpDir = tmpdir();
       const videoPath = join(tmpDir, `cv-video-${id}.mp4`);
@@ -200,12 +201,34 @@ export async function POST(request: Request) {
       try {
         const videoRes = await fetch(singleClipUrl);
         if (!videoRes.ok) throw new Error(`Failed to fetch video: ${videoRes.status}`);
-        writeFileSync(videoPath, Buffer.from(await videoRes.arrayBuffer()));
+        const videoBuffer = Buffer.from(await videoRes.arrayBuffer());
+        writeFileSync(videoPath, videoBuffer);
+
+        // Probe video duration before merge
+        const videoDuration = await new Promise<number>((resolve) => {
+          ffmpeg.ffprobe(videoPath, (err, metadata) => {
+            const dur = metadata?.format?.duration ?? 0;
+            console.log(`[compose-video:single] VIDEO DURATION=${dur}s size=${videoBuffer.length} err=${err?.message ?? null}`);
+            resolve(typeof dur === "number" ? dur : parseFloat(String(dur)) || 0);
+          });
+        });
+        console.log(`[compose-video:single] video_duration=${videoDuration}s`);
 
         if (singleVoiceUrl) {
           const audioRes = await fetch(singleVoiceUrl);
           if (!audioRes.ok) throw new Error(`Failed to fetch audio: ${audioRes.status}`);
-          writeFileSync(audioPath, Buffer.from(await audioRes.arrayBuffer()));
+          const audioBuffer = Buffer.from(await audioRes.arrayBuffer());
+          writeFileSync(audioPath, audioBuffer);
+
+          // Probe audio duration before merge
+          const audioDuration = await new Promise<number>((resolve) => {
+            ffmpeg.ffprobe(audioPath, (err, metadata) => {
+              const dur = metadata?.format?.duration ?? 0;
+              console.log(`[compose-video:single] AUDIO DURATION=${dur}s size=${audioBuffer.length} err=${err?.message ?? null}`);
+              resolve(typeof dur === "number" ? dur : parseFloat(String(dur)) || 0);
+            });
+          });
+          console.log(`[compose-video:single] audio_duration=${audioDuration}s — video_shorter_than_audio=${videoDuration < audioDuration}`);
 
           await new Promise<void>((resolve, reject) => {
             ffmpeg()
@@ -216,6 +239,15 @@ export async function POST(request: Request) {
               .on("end", () => resolve())
               .on("error", (err: Error) => reject(err))
               .run();
+          });
+
+          // Probe output duration after merge
+          await new Promise<void>((resolve) => {
+            ffmpeg.ffprobe(outputPath, (err, metadata) => {
+              const dur = metadata?.format?.duration ?? 0;
+              console.log(`[compose-video:single] OUTPUT DURATION=${dur}s video_was=${videoDuration}s audio_was=${audioDuration}s err=${err?.message ?? null}`);
+              resolve();
+            });
           });
         } else {
           // No audio — just copy the video

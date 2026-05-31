@@ -162,8 +162,14 @@ export async function POST(req: Request) {
     return Response.json(errorPayload, { status: 500 });
   }
 
+  // ── Stitch ────────────────────────────────────────────────────────────────────
+  console.log(`[cinematic-sequence] STITCH clip_urls.length=${clip_urls.length} urls=${JSON.stringify(clip_urls.map(u => u.substring(0, 60)))}`);
+
   let stitched_url = clip_urls[0];
+  let stitch_source = "clip_urls[0] (no stitch — only 1 clip)";
+
   if (clip_urls.length > 1) {
+    console.log(`[cinematic-sequence] STITCH starting fal-ai/ffmpeg-api/concatenate with ${clip_urls.length} clips`);
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const stitched = await (fal as any).subscribe("fal-ai/ffmpeg-api/concatenate", {
@@ -172,14 +178,37 @@ export async function POST(req: Request) {
       });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const s = stitched as any;
-      stitched_url = s?.video?.url ?? s?.url ?? s?.data?.video?.url ?? clip_urls[0];
+      console.log(`[cinematic-sequence] STITCH raw response keys=${Object.keys(s ?? {}).join(",")} full=${JSON.stringify(s).substring(0, 400)}`);
+
+      const fromVideo    = s?.video?.url as string | undefined;
+      const fromUrl      = s?.url as string | undefined;
+      const fromDataVideo = (s?.data as { video?: { url?: string } })?.video?.url;
+      const fromOutput   = (s?.output as { url?: string })?.url;
+
+      console.log(`[cinematic-sequence] STITCH extraction: video.url=${fromVideo} url=${fromUrl} data.video.url=${fromDataVideo} output.url=${fromOutput}`);
+
+      stitched_url = fromVideo ?? fromUrl ?? fromDataVideo ?? fromOutput ?? clip_urls[0];
+      stitch_source = fromVideo    ? "s.video.url"      :
+                      fromUrl      ? "s.url"             :
+                      fromDataVideo ? "s.data.video.url" :
+                      fromOutput   ? "s.output.url"      :
+                      "FALLBACK clip_urls[0] (no url found in stitch response)";
+
+      console.log(`[cinematic-sequence] STITCH result: source=${stitch_source} stitched_url=${stitched_url.substring(0, 80)}`);
     } catch (err) {
-      console.error("[cinematic-sequence] stitch failed, returning first clip:", err instanceof Error ? err.message : err);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const e = err as any;
+      stitch_source = `FALLBACK clip_urls[0] (stitch THREW: status=${e?.status} message=${e?.message ?? String(err)})`;
+      console.error(`[cinematic-sequence] STITCH FAILED — ${stitch_source}`);
     }
   }
 
+  console.log(`[cinematic-sequence] FINAL stitched_url=${stitched_url.substring(0, 80)} source=${stitch_source}`);
+  console.log(`[cinematic-sequence] is_stitched=${stitched_url !== clip_urls[0]} stitched_url_is_clip0=${stitched_url === clip_urls[0]}`);
+
   return Response.json({
     stitched_url,
+    stitch_source,
     clip_urls,
     clips_generated: clip_urls.length,
     total_duration: clip_urls.length * Number(duration),

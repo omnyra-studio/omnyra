@@ -968,8 +968,10 @@ function CreatePageInner() {
         const rawText = await seqRes.text();
         let seqData: {
           stitched_url?: string;
+          stitch_source?: string;
           clip_urls?: string[];
           clips_generated?: number;
+          total_duration?: number;
           error?: string;
           SEQUENCE_ROUTE_VERSION?: string;
           clipsAttempted?: number;
@@ -981,6 +983,10 @@ function CreatePageInner() {
         try { seqData = JSON.parse(rawText); } catch { seqData = null; }
 
         console.error('FULL SEQUENCE RESPONSE', JSON.stringify(seqData, null, 2));
+        console.log('[cinematic] stitch_source:', seqData?.stitch_source);
+        console.log('[cinematic] clips_generated:', seqData?.clips_generated, 'total_duration:', seqData?.total_duration);
+        console.log('[cinematic] clip_urls:', seqData?.clip_urls?.map(u => u.substring(0, 60)));
+        console.log('[cinematic] stitched_url:', seqData?.stitched_url?.substring(0, 80));
 
         if (!seqRes.ok) {
           throw new Error(seqData?.error || rawText || `Cinematic generation failed (${seqRes.status})`);
