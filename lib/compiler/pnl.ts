@@ -179,7 +179,7 @@ function normalizeClipProvider(
   const sceneType = inferSceneType(clip);
   const current   = clip.provider;
 
-  // Specialist providers with no fallback (e.g. heygen) are accepted unconditionally.
+  // Specialist providers with no fallback are accepted unconditionally.
   // They serve content that no other provider can render — rejecting them would break
   // the workflow entirely. Their scene-type mismatch risk is accepted by the caller.
   const currentProfile = getProfile(current);

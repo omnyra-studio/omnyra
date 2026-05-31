@@ -55,11 +55,6 @@ interface AssetUploadProps {
   userId: string;
   /** Called with the public URL after a successful upload */
   onUploaded: (url: string) => void;
-  /**
-   * Avatar variant only — called with the HeyGen avatar ID once the
-   * Digital Twin is ready. Fires asynchronously after onUploaded.
-   */
-  onAvatarCreated?: (avatarId: string) => void;
   /** Optional initial URL to display as existing asset */
   initialUrl?: string;
   className?: string;
@@ -71,20 +66,17 @@ export default function AssetUpload({
   variant,
   userId,
   onUploaded,
-  onAvatarCreated,
   initialUrl,
   className,
 }: AssetUploadProps) {
   const cfg     = VARIANT_CONFIG[variant];
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const [assetUrl,      setAssetUrl]      = useState<string | null>(initialUrl ?? null);
-  const [dragging,      setDragging]      = useState(false);
-  const [uploading,     setUploading]     = useState(false);
-  const [progress,      setProgress]      = useState(0);
-  const [error,         setError]         = useState("");
-  const [twinStatus,    setTwinStatus]    = useState<"idle" | "creating" | "ready" | "failed">("idle");
-  const [twinAvatarId,  setTwinAvatarId]  = useState<string | null>(null);
+  const [assetUrl,  setAssetUrl]  = useState<string | null>(initialUrl ?? null);
+  const [dragging,  setDragging]  = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [progress,  setProgress]  = useState(0);
+  const [error,     setError]     = useState("");
 
   const upload = useCallback(async (file: File) => {
     setError("");
@@ -115,36 +107,12 @@ export default function AssetUpload({
       setAssetUrl(publicUrl);
       setProgress(100);
       onUploaded(publicUrl);
-
-      // Avatar variant: kick off HeyGen Digital Twin creation asynchronously
-      if (variant === "avatar") {
-        setTwinStatus("creating");
-        createHeyGenAvatar().catch(() => {});
-      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
       setUploading(false);
     }
-  }, [cfg, userId, variant, onUploaded]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const createHeyGenAvatar = useCallback(async () => {
-    try {
-      const res = await fetch("/api/create-avatar", { method: "POST" });
-      const data = await res.json() as { success?: boolean; avatar_id?: string; error?: string };
-
-      if (!res.ok || !data.success || !data.avatar_id) {
-        throw new Error(data.error ?? "Avatar creation failed");
-      }
-
-      setTwinAvatarId(data.avatar_id);
-      setTwinStatus("ready");
-      onAvatarCreated?.(data.avatar_id);
-    } catch (err) {
-      console.error("[AssetUpload] HeyGen avatar creation failed:", err);
-      setTwinStatus("failed");
-    }
-  }, [onAvatarCreated]);
+  }, [cfg, userId, onUploaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleFiles = useCallback((files: FileList | null) => {
     if (!files?.length) return;
@@ -239,41 +207,6 @@ export default function AssetUpload({
         )}
       </div>
 
-      {/* Digital Twin status (avatar variant only) */}
-      {variant === "avatar" && assetUrl && !uploading && twinStatus !== "idle" && (
-        <div style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          padding: "10px 14px",
-          borderRadius: 8,
-          background: twinStatus === "ready"
-            ? "rgba(34,197,94,0.08)"
-            : twinStatus === "failed"
-            ? "rgba(239,68,68,0.08)"
-            : "rgba(124,111,255,0.08)",
-          border: `1px solid ${twinStatus === "ready" ? "rgba(34,197,94,0.25)" : twinStatus === "failed" ? "rgba(239,68,68,0.25)" : "rgba(124,111,255,0.2)"}`,
-        }}>
-          {twinStatus === "creating" && (
-            <>
-              <TwinSpinner />
-              <span style={{ fontSize: 13, color: "rgba(245,243,255,0.7)" }}>
-                Creating your Digital Twin…
-              </span>
-            </>
-          )}
-          {twinStatus === "ready" && (
-            <span style={{ fontSize: 13, color: "rgba(34,197,94,0.9)", fontWeight: 600 }}>
-              ✅ Your Digital Twin is ready{twinAvatarId ? ` · ID: ${twinAvatarId.slice(0, 12)}…` : ""}
-            </span>
-          )}
-          {twinStatus === "failed" && (
-            <span style={{ fontSize: 13, color: "rgba(239,68,68,0.9)" }}>
-              Avatar creation failed. Try uploading a different video.
-            </span>
-          )}
-        </div>
-      )}
 
       {/* Actions row */}
       {assetUrl && !uploading && (
@@ -330,18 +263,6 @@ function ProgressRing({ pct }: { pct: number }) {
         style={{ transition: "stroke-dashoffset 0.3s ease" }}
       />
     </svg>
-  );
-}
-
-function TwinSpinner() {
-  return (
-    <div style={{
-      width: 14, height: 14, flexShrink: 0,
-      border: "2px solid rgba(124,111,255,0.25)",
-      borderTopColor: "#7c6fff",
-      borderRadius: "50%",
-      animation: "assetUploadSpin 0.7s linear infinite",
-    }} />
   );
 }
 

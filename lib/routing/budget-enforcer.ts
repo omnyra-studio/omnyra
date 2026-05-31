@@ -11,7 +11,7 @@
  *     routeProvider() always records the primary optimal decision.
  *   - Downgrade preserves determinism: given identical inputs and budget,
  *     the same clips are downgraded in the same order.
- *   - heygen clips are never downgraded (no fallback exists — avatar-specific).
+ *   - Avatar clips are never downgraded (no fallback exists — avatar-specific).
  *   - If budget is null or clip count is 0, returns decisions unchanged.
  */
 

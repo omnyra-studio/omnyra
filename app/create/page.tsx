@@ -281,7 +281,6 @@ function CreatePageInner() {
 
   // Avatar reference video upload
   const [avatarRefVideoUrl, setAvatarRefVideoUrl] = useState<string | null>(null);
-  const [heygenAvatarId, setHeygenAvatarId] = useState<string | null>(null);
 
   // Poll cleanup ref
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -2083,7 +2082,6 @@ function CreatePageInner() {
                       variant="avatar"
                       userId={userId}
                       onUploaded={handleAvatarVideoUploaded}
-                      onAvatarCreated={(id) => setHeygenAvatarId(id)}
                       initialUrl={avatarRefVideoUrl ?? undefined}
                     />
                   </div>

@@ -41,7 +41,7 @@ export interface ShotPacket {
   framing: Framing;
   content_type: ContentType;
   visual_prompt: string;
-  render_assignment: "heygen" | "fal";
+  render_assignment: "avatar" | "fal";
   fal_model: string | null;
   transition_in: TransitionIn;
   transition_duration: number;

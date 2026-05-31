@@ -41,7 +41,7 @@ export interface ShotPlanGeneratedEvent extends BaseEvent {
     shotCount:     number;
     mode:          string;
     totalDuration: number;
-    heygenShots:   number;
+    avatarShots:   number;
     falShots:      number;
   };
 }

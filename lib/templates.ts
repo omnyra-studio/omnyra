@@ -102,7 +102,7 @@ export const templates: Template[] = [
     default_energy: "Confident",
     default_camera: "Studio",
     default_style: "Cinematic",
-    apis: ["elevenlabs", "kling", "heygen", "synclabs"],
+    apis: ["elevenlabs", "kling", "synclabs"],
     brief_fields: [
       {
         id: "persona",

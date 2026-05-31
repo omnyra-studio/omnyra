@@ -11,7 +11,7 @@ const STORYTIME: ModeConfig = {
   allowed_content_types:   ["avatar", "broll", "text_overlay"],
   pacing_profile:          "slow",
   director_constraints: [
-    "At least 30% of shots must use render_assignment='heygen' (avatar presence is mandatory).",
+    "At least 30% of shots must use render_assignment='avatar' (avatar presence is mandatory).",
     "emotional_release attention function must appear at least once before the final CTA.",
     "trust_grounding must appear at least once in the middle third of the plan.",
     "Shot 1 must be pattern_interrupt. Never open with avatar.",
@@ -39,7 +39,7 @@ const INFLUENCER: ModeConfig = {
   allowed_content_types:   ["avatar", "broll"],
   pacing_profile:          "fast",
   director_constraints: [
-    "At least 40% of shots must use render_assignment='heygen' — the influencer IS the brand.",
+    "At least 40% of shots must use render_assignment='avatar' — the influencer IS the brand.",
     "No 'fade' transitions — use 'cut' or 'flash' only.",
     "Energy curve must stay at spike or ramp_up for at least 70% of shots.",
     "Shot 1 must be pattern_interrupt. Never open with avatar.",
@@ -70,7 +70,7 @@ const PRODUCT_LAUNCH: ModeConfig = {
     "desire_activation must appear at least twice.",
     "trust_grounding must appear at least twice.",
     "urgency_trigger must appear in one of the last two shots.",
-    "Avatar (heygen) shots limited to maximum 2 — only for founder or testimonial moments.",
+    "Avatar shots limited to maximum 2 — only for founder or testimonial moments.",
   ],
   director_brief_addendum: `
 ## Mode: Product Launch / Advertising

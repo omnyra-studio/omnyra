@@ -112,25 +112,6 @@ const PROFILES: Record<ProviderId, ProviderProfile> = Object.freeze({
     }),
   }),
 
-  heygen: Object.freeze({
-    id:                "heygen",
-    strengths:         ["avatar lip-sync", "presenter video quality", "speech accuracy"],
-    weaknesses:        ["avatar/presenter content only", "high cost per second"],
-    avgLatencyMs:      30_000,
-    avgCostPerSecond:  0.080,
-    consistencyScore:  0.95,
-    failureRate:       0.03,
-    supportedModes:    ["storytime", "general", "influencer"] as const,
-    fallback:          null,  // no fallback — avatar content is heygen-specific
-    // PNL: avatar-specialist — ultra-stable, very subject-focused, low motion
-    styleBiasVector:         Object.freeze([0.88, 0.25, 0.60, 0.70, 0.65, 0.82, 0.92, 0.95]),
-    temporalStabilityScore:  0.94,
-    subjectConsistencyScore: 0.96,
-    failureDistribution: Object.freeze({
-      narrative: 0.04, action: 0.10, product: 0.03,
-      dialogue: 0.03, transition: 0.05, ambient: 0.05,
-    }),
-  }),
 });
 
 export function getProfile(id: ProviderId): ProviderProfile {

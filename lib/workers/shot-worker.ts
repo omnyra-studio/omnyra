@@ -2,7 +2,7 @@
  * Shot render worker — processes one shot per job invocation.
  *
  * Routing logic mirrors /api/generate-shot:
- *   avatar + HeyGen configured  → HeyGen (sync, 30–90s)
+ *   avatar                      → Kling animate → SyncLabs lipsync (async)
  *   text_overlay                → fal Flux (sync, fast)
  *   everything else             → fal.queue.submit() — async, returns immediately
  *

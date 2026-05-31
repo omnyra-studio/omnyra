@@ -32,8 +32,7 @@ export type ProviderId =
   | "pika"
   | "kling"
   | "fal"
-  | "getimg"
-  | "heygen";
+  | "getimg";
 
 // ── Scene type taxonomy — used by PNL for coherence zone classification ────────
 

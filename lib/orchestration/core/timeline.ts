@@ -84,7 +84,7 @@ export function applyNarrationDurations(
       ? r1(wordCount / 2.4 * densityMultiplier)
       : shot.duration_seconds;
 
-    // Avatar: hard cap 3.0s (HeyGen clips are short; avatar max is a hard director rule).
+    // Avatar: hard cap 3.0s — avatar max is a hard director rule.
     // Non-avatar (fal/broll): minimum 5.0s — Seedance 2 rejects requests below 5s.
     const clamped = Math.max(3.0, Math.min(10.0, base));
     shot.duration_seconds = shot.content_type === "avatar"

@@ -62,18 +62,18 @@ ATTENTION FUNCTIONS (assign one per shot):
 - pacing_reset: Breathing room after 3-4 tension shots. Hard requirement.
 
 RENDER ASSIGNMENT RULES (follow exactly):
-- Avatar speaking to camera → render_assignment: "heygen", fal_model: null
+- Avatar speaking to camera → render_assignment: "avatar", fal_model: null
 - Cinematic lifestyle, product, ambient → render_assignment: "fal", fal_model: "fal-ai/seedance-2"
 - Stylised, graphic, high-contrast → render_assignment: "fal", fal_model: "fal-ai/pixverse-v6"
 - Any shot requiring a specific camera move → render_assignment: "fal", fal_model: "fal-ai/kling-video-v3-pro"
 
-AVATAR MOTION RULES (non-negotiable — applied to every heygen shot):
+AVATAR MOTION RULES (non-negotiable — applied to every avatar shot):
 - idle_motion: ALWAYS "micro_movements". Never "none". A static avatar reads as dead.
 - camera.zoom_pattern: ALWAYS "slow_push_in". Creates subconscious intimacy and forward momentum.
 - motion_extraction.capture_micro_expressions: true. Micro-expressions build trust subliminally.
 - motion_extraction.capture_gestures: true. Hand and shoulder movement signals confidence.
 - motion_extraction.motion_variance: 0.7. High enough for life, low enough for authority.
-Include these fields in every shot where render_assignment is "heygen".
+Include these fields in every shot where render_assignment is "avatar".
 
 STRUCTURAL RULES (non-negotiable):
 1. Shot 1 must be pattern_interrupt. Content type: broll or text_overlay. Never avatar.
@@ -85,7 +85,7 @@ STRUCTURAL RULES (non-negotiable):
 
 NARRATION ASSIGNMENT RULES (mandatory):
 7. Split the approved script across ALL shots. Every word of the script must appear in exactly one shot's narration_text. Leave no dialogue unassigned.
-   - For avatar (heygen) shots: narration_text is the spoken dialogue the avatar delivers.
+   - For avatar shots: narration_text is the spoken dialogue the avatar delivers.
    - For broll (fal) shots: narration_text is the voiceover narration playing over the visual.
 8. DURATION FORMULA: duration_seconds = max(3.0, min(10.0, round(word_count(narration_text) / 2.4, 1)))
    Avatar shots are further capped at 3.0s — keep their narration_text ≤7 words.
@@ -143,7 +143,7 @@ Output a single JSON object. No markdown. No code fences. Raw JSON starting with
     "shot_count": 11,
     "avatar_seconds": 12.0,
     "broll_seconds": 38.0,
-    "render_breakdown": { "heygen": 4, "fal": 7 }
+    "render_breakdown": { "avatar": 4, "fal": 7 }
   }
 }`;
 
@@ -162,7 +162,7 @@ interface RawShot {
   framing: Framing;
   content_type: ContentType;
   visual_prompt: string;
-  render_assignment: "heygen" | "fal";
+  render_assignment: "avatar" | "fal";
   fal_model: string | null;
   transition_in: TransitionIn;
   transition_after: TransitionAfter;
@@ -200,7 +200,7 @@ export interface GenerateShotPlanOutput {
     shot_count:     number;
     total_duration: number;
     mode:           OrchestratorMode;
-    heygen_shots:   number;
+    avatar_shots:   number;
     fal_shots:      number;
   };
 }
@@ -499,7 +499,7 @@ export async function generateShotPlan(
       shotCount:     rebalanced.length,
       mode,
       totalDuration: Math.round(motionMap.total_duration * 10) / 10,
-      heygenShots:   rebalanced.filter(s => s.render_assignment === "heygen").length,
+      avatarShots:   rebalanced.filter(s => s.render_assignment === "avatar").length,
       falShots:      rebalanced.filter(s => s.render_assignment === "fal").length,
     },
   });
@@ -529,7 +529,7 @@ export async function generateShotPlan(
       shot_count:     rebalanced.length,
       total_duration: Math.round(motionMap.total_duration * 10) / 10,
       mode,
-      heygen_shots:   rebalanced.filter(s => s.render_assignment === "heygen").length,
+      avatar_shots:   rebalanced.filter(s => s.render_assignment === "avatar").length,
       fal_shots:      rebalanced.filter(s => s.render_assignment === "fal").length,
     },
   };

@@ -34,7 +34,6 @@ export interface CreditBreakdown {
   runway: number;
   pika: number;
   synclabs: number;
-  heygen: number;
   did: number;
   falai: number;
   flux: number;
@@ -60,7 +59,7 @@ const LOW_CREDIT_THRESHOLD = 20;
 export const TEMPLATE_DEFAULT_APIS: Record<string, readonly string[]> = {
   "ugc-ad": ["elevenlabs", "kling", "synclabs"],
   storytime: ["elevenlabs", "runway", "synclabs"],
-  influencer: ["elevenlabs", "kling", "heygen", "synclabs"],
+  influencer: ["elevenlabs", "kling", "synclabs"],
   "product-launch": ["elevenlabs", "runway", "falai"],
   faceless: ["elevenlabs", "kling"],
 };
@@ -75,7 +74,6 @@ const API_KEYS: readonly ApiKey[] = [
   "runway",
   "pika",
   "synclabs",
-  "heygen",
   "did",
   "falai",
   "flux",
@@ -88,7 +86,6 @@ function emptyBreakdown(): CreditBreakdown {
     runway: 0,
     pika: 0,
     synclabs: 0,
-    heygen: 0,
     did: 0,
     falai: 0,
     flux: 0,
@@ -120,8 +117,6 @@ function costForApi(
       return scenes * 5;
     case "synclabs":
       return blocks30s(duration) * 6;
-    case "heygen":
-      return blocks30s(duration) * 15;
     case "did":
       return blocks30s(duration) * 8;
     case "falai":

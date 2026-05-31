@@ -5,7 +5,7 @@
  *
  * Routing:
  *   content_type="text_overlay" → fal Flux (sync, fast)
- *   content_type="avatar" + heygenAvatarId set → HeyGen (sync, 30-90s)
+ *   content_type="avatar" → Kling animate → SyncLabs lipsync (async)
  *   everything else → fal.queue.submit() — returns immediately with { status: "queued" }
  *
  * Async path body:  { shotId: string }

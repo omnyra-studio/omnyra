@@ -60,7 +60,7 @@ function categorise(actionType: string): string {
   if (/^(image|img)/.test(t))                         return 'images';
   if (/^(voice|audio|clone)/.test(t))                 return 'voice';
   if (/^(video|render|cinematic)/.test(t))            return 'video';
-  if (/^(avatar|heygen|lipsync|photo.anim)/.test(t))  return 'avatar';
+  if (/^(avatar|lipsync|photo.anim)/.test(t))          return 'avatar';
   return 'other';
 }
 

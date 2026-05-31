@@ -654,7 +654,7 @@ export default function DirectorModePage() {
             { dbId: data.shot_db_id, shotId: shot.shot_id },
           ];
         } else if (data.success && data.clip_url) {
-          // Sync completion (HeyGen or text_overlay)
+          // Sync completion (text_overlay or avatar via job queue)
           doneCountRef.current++;
           setShotStatuses(prev => ({ ...prev, [shot.shot_id]: "completed" }));
           setPlan(prev =>
