@@ -382,14 +382,6 @@ function CreatePageInner() {
     });
   }, []);
 
-  // Auto-merge when both video and voice are ready
-  useEffect(() => {
-    if (voiceAudioUrl && videoUrl && !mergedVideoUrl && !isMerging) {
-      handleMergeVideoAudio();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [voiceAudioUrl, videoUrl]);
-
   // Clean up video poll on unmount
   useEffect(() => {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
