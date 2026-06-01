@@ -31,7 +31,14 @@
  */
 
 import { after } from "next/server";
+import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
+import ffmpeg from "fluent-ffmpeg";
+import { tmpdir } from "os";
+import { join } from "path";
+import { writeFileSync, readFileSync, unlinkSync } from "fs";
 import { uploadArtifact, StorageValidationError } from "@/lib/storage-artifact";
+
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 import {
   type AvatarJob,
   type PipelineStage,
@@ -300,8 +307,6 @@ async function executeAnimateStage(
 
   // ── Kling animate (N parallel scenes → Railway stitch) ───────────────────
   const NUM_SCENES = job.input.plan === "studio" ? 6 : 3;
-  const composerUrl = process.env.COMPOSER_SERVICE_URL;
-  const composerKey = process.env.COMPOSER_API_KEY ?? "";
 
   await registerCostIntent(job.id, "animate", "kling", reqHash, dagNode.creditEstimate);
   log(`[FAL_REQUEST] kling scenes=${NUM_SCENES} imageUrl=${job.input.image_url.substring(0, 80)} fal_key_set=${!!(process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY)}`);
@@ -316,59 +321,64 @@ async function executeAnimateStage(
     );
     log(`kling scenes=${NUM_SCENES} elapsed=${Date.now() - t0}ms urls=${sceneUrls.map(u => u.substring(0, 40)).join(" | ")}`);
 
-    if (composerUrl) {
-      // Download clips + voiceover in parallel, then POST multipart to Railway composer
-      const [clipBuffers, voiceBuffer] = await Promise.all([
-        Promise.all(
-          sceneUrls.map(async (url) => {
-            const r = await fetch(url, { signal: AbortSignal.timeout(30_000) });
-            if (!r.ok) throw new Error(`clip download ${r.status} url=${url}`);
-            return Buffer.from(await r.arrayBuffer());
-          }),
-        ),
-        (async () => {
-          const r = await fetch(audioUrl, { signal: AbortSignal.timeout(30_000) });
-          if (!r.ok) throw new Error(`voiceover download ${r.status} url=${audioUrl}`);
+    // ── Local ffmpeg concat (no external service, no OOM risk) ───────────────
+    const tmpDir       = tmpdir();
+    const sid          = job.id.replace(/-/g, "").substring(0, 8);
+    const clipPaths    = sceneUrls.map((_, i) => join(tmpDir, `av-${sid}-clip${i}.mp4`));
+    const concatPath   = join(tmpDir, `av-${sid}-concat.txt`);
+    const stitchedPath = join(tmpDir, `av-${sid}-stitched.mp4`);
+    const cleanupPaths = [...clipPaths, concatPath, stitchedPath];
+
+    try {
+      // Download clips in parallel
+      const clipBuffers = await Promise.all(
+        sceneUrls.map(async (url) => {
+          const r = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+          if (!r.ok) throw new Error(`clip download ${r.status} url=${url}`);
           return Buffer.from(await r.arrayBuffer());
-        })(),
-      ]);
-      const shots = sceneUrls.map(() => ({
-        duration: 10,
-        energy_curve: "sustain",
-        transition_in: "hard_cut",
-        transition_after: null,
-        transition_duration: 0,
-        zoom_effect: false,
-      }));
-      const form = new FormData();
+        }),
+      );
+      log(`[STITCH] clips=${clipBuffers.length} total_bytes=${clipBuffers.reduce((s, b) => s + b.byteLength, 0)}`);
+
       for (let i = 0; i < clipBuffers.length; i++) {
-        form.append(
-          "clips",
-          new Blob([new Uint8Array(clipBuffers[i])], { type: "video/mp4" }),
-          `clip_${i}.mp4`,
-        );
+        writeFileSync(clipPaths[i], clipBuffers[i]);
       }
-      form.append("voiceover", new Blob([new Uint8Array(voiceBuffer)], { type: "audio/mpeg" }), "voiceover.mp3");
-      form.append("shot_plan", JSON.stringify({ shots }));
-      log(`[COMPOSE_REQUEST] url=${composerUrl}/compose clips=${clipBuffers.length} voiceover_bytes=${voiceBuffer.byteLength} shot_plan_shots=${shots.length}`);
-      const composeRes = await fetch(`${composerUrl}/compose`, {
-        method: "POST",
-        headers: { "x-api-key": composerKey },
-        body: form,
-        signal: AbortSignal.timeout(90_000),
+
+      let finalPath: string;
+      if (clipBuffers.length === 1) {
+        finalPath = clipPaths[0];
+      } else {
+        const concatContent = clipPaths.map(p => `file '${p.replace(/\\/g, "/")}'`).join("\n");
+        writeFileSync(concatPath, concatContent);
+        await new Promise<void>((resolve, reject) => {
+          ffmpeg()
+            .input(concatPath)
+            .inputOptions(["-f", "concat", "-safe", "0"])
+            .outputOptions(["-c", "copy"])
+            .output(stitchedPath)
+            .on("stderr", (line: string) => log(`[ffmpeg:stderr] ${line}`))
+            .on("end", () => resolve())
+            .on("error", (err: Error) => reject(new Error(`FFmpeg concat failed: ${err.message}`)))
+            .run();
+        });
+        finalPath = stitchedPath;
+      }
+
+      const stitchBuffer = readFileSync(finalPath);
+      if (!stitchBuffer.length) throw new Error("FFmpeg stitch produced 0-byte output");
+      log(`[STITCH] stitch_bytes=${stitchBuffer.byteLength}`);
+
+      animatedVideoUrl = await uploadArtifact({
+        jobId:        job.id,
+        stage:        "animate",
+        buffer:       stitchBuffer,
+        contentType:  "video/mp4",
+        extension:    "mp4",
+        modelVersion: "kling-pro-v2.1-x3",
       });
-      if (!composeRes.ok) {
-        throw new Error(`Railway composer ${composeRes.status}: ${await composeRes.text().catch(() => "")}`);
-      }
-      const composeData = (await composeRes.json()) as { success: boolean; video_url: string };
-      animatedVideoUrl = composeData.video_url.startsWith("http")
-        ? composeData.video_url
-        : `${composerUrl}${composeData.video_url}`;
-      log(`[STITCH] stitched url=${animatedVideoUrl.substring(0, 80)}`);
-    } else {
-      // No composer configured — fall back to single clip
-      animatedVideoUrl = sceneUrls[0];
-      log("COMPOSER_SERVICE_URL not set — falling back to single clip");
+      log(`[STITCH] uploaded url=${animatedVideoUrl.substring(0, 80)}`);
+    } finally {
+      for (const p of cleanupPaths) { try { unlinkSync(p); } catch { /* already gone */ } }
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
