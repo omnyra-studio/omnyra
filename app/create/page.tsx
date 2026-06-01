@@ -276,6 +276,10 @@ function CreatePageInner() {
   const [voices, setVoices] = useState<VoiceOption[]>([]);
   const [selectedVoiceId, setSelectedVoiceId] = useState<string>('');
 
+  // Character registry
+  const [characters, setCharacters] = useState<Array<{ id: string; name: string; ref_frame_url: string | null }>>([]);
+  const [selectedCharacterId, setSelectedCharacterId] = useState<string>('');
+
   // Selected scene image (from ImageGenerator or upload)
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
@@ -395,6 +399,17 @@ function CreatePageInner() {
   useEffect(() => {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
+
+  // Load characters once when avatar mode is first selected
+  useEffect(() => {
+    if (videoType !== 'avatar' || characters.length > 0) return;
+    fetch('/api/characters')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data?.characters) setCharacters(data.characters);
+      })
+      .catch(() => {});
+  }, [videoType, characters.length]);
 
   // ─── File upload helpers ─────────────────────────────────────────────────
 
@@ -875,9 +890,10 @@ function CreatePageInner() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           script,
-          voice_id: selectedVoiceId || userVoice?.voice_id || null,
+          voice_id:         selectedVoiceId || userVoice?.voice_id || null,
           background_image: selectedImage,
-          plan: userTier === 'studio' ? 'studio' : 'starter',
+          plan:             userTier === 'studio' ? 'studio' : 'starter',
+          character_id:     selectedCharacterId || null,
         }),
       });
       const data = await res.json();
@@ -2064,6 +2080,35 @@ function CreatePageInner() {
                       onUploaded={handleAvatarVideoUploaded}
                       initialUrl={avatarRefVideoUrl ?? undefined}
                     />
+                  </div>
+                )}
+
+                {/* Character preset picker — shown when avatar type is selected and characters exist */}
+                {videoType === 'avatar' && characters.length > 0 && (
+                  <div style={{ marginBottom: 16 }}>
+                    <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 8px' }}>
+                      Character Preset <span style={{ color: 'rgba(255,255,255,0.3)', fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(optional — locks visual identity across scenes)</span>
+                    </p>
+                    <select
+                      value={selectedCharacterId}
+                      onChange={e => setSelectedCharacterId(e.target.value)}
+                      style={{
+                        width: '100%',
+                        background: 'rgba(0,0,0,0.4)',
+                        border: '1px solid rgba(255,255,255,0.2)',
+                        borderRadius: 10,
+                        color: 'white',
+                        padding: '10px 14px',
+                        fontSize: '0.9rem',
+                        fontFamily: 'inherit',
+                        outline: 'none',
+                      }}
+                    >
+                      <option value="">None — use image only</option>
+                      {characters.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
                   </div>
                 )}
 

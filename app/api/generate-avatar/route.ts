@@ -31,14 +31,14 @@ export async function POST(req: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { script?: string; voice_id?: string; background_image?: string; plan?: string };
+  let body: { script?: string; voice_id?: string; background_image?: string; plan?: string; character_id?: string };
   try {
     body = await req.json();
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { script, voice_id, background_image, plan } = body;
+  const { script, voice_id, background_image, plan, character_id } = body;
 
   if (!script?.trim()) {
     return Response.json({ error: "script is required" }, { status: 400 });
@@ -58,10 +58,11 @@ export async function POST(req: Request) {
   }
 
   const input = {
-    script: script.trim(),
-    voice_id: voice_id || null,
-    image_url: background_image,
-    plan: (plan === "studio" ? "studio" : "starter") as "starter" | "studio",
+    script:       script.trim(),
+    voice_id:     voice_id || null,
+    image_url:    background_image,
+    plan:         (plan === "studio" ? "studio" : "starter") as "starter" | "studio",
+    character_id: character_id || null,
   };
 
   let job;

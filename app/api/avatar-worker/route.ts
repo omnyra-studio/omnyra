@@ -58,6 +58,7 @@ import {
 } from "@/lib/avatar-pipeline";
 import { animateImage, lipSyncVideo } from "@/lib/avatar-provider";
 import { planScenes, type SceneSpec } from "@/lib/avatar-scene-planner";
+import { loadCharacter, buildCharacterPromptSuffix, updateCharacterRefFrame } from "@/lib/character-registry";
 
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
@@ -174,6 +175,21 @@ async function executeTtsStage(
     return;
   }
   log(`[DIRECTOR] scenes=${scenes.length} elapsed=${Date.now() - directorT0}ms`);
+
+  // ── Character consistency injection ───────────────────────────────────────
+  if (job.input.character_id) {
+    const character = await loadCharacter(job.input.character_id);
+    if (character) {
+      const suffix = buildCharacterPromptSuffix(character);
+      scenes = scenes.map(scene => ({
+        ...scene,
+        visualPrompt: `${scene.visualPrompt}, ${suffix}`,
+      }));
+      log(`[CHARACTER] injected character="${character.name}" scenes=${scenes.length}`);
+    } else {
+      log(`[CHARACTER] character_id=${job.input.character_id} not found — skipping injection`);
+    }
+  }
 
   await registerCostIntent(job.id, "tts", "elevenlabs", reqHash, dagNode.creditEstimate);
 
@@ -569,6 +585,13 @@ async function executeLipsyncStage(
   await markCostCharged(job.id, "lipsync", reqHash, finalVideoUrl);
   await completeLedgerEntry(job.id, "lipsync", workerId, finalVideoUrl);
   await completeJobWithLease(job.id, workerId, finalVideoUrl, sceneVideoUrls[0]);
+
+  // Update character ref_frame_url with the first animated scene for future consistency
+  if (job.input.character_id && sceneVideoUrls[0]) {
+    void updateCharacterRefFrame(job.input.character_id, sceneVideoUrls[0]);
+    log(`[CHARACTER] updated ref_frame character_id=${job.input.character_id}`);
+  }
+
   log("pipeline COMPLETE");
 }
 
