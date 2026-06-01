@@ -317,14 +317,21 @@ async function executeAnimateStage(
     log(`kling scenes=${NUM_SCENES} elapsed=${Date.now() - t0}ms urls=${sceneUrls.map(u => u.substring(0, 40)).join(" | ")}`);
 
     if (composerUrl) {
-      // Download all clips then POST multipart to Railway composer
-      const clipBuffers = await Promise.all(
-        sceneUrls.map(async (url) => {
-          const r = await fetch(url, { signal: AbortSignal.timeout(30_000) });
-          if (!r.ok) throw new Error(`clip download ${r.status} url=${url}`);
+      // Download clips + voiceover in parallel, then POST multipart to Railway composer
+      const [clipBuffers, voiceBuffer] = await Promise.all([
+        Promise.all(
+          sceneUrls.map(async (url) => {
+            const r = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+            if (!r.ok) throw new Error(`clip download ${r.status} url=${url}`);
+            return Buffer.from(await r.arrayBuffer());
+          }),
+        ),
+        (async () => {
+          const r = await fetch(audioUrl, { signal: AbortSignal.timeout(30_000) });
+          if (!r.ok) throw new Error(`voiceover download ${r.status} url=${audioUrl}`);
           return Buffer.from(await r.arrayBuffer());
-        }),
-      );
+        })(),
+      ]);
       const shots = sceneUrls.map(() => ({
         duration: 10,
         energy_curve: "sustain",
@@ -341,7 +348,9 @@ async function executeAnimateStage(
           `clip_${i}.mp4`,
         );
       }
+      form.append("voiceover", new Blob([new Uint8Array(voiceBuffer)], { type: "audio/mpeg" }), "voiceover.mp3");
       form.append("shot_plan", JSON.stringify({ shots }));
+      log(`[COMPOSE_REQUEST] url=${composerUrl}/compose clips=${clipBuffers.length} voiceover_bytes=${voiceBuffer.byteLength} shot_plan_shots=${shots.length}`);
       const composeRes = await fetch(`${composerUrl}/compose`, {
         method: "POST",
         headers: { "x-api-key": composerKey },
