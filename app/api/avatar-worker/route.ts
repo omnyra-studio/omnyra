@@ -47,6 +47,7 @@ import {
   checkCostFirewall,
   registerCostIntent,
   markCostCharged,
+  setPipelineStatus,
 } from "@/lib/avatar-queue";
 import {
   getDagNode,
@@ -158,6 +159,7 @@ async function executeTtsStage(
   }
 
   // ── Director Core: plan N scenes from script ──────────────────────────────
+  void setPipelineStatus(job.id, "planning_scenes");
   log(`[DIRECTOR] planning scenes script_chars=${job.input.script.length}`);
   const directorT0 = Date.now();
   let scenes: SceneSpec[];
@@ -176,6 +178,7 @@ async function executeTtsStage(
   await registerCostIntent(job.id, "tts", "elevenlabs", reqHash, dagNode.creditEstimate);
 
   // ── Parallel TTS per scene ────────────────────────────────────────────────
+  void setPipelineStatus(job.id, "generating_audio");
   const ttsT0 = Date.now();
   let rawSegments: Array<{ index: number; text: string; buffer: ArrayBuffer; char_count: number }>;
 
@@ -318,6 +321,7 @@ async function executeAnimateStage(
   const numScenes = sceneSpecs?.length ?? (job.input.plan === "studio" ? 6 : 3);
 
   await registerCostIntent(job.id, "animate", "kling", reqHash, dagNode.creditEstimate);
+  void setPipelineStatus(job.id, "generating_animation");
   log(`[FAL_REQUEST] kling scenes=${numScenes} imageUrl=${job.input.image_url.substring(0, 80)}`);
 
   let sceneUrls: string[];
@@ -444,6 +448,7 @@ async function executeLipsyncStage(
   await registerCostIntent(job.id, "lipsync", "synclabs", reqHash, dagNode.creditEstimate);
 
   // ── Parallel per-scene lipsync ────────────────────────────────────────────
+  void setPipelineStatus(job.id, "syncing_lips");
   const lipsyncT0 = Date.now();
   log(`[LIPSYNC_PARALLEL_START] scenes=${numScenes}`);
 
@@ -475,6 +480,7 @@ async function executeLipsyncStage(
   log(`[LIPSYNC_PARALLEL_DONE] elapsed=${lipsyncMs}ms scenes=${lipsyncedUrls.length}`);
 
   // ── Stitch lipsynced clips ────────────────────────────────────────────────
+  void setPipelineStatus(job.id, "stitching");
   const stitchT0    = Date.now();
   const tmpDir      = tmpdir();
   const sid         = job.id.replace(/-/g, "").substring(0, 8);

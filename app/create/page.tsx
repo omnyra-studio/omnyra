@@ -86,6 +86,14 @@ const SECTION_TAG: CSSProperties = {
   textAlign: "center",
 };
 
+const PIPELINE_STATUS_LABELS: Record<string, string> = {
+  planning_scenes:      "Planning scenes...",
+  generating_audio:     "Generating voiceover...",
+  generating_animation: "Animating character...",
+  syncing_lips:         "Syncing lip movements...",
+  stitching:            "Stitching final video...",
+};
+
 const TEMPLATE_TITLES: Record<string, string> = {
   "ugc-ad": "UGC Ad",
   storytime: "TikTok Storytime",
@@ -262,6 +270,7 @@ function CreatePageInner() {
   const [isGeneratingVideo, setIsGeneratingVideo] = useState(false);
   const [videoProgress, setVideoProgress] = useState(0);
   const [videoType, setVideoType] = useState<string | null>(null);
+  const [pipelineStatus, setPipelineStatusDisplay] = useState<string | null>(null);
 
   // Inline voice picker
   const [voices, setVoices] = useState<VoiceOption[]>([]);
@@ -857,6 +866,7 @@ function CreatePageInner() {
 
     setIsGeneratingVideo(true);
     setVideoProgress(10);
+    setPipelineStatusDisplay(null);
 
     try {
       const script = briefResponse.versions[selectedVersion].script;
@@ -908,7 +918,9 @@ function CreatePageInner() {
           if (!statusRes.ok) return; // transient error — keep polling
 
           const status = await statusRes.json();
-          console.log(`[generate-avatar] poll ${pollCount} status=${status.status} stage=${status.stage}`);
+          console.log(`[generate-avatar] poll ${pollCount} status=${status.status} stage=${status.stage} pipeline_status=${status.pipeline_status}`);
+
+          if (status.pipeline_status) setPipelineStatusDisplay(status.pipeline_status);
 
           // Advance progress bar proportionally (20–95 % during processing)
           const progressEstimate = Math.min(20 + Math.round((pollCount / MAX_POLLS) * 75), 95);
@@ -920,12 +932,14 @@ function CreatePageInner() {
             setVideoUrl(status.result_url);
             setMergedVideoUrl(status.result_url);
             setVideoProgress(100);
+            setPipelineStatusDisplay(null);
             setIsGeneratingVideo(false);
           } else if (status.status === 'failed') {
             clearInterval(pollRef.current!);
             pollRef.current = null;
             const stageLabel = status.stage ? ` [stage: ${status.stage}]` : '';
             setError(`${status.error || 'Avatar generation failed'}${stageLabel}`);
+            setPipelineStatusDisplay(null);
             setIsGeneratingVideo(false);
           }
         } catch (pollErr) {
@@ -2096,9 +2110,14 @@ function CreatePageInner() {
 
                 {isGeneratingVideo && (
                   <div style={{ marginTop: 16 }}>
-                    <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, marginBottom: 8 }}>
+                    <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, marginBottom: 4 }}>
                       🎬 Rendering video — this takes 3-6 minutes...
                     </p>
+                    {pipelineStatus && (
+                      <p style={{ color: '#C9A84C', fontSize: 12, marginBottom: 8, fontWeight: 500 }}>
+                        {PIPELINE_STATUS_LABELS[pipelineStatus] ?? pipelineStatus}
+                      </p>
+                    )}
                     <div style={{ width: '100%', height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 2 }}>
                       <div style={{ width: videoProgress + '%', height: '100%', background: 'linear-gradient(90deg, #C9A84C, #FFD700)', borderRadius: 2, transition: 'width 0.5s ease' }} />
                     </div>

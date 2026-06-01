@@ -296,6 +296,21 @@ export async function reclaimExpiredLease(jobId: string): Promise<AvatarJob | nu
 }
 
 /**
+ * Write a human-readable progress label to pipeline_status.
+ * Fire-and-forget safe — this field is informational only and does not
+ * participate in execution state or lease logic.
+ */
+export async function setPipelineStatus(
+  jobId: string,
+  status: string,
+): Promise<void> {
+  await supabaseAdmin
+    .from("avatar_jobs")
+    .update({ pipeline_status: status, updated_at: new Date().toISOString() })
+    .eq("id", jobId);
+}
+
+/**
  * Permanently fail a job — called when a reclaimed job has no retries left.
  */
 export async function permanentlyFailJob(

@@ -40,7 +40,7 @@ export async function GET(req: Request) {
   const { data, error } = await supabaseAdmin
     .from("avatar_jobs")
     .select(
-      "id, status, stage, result_url, animated_video_url, error, retry_count, created_at, updated_at"
+      "id, status, stage, pipeline_status, result_url, animated_video_url, error, retry_count, created_at, updated_at"
     )
     .eq("id", id)
     .eq("user_id", user.id)
