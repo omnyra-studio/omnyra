@@ -41,7 +41,7 @@ export const AVATAR_DAG: readonly DagNode[] = [
     provider:        "kling",
     dependencies:    ["tts"],
     creditEstimate:  8,
-    maxRetries:      2,
+    maxRetries:      1,
     leaseDurationMs: 12 * 60 * 1000,
   },
   {
@@ -49,7 +49,7 @@ export const AVATAR_DAG: readonly DagNode[] = [
     provider:        "synclabs",
     dependencies:    ["animate"],
     creditEstimate:  5,
-    maxRetries:      2,
+    maxRetries:      1,
     leaseDurationMs: 5 * 60 * 1000,
   },
 ] as const;

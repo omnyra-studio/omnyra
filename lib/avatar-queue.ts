@@ -11,8 +11,8 @@ export const STAGE_SEQUENCE: readonly PipelineStage[] = ["tts", "animate", "lips
 // Per-stage retry caps — more retries for cheap/fast stages, fewer for expensive ones
 export const STAGE_MAX_RETRIES: Record<PipelineStage, number> = {
   tts:     3,
-  animate: 2,
-  lipsync: 2,
+  animate: 1,
+  lipsync: 1,
 };
 
 // Single lease duration covers the longest possible stage (Kling ~8 min) plus headroom

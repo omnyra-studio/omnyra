@@ -59,6 +59,7 @@ import {
 import { animateImage, lipSyncVideo } from "@/lib/avatar-provider";
 import { planScenes, type SceneSpec } from "@/lib/avatar-scene-planner";
 import { loadCharacter, buildCharacterPromptSuffix, updateCharacterRefFrame } from "@/lib/character-registry";
+import { lookupCachedPrompt, cachePrompt } from "@/lib/prompt-memory-cache";
 
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
@@ -175,6 +176,24 @@ async function executeTtsStage(
     return;
   }
   log(`[DIRECTOR] scenes=${scenes.length} elapsed=${Date.now() - directorT0}ms`);
+
+  // ── Prompt memory cache lookup (only for non-character jobs) ──────────────
+  // Character jobs skip the cache entirely to avoid cross-character contamination.
+  if (!job.input.character_id) {
+    const cacheResults = await Promise.all(
+      scenes.map(scene => lookupCachedPrompt(job.user_id, scene.shotType, scene.emotion)),
+    );
+    let cacheHits = 0;
+    scenes = scenes.map((scene, i) => {
+      const cached = cacheResults[i];
+      if (cached) {
+        cacheHits++;
+        return { ...scene, visualPrompt: cached.visual_prompt };
+      }
+      return scene;
+    });
+    if (cacheHits > 0) log(`[CACHE] prompt cache hits=${cacheHits}/${scenes.length}`);
+  }
 
   // ── Character consistency injection ───────────────────────────────────────
   if (job.input.character_id) {
@@ -590,6 +609,18 @@ async function executeLipsyncStage(
   if (job.input.character_id && sceneVideoUrls[0]) {
     void updateCharacterRefFrame(job.input.character_id, sceneVideoUrls[0]);
     log(`[CHARACTER] updated ref_frame character_id=${job.input.character_id}`);
+  }
+
+  // Populate prompt memory cache for non-character jobs (score=1.0 on success)
+  if (!job.input.character_id) {
+    const specsJson = job.stage_outputs?.scene_specs;
+    if (specsJson) {
+      const completedSpecs = JSON.parse(specsJson) as SceneSpec[];
+      void Promise.all(
+        completedSpecs.map(s => cachePrompt(job.user_id, s.shotType, s.emotion, s.visualPrompt, 1.0)),
+      ).catch(e => log(`[CACHE] populate error: ${(e as Error).message}`));
+      log(`[CACHE] queued ${completedSpecs.length} prompt(s) for caching`);
+    }
   }
 
   log("pipeline COMPLETE");
