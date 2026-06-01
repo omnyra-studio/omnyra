@@ -56,7 +56,7 @@ import {
 } from "@/lib/avatar-pipeline";
 import { animateImage, lipSyncVideo } from "@/lib/avatar-provider";
 
-export const maxDuration = 300;
+export const maxDuration = 800;
 
 const DEFAULT_VOICE_ID = "EXAVITQu4vr4xnSDxMaL";
 

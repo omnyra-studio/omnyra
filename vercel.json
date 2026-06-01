@@ -3,6 +3,7 @@
   "buildCommand": "next build",
   "installCommand": "npm install",
   "functions": {
+    "app/api/avatar-worker/route.ts": { "maxDuration": 800 },
     "app/api/generate-video-sequence/route.ts": { "maxDuration": 300 },
     "app/api/generate-video-kling/route.ts": { "maxDuration": 300 },
     "app/api/generate-video-fal/route.ts": { "maxDuration": 300 },
