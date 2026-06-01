@@ -138,6 +138,23 @@ export async function uploadArtifact({
   } = supabaseAdmin.storage.from(BUCKET).getPublicUrl(storagePath);
 
   console.log(`${ctx} UPLOAD_OK url=${publicUrl.substring(0, 100)}`);
+  console.log(`${ctx} UPLOAD_DETAILS bucket=${BUCKET} path=${storagePath} public_url=${publicUrl} bytes=${uint8.byteLength} content_type=${contentType}`);
+
+  // Probe whether the URL is publicly accessible (fal.ai / external services will do the same)
+  try {
+    const headRes = await fetch(publicUrl, { method: "HEAD" });
+    const headStatus   = headRes.status;
+    const headLen      = headRes.headers.get("content-length") ?? "none";
+    const headType     = headRes.headers.get("content-type")   ?? "none";
+    console.log(`${ctx} HEAD_PROBE status=${headStatus} content-length=${headLen} content-type=${headType} url=${publicUrl}`);
+    if (!headRes.ok) {
+      console.error(`${ctx} HEAD_PROBE FAILED status=${headStatus} bucket=${BUCKET} path=${storagePath} — bucket is likely private or RLS blocks public reads`);
+    }
+  } catch (headErr) {
+    const msg = headErr instanceof Error ? headErr.message : String(headErr);
+    console.error(`${ctx} HEAD_PROBE ERROR: ${msg} url=${publicUrl}`);
+  }
+
   return publicUrl;
 }
 
