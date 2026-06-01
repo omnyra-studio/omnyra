@@ -2083,32 +2083,48 @@ function CreatePageInner() {
                   </div>
                 )}
 
-                {/* Character preset picker — shown when avatar type is selected and characters exist */}
-                {videoType === 'avatar' && characters.length > 0 && (
+                {/* Character preset picker — shown when avatar type is selected */}
+                {videoType === 'avatar' && (
                   <div style={{ marginBottom: 16 }}>
-                    <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 8px' }}>
-                      Character Preset <span style={{ color: 'rgba(255,255,255,0.3)', fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(optional — locks visual identity across scenes)</span>
-                    </p>
-                    <select
-                      value={selectedCharacterId}
-                      onChange={e => setSelectedCharacterId(e.target.value)}
-                      style={{
-                        width: '100%',
-                        background: 'rgba(0,0,0,0.4)',
-                        border: '1px solid rgba(255,255,255,0.2)',
-                        borderRadius: 10,
-                        color: 'white',
-                        padding: '10px 14px',
-                        fontSize: '0.9rem',
-                        fontFamily: 'inherit',
-                        outline: 'none',
-                      }}
-                    >
-                      <option value="">None — use image only</option>
-                      {characters.map(c => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
-                    </select>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0 }}>
+                        Character Preset <span style={{ color: 'rgba(255,255,255,0.3)', fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(optional)</span>
+                      </p>
+                      <a
+                        href="/dashboard/characters"
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{ fontSize: 11, color: '#C9A84C', textDecoration: 'none', fontWeight: 600 }}
+                      >
+                        {characters.length === 0 ? '+ Create character →' : 'Manage →'}
+                      </a>
+                    </div>
+                    {characters.length > 0 ? (
+                      <select
+                        value={selectedCharacterId}
+                        onChange={e => setSelectedCharacterId(e.target.value)}
+                        style={{
+                          width: '100%',
+                          background: 'rgba(0,0,0,0.4)',
+                          border: '1px solid rgba(255,255,255,0.2)',
+                          borderRadius: 10,
+                          color: 'white',
+                          padding: '10px 14px',
+                          fontSize: '0.9rem',
+                          fontFamily: 'inherit',
+                          outline: 'none',
+                        }}
+                      >
+                        <option value="">None — use image only</option>
+                        {characters.map(c => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                    ) : (
+                      <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.3)', margin: 0, lineHeight: 1.5 }}>
+                        No characters yet. Create one to lock a visual identity across all scenes.
+                      </p>
+                    )}
                   </div>
                 )}
 
