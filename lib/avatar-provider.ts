@@ -1,10 +1,10 @@
 /**
- * Avatar provider — Kling v2.1 pro → SyncLabs pipeline.
+ * Avatar provider — Kling v2.1 pro → SyncLabs (via fal.ai) pipeline.
  * Single entry point for all talking-avatar generation in the codebase.
  */
 
 import { fal } from "@fal-ai/client";
-import { KLING_I2V_PRO, extractVideoUrl } from "./video-models";
+import { KLING_I2V_PRO, FAL_SYNC_LIPSYNC, extractVideoUrl } from "./video-models";
 
 export interface TalkingAvatarInput {
   imageUrl: string;
@@ -30,38 +30,12 @@ const ANIMATE_NEGATIVE =
   "talking, mouth moving, speaking, gestures, dramatic motion, blur, " +
   "body movement, hands, sudden motion, exaggerated expression";
 
-const SYNCLABS_BASE = "https://api.synclabs.so";
-const SYNCLABS_TIMEOUT_MS = 60_000;
 const KLING_POLL_MS = 4_000;
 
-async function pollSyncLabs(
-  jobId: string,
-  apiKey: string,
-  intervalMs: number,
-  timeoutMs: number,
-): Promise<string> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, intervalMs));
-    const res = await fetch(`${SYNCLABS_BASE}/video/${jobId}`, {
-      headers: { "x-api-key": apiKey },
-    });
-    if (!res.ok) throw new Error(`SyncLabs poll returned ${res.status}`);
-    const data = await res.json() as {
-      id: string;
-      status: string;
-      url?: string;
-      videoUrl?: string;
-      error?: string;
-    };
-    const url = data.url ?? data.videoUrl;
-    if (data.status === "completed" && url) return url;
-    if (data.status === "failed" || data.status === "error") {
-      throw new Error(`SyncLabs lipsync failed: ${data.error ?? data.status}`);
-    }
-    console.log(`[avatar-provider] SyncLabs status=${data.status} jobId=${jobId}`);
-  }
-  throw new Error(`SyncLabs lipsync timed out after ${timeoutMs / 1000}s`);
+function configureFal(): void {
+  const falKey = process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY;
+  if (!falKey) throw new Error("FAL_API_KEY not configured");
+  fal.config({ credentials: falKey });
 }
 
 /**
@@ -69,9 +43,8 @@ async function pollSyncLabs(
  * Returns the animated video URL.  Used by the stage-based worker.
  */
 export async function animateImage(imageUrl: string): Promise<string> {
-  const falKey = process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY;
-  if (!falKey) throw new Error("FAL_API_KEY not configured");
-  fal.config({ credentials: falKey });
+  console.log(`[FAL_REQUEST] animateImage fal_key_set=${!!(process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY)}`);
+  configureFal();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const result = await (fal as any).subscribe(KLING_I2V_PRO, {
@@ -97,65 +70,50 @@ export async function animateImage(imageUrl: string): Promise<string> {
       `Kling animate returned no video URL — keys=${Object.keys(result ?? {}).join(",")}`,
     );
   }
+  console.log(`[FAL_RESPONSE] kling SUCCESS url=${url.substring(0, 80)}`);
   return url;
 }
 
 /**
- * Stage 2 only: lipsync an animated video with an audio track via SyncLabs.
+ * Stage 2 only: lipsync an animated video with an audio track via fal-ai/sync-lipsync.
  * Returns the lipsynced video URL.  Used by the stage-based worker.
  */
 export async function lipSyncVideo(
   animatedVideoUrl: string,
   audioUrl: string,
 ): Promise<string> {
-  const syncKey = process.env.SYNCLABS_API_KEY;
-  console.log(`[synclabs] lipSyncVideo key_present=${!!syncKey}`);
-  if (!syncKey) throw new Error("SYNCLABS_API_KEY not configured");
+  console.log(`[synclabs] lipSyncVideo fal_key_set=${!!(process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY)}`);
+  configureFal();
 
-  const requestBody = {
-    videoUrl:   animatedVideoUrl,
-    audioUrl,
-    synergize:  true,
-    maxCredits: 120,
-    webhookUrl: null,
-  };
-  console.log(`[synclabs] lipSyncVideo submit body=${JSON.stringify(requestBody)}`);
+  console.log(`[synclabs] lipSyncVideo submit video_url=${animatedVideoUrl.substring(0, 80)} audio_url=${audioUrl.substring(0, 80)}`);
 
-  let submitRes: Response;
-  try {
-    submitRes = await fetch(`${SYNCLABS_BASE}/video`, {
-      method:  "POST",
-      headers: { "x-api-key": syncKey, "Content-Type": "application/json" },
-      body: JSON.stringify(requestBody),
-    });
-  } catch (fetchErr) {
-    const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
-    console.error(`[synclabs] lipSyncVideo fetch threw: ${msg}`);
-    throw new Error(`SyncLabs fetch failed: ${msg}`);
-  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const result = await (fal as any).subscribe(FAL_SYNC_LIPSYNC, {
+    input: {
+      video_url: animatedVideoUrl,
+      audio_url: audioUrl,
+    },
+    logs: true,
+    onQueueUpdate: (update: { status: string }) => {
+      console.log(`[synclabs] lipSyncVideo queue status=${update.status}`);
+    },
+  });
 
-  const statusCode = submitRes.status;
-  const rawText = await submitRes.text().catch(() => `<unreadable>`);
-  console.log(`[synclabs] lipSyncVideo response status=${statusCode} body=${rawText.substring(0, 500)}`);
+  console.log(`[synclabs] lipSyncVideo raw result keys=${Object.keys(result ?? {}).join(",")}`);
 
-  if (!submitRes.ok) {
-    throw new Error(`SyncLabs submit failed: ${statusCode} — ${rawText.substring(0, 200)}`);
-  }
+  const url =
+    extractVideoUrl(result) ??
+    (result as { video?: { url?: string } })?.video?.url ??
+    (result as { output?: { video_url?: string } })?.output?.video_url ??
+    (result as { video_url?: string })?.video_url;
 
-  let submitData: { id?: string; error?: string };
-  try {
-    submitData = JSON.parse(rawText);
-  } catch {
-    throw new Error(`SyncLabs response not valid JSON: ${rawText.substring(0, 200)}`);
-  }
-
-  if (!submitData.id) {
+  if (!url) {
     throw new Error(
-      `SyncLabs returned no job id — ${JSON.stringify(submitData).substring(0, 200)}`,
+      `fal sync-lipsync returned no video URL — result=${JSON.stringify(result).substring(0, 300)}`,
     );
   }
-
-  return pollSyncLabs(submitData.id, syncKey, 4_000, SYNCLABS_TIMEOUT_MS);
+  console.log(`[synclabs] lipSyncVideo SUCCESS url=${url.substring(0, 80)}`);
+  return url;
 }
 
 export async function generateTalkingAvatar(
@@ -164,12 +122,7 @@ export async function generateTalkingAvatar(
   const { imageUrl, audioUrl } = input;
   const t0 = Date.now();
 
-  const falKey = process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY;
-  if (!falKey) throw new Error("FAL_API_KEY not configured");
-  const syncKey = process.env.SYNCLABS_API_KEY;
-  if (!syncKey) throw new Error("SYNCLABS_API_KEY not configured");
-
-  fal.config({ credentials: falKey });
+  configureFal();
 
   // ── Stage 1: Kling v2.1 pro — animate image to 10s video ──────────────────
   const s1T0 = Date.now();
@@ -202,55 +155,37 @@ export async function generateTalkingAvatar(
   const s1Ms = Date.now() - s1T0;
   console.log(`[TIMING] avatar STAGE1_ANIMATE complete ${s1Ms}ms`);
 
-  // ── Stage 2: SyncLabs lipsync ──────────────────────────────────────────────
+  // ── Stage 2: fal-ai/sync-lipsync ──────────────────────────────────────────
   const s2T0 = Date.now();
   console.log(`[TIMING] avatar STAGE2_LIPSYNC start`);
-  console.log(`[synclabs] generateTalkingAvatar key_present=${!!syncKey}`);
+  console.log(`[synclabs] generateTalkingAvatar submit video_url=${animatedVideoUrl.substring(0, 80)} audio_url=${audioUrl.substring(0, 80)}`);
 
-  const gta_requestBody = {
-    videoUrl:    animatedVideoUrl,
-    audioUrl,
-    synergize:   true,
-    maxCredits:  120,
-    webhookUrl:  null,
-  };
-  console.log(`[synclabs] generateTalkingAvatar submit body=${JSON.stringify(gta_requestBody)}`);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const lipsyncResult = await (fal as any).subscribe(FAL_SYNC_LIPSYNC, {
+    input: {
+      video_url: animatedVideoUrl,
+      audio_url: audioUrl,
+    },
+    logs: true,
+    onQueueUpdate: (update: { status: string }) => {
+      console.log(`[synclabs] generateTalkingAvatar queue status=${update.status}`);
+    },
+  });
 
-  let gta_submitRes: Response;
-  try {
-    gta_submitRes = await fetch(`${SYNCLABS_BASE}/video`, {
-      method:  "POST",
-      headers: { "x-api-key": syncKey, "Content-Type": "application/json" },
-      body: JSON.stringify(gta_requestBody),
-    });
-  } catch (fetchErr) {
-    const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
-    console.error(`[synclabs] generateTalkingAvatar fetch threw: ${msg}`);
-    throw new Error(`SyncLabs fetch failed: ${msg}`);
+  console.log(`[synclabs] generateTalkingAvatar raw result keys=${Object.keys(lipsyncResult ?? {}).join(",")}`);
+
+  const videoUrl =
+    extractVideoUrl(lipsyncResult) ??
+    (lipsyncResult as { video?: { url?: string } })?.video?.url ??
+    (lipsyncResult as { output?: { video_url?: string } })?.output?.video_url ??
+    (lipsyncResult as { video_url?: string })?.video_url;
+
+  if (!videoUrl) {
+    throw new Error(
+      `fal sync-lipsync returned no video URL — result=${JSON.stringify(lipsyncResult).substring(0, 300)}`,
+    );
   }
 
-  const gta_statusCode = gta_submitRes.status;
-  const gta_rawText = await gta_submitRes.text().catch(() => `<unreadable>`);
-  console.log(`[synclabs] generateTalkingAvatar response status=${gta_statusCode} body=${gta_rawText.substring(0, 500)}`);
-
-  if (!gta_submitRes.ok) {
-    throw new Error(`SyncLabs submit failed: ${gta_statusCode} — ${gta_rawText.substring(0, 200)}`);
-  }
-
-  let submitData: { id?: string; error?: string };
-  try {
-    submitData = JSON.parse(gta_rawText);
-  } catch {
-    throw new Error(`SyncLabs response not valid JSON: ${gta_rawText.substring(0, 200)}`);
-  }
-
-  if (!submitData.id) {
-    throw new Error(`SyncLabs returned no job id — ${JSON.stringify(submitData).substring(0, 200)}`);
-  }
-
-  console.log(`[avatar-provider] SyncLabs job submitted: ${submitData.id}`);
-
-  const videoUrl = await pollSyncLabs(submitData.id, syncKey, 4_000, SYNCLABS_TIMEOUT_MS);
   const s2Ms = Date.now() - s2T0;
   console.log(`[TIMING] avatar STAGE2_LIPSYNC complete ${s2Ms}ms`);
 

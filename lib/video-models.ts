@@ -7,6 +7,8 @@ export const KLING_I2V_PRO     = "fal-ai/kling-video/v2.1/pro/image-to-video";  
 export const RUNWAY_MODEL      = "fal-ai/runway-gen4/turbo";
 // Hedra Character-1: static image + audio → lip-synced talking character video
 export const HEDRA_MODEL       = "fal-ai/hedra/character-1";
+// SyncLabs lipsync via fal.ai proxy
+export const FAL_SYNC_LIPSYNC  = "fal-ai/sync-lipsync";
 
 // Models that have been removed from fal.ai and must never be used.
 const DEPRECATED_MODELS = [
@@ -18,7 +20,7 @@ const DEPRECATED_MODELS = [
 ];
 
 // Startup validation — called once at module load.
-const ACTIVE_MODELS = [KLING_I2V_MODEL, KLING_T2V_MODEL, KLING_I2V_PRO, RUNWAY_MODEL, HEDRA_MODEL];
+const ACTIVE_MODELS = [KLING_I2V_MODEL, KLING_T2V_MODEL, KLING_I2V_PRO, RUNWAY_MODEL, HEDRA_MODEL, FAL_SYNC_LIPSYNC];
 
 for (const m of ACTIVE_MODELS) {
   if (DEPRECATED_MODELS.includes(m)) {
