@@ -298,18 +298,72 @@ async function executeAnimateStage(
     return advanceFromAnimate(job, workerId, ledgerCached, origin, log);
   }
 
-  // ── Kling animate ──────────────────────────────────────────────────────────
+  // ── Kling animate (3 parallel scenes → Railway stitch) ───────────────────
+  const NUM_SCENES = 3;
+  const composerUrl = process.env.COMPOSER_SERVICE_URL;
+  const composerKey = process.env.COMPOSER_API_KEY ?? "";
+
   await registerCostIntent(job.id, "animate", "kling", reqHash, dagNode.creditEstimate);
-  log(`[FAL_REQUEST] kling imageUrl=${job.input.image_url.substring(0, 80)} fal_key_set=${!!(process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY)}`);
+  log(`[FAL_REQUEST] kling scenes=${NUM_SCENES} imageUrl=${job.input.image_url.substring(0, 80)} fal_key_set=${!!(process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY)}`);
 
   let animatedVideoUrl: string;
   try {
     const t0 = Date.now();
-    animatedVideoUrl = await animateImage(job.input.image_url);
-    log(`[FAL_RESPONSE] kling SUCCESS animatedUrl=${animatedVideoUrl.substring(0, 60)} elapsed=${Date.now() - t0}ms`);
+
+    // Run NUM_SCENES Kling calls in parallel
+    const sceneUrls = await Promise.all(
+      Array.from({ length: NUM_SCENES }, () => animateImage(job.input.image_url)),
+    );
+    log(`kling scenes=${NUM_SCENES} elapsed=${Date.now() - t0}ms urls=${sceneUrls.map(u => u.substring(0, 40)).join(" | ")}`);
+
+    if (composerUrl) {
+      // Download all clips then POST multipart to Railway composer
+      const clipBuffers = await Promise.all(
+        sceneUrls.map(async (url) => {
+          const r = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+          if (!r.ok) throw new Error(`clip download ${r.status} url=${url}`);
+          return Buffer.from(await r.arrayBuffer());
+        }),
+      );
+      const shots = sceneUrls.map(() => ({
+        duration: 10,
+        energy_curve: "sustain",
+        transition_in: "hard_cut",
+        transition_after: null,
+        transition_duration: 0,
+        zoom_effect: false,
+      }));
+      const form = new FormData();
+      for (let i = 0; i < clipBuffers.length; i++) {
+        form.append(
+          "clips",
+          new Blob([new Uint8Array(clipBuffers[i])], { type: "video/mp4" }),
+          `clip_${i}.mp4`,
+        );
+      }
+      form.append("shot_plan", JSON.stringify({ shots }));
+      const composeRes = await fetch(`${composerUrl}/compose`, {
+        method: "POST",
+        headers: { "x-api-key": composerKey },
+        body: form,
+        signal: AbortSignal.timeout(90_000),
+      });
+      if (!composeRes.ok) {
+        throw new Error(`Railway composer ${composeRes.status}: ${await composeRes.text().catch(() => "")}`);
+      }
+      const composeData = (await composeRes.json()) as { success: boolean; video_url: string };
+      animatedVideoUrl = composeData.video_url.startsWith("http")
+        ? composeData.video_url
+        : `${composerUrl}${composeData.video_url}`;
+      log(`[STITCH] stitched url=${animatedVideoUrl.substring(0, 80)}`);
+    } else {
+      // No composer configured — fall back to single clip
+      animatedVideoUrl = sceneUrls[0];
+      log("COMPOSER_SERVICE_URL not set — falling back to single clip");
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    log(`kling ERROR: ${msg}`);
+    log(`kling/stitch ERROR: ${msg}`);
     await failLedgerEntry(job.id, "animate", workerId, msg);
     const { shouldRetry } = await recordStageFailure(
       job.id, workerId, "animate", msg, job.retry_count_per_stage ?? {},
