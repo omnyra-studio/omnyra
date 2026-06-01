@@ -298,8 +298,8 @@ async function executeAnimateStage(
     return advanceFromAnimate(job, workerId, ledgerCached, origin, log);
   }
 
-  // ── Kling animate (3 parallel scenes → Railway stitch) ───────────────────
-  const NUM_SCENES = 3;
+  // ── Kling animate (N parallel scenes → Railway stitch) ───────────────────
+  const NUM_SCENES = job.input.plan === "studio" ? 6 : 3;
   const composerUrl = process.env.COMPOSER_SERVICE_URL;
   const composerKey = process.env.COMPOSER_API_KEY ?? "";
 

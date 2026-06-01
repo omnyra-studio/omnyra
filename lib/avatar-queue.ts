@@ -19,9 +19,10 @@ export const STAGE_MAX_RETRIES: Record<PipelineStage, number> = {
 const STAGE_LEASE_MS = 12 * 60 * 1000; // 12 minutes
 
 export interface AvatarJobInput {
-  script: string;
-  voice_id: string | null;
+  script:    string;
+  voice_id:  string | null;
   image_url: string;
+  plan?:     "starter" | "studio";
 }
 
 export interface AvatarJob {

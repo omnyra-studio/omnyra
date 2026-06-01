@@ -31,14 +31,14 @@ export async function POST(req: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { script?: string; voice_id?: string; background_image?: string };
+  let body: { script?: string; voice_id?: string; background_image?: string; plan?: string };
   try {
     body = await req.json();
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { script, voice_id, background_image } = body;
+  const { script, voice_id, background_image, plan } = body;
 
   if (!script?.trim()) {
     return Response.json({ error: "script is required" }, { status: 400 });
@@ -56,14 +56,12 @@ export async function POST(req: Request) {
   if (!process.env.FAL_API_KEY && !process.env.FALAI_API_KEY) {
     return Response.json({ error: "FAL_API_KEY not configured" }, { status: 500 });
   }
-  if (!process.env.SYNCLABS_API_KEY) {
-    return Response.json({ error: "SYNCLABS_API_KEY not configured" }, { status: 500 });
-  }
 
   const input = {
     script: script.trim(),
     voice_id: voice_id || null,
     image_url: background_image,
+    plan: (plan === "studio" ? "studio" : "starter") as "starter" | "studio",
   };
 
   let job;

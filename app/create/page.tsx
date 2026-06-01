@@ -867,6 +867,7 @@ function CreatePageInner() {
           script,
           voice_id: selectedVoiceId || userVoice?.voice_id || null,
           background_image: selectedImage,
+          plan: userTier === 'studio' ? 'studio' : 'starter',
         }),
       });
       const data = await res.json();
@@ -946,33 +947,6 @@ function CreatePageInner() {
     const v = briefResponse.versions[selectedVersion];
 
     if (type === 'avatar') {
-      // If the user has a selected/generated image and a voiceover, use the
-      // image-to-talking-character lipsync pipeline (Kling animate → SyncLabs).
-      if (selectedImage && voiceAudioUrl && !voiceAudioUrl.startsWith('blob:')) {
-        setIsGeneratingVideo(true);
-        setVideoProgress(10);
-        try {
-          console.log('[avatar-lipsync] starting image→lipsync pipeline');
-          const lipsyncRes = await fetch('/api/avatar-lipsync', {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body:    JSON.stringify({ imageUrl: selectedImage, audioUrl: voiceAudioUrl }),
-          });
-          const lipsyncData = await lipsyncRes.json();
-          if (!lipsyncRes.ok) throw new Error(lipsyncData.error || 'Lipsync failed');
-          if (!lipsyncData.video_url) throw new Error('No video URL from lipsync');
-          setVideoUrl(lipsyncData.video_url);
-          setMergedVideoUrl(lipsyncData.video_url); // audio already embedded
-          setVideoProgress(100);
-          console.log(`[avatar-lipsync] done timing_ms=${JSON.stringify(lipsyncData.timing_ms)}`);
-        } catch (err) {
-          console.error('[avatar-lipsync] error:', err);
-          setError(err instanceof Error ? err.message : 'Avatar lipsync failed');
-        } finally {
-          setIsGeneratingVideo(false);
-        }
-        return;
-      }
       await handleGenerateVideoAvatar();
       return;
     }

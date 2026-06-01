@@ -4,7 +4,7 @@
  */
 
 import { fal } from "@fal-ai/client";
-import { KLING_I2V_PRO, FAL_SYNC_LIPSYNC, extractVideoUrl } from "./video-models";
+import { KLING_I2V_MODEL, FAL_SYNC_LIPSYNC, extractVideoUrl } from "./video-models";
 import { supabaseAdmin } from "./supabase/admin";
 
 const RENDERS_BUCKET = "renders";
@@ -113,14 +113,13 @@ export async function animateImage(imageUrl: string): Promise<string> {
   configureFal();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const result = await (fal as any).subscribe(KLING_I2V_PRO, {
+  const result = await (fal as any).subscribe(KLING_I2V_MODEL, {
     input: {
       image_url:       imageUrl,
       prompt:          ANIMATE_PROMPT,
       negative_prompt: ANIMATE_NEGATIVE,
-      duration:        10,
+      duration:        "10",
       aspect_ratio:    "9:16",
-      cfg_scale:       0.35,
     },
     logs:         false,
     pollInterval: KLING_POLL_MS,
@@ -161,8 +160,9 @@ export async function lipSyncVideo(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     result = await (fal as any).subscribe(FAL_SYNC_LIPSYNC, {
       input: {
-        video_url: animatedVideoUrl,
-        audio_url: resolvedAudioUrl,
+        video_url:  animatedVideoUrl,
+        audio_url:  resolvedAudioUrl,
+        model_name: "sync-1.9.0-turbo",
       },
       logs: true,
       onEnqueue: (requestId: string) => {
@@ -209,19 +209,18 @@ export async function generateTalkingAvatar(
 
   configureFal();
 
-  // ── Stage 1: Kling v2.1 pro — animate image to 10s video ──────────────────
+  // ── Stage 1: Kling v1.6 standard — animate image to 10s video ────────────
   const s1T0 = Date.now();
   console.log(`[TIMING] avatar STAGE1_ANIMATE start`);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const klingResult = await (fal as any).subscribe(KLING_I2V_PRO, {
+  const klingResult = await (fal as any).subscribe(KLING_I2V_MODEL, {
     input: {
       image_url:       imageUrl,
       prompt:          ANIMATE_PROMPT,
       negative_prompt: ANIMATE_NEGATIVE,
-      duration:        10,
+      duration:        "10",
       aspect_ratio:    "9:16",
-      cfg_scale:       0.35,
     },
     logs:         false,
     pollInterval: KLING_POLL_MS,
@@ -253,8 +252,9 @@ export async function generateTalkingAvatar(
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     lipsyncResult = await (fal as any).subscribe(FAL_SYNC_LIPSYNC, {
       input: {
-        video_url: animatedVideoUrl,
-        audio_url: resolvedAudioUrl,
+        video_url:  animatedVideoUrl,
+        audio_url:  resolvedAudioUrl,
+        model_name: "sync-1.9.0-turbo",
       },
       logs: true,
       onEnqueue: (requestId: string) => {
