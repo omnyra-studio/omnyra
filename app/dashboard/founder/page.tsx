@@ -95,14 +95,15 @@ const STATUS_COLOR: Record<string, string> = {
 
 const STAGE_LABELS: Record<string, string> = {
   tts:     "TTS",
-  animate: "Kling",
-  lipsync: "SyncLabs",
+  animate: "Animate",
+  lipsync: "Hedra",
 };
 
 const PROVIDER_LABELS: Record<string, string> = {
-  elevenlabs: "ElevenLabs",
-  kling:      "Kling",
-  synclabs:   "SyncLabs",
+  elevenlabs:    "ElevenLabs",
+  kling:         "Kling",
+  hedra:         "Hedra",
+  "hedra-bypass": "Hedra Bypass",
 };
 
 // ── Styles ─────────────────────────────────────────────────────────────────────

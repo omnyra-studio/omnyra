@@ -4,7 +4,7 @@
  * Validates input, creates a queued avatar_jobs record, triggers the worker,
  * and returns { jobId } immediately — never calls external AI APIs directly.
  *
- * The worker at /api/avatar-worker handles ElevenLabs → Storage → Kling → SyncLabs.
+ * The worker at /api/avatar-worker handles ElevenLabs TTS → Hedra lipsync.
  * Poll /api/job-status?id=<jobId> for progress.
  *
  * Body:    { script: string; voice_id?: string; background_image: string }

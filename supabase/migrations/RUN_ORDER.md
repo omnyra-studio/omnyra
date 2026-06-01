@@ -48,6 +48,7 @@ If you haven't already, run `setup.sql` once before any migration below.
 | 28 | `rename_heygen_shots_column.sql` | rename `shot_plans.heygen_shots` → `avatar_shots` | shot_plans |
 | 29 | `fix_render_assignment_constraint.sql` | drop `shots.render_assignment CHECK IN ('heygen','fal')`, re-add with `('avatar','fal')` | shots |
 | 30 | `make_renders_bucket_public.sql` | `UPDATE storage.buckets SET public = true WHERE id = 'renders'` — fal.ai cannot download private bucket URLs | — |
+| 31 | `system_insights_extend.sql` | ADD COLUMN: `insight_type`, `title`, `summary`, `metadata`, `severity`, `source`, `confidence_score`, `user_id`; 4 new indexes | system_insights |
 
 ## Notes
 

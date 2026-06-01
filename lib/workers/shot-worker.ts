@@ -2,9 +2,8 @@
  * Shot render worker — processes one shot per job invocation.
  *
  * Routing logic mirrors /api/generate-shot:
- *   avatar                      → Kling animate → SyncLabs lipsync (async)
- *   text_overlay                → fal Flux (sync, fast)
- *   everything else             → fal.queue.submit() — async, returns immediately
+ *   text_overlay                → fal Flux via executeShot() (sync, fast)
+ *   everything else             → fal.queue.submit() with Seedance — async, returns immediately
  *
  * For async fal shots the worker exits after submitting. Completion is
  * detected via the existing /api/generate-shot/status-batch polling endpoint

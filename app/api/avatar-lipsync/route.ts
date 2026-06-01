@@ -3,19 +3,15 @@
  *
  * Turns any selected/generated image into a talking character video.
  *
- * Pipeline (two stages, ~75–105s total):
- *   Stage 1 — Kling v2.1 pro (≤45s)
- *     image → 10s animated video (micro head motion, blinks — no mouth)
+ * Pipeline — Hedra Character-2 (~360s max):
+ *   image + audio → lip-synced talking character video
  *
- *   Stage 2 — SyncLabs (≤60s)
- *     animated video + voiceover audio → lip-synced talking character
- *
- * Env vars: FAL_API_KEY, SYNCLABS_API_KEY
+ * Env vars: HEDRA_API_KEY
  */
 
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import { generateTalkingAvatar } from "@/lib/avatar-provider";
+import { generateHedraAvatar } from "@/lib/providers/hedra";
 
 export const maxDuration = 300;
 
@@ -52,23 +48,19 @@ export async function POST(req: Request) {
 
   // ── Generate ──────────────────────────────────────────────────────────────
   try {
-    const result = await generateTalkingAvatar({ imageUrl, audioUrl });
+    const result = await generateHedraAvatar({ image_url: imageUrl, audio_url: audioUrl });
     const totalMs = Date.now() - routeT0;
     console.log(`[TIMING] avatar-lipsync TOTAL ${totalMs}ms`);
 
     return Response.json({
-      success:            true,
-      video_url:          result.videoUrl,
-      animated_video_url: result.animatedVideoUrl,
-      timing_ms:          { ...result.timingMs, route_total: totalMs },
+      success:    true,
+      video_url:  result.video_url,
+      request_id: result.request_id,
+      timing_ms:  { route_total: totalMs },
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    const isStage1 = msg.includes("Kling") || msg.includes("animate");
-    console.error(`[avatar-lipsync] ${isStage1 ? "STAGE1" : "STAGE2"} FAILED:`, msg);
-    return Response.json(
-      { error: msg, stage: isStage1 ? "animate" : "lipsync" },
-      { status: 500 },
-    );
+    console.error("[avatar-lipsync] FAILED:", msg);
+    return Response.json({ error: msg }, { status: 500 });
   }
 }

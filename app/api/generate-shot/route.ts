@@ -4,9 +4,8 @@
  * Generates ONE shot and saves the resulting clip URL to the shots table.
  *
  * Routing:
- *   content_type="text_overlay" → fal Flux (sync, fast)
- *   content_type="avatar" → Kling animate → SyncLabs lipsync (async)
- *   everything else → fal.queue.submit() — returns immediately with { status: "queued" }
+ *   content_type="text_overlay" → fal Flux via executeShot() (sync, fast)
+ *   everything else → fal.queue.submit() with Seedance — returns immediately with { status: "queued" }
  *
  * Async path body:  { shotId: string }
  * Async path return: { success: true, status: "queued", fal_request_id: string, shot_db_id: string }

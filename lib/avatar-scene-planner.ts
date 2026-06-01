@@ -1,9 +1,9 @@
 /**
  * Avatar scene planner.
  *
- * Converts a script into an array of SceneSpec objects — one per Kling
- * generation + TTS call + SyncLabs call.  Each spec carries the text for TTS,
- * a visual prompt for Kling, shot metadata, and an estimated duration.
+ * Converts a script into an array of SceneSpec objects — one per avatar scene.
+ * Each spec carries the text for TTS, a visual prompt, shot metadata, and an
+ * estimated duration.  Lipsync is handled by Hedra (lib/providers/hedra.ts).
  *
  * Two execution modes (tried in order):
  *   1. LLM Director — calls Anthropic Claude with the Director Core system

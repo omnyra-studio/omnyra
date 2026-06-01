@@ -38,7 +38,7 @@ export const templates: Template[] = [
     default_energy: "High-energy",
     default_camera: "Selfie",
     default_style: "Realistic",
-    apis: ["elevenlabs", "kling", "synclabs"],
+    apis: ["elevenlabs", "kling", "hedra"],
     brief_fields: [
       {
         id: "product",
@@ -70,7 +70,7 @@ export const templates: Template[] = [
     default_energy: "Intimate",
     default_camera: "Handheld",
     default_style: "Cinematic",
-    apis: ["elevenlabs", "runway", "synclabs"],
+    apis: ["elevenlabs", "runway", "hedra"],
     brief_fields: [
       {
         id: "topic",
@@ -102,7 +102,7 @@ export const templates: Template[] = [
     default_energy: "Confident",
     default_camera: "Studio",
     default_style: "Cinematic",
-    apis: ["elevenlabs", "kling", "synclabs"],
+    apis: ["elevenlabs", "kling", "hedra"],
     brief_fields: [
       {
         id: "persona",
