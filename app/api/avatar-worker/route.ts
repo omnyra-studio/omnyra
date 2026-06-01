@@ -18,9 +18,9 @@
  *     startLedgerEntry(): second dedup layer, marks stage 'running'.
  *
  * Pipeline (per job):
- *   tts     → Director Core plans N scenes, parallel TTS per scene
- *   animate → N parallel Kling calls (scene-specific visual prompts)
- *   lipsync → N parallel SyncLabs calls → ffmpeg stitch → validate → telemetry
+ *   tts     → Director Core plans N scenes, parallel TTS per scene → audio_segments
+ *   animate → bypass (Kling removed; near-instant ledger entry only)
+ *   lipsync → Hedra: original image + stitched audio → talking avatar video
  *
  * Body:    { jobId: string }
  * Returns: { acknowledged, stage?, skipped? }
@@ -492,9 +492,18 @@ async function executeLipsyncStage(
     .eq("id", job.id);
 
   // ── Commit ─────────────────────────────────────────────────────────────────
-  await markCostCharged(job.id, "lipsync", reqHash, finalVideoUrl);
-  await completeLedgerEntry(job.id, "lipsync", workerId, finalVideoUrl);
-  await completeJobWithLease(job.id, workerId, finalVideoUrl, finalVideoUrl);
+  // Wrapped — a Supabase failure here after a successful Hedra generation must
+  // not leave the job stuck in "processing" with the credit already charged.
+  try {
+    await markCostCharged(job.id, "lipsync", reqHash, finalVideoUrl);
+    await completeLedgerEntry(job.id, "lipsync", workerId, finalVideoUrl);
+    await completeJobWithLease(job.id, workerId, finalVideoUrl, finalVideoUrl);
+  } catch (commitErr) {
+    const msg = commitErr instanceof Error ? commitErr.message : String(commitErr);
+    log(`COMMIT_ERROR: ${msg} — Hedra succeeded but job record update failed; manual recovery needed`);
+    // Re-throw so the after() caller surface sees the error in logs
+    throw commitErr;
+  }
 
   // Update character ref_frame_url
   if (job.input.character_id) {
