@@ -109,26 +109,46 @@ export async function lipSyncVideo(
   audioUrl: string,
 ): Promise<string> {
   const syncKey = process.env.SYNCLABS_API_KEY;
+  console.log(`[synclabs] lipSyncVideo key_present=${!!syncKey}`);
   if (!syncKey) throw new Error("SYNCLABS_API_KEY not configured");
 
-  const submitRes = await fetch(`${SYNCLABS_BASE}/video`, {
-    method:  "POST",
-    headers: { "x-api-key": syncKey, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      videoUrl:   animatedVideoUrl,
-      audioUrl,
-      synergize:  true,
-      maxCredits: 120,
-      webhookUrl: null,
-    }),
-  });
+  const requestBody = {
+    videoUrl:   animatedVideoUrl,
+    audioUrl,
+    synergize:  true,
+    maxCredits: 120,
+    webhookUrl: null,
+  };
+  console.log(`[synclabs] lipSyncVideo submit body=${JSON.stringify(requestBody)}`);
 
-  if (!submitRes.ok) {
-    const errText = await submitRes.text().catch(() => `HTTP ${submitRes.status}`);
-    throw new Error(`SyncLabs submit failed: ${submitRes.status} — ${errText.substring(0, 200)}`);
+  let submitRes: Response;
+  try {
+    submitRes = await fetch(`${SYNCLABS_BASE}/video`, {
+      method:  "POST",
+      headers: { "x-api-key": syncKey, "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody),
+    });
+  } catch (fetchErr) {
+    const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+    console.error(`[synclabs] lipSyncVideo fetch threw: ${msg}`);
+    throw new Error(`SyncLabs fetch failed: ${msg}`);
   }
 
-  const submitData = await submitRes.json() as { id?: string; error?: string };
+  const statusCode = submitRes.status;
+  const rawText = await submitRes.text().catch(() => `<unreadable>`);
+  console.log(`[synclabs] lipSyncVideo response status=${statusCode} body=${rawText.substring(0, 500)}`);
+
+  if (!submitRes.ok) {
+    throw new Error(`SyncLabs submit failed: ${statusCode} — ${rawText.substring(0, 200)}`);
+  }
+
+  let submitData: { id?: string; error?: string };
+  try {
+    submitData = JSON.parse(rawText);
+  } catch {
+    throw new Error(`SyncLabs response not valid JSON: ${rawText.substring(0, 200)}`);
+  }
+
   if (!submitData.id) {
     throw new Error(
       `SyncLabs returned no job id — ${JSON.stringify(submitData).substring(0, 200)}`,
@@ -185,25 +205,45 @@ export async function generateTalkingAvatar(
   // ── Stage 2: SyncLabs lipsync ──────────────────────────────────────────────
   const s2T0 = Date.now();
   console.log(`[TIMING] avatar STAGE2_LIPSYNC start`);
+  console.log(`[synclabs] generateTalkingAvatar key_present=${!!syncKey}`);
 
-  const submitRes = await fetch(`${SYNCLABS_BASE}/video`, {
-    method:  "POST",
-    headers: { "x-api-key": syncKey, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      videoUrl:    animatedVideoUrl,
-      audioUrl,
-      synergize:   true,
-      maxCredits:  120,
-      webhookUrl:  null,
-    }),
-  });
+  const gta_requestBody = {
+    videoUrl:    animatedVideoUrl,
+    audioUrl,
+    synergize:   true,
+    maxCredits:  120,
+    webhookUrl:  null,
+  };
+  console.log(`[synclabs] generateTalkingAvatar submit body=${JSON.stringify(gta_requestBody)}`);
 
-  if (!submitRes.ok) {
-    const errText = await submitRes.text().catch(() => `HTTP ${submitRes.status}`);
-    throw new Error(`SyncLabs submit failed: ${submitRes.status} — ${errText.substring(0, 200)}`);
+  let gta_submitRes: Response;
+  try {
+    gta_submitRes = await fetch(`${SYNCLABS_BASE}/video`, {
+      method:  "POST",
+      headers: { "x-api-key": syncKey, "Content-Type": "application/json" },
+      body: JSON.stringify(gta_requestBody),
+    });
+  } catch (fetchErr) {
+    const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+    console.error(`[synclabs] generateTalkingAvatar fetch threw: ${msg}`);
+    throw new Error(`SyncLabs fetch failed: ${msg}`);
   }
 
-  const submitData = await submitRes.json() as { id?: string; error?: string };
+  const gta_statusCode = gta_submitRes.status;
+  const gta_rawText = await gta_submitRes.text().catch(() => `<unreadable>`);
+  console.log(`[synclabs] generateTalkingAvatar response status=${gta_statusCode} body=${gta_rawText.substring(0, 500)}`);
+
+  if (!gta_submitRes.ok) {
+    throw new Error(`SyncLabs submit failed: ${gta_statusCode} — ${gta_rawText.substring(0, 200)}`);
+  }
+
+  let submitData: { id?: string; error?: string };
+  try {
+    submitData = JSON.parse(gta_rawText);
+  } catch {
+    throw new Error(`SyncLabs response not valid JSON: ${gta_rawText.substring(0, 200)}`);
+  }
+
   if (!submitData.id) {
     throw new Error(`SyncLabs returned no job id — ${JSON.stringify(submitData).substring(0, 200)}`);
   }
