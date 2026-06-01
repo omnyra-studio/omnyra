@@ -888,9 +888,9 @@ function CreatePageInner() {
 
       setVideoProgress(20);
 
-      // Poll /api/job-status every 5 s — up to 60 polls (5 minutes)
+      // Poll /api/job-status every 5 s — up to 150 polls (12.5 minutes)
       let pollCount = 0;
-      const MAX_POLLS = 60;
+      const MAX_POLLS = 150;
 
       pollRef.current = setInterval(async () => {
         try {
