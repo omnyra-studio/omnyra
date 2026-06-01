@@ -5,7 +5,7 @@
  *                                   ↘ failed
  *
  * `runPipeline()` drives a row from `rendering` through to `complete`.
- * Internal sub-stages (voice / motion / lipsync) do NOT mutate the
+ * Internal sub-stages (voice / motion / voiceover) do NOT mutate the
  * status column — they emit granular rows into `render_events` only,
  * which the client subscribes to for fine-grained UI.
  *
@@ -14,7 +14,7 @@
  *   short-circuits if its output already exists on the row:
  *     - audio_url present → skip voice
  *     - all scene URLs present in event payload → skip motion
- *     - video_url present → skip lipsync + finalisation
+ *     - video_url present → skip voiceover + finalisation
  *   This makes retries on failure or crashes safe — the system resumes
  *   from the last successful stage.
  *
@@ -27,11 +27,18 @@
  * Never import from the browser.
  */
 
-import { createHmac } from "crypto";
+import { createHmac, randomUUID } from "crypto";
+import { tmpdir } from "os";
+import { join } from "path";
+import { mkdirSync, writeFileSync, readFileSync, unlinkSync, rmdirSync } from "fs";
+import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
+import ffmpeg from "fluent-ffmpeg";
 import { supabaseAdmin } from "./supabase/admin";
 import { trackEvent } from "./events/trackEvent";
 import { openJob, completeJob, skipJob, failJob } from "./pipeline/jobs";
 import type { Scene } from "./script-engine";
+
+ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
 export type RenderStatus =
   | "queued"
@@ -71,8 +78,8 @@ export type RenderEventType =
   | "voice_completed"
   | "motion_started"
   | "motion_completed"
-  | "lipsync_started"
-  | "lipsync_completed"
+  | "lipsync_started"      // kept: client event contract; semantically "voiceover_started"
+  | "lipsync_completed"    // kept: client event contract; semantically "voiceover_completed"
   | "render_finalised"
   | "render_failed";
 
@@ -247,40 +254,118 @@ async function generateSceneVideo(scene: Scene): Promise<string> {
 }
 
 /* ────────────────────────────────────────────────────────────────
- *  Lip-sync — SyncLabs
+ *  Voiceover attachment — ffmpeg
+ *
+ *  Replaces the former SyncLabs lipsync step.
+ *
+ *  DMCE output is B-roll / cinematic footage — AI-generated scenes
+ *  have no visible face. Lip-syncing is semantically meaningless here.
+ *  The correct operation is: stitch all N scene clips into one
+ *  continuous video, then mux the ElevenLabs narration onto it.
+ *
+ *  Steps:
+ *    1. Download all scene videos to temp files.
+ *    2. If N > 1: concat with `ffmpeg -f concat -c copy`.
+ *    3. Download the voiceover audio to a temp file.
+ *    4. Mux video + audio: `-c:v copy -c:a aac -shortest`.
+ *    5. Upload to Supabase renders bucket, return public URL.
+ *    6. Clean up all temp files in finally.
  * ─────────────────────────────────────────────────────────────── */
 
-async function runLipsync(videoUrl: string, audioUrl: string): Promise<string> {
-  const apiKey = process.env.SYNCLABS_API_KEY;
-  if (!apiKey) throw new Error("SYNCLABS_API_KEY not configured");
+async function attachVoiceover(
+  sceneUrls: string[],
+  audioUrl: string,
+  renderId: string,
+  userId: string,
+): Promise<string> {
+  if (sceneUrls.length === 0) throw new Error("attachVoiceover: no scene URLs");
 
-  const submitRes = await fetch("https://api.synclabs.so/video", {
-    method: "POST",
-    headers: { "x-api-key": apiKey, "Content-Type": "application/json" },
-    body: JSON.stringify({ videoUrl, audioUrl, synergize: true, maxCredits: 120, webhookUrl: null }),
-  });
-  if (!submitRes.ok) throw new Error(`synclabs submit ${submitRes.status}`);
-  const submitData = await submitRes.json();
-  const jobId = submitData.id;
-  if (!jobId) throw new Error("synclabs: no job id");
+  const runId  = randomUUID().slice(0, 8);
+  const tmpDir = join(tmpdir(), `omnyra_re_${runId}`);
+  mkdirSync(tmpDir, { recursive: true });
 
-  for (let i = 0; i < 30; i++) {
-    await sleep(4000);
-    const pollRes = await fetch(`https://api.synclabs.so/video/${jobId}`, {
-      headers: { "x-api-key": apiKey },
+  const toDelete: string[] = [];
+
+  try {
+    // ── 1. Download scene videos ──────────────────────────────────
+    const scenePaths: string[] = [];
+    for (let i = 0; i < sceneUrls.length; i++) {
+      const p = join(tmpDir, `scene_${i}.mp4`);
+      const buf = Buffer.from(await (await fetch(sceneUrls[i])).arrayBuffer());
+      writeFileSync(p, buf);
+      scenePaths.push(p);
+      toDelete.push(p);
+    }
+
+    // ── 2. Stitch scenes (skip if single) ─────────────────────────
+    let videoPath: string;
+    if (scenePaths.length === 1) {
+      videoPath = scenePaths[0];
+    } else {
+      const concatListPath = join(tmpDir, "concat.txt");
+      const stitchedPath   = join(tmpDir, "stitched.mp4");
+      toDelete.push(concatListPath, stitchedPath);
+
+      writeFileSync(concatListPath, scenePaths.map(p => `file '${p}'`).join("\n"));
+
+      await new Promise<void>((resolve, reject) => {
+        ffmpeg()
+          .input(concatListPath)
+          .inputOptions(["-f", "concat", "-safe", "0"])
+          .outputOptions(["-c", "copy"])
+          .output(stitchedPath)
+          .on("end", () => resolve())
+          .on("error", (err: Error) => reject(new Error(`ffmpeg concat: ${err.message}`)))
+          .run();
+      });
+
+      videoPath = stitchedPath;
+    }
+
+    // ── 3. Download audio ─────────────────────────────────────────
+    const audioPath = join(tmpDir, "voice.mp3");
+    const audioBuf  = Buffer.from(await (await fetch(audioUrl)).arrayBuffer());
+    writeFileSync(audioPath, audioBuf);
+    toDelete.push(audioPath);
+
+    // ── 4. Mux video + audio ──────────────────────────────────────
+    const outputPath = join(tmpDir, "output.mp4");
+    toDelete.push(outputPath);
+
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg()
+        .input(videoPath)
+        .input(audioPath)
+        .outputOptions([
+          "-c:v", "copy",
+          "-c:a", "aac",
+          "-map", "0:v:0",
+          "-map", "1:a:0",
+          "-shortest",       // trim to shorter of video/audio — narration is the reference
+        ])
+        .output(outputPath)
+        .on("end", () => resolve())
+        .on("error", (err: Error) => reject(new Error(`ffmpeg mux: ${err.message}`)))
+        .run();
     });
-    if (!pollRes.ok) continue;
-    const pollData = await pollRes.json();
-    if (pollData.status === "completed") {
-      const url = pollData.url ?? pollData.videoUrl;
-      if (!url) throw new Error("synclabs: no output url");
-      return url;
+
+    // ── 5. Upload ─────────────────────────────────────────────────
+    const outputBuf = readFileSync(outputPath);
+    const finalUrl  = await uploadBuffer(
+      outputBuf,
+      `${userId}/${renderId}-final.mp4`,
+      "video/mp4",
+    );
+
+    console.log(`[render-engine] attachVoiceover done scenes=${sceneUrls.length} renderId=${renderId}`);
+    return finalUrl;
+
+  } finally {
+    for (const p of toDelete) {
+      try { unlinkSync(p); } catch { /* ignore */ }
     }
-    if (pollData.status === "failed" || pollData.status === "error") {
-      throw new Error(`synclabs: ${pollData.error ?? pollData.status}`);
-    }
+    try { rmdirSync(tmpDir); } catch { /* ignore */ }
   }
-  throw new Error("synclabs: timed out");
 }
 
 /* ────────────────────────────────────────────────────────────────
@@ -317,8 +402,6 @@ export async function runPipeline(input: RunPipelineInput): Promise<void> {
   try {
     const existing = await getExisting(renderId);
 
-    // User-level start event (idempotent at the event layer; dup events
-    // are tolerable since funnel queries use BOOL_OR / MIN).
     await trackEvent(userId, "render_started", { render_id: renderId });
 
     // ── Voice ─────────────────────────────────────────────────────
@@ -383,10 +466,12 @@ export async function runPipeline(input: RunPipelineInput): Promise<void> {
       }
     }
 
-    // ── Lipsync ───────────────────────────────────────────────────
+    // ── Voiceover attachment ──────────────────────────────────────
+    // Event types kept as lipsync_* to preserve the client event contract.
+    // Implementation: stitch all scene clips, mux ElevenLabs narration.
     let finalUrl: string;
-    const lipsyncJob = await openJob({
-      render_id: renderId, user_id: userId, step: "generate_lipsync", provider: "synclabs",
+    const voiceoverJob = await openJob({
+      render_id: renderId, user_id: userId, step: "attach_voiceover", provider: "ffmpeg",
     });
     if (existing.video_url) {
       finalUrl = existing.video_url;
@@ -394,23 +479,20 @@ export async function runPipeline(input: RunPipelineInput): Promise<void> {
         video_url: finalUrl,
         cached: true,
       });
-      if (lipsyncJob.id) await skipJob(lipsyncJob.id, "video_url_already_present");
+      if (voiceoverJob.id) await skipJob(voiceoverJob.id, "video_url_already_present");
     } else {
       try {
-        await emitEvent(renderId, "lipsync_started", { provider: "synclabs" });
-        finalUrl = await runLipsync(sceneUrls[0], audioUrl);
+        await emitEvent(renderId, "lipsync_started", { provider: "ffmpeg", scene_count: sceneUrls.length });
+        finalUrl = await attachVoiceover(sceneUrls, audioUrl, renderId, userId);
         await emitEvent(renderId, "lipsync_completed", { video_url: finalUrl });
-        if (lipsyncJob.id) await completeJob(lipsyncJob.id, { video_url: finalUrl });
+        if (voiceoverJob.id) await completeJob(voiceoverJob.id, { video_url: finalUrl });
       } catch (err) {
-        if (lipsyncJob.id) await failJob(lipsyncJob.id, err instanceof Error ? err.message : String(err));
+        if (voiceoverJob.id) await failJob(voiceoverJob.id, err instanceof Error ? err.message : String(err));
         throw err;
       }
     }
 
     // ── Finalise + deduct credits (ledger) ────────────────────────
-    // Skip the debit if we're resuming a previously-completed render
-    // that was somehow re-invoked. `credits_used` being already-set is
-    // our marker that credits were already taken.
     const { data: priorRow } = await supabaseAdmin
       .from("renders")
       .select("credits_used")
