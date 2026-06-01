@@ -87,19 +87,35 @@ export async function lipSyncVideo(
 
   console.log(`[synclabs] lipSyncVideo submit video_url=${animatedVideoUrl.substring(0, 80)} audio_url=${audioUrl.substring(0, 80)}`);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const result = await (fal as any).subscribe(FAL_SYNC_LIPSYNC, {
-    input: {
-      video_url: animatedVideoUrl,
-      audio_url: audioUrl,
-    },
-    logs: true,
-    onQueueUpdate: (update: { status: string }) => {
-      console.log(`[synclabs] lipSyncVideo queue status=${update.status}`);
-    },
-  });
+  let result: unknown;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    result = await (fal as any).subscribe(FAL_SYNC_LIPSYNC, {
+      input: {
+        video_url: animatedVideoUrl,
+        audio_url: audioUrl,
+      },
+      logs: true,
+      onEnqueue: (requestId: string) => {
+        console.log(`[synclabs] lipSyncVideo ENQUEUED requestId=${requestId} endpoint=${FAL_SYNC_LIPSYNC}`);
+      },
+      onQueueUpdate: (update: unknown) => {
+        console.log(`[synclabs] lipSyncVideo QUEUE_UPDATE=${JSON.stringify(update)}`);
+      },
+    });
+  } catch (falErr) {
+    const e = falErr as { name?: string; message?: string; status?: number; body?: unknown; requestId?: string };
+    console.error(`[synclabs] lipSyncVideo FAL_THROW ERROR_CLASS=${e.name ?? "unknown"}`);
+    console.error(`[synclabs] lipSyncVideo FAL_THROW ERROR_STATUS=${e.status ?? "none"}`);
+    console.error(`[synclabs] lipSyncVideo FAL_THROW ERROR_BODY=${JSON.stringify(e.body ?? null)}`);
+    console.error(`[synclabs] lipSyncVideo FAL_THROW ERROR_DETAIL=${JSON.stringify((e.body as { detail?: unknown } | null)?.detail ?? null)}`);
+    console.error(`[synclabs] lipSyncVideo FAL_THROW REQUEST_ID=${e.requestId ?? "none"}`);
+    console.error(`[synclabs] lipSyncVideo FAL_THROW ENDPOINT=${FAL_SYNC_LIPSYNC}`);
+    console.error(`[synclabs] lipSyncVideo FAL_THROW MESSAGE=${e.message ?? String(falErr)}`);
+    throw falErr;
+  }
 
-  console.log(`[synclabs] lipSyncVideo raw result keys=${Object.keys(result ?? {}).join(",")}`);
+  console.log(`[synclabs] lipSyncVideo RESULT_FULL=${JSON.stringify(result)}`);
 
   const url =
     extractVideoUrl(result) ??
@@ -160,19 +176,35 @@ export async function generateTalkingAvatar(
   console.log(`[TIMING] avatar STAGE2_LIPSYNC start`);
   console.log(`[synclabs] generateTalkingAvatar submit video_url=${animatedVideoUrl.substring(0, 80)} audio_url=${audioUrl.substring(0, 80)}`);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const lipsyncResult = await (fal as any).subscribe(FAL_SYNC_LIPSYNC, {
-    input: {
-      video_url: animatedVideoUrl,
-      audio_url: audioUrl,
-    },
-    logs: true,
-    onQueueUpdate: (update: { status: string }) => {
-      console.log(`[synclabs] generateTalkingAvatar queue status=${update.status}`);
-    },
-  });
+  let lipsyncResult: unknown;
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    lipsyncResult = await (fal as any).subscribe(FAL_SYNC_LIPSYNC, {
+      input: {
+        video_url: animatedVideoUrl,
+        audio_url: audioUrl,
+      },
+      logs: true,
+      onEnqueue: (requestId: string) => {
+        console.log(`[synclabs] generateTalkingAvatar ENQUEUED requestId=${requestId} endpoint=${FAL_SYNC_LIPSYNC}`);
+      },
+      onQueueUpdate: (update: unknown) => {
+        console.log(`[synclabs] generateTalkingAvatar QUEUE_UPDATE=${JSON.stringify(update)}`);
+      },
+    });
+  } catch (falErr) {
+    const e = falErr as { name?: string; message?: string; status?: number; body?: unknown; requestId?: string };
+    console.error(`[synclabs] generateTalkingAvatar FAL_THROW ERROR_CLASS=${e.name ?? "unknown"}`);
+    console.error(`[synclabs] generateTalkingAvatar FAL_THROW ERROR_STATUS=${e.status ?? "none"}`);
+    console.error(`[synclabs] generateTalkingAvatar FAL_THROW ERROR_BODY=${JSON.stringify(e.body ?? null)}`);
+    console.error(`[synclabs] generateTalkingAvatar FAL_THROW ERROR_DETAIL=${JSON.stringify((e.body as { detail?: unknown } | null)?.detail ?? null)}`);
+    console.error(`[synclabs] generateTalkingAvatar FAL_THROW REQUEST_ID=${e.requestId ?? "none"}`);
+    console.error(`[synclabs] generateTalkingAvatar FAL_THROW ENDPOINT=${FAL_SYNC_LIPSYNC}`);
+    console.error(`[synclabs] generateTalkingAvatar FAL_THROW MESSAGE=${e.message ?? String(falErr)}`);
+    throw falErr;
+  }
 
-  console.log(`[synclabs] generateTalkingAvatar raw result keys=${Object.keys(lipsyncResult ?? {}).join(",")}`);
+  console.log(`[synclabs] generateTalkingAvatar RESULT_FULL=${JSON.stringify(lipsyncResult)}`);
 
   const videoUrl =
     extractVideoUrl(lipsyncResult) ??

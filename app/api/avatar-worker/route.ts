@@ -395,7 +395,14 @@ async function executeLipsyncStage(
     log(`synclabs SUCCESS resultUrl=${resultUrl.substring(0, 60)} elapsed=${Date.now() - t0}ms`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    const e = err as { name?: string; status?: number; body?: unknown; requestId?: string };
     log(`synclabs ERROR: ${msg}`);
+    log(`synclabs ERROR_CLASS=${e.name ?? "unknown"}`);
+    log(`synclabs ERROR_STATUS=${e.status ?? "none"}`);
+    log(`synclabs ERROR_BODY=${JSON.stringify(e.body ?? null)}`);
+    log(`synclabs ERROR_DETAIL=${JSON.stringify((e.body as { detail?: unknown } | null)?.detail ?? null)}`);
+    log(`synclabs REQUEST_ID=${e.requestId ?? "none"}`);
+    log(`synclabs ENDPOINT=fal-ai/sync-lipsync`);
     await failLedgerEntry(job.id, "lipsync", workerId, msg);
     const { shouldRetry } = await recordStageFailure(
       job.id, workerId, "lipsync", msg, job.retry_count_per_stage ?? {},
