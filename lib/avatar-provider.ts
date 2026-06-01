@@ -107,8 +107,10 @@ async function resolvePublicAudioUrl(audioUrl: string, ctx: string): Promise<str
 /**
  * Stage 1 only: animate a still image into a 10-second head-motion video.
  * Returns the animated video URL.  Used by the stage-based worker.
+ * @param visualPrompt Optional scene-specific Kling prompt from Director Core.
+ *                     Falls back to ANIMATE_PROMPT when not provided.
  */
-export async function animateImage(imageUrl: string): Promise<string> {
+export async function animateImage(imageUrl: string, visualPrompt?: string): Promise<string> {
   console.log(`[FAL_REQUEST] animateImage fal_key_set=${!!(process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY)}`);
   configureFal();
 
@@ -116,7 +118,7 @@ export async function animateImage(imageUrl: string): Promise<string> {
   const result = await (fal as any).subscribe(KLING_I2V_PRO, {
     input: {
       image_url:       imageUrl,
-      prompt:          ANIMATE_PROMPT,
+      prompt:          visualPrompt ?? ANIMATE_PROMPT,
       negative_prompt: ANIMATE_NEGATIVE,
       duration:        10,
       aspect_ratio:    "9:16",
@@ -163,7 +165,7 @@ export async function lipSyncVideo(
       input: {
         video_url:  animatedVideoUrl,
         audio_url:  resolvedAudioUrl,
-        model_name: "sync-1.9.0-turbo",
+        model_name: "sync-1.9.0-beta",
       },
       logs: true,
       onEnqueue: (requestId: string) => {
@@ -256,7 +258,7 @@ export async function generateTalkingAvatar(
       input: {
         video_url:  animatedVideoUrl,
         audio_url:  resolvedAudioUrl,
-        model_name: "sync-1.9.0-turbo",
+        model_name: "sync-1.9.0-beta",
       },
       logs: true,
       onEnqueue: (requestId: string) => {

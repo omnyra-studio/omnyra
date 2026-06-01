@@ -126,7 +126,7 @@ export function animateRequestHash(
   imageUrl: string,
 ): string {
   return createHash("sha256")
-    .update(`kling|i2v-pro|v2.1|10s|9:16|0.35|${imageUrl}`)
+    .update(`kling|i2v-pro|v2.1|10s|9:16|0.35|${imageUrl}|scene-planner-v1`)
     .digest("hex");
 }
 
@@ -136,5 +136,16 @@ export function lipsyncRequestHash(
 ): string {
   return createHash("sha256")
     .update(`synclabs|${animatedVideoUrl}|${audioUrl}`)
+    .digest("hex");
+}
+
+/** Per-scene lipsync dedup key — includes scene index for exact call fingerprinting. */
+export function sceneLipsyncRequestHash(
+  sceneVideoUrl: string,
+  segmentAudioUrl: string,
+  sceneIndex: number,
+): string {
+  return createHash("sha256")
+    .update(`synclabs|scene${sceneIndex}|${sceneVideoUrl}|${segmentAudioUrl}`)
     .digest("hex");
 }
