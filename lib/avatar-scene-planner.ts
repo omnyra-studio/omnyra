@@ -195,14 +195,19 @@ export function planScenesDeterministic(script: string): SceneSpec[] {
  * Plan scenes for a script.
  * Attempts LLM Director first (requires ANTHROPIC_API_KEY);
  * falls back to deterministic planner on failure or missing key.
+ *
+ * maxScenes caps the output — use execution control to pass a lower limit
+ * under system stress (stable mode = 3, balanced = 5, aggressive = default).
  */
-export async function planScenes(script: string): Promise<SceneSpec[]> {
+export async function planScenes(script: string, maxScenes = MAX_SCENES): Promise<SceneSpec[]> {
+  const cap       = Math.min(maxScenes, MAX_SCENES);
   const llmResult = await planScenesLLM(script);
   if (llmResult) {
-    console.log(`[scene-planner] LLM Director: scenes=${llmResult.length}`);
-    return llmResult;
+    const scenes = llmResult.slice(0, cap);
+    console.log(`[scene-planner] LLM Director: scenes=${scenes.length} cap=${cap}`);
+    return scenes;
   }
-  const detResult = planScenesDeterministic(script);
-  console.log(`[scene-planner] deterministic fallback: scenes=${detResult.length}`);
+  const detResult = planScenesDeterministic(script).slice(0, cap);
+  console.log(`[scene-planner] deterministic fallback: scenes=${detResult.length} cap=${cap}`);
   return detResult;
 }

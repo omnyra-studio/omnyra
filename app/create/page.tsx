@@ -87,11 +87,10 @@ const SECTION_TAG: CSSProperties = {
 };
 
 const PIPELINE_STATUS_LABELS: Record<string, string> = {
-  planning_scenes:      "Planning scenes...",
-  generating_audio:     "Generating voiceover...",
-  generating_animation: "Animating character...",
-  syncing_lips:         "Syncing lip movements...",
-  stitching:            "Stitching final video...",
+  planning_scenes:   "Planning scenes...",
+  generating_audio:  "Generating voiceover...",
+  generating_avatar: "Generating avatar...",
+  stitching:         "Finalising video...",
 };
 
 const TEMPLATE_TITLES: Record<string, string> = {

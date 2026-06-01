@@ -38,19 +38,19 @@ export const AVATAR_DAG: readonly DagNode[] = [
   },
   {
     stage:           "animate",
-    provider:        "kling",
+    provider:        "hedra-bypass",  // Kling bypassed — Hedra handles image+audio directly
     dependencies:    ["tts"],
-    creditEstimate:  8,
+    creditEstimate:  0,
     maxRetries:      1,
-    leaseDurationMs: 12 * 60 * 1000,
+    leaseDurationMs: 30 * 1000,      // near-instant pass-through
   },
   {
     stage:           "lipsync",
-    provider:        "synclabs",
+    provider:        "hedra",
     dependencies:    ["animate"],
-    creditEstimate:  5,
+    creditEstimate:  15,
     maxRetries:      1,
-    leaseDurationMs: 5 * 60 * 1000,
+    leaseDurationMs: 8 * 60 * 1000,
   },
 ] as const;
 
@@ -130,22 +130,11 @@ export function animateRequestHash(
     .digest("hex");
 }
 
-export function lipsyncRequestHash(
-  animatedVideoUrl: string,
+export function hedraRequestHash(
+  imageUrl: string,
   audioUrl: string,
 ): string {
   return createHash("sha256")
-    .update(`synclabs|${animatedVideoUrl}|${audioUrl}`)
-    .digest("hex");
-}
-
-/** Per-scene lipsync dedup key — includes scene index for exact call fingerprinting. */
-export function sceneLipsyncRequestHash(
-  sceneVideoUrl: string,
-  segmentAudioUrl: string,
-  sceneIndex: number,
-): string {
-  return createHash("sha256")
-    .update(`synclabs|scene${sceneIndex}|${sceneVideoUrl}|${segmentAudioUrl}`)
+    .update(`hedra|character-2|${imageUrl}|${audioUrl}`)
     .digest("hex");
 }

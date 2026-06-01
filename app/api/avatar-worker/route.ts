@@ -33,6 +33,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { writeFileSync, readFileSync, unlinkSync } from "fs";
 import { uploadArtifact, StorageValidationError } from "@/lib/storage-artifact";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import {
   type AvatarJob,
   type PipelineStage,
@@ -54,12 +55,13 @@ import {
   resolveStageFromLedger,
   ttsRequestHash,
   animateRequestHash,
-  sceneLipsyncRequestHash,
+  hedraRequestHash,
 } from "@/lib/avatar-pipeline";
-import { animateImage, lipSyncVideo } from "@/lib/avatar-provider";
+import { generateHedraAvatar } from "@/lib/providers/hedra";
 import { planScenes, type SceneSpec } from "@/lib/avatar-scene-planner";
 import { loadCharacter, buildCharacterPromptSuffix, updateCharacterRefFrame } from "@/lib/character-registry";
 import { lookupCachedPrompt, cachePrompt } from "@/lib/prompt-memory-cache";
+import { getExecutionPlan } from "@/lib/execution-control";
 
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
@@ -160,13 +162,17 @@ async function executeTtsStage(
     return advanceFromTts(job, workerId, ledgerCached, null, null, origin, log);
   }
 
+  // ── Execution control: cap scene count based on system health ────────────
+  const execPlan = await getExecutionPlan();
+  log(`[EXEC_CONTROL] mode=${execPlan.mode} maxScenes=${execPlan.maxScenes} reason=${execPlan.reason}`);
+
   // ── Director Core: plan N scenes from script ──────────────────────────────
   void setPipelineStatus(job.id, "planning_scenes");
   log(`[DIRECTOR] planning scenes script_chars=${job.input.script.length}`);
   const directorT0 = Date.now();
   let scenes: SceneSpec[];
   try {
-    scenes = await planScenes(job.input.script);
+    scenes = await planScenes(job.input.script, execPlan.maxScenes);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     log(`[DIRECTOR] ERROR: ${msg} — aborting`);
@@ -309,7 +315,7 @@ async function advanceFromTts(
   await retrigger(origin, job.id, log);
 }
 
-// ── Stage: Animate — parallel Kling with scene-specific visual prompts ─────────
+// ── Stage: Animate — bypass (Kling skipped; Hedra handles image+audio directly) ─
 
 async function executeAnimateStage(
   job: AvatarJob,
@@ -317,101 +323,24 @@ async function executeAnimateStage(
   origin: string,
   log: (msg: string) => void,
 ): Promise<void> {
-  const audioUrl = job.stage_outputs?.audio_url;
-  log(`[ANIMATE_START] audio_url_present=${!!audioUrl} image_url=${job.input.image_url.substring(0, 60)}`);
-  if (!audioUrl) {
-    const msg = "audio_url missing from stage_outputs";
-    log(`ERROR: ${msg}`);
-    await recordStageFailure(job.id, workerId, "animate", msg, job.retry_count_per_stage ?? {});
-    return;
-  }
+  // Kling is bypassed. Register a near-instant ledger entry so the DAG resolver
+  // sees animate as completed, then advance directly to the Hedra stage.
+  log(`[ANIMATE_BYPASS] Kling skipped — pipeline: TTS → Hedra`);
 
-  // Restore scene specs (may be absent on cache-hit retry paths)
-  const specsJson  = job.stage_outputs?.scene_specs;
-  const sceneSpecs: SceneSpec[] | null = specsJson
-    ? (JSON.parse(specsJson) as SceneSpec[])
-    : null;
-
-  const dagNode = getDagNode("animate");
   const reqHash = animateRequestHash(job.input.image_url);
-
-  // Cost firewall
-  const { blocked, cachedOutputUrl: costCached } = await checkCostFirewall(job.id, "animate", reqHash);
-  if (blocked && costCached) {
-    log("cost_firewall HIT kling — recovering scene_video_urls");
-    const existing = job.stage_outputs?.scene_video_urls;
-    const urls     = existing ? (JSON.parse(existing) as string[]) : [costCached];
-    return advanceFromAnimate(job, workerId, urls, sceneSpecs, origin, log);
+  const { shouldSkip } = await startLedgerEntry(job.id, "animate", workerId, reqHash);
+  if (!shouldSkip) {
+    await completeLedgerEntry(job.id, "animate", workerId, "hedra-bypass");
   }
 
-  // Execution ledger
-  const { shouldSkip, cachedOutputUrl: ledgerCached } = await startLedgerEntry(job.id, "animate", workerId, reqHash);
-  if (shouldSkip && ledgerCached) {
-    log("ledger HIT animate — recovering scene_video_urls");
-    const existing = job.stage_outputs?.scene_video_urls;
-    const urls     = existing ? (JSON.parse(existing) as string[]) : [ledgerCached];
-    return advanceFromAnimate(job, workerId, urls, sceneSpecs, origin, log);
-  }
-
-  const numScenes = sceneSpecs?.length ?? (job.input.plan === "studio" ? 6 : 3);
-
-  await registerCostIntent(job.id, "animate", "kling", reqHash, dagNode.creditEstimate);
-  void setPipelineStatus(job.id, "generating_animation");
-  log(`[FAL_REQUEST] kling scenes=${numScenes} imageUrl=${job.input.image_url.substring(0, 80)}`);
-
-  let sceneUrls: string[];
-  try {
-    const t0 = Date.now();
-
-    sceneUrls = await Promise.all(
-      Array.from({ length: numScenes }, (_, i) => {
-        const visualPrompt = sceneSpecs?.[i]?.visualPrompt;
-        log(`[SCENE_${i}_START] prompt_len=${visualPrompt?.length ?? 0}`);
-        const t1 = Date.now();
-        return animateImage(job.input.image_url, visualPrompt).then(url => {
-          log(`[SCENE_${i}_DONE] elapsed=${Date.now() - t1}ms url=${url.substring(0, 60)}`);
-          return url;
-        });
-      }),
-    );
-
-    log(`[ANIMATE_DONE] scenes=${numScenes} total_elapsed=${Date.now() - t0}ms`);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    log(`kling ERROR: ${msg}`);
-    await failLedgerEntry(job.id, "animate", workerId, msg);
-    const { shouldRetry } = await recordStageFailure(job.id, workerId, "animate", msg, job.retry_count_per_stage ?? {});
-    if (shouldRetry) await retrigger(origin, job.id, log);
-    return;
-  }
-
-  await markCostCharged(job.id, "animate", reqHash, sceneUrls[0]);
-  await completeLedgerEntry(job.id, "animate", workerId, sceneUrls[0]);
-  await advanceFromAnimate(job, workerId, sceneUrls, sceneSpecs, origin, log);
-}
-
-async function advanceFromAnimate(
-  job:        AvatarJob,
-  workerId:   string,
-  sceneUrls:  string[],
-  sceneSpecs: SceneSpec[] | null,
-  origin:     string,
-  log:        (msg: string) => void,
-): Promise<void> {
-  const stageOutputs: Record<string, string> = {
-    ...(job.stage_outputs ?? {}),
-    animated_video_url: sceneUrls[0],
-    scene_video_urls:   JSON.stringify(sceneUrls),
-  };
-  if (sceneSpecs) stageOutputs.scene_specs = JSON.stringify(sceneSpecs);
-
+  const stageOutputs = { ...(job.stage_outputs ?? {}) };
   const advanced = await advanceToNextStage(job.id, workerId, "lipsync", stageOutputs);
-  if (!advanced) { log("lock_lost during transition — abandoning"); return; }
-  log(`advanced → lipsync scenes=${sceneUrls.length}`);
+  if (!advanced) { log("lock_lost during bypass — abandoning"); return; }
+  log("advanced → lipsync (Hedra)");
   await retrigger(origin, job.id, log);
 }
 
-// ── Stage: Lipsync — parallel per-scene → stitch → validate → telemetry ──────
+// ── Stage: Lipsync (Hedra) — image + stitched audio → talking avatar video ────
 
 async function executeLipsyncStage(
   job: AvatarJob,
@@ -421,197 +350,159 @@ async function executeLipsyncStage(
 ): Promise<void> {
   const stageT0 = Date.now();
 
-  // ── Resolve per-scene and per-segment data ────────────────────────────────
-  const sceneVideoUrls: string[] = job.stage_outputs?.scene_video_urls
-    ? (JSON.parse(job.stage_outputs.scene_video_urls) as string[])
-    : job.stage_outputs?.animated_video_url
-      ? [job.stage_outputs.animated_video_url]
-      : [];
-
-  if (!sceneVideoUrls.length) {
-    const msg = "stage_outputs missing scene_video_urls and animated_video_url";
-    log(`ERROR: ${msg}`);
-    await recordStageFailure(job.id, workerId, "lipsync", msg, job.retry_count_per_stage ?? {});
-    return;
-  }
-
+  // ── Resolve audio ─────────────────────────────────────────────────────────
   const audioSegments: AudioSegment[] = job.stage_outputs?.audio_segments
     ? (JSON.parse(job.stage_outputs.audio_segments) as AudioSegment[])
-    : sceneVideoUrls.map((_, i) => ({
-        index: i, text: "", audio_url: job.stage_outputs?.audio_url ?? "", char_count: 0,
-      }));
+    : [];
 
-  if (!audioSegments[0]?.audio_url) {
-    const msg = "stage_outputs missing audio_segments and audio_url";
+  const firstAudioUrl = job.stage_outputs?.audio_url ?? audioSegments[0]?.audio_url ?? "";
+  if (!firstAudioUrl) {
+    const msg = "stage_outputs missing audio_url and audio_segments";
     log(`ERROR: ${msg}`);
     await recordStageFailure(job.id, workerId, "lipsync", msg, job.retry_count_per_stage ?? {});
     return;
   }
 
-  const numScenes = sceneVideoUrls.length;
+  // Stitch audio segments into one file if there are multiple, otherwise use
+  // the single audio URL directly.
+  let combinedAudioUrl: string;
+  if (audioSegments.length <= 1) {
+    combinedAudioUrl = firstAudioUrl;
+    log(`[HEDRA_AUDIO] single segment — using audio_url directly`);
+  } else {
+    log(`[HEDRA_AUDIO] stitching ${audioSegments.length} segments`);
+    const stitchT0  = Date.now();
+    const tmpDir    = tmpdir();
+    const sid       = job.id.replace(/-/g, "").substring(0, 8);
+    const segPaths  = audioSegments.map((_, i) => join(tmpDir, `ha-${sid}-s${i}.mp3`));
+    const concatPath = join(tmpDir, `ha-${sid}-concat.txt`);
+    const outPath   = join(tmpDir, `ha-${sid}-out.mp3`);
+    const cleanup   = [...segPaths, concatPath, outPath];
 
-  // ── Synchronize: zip scene[i] ↔ segment[i] ───────────────────────────────
-  const pairs = Array.from({ length: numScenes }, (_, i) => ({
-    sceneUrl:    sceneVideoUrls[i],
-    segAudioUrl: audioSegments[Math.min(i, audioSegments.length - 1)].audio_url,
-    index:       i,
-  }));
+    try {
+      const buffers = await Promise.all(
+        audioSegments.map(async (seg, i) => {
+          const r = await fetch(seg.audio_url, { signal: AbortSignal.timeout(30_000) });
+          if (!r.ok) throw new Error(`audio seg ${i} download ${r.status}`);
+          return Buffer.from(await r.arrayBuffer());
+        }),
+      );
 
-  log(`[LIPSYNC_SYNC] scenes=${numScenes} segments=${audioSegments.length}`);
+      for (let i = 0; i < buffers.length; i++) writeFileSync(segPaths[i], buffers[i]);
+
+      const concatContent = segPaths.map(p => `file '${p.replace(/\\/g, "/")}'`).join("\n");
+      writeFileSync(concatPath, concatContent);
+
+      await new Promise<void>((resolve, reject) => {
+        ffmpeg()
+          .input(concatPath)
+          .inputOptions(["-f", "concat", "-safe", "0"])
+          .outputOptions(["-c", "copy"])
+          .output(outPath)
+          .on("end", () => resolve())
+          .on("error", (err: Error) => reject(new Error(`ffmpeg audio stitch: ${err.message}`)))
+          .run();
+      });
+
+      const stitchedBuffer = readFileSync(outPath);
+      if (stitchedBuffer.byteLength === 0) throw new Error("ffmpeg audio stitch produced 0-byte output");
+
+      combinedAudioUrl = await uploadArtifact({
+        jobId:        job.id,
+        stage:        "tts_combined",
+        buffer:       stitchedBuffer,
+        contentType:  "audio/mpeg",
+        extension:    "mp3",
+        modelVersion: "eleven_turbo_v2",
+      });
+      log(`[HEDRA_AUDIO] stitched elapsed=${Date.now() - stitchT0}ms url=${combinedAudioUrl.substring(0, 80)}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log(`audio stitch ERROR: ${msg}`);
+      await failLedgerEntry(job.id, "lipsync", workerId, msg);
+      const { shouldRetry } = await recordStageFailure(job.id, workerId, "lipsync", msg, job.retry_count_per_stage ?? {});
+      if (shouldRetry) await retrigger(origin, job.id, log);
+      return;
+    } finally {
+      for (const p of cleanup) { try { unlinkSync(p); } catch { /* already gone */ } }
+    }
+  }
 
   // ── Cost firewall / ledger ────────────────────────────────────────────────
   const dagNode = getDagNode("lipsync");
-  const reqHash = sceneLipsyncRequestHash(sceneVideoUrls[0], audioSegments[0].audio_url, 0);
+  const reqHash = hedraRequestHash(job.input.image_url, combinedAudioUrl);
 
   const { blocked, cachedOutputUrl: costCached } = await checkCostFirewall(job.id, "lipsync", reqHash);
   if (blocked && costCached) {
-    log("cost_firewall HIT synclabs — reusing cached");
+    log("cost_firewall HIT hedra — reusing cached");
     await completeLedgerEntry(job.id, "lipsync", workerId, costCached);
-    await completeJobWithLease(job.id, workerId, costCached, sceneVideoUrls[0]);
+    await completeJobWithLease(job.id, workerId, costCached, costCached);
     log("pipeline COMPLETE (cost_firewall cache)");
     return;
   }
 
   const { shouldSkip, cachedOutputUrl: ledgerCached } = await startLedgerEntry(job.id, "lipsync", workerId, reqHash);
   if (shouldSkip && ledgerCached) {
-    log("ledger HIT lipsync — reusing cached");
-    await completeJobWithLease(job.id, workerId, ledgerCached, sceneVideoUrls[0]);
+    log("ledger HIT hedra — reusing cached");
+    await completeJobWithLease(job.id, workerId, ledgerCached, ledgerCached);
     log("pipeline COMPLETE (ledger cache)");
     return;
   }
 
-  await registerCostIntent(job.id, "lipsync", "synclabs", reqHash, dagNode.creditEstimate);
+  await registerCostIntent(job.id, "lipsync", "hedra", reqHash, dagNode.creditEstimate);
 
-  // ── Parallel per-scene lipsync ────────────────────────────────────────────
-  void setPipelineStatus(job.id, "syncing_lips");
-  const lipsyncT0 = Date.now();
-  log(`[LIPSYNC_PARALLEL_START] scenes=${numScenes}`);
-
-  let lipsyncedUrls: string[];
-  try {
-    lipsyncedUrls = await Promise.all(
-      pairs.map(async ({ sceneUrl, segAudioUrl, index: i }) => {
-        log(`[LIPSYNC_SCENE_${i}_START]`);
-        const t1  = Date.now();
-        const url = await lipSyncVideo(sceneUrl, segAudioUrl);
-        log(`[LIPSYNC_SCENE_${i}_DONE] elapsed=${Date.now() - t1}ms url=${url.substring(0, 60)}`);
-        return url;
-      }),
-    );
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    const e   = err as { name?: string; status?: number; body?: unknown; requestId?: string };
-    log(`synclabs ERROR: ${msg}`);
-    log(`synclabs ERROR_CLASS=${e.name ?? "unknown"} STATUS=${e.status ?? "none"}`);
-    log(`synclabs ERROR_BODY=${JSON.stringify(e.body ?? null)}`);
-    log(`synclabs REQUEST_ID=${e.requestId ?? "none"}`);
-    await failLedgerEntry(job.id, "lipsync", workerId, msg);
-    const { shouldRetry } = await recordStageFailure(job.id, workerId, "lipsync", msg, job.retry_count_per_stage ?? {});
-    if (shouldRetry) await retrigger(origin, job.id, log);
-    return;
-  }
-
-  const lipsyncMs = Date.now() - lipsyncT0;
-  log(`[LIPSYNC_PARALLEL_DONE] elapsed=${lipsyncMs}ms scenes=${lipsyncedUrls.length}`);
-
-  // ── Stitch lipsynced clips ────────────────────────────────────────────────
-  void setPipelineStatus(job.id, "stitching");
-  const stitchT0    = Date.now();
-  const tmpDir      = tmpdir();
-  const sid         = job.id.replace(/-/g, "").substring(0, 8);
-  const scenePaths  = lipsyncedUrls.map((_, i) => join(tmpDir, `lp-${sid}-s${i}.mp4`));
-  const concatPath  = join(tmpDir, `lp-${sid}-concat.txt`);
-  const outputPath  = join(tmpDir, `lp-${sid}-out.mp4`);
-  const cleanupPaths = [...scenePaths, concatPath, outputPath];
+  // ── Hedra generation ──────────────────────────────────────────────────────
+  void setPipelineStatus(job.id, "generating_avatar");
+  const hedraT0 = Date.now();
+  log(`[HEDRA_START] image=${job.input.image_url.substring(0, 60)} audio=${combinedAudioUrl.substring(0, 60)}`);
 
   let finalVideoUrl: string;
-  let outputBytes = 0;
-
   try {
-    // Download lipsynced clips in parallel
-    const sceneBuffers = await Promise.all(
-      lipsyncedUrls.map(async (url, i) => {
-        const r = await fetch(url, { signal: AbortSignal.timeout(60_000) });
-        if (!r.ok) throw new Error(`lipsync clip download ${r.status} scene=${i}`);
-        return Buffer.from(await r.arrayBuffer());
-      }),
-    );
-
-    for (let i = 0; i < sceneBuffers.length; i++) {
-      writeFileSync(scenePaths[i], sceneBuffers[i]);
-    }
-
-    let finalPath: string;
-    if (sceneBuffers.length === 1) {
-      finalPath = scenePaths[0];
-    } else {
-      const concatContent = scenePaths.map(p => `file '${p.replace(/\\/g, "/")}'`).join("\n");
-      writeFileSync(concatPath, concatContent);
-      await new Promise<void>((resolve, reject) => {
-        ffmpeg()
-          .input(concatPath)
-          .inputOptions(["-f", "concat", "-safe", "0"])
-          .outputOptions(["-c", "copy"])
-          .output(outputPath)
-          .on("stderr", (line: string) => log(`[ffmpeg:stderr] ${line}`))
-          .on("end", () => resolve())
-          .on("error", (err: Error) => reject(new Error(`FFmpeg stitch failed: ${err.message}`)))
-          .run();
-      });
-      finalPath = outputPath;
-    }
-
-    // ── Validate output integrity ──────────────────────────────────────────
-    const outputBuffer = readFileSync(finalPath);
-    outputBytes = outputBuffer.byteLength;
-    if (outputBytes === 0) throw new Error("FFmpeg stitch produced 0-byte output");
-    log(`[STITCH_DONE] bytes=${outputBytes} elapsed=${Date.now() - stitchT0}ms`);
-
-    // ── Upload final video ─────────────────────────────────────────────────
-    finalVideoUrl = await uploadArtifact({
-      jobId:        job.id,
-      stage:        "lipsync",
-      buffer:       outputBuffer,
-      contentType:  "video/mp4",
-      extension:    "mp4",
-      modelVersion: `synclabs-1.9-x${numScenes}`,
+    const result = await generateHedraAvatar({
+      image_url: job.input.image_url,
+      audio_url: combinedAudioUrl,
+      resolution: "720p",
     });
+    finalVideoUrl = result.video_url;
+    log(`[HEDRA_DONE] elapsed=${Date.now() - hedraT0}ms request_id=${result.request_id} url=${finalVideoUrl.substring(0, 80)}`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    log(`stitch/upload ERROR: ${msg}`);
+    log(`hedra ERROR: ${msg}`);
     await failLedgerEntry(job.id, "lipsync", workerId, msg);
     const { shouldRetry } = await recordStageFailure(job.id, workerId, "lipsync", msg, job.retry_count_per_stage ?? {});
     if (shouldRetry) await retrigger(origin, job.id, log);
     return;
-  } finally {
-    for (const p of cleanupPaths) { try { unlinkSync(p); } catch { /* already gone */ } }
   }
 
-  const stitchMs  = Date.now() - stitchT0;
-  const totalMs   = Date.now() - stageT0;
+  const totalMs = Date.now() - stageT0;
+  const hedraMs = Date.now() - hedraT0;
+  log(`[TELEMETRY] hedra_ms=${hedraMs} total_stage_ms=${totalMs}`);
 
-  // ── Telemetry report ───────────────────────────────────────────────────────
-  log(
-    `[TELEMETRY] ` +
-    `scenes=${numScenes} ` +
-    `lipsync_parallel_ms=${lipsyncMs} ` +
-    `stitch_ms=${stitchMs} ` +
-    `output_bytes=${outputBytes} ` +
-    `total_lipsync_stage_ms=${totalMs}`,
-  );
+  // ── Persist Hedra-specific metadata ────────────────────────────────────────
+  void supabaseAdmin
+    .from("avatar_jobs")
+    .update({
+      stage_outputs: {
+        ...(job.stage_outputs ?? {}),
+        hedra_output_url:  finalVideoUrl,
+        hedra_latency_ms:  String(hedraMs),
+      },
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", job.id);
 
   // ── Commit ─────────────────────────────────────────────────────────────────
   await markCostCharged(job.id, "lipsync", reqHash, finalVideoUrl);
   await completeLedgerEntry(job.id, "lipsync", workerId, finalVideoUrl);
-  await completeJobWithLease(job.id, workerId, finalVideoUrl, sceneVideoUrls[0]);
+  await completeJobWithLease(job.id, workerId, finalVideoUrl, finalVideoUrl);
 
-  // Update character ref_frame_url with the first animated scene for future consistency
-  if (job.input.character_id && sceneVideoUrls[0]) {
-    void updateCharacterRefFrame(job.input.character_id, sceneVideoUrls[0]);
+  // Update character ref_frame_url
+  if (job.input.character_id) {
+    void updateCharacterRefFrame(job.input.character_id, finalVideoUrl);
     log(`[CHARACTER] updated ref_frame character_id=${job.input.character_id}`);
   }
 
-  // Populate prompt memory cache for non-character jobs (score=1.0 on success)
+  // Populate prompt memory cache for non-character jobs
   if (!job.input.character_id) {
     const specsJson = job.stage_outputs?.scene_specs;
     if (specsJson) {
