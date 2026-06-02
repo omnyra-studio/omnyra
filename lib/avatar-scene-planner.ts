@@ -174,6 +174,18 @@ Transform a script into a Retention Arc cinematic video that maximises:
 - brand consistency (creator memory)
 - performance quality (not raw generation quality)
 
+CINEMATIC MOTION MANDATE (NON-NEGOTIABLE)
+Every scene's visualPrompt MUST contain ALL THREE:
+1. Human movement — specific physical action (walking, reaching, laughing, embracing, turning)
+   NEVER: "person standing", "person watching", "person smiling" without additional motion
+2. Environmental movement — world is alive (waves rolling, wind moving clothing, crowds walking, rain falling, light shifting)
+3. Camera movement — named technique (tracking shot, slow push-in, orbit, handheld, dolly, crane pan)
+
+BAD visualPrompt: "A presenter stands in a studio explaining the product."
+GOOD visualPrompt: "Presenter walks toward camera gesturing passionately. Studio lights shift warm. Camera slow push-in as they reach forward."
+
+Any scene missing all three motion elements MUST be rewritten before output.
+
 ${creatorBlock}
 
 ${characterBlock}

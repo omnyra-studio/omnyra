@@ -33,48 +33,80 @@ export async function POST(req: Request) {
     }
   } catch { /* brand injection is optional */ }
 
-  const prompt = `Split this script into exactly ${num_segments} visual scene segments for a cinematic video.${brandContext}
+  const systemPrompt = `You are Omnyra's Cinematic Motion Director.
+
+Your job is NOT to write a screenplay. Your job is to create visual scene descriptions that generate compelling AI video.
+
+RULE: Every scene MUST contain all three:
+1. Human movement (walking, reaching, laughing, spinning, embracing — never just standing/watching/posing)
+2. Environmental movement (waves, wind, rain, traffic, birds, trees, water, light changes)
+3. Camera movement (tracking shot, push-in, orbit, slow dolly, handheld, crane, cinematic pan)
+
+BAD: "A couple stands on the beach watching the sunset."
+GOOD: "A couple walks barefoot along the shoreline at golden hour. Wind moves through their hair. Waves roll in. Camera tracks alongside them as the sun drops."
+
+MOTION REQUIREMENTS per scene:
+- Human motion ≥ 70 — visible physical action within first 2 seconds
+- Environmental motion ≥ 60 — world is alive and moving
+- Camera motion ≥ 60 — camera never locked off
+
+EMOTIONAL ESCALATION across scenes:
+Scene 1 → Curiosity
+Scene 2 → Connection
+Scene 3 → Emotion
+Scene 4 → Payoff / Climax
+Scene 5+ → Reflection → CTA
+
+If any scene lacks visible movement, automatically rewrite it before returning.${brandContext}`;
+
+  const prompt = `Split this script into exactly ${num_segments} visual scene segments optimised for AI video generation (Kling, Runway, Veo).
 
 Script: ${script}
 Hook: ${hook ?? ""}
 Niche: ${niche ?? "general"}
 
-For each segment create a cinematic image-to-video prompt and classify the scene type.
+SCENE TYPE CLASSIFICATION:
+- talking_head: presenter speaking directly to camera with natural head/body movement
+- lifestyle_broll: people in motion — walking, laughing, dancing, playing, working
+- product_demo: product being used, handled, demonstrated with movement
+- emotional: high-impact moment — embrace, reaction, tears, celebration
+- quote: inspirational text with dynamic background movement
+- educational: concept visualised with motion — diagrams, demonstrations
+- cta: call-to-action with energetic motion background
+- background: atmospheric environment — waves, cityscape, nature with movement
+- transition: motion blur, time-lapse, visual transition
 
-SCENE TYPE RULES:
-- talking_head: presenter speaking directly to camera
-- lifestyle_broll: dynamic lifestyle footage, environments, people in action
-- product_demo: product being shown or demonstrated
-- emotional: high-impact emotional moment, dramatic
-- quote: text overlay, inspirational message, statistic
-- educational: explanation, diagram, concept visualization
-- cta: call-to-action, subscribe/follow prompt
-- background: ambient backdrop, establishing shot
-- transition: scene transition, time lapse
+ROUTING:
+- talking_head, lifestyle_broll, product_demo, emotional → "kling" (premium AI motion)
+- quote, educational, cta, background, transition → "smart_motion" (lightweight cinematic)
 
-ROUTING (use this to assign provider):
-- talking_head, lifestyle_broll, product_demo, emotional → "kling"
-- quote, educational, cta, background, transition → "smart_motion"
-
-For each segment:
-- visual_prompt: 15-20 word cinematic scene description with camera movement, lighting, mood
-- scene_type: one of the types above
+For each segment output:
+- text: the exact script words for this scene
+- visual_prompt: 20-30 words describing the scene with SPECIFIC human action + environmental action + camera movement
+- scene_type: one type from above
 - provider: "kling" or "smart_motion"
+- motion_score: estimated 0-100 motion intensity
 
 Return ONLY valid JSON. No markdown, no backticks:
 {
   "segments": [
-    { "text": "script portion", "visual_prompt": "cinematic scene prompt", "scene_type": "lifestyle_broll", "provider": "kling" }
+    {
+      "text": "script portion",
+      "visual_prompt": "20-30 word motion-rich cinematic description",
+      "scene_type": "lifestyle_broll",
+      "provider": "kling",
+      "motion_score": 85
+    }
   ]
 }`;
 
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   try {
     const response = await client.messages.create({
-      model:     "claude-haiku-4-5-20251001",
-      max_tokens: 1000,
-      system:    brandContext ? `You are a cinematic scriptwriter.${brandContext}` : "You are a cinematic scriptwriter.",
-      messages:  [{ role: "user", content: prompt }],
+      model:      "claude-haiku-4-5-20251001",
+      max_tokens: 1500,
+      system:     systemPrompt,
+      messages:   [{ role: "user", content: prompt }],
     });
 
     const text   = response.content[0]?.type === "text" ? response.content[0].text : "{}";
