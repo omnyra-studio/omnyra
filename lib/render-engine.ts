@@ -256,7 +256,7 @@ async function generateSceneVideo(scene: Scene): Promise<string> {
 /* ────────────────────────────────────────────────────────────────
  *  Voiceover attachment — ffmpeg
  *
- *  Replaces the former SyncLabs lipsync step.
+ *  Replaces the legacy third-party lipsync step.
  *
  *  DMCE output is B-roll / cinematic footage — AI-generated scenes
  *  have no visible face. Lip-syncing is semantically meaningless here.

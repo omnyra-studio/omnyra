@@ -16,6 +16,7 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { after } from "next/server";
 import { createOrFindJob } from "@/lib/avatar-queue";
+import { assertNoLegacyLipsync, LegacyPipelineViolationError } from "@/lib/guards/legacy-pipeline-guard";
 
 export const maxDuration = 30;
 
@@ -36,6 +37,19 @@ export async function POST(req: Request) {
     body = await req.json();
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  // ── Runtime schema guardrail ──────────────────────────────────────────────
+  try {
+    assertNoLegacyLipsync(body, "generate-avatar:POST");
+  } catch (e) {
+    if (e instanceof LegacyPipelineViolationError) {
+      return Response.json(
+        { error: "FAILED_ARCHITECTURE_VIOLATION", message: e.message },
+        { status: 400 },
+      );
+    }
+    throw e;
   }
 
   const { script, voice_id, background_image, plan, character_id } = body;

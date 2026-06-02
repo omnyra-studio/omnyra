@@ -58,16 +58,35 @@ import {
   hedraRequestHash,
 } from "@/lib/avatar-pipeline";
 import { generateHedraAvatar } from "@/lib/providers/hedra";
-import { planScenes, type SceneSpec } from "@/lib/avatar-scene-planner";
+import { planScenes, type SceneSpec, type CreatorContext } from "@/lib/avatar-scene-planner";
 import { loadCharacter, buildCharacterPromptSuffix, updateCharacterRefFrame } from "@/lib/character-registry";
+import { loadCreatorProfile } from "@/lib/creator-profile";
 import { lookupCachedPrompt, cachePrompt } from "@/lib/prompt-memory-cache";
 import { getExecutionPlan } from "@/lib/execution-control";
+import {
+  assertNoLegacyLipsync,
+  assertDirectorPipelineOnly,
+  LegacyPipelineViolationError,
+} from "@/lib/guards/legacy-pipeline-guard";
 
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
 export const maxDuration = 800;
 
 const DEFAULT_VOICE_ID = "EXAVITQu4vr4xnSDxMaL";
+
+// ── Performance Engine: energy → ElevenLabs voice settings ────────────────────
+
+function voiceSettingsForScene(energy: number, pacing: string) {
+  const e = Math.max(1, Math.min(5, Math.round(energy)));
+  // energy 1 = reflective/calm → energy 5 = urgent/intense
+  const stability        = 0.60 - (e - 1) * 0.10;  // 0.60 → 0.20
+  const style            = 0.30 + (e - 1) * 0.15;  // 0.30 → 0.90
+  const baseSpeed        = 0.90 + (e - 1) * 0.055; // 0.90 → 1.12
+  const speed = pacing === "fast" ? baseSpeed + 0.06 :
+                pacing === "slow" ? baseSpeed - 0.06 : baseSpeed;
+  return { stability, similarity_boost: 0.75, style, speed: Math.round(speed * 100) / 100 };
+}
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -92,6 +111,19 @@ export async function POST(req: Request) {
 
   const { jobId } = body;
   if (!jobId) return Response.json({ error: "jobId required" }, { status: 400 });
+
+  // ── Execution Guardrail Layer ────────────────────────────────────────────────
+  try {
+    assertNoLegacyLipsync(body, "avatar-worker:POST");
+  } catch (e) {
+    if (e instanceof LegacyPipelineViolationError) {
+      return Response.json(
+        { error: "FAILED_ARCHITECTURE_VIOLATION", message: e.message },
+        { status: 400 },
+      );
+    }
+    throw e;
+  }
 
   console.log(`[WORKER_RECEIVED] jobId=${jobId}`);
 
@@ -122,6 +154,7 @@ export async function POST(req: Request) {
     const log = (msg: string) =>
       console.log(`[avatar-worker] [${jobId}] [${currentStage}] [${workerId.slice(0, 8)}] ${msg}`);
 
+    assertDirectorPipelineOnly(currentStage, `avatar-worker:after:${jobId}`);
     log(`lease=acquired dag_stage=${currentStage}`);
     const t0 = Date.now();
 
@@ -166,13 +199,21 @@ async function executeTtsStage(
   const execPlan = await getExecutionPlan();
   log(`[EXEC_CONTROL] mode=${execPlan.mode} maxScenes=${execPlan.maxScenes} reason=${execPlan.reason}`);
 
+  // ── Load creator + character memory (Director Core context) ───────────────
+  const [creatorProfile, characterForCtx] = await Promise.all([
+    loadCreatorProfile(job.user_id),
+    job.input.character_id ? loadCharacter(job.input.character_id) : Promise.resolve(null),
+  ]);
+  const directorCtx: CreatorContext = { profile: creatorProfile, character: characterForCtx };
+  log(`[DIRECTOR_CTX] profile=${!!creatorProfile} character=${!!characterForCtx} quality=${creatorProfile?.quality_score ?? "n/a"}`);
+
   // ── Director Core: plan N scenes from script ──────────────────────────────
   void setPipelineStatus(job.id, "planning_scenes");
   log(`[DIRECTOR] planning scenes script_chars=${job.input.script.length}`);
   const directorT0 = Date.now();
   let scenes: SceneSpec[];
   try {
-    scenes = await planScenes(job.input.script, execPlan.maxScenes);
+    scenes = await planScenes(job.input.script, execPlan.maxScenes, directorCtx);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     log(`[DIRECTOR] ERROR: ${msg} — aborting`);
@@ -202,18 +243,15 @@ async function executeTtsStage(
   }
 
   // ── Character consistency injection ───────────────────────────────────────
-  if (job.input.character_id) {
-    const character = await loadCharacter(job.input.character_id);
-    if (character) {
-      const suffix = buildCharacterPromptSuffix(character);
-      scenes = scenes.map(scene => ({
-        ...scene,
-        visualPrompt: `${scene.visualPrompt}, ${suffix}`,
-      }));
-      log(`[CHARACTER] injected character="${character.name}" scenes=${scenes.length}`);
-    } else {
-      log(`[CHARACTER] character_id=${job.input.character_id} not found — skipping injection`);
-    }
+  if (characterForCtx) {
+    const suffix = buildCharacterPromptSuffix(characterForCtx);
+    scenes = scenes.map(scene => ({
+      ...scene,
+      visualPrompt: `${scene.visualPrompt}, ${suffix}`,
+    }));
+    log(`[CHARACTER] injected character="${characterForCtx.name}" scenes=${scenes.length}`);
+  } else if (job.input.character_id) {
+    log(`[CHARACTER] character_id=${job.input.character_id} not found — skipping injection`);
   }
 
   await registerCostIntent(job.id, "tts", "elevenlabs", reqHash, dagNode.creditEstimate);
@@ -236,7 +274,7 @@ async function executeTtsStage(
             body:    JSON.stringify({
               text:           scene.text,
               model_id:       "eleven_turbo_v2",
-              voice_settings: { stability: 0.35, similarity_boost: 0.75, style: 0.65, speed: 1.08 },
+              voice_settings: voiceSettingsForScene(scene.energy ?? 3, scene.pacing ?? "measured"),
             }),
           },
         );
@@ -453,6 +491,7 @@ async function executeLipsyncStage(
 
   // ── Hedra generation ──────────────────────────────────────────────────────
   void setPipelineStatus(job.id, "generating_avatar");
+  log(`[PROVIDER_SELECTION] provider=hedra stage=lipsync`);
   const hedraT0 = Date.now();
   log(`[HEDRA_START] image=${job.input.image_url.substring(0, 60)} audio=${combinedAudioUrl.substring(0, 60)}`);
 
@@ -467,7 +506,7 @@ async function executeLipsyncStage(
     log(`[HEDRA_DONE] elapsed=${Date.now() - hedraT0}ms request_id=${result.request_id} url=${finalVideoUrl.substring(0, 80)}`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    log(`hedra ERROR: ${msg}`);
+    log(`[HEDRA_FAILED] ${msg}`);
     await failLedgerEntry(job.id, "lipsync", workerId, msg);
     const { shouldRetry } = await recordStageFailure(job.id, workerId, "lipsync", msg, job.retry_count_per_stage ?? {});
     if (shouldRetry) await retrigger(origin, job.id, log);
