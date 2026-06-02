@@ -1,6 +1,6 @@
 import { getUserAndPlan } from '../../../lib/auth'
 import { refundCredits } from '../../../lib/credits'
-import { pollKling, pollRunway, pollDID, pollSyncLabs } from '../../../lib/providers'
+import { pollKling, pollRunway, pollDID } from '../../../lib/providers'
 
 function normaliseKling(data) {
   const s = data.data?.task_status
@@ -24,12 +24,6 @@ function normaliseDID(data) {
   }
 }
 
-function normaliseSyncLabs(data) {
-  return {
-    status: data.status === 'completed' ? 'complete' : data.status === 'failed' ? 'failed' : 'processing',
-    url: data.url ?? null,
-  }
-}
 
 export async function GET(request) {
   const { user } = await getUserAndPlan(request)
@@ -62,10 +56,6 @@ export async function GET(request) {
       case 'did':
         raw = await pollDID(jobId)
         normalised = normaliseDID(raw)
-        break
-      case 'synclabs':
-        raw = await pollSyncLabs(jobId)
-        normalised = normaliseSyncLabs(raw)
         break
       default:
         return Response.json({ error: `Unknown provider: ${provider}` }, { status: 400 })
