@@ -286,6 +286,11 @@ function CreatePageInner() {
   const [isMerging, setIsMerging] = useState(false);
   const [mergedVideoUrl, setMergedVideoUrl] = useState<string | null>(null);
 
+  // Visual continuity score (from cinematic generation)
+  const [continuityScore, setContinuityScore] = useState<{
+    character: number; environment: number; object: number; overall: number;
+  } | null>(null);
+
   // Tier gating
   const [userTier, setUserTier] = useState<UserTier>("free");
   const [tierLimits, setTierLimits] = useState<typeof TIER_VIDEO_LIMITS[UserTier]>(TIER_VIDEO_LIMITS.free);
@@ -1037,10 +1042,11 @@ function CreatePageInner() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            prompts: enhancedPrompts,
-            imageUrl: selectedImage || null,
+            prompts:    enhancedPrompts,
+            imageUrl:   selectedImage || null,
             clipDuration: CLIP_SECONDS,
             sceneTypes: sceneTypes.length ? sceneTypes : undefined,
+            script:     scriptText || undefined,
           }),
         });
 
@@ -1059,9 +1065,14 @@ function CreatePageInner() {
           failedClips?: number;
           extractedUrls?: Array<string | null>;
           clipReports?: string[];
+          continuity_score?: { character: number; environment: number; object: number; overall: number } | null;
         } | null = null;
         try { seqData = JSON.parse(rawText); } catch { seqData = null; }
 
+        if (seqData?.continuity_score) {
+          setContinuityScore(seqData.continuity_score);
+          console.log('[CONTINUITY]', seqData.continuity_score);
+        }
         console.log('FULL SEQUENCE RESPONSE', JSON.stringify(seqData, null, 2));
         console.log('[cinematic] stitch_source:', seqData?.stitch_source);
         console.log('[cinematic] clips_generated:', seqData?.clips_generated, 'total_duration:', seqData?.total_duration);
@@ -1307,6 +1318,7 @@ function CreatePageInner() {
     setGeneratedScript("");
     setScriptId(null);
     setMergedVideoUrl(null);
+    setContinuityScore(null);
     if (pollRef.current) clearInterval(pollRef.current);
   }
 
@@ -2238,6 +2250,37 @@ function CreatePageInner() {
                         View in Library
                       </button>
                     </div>
+
+                    {continuityScore && (
+                      <div style={{ marginTop: 16, background: 'rgba(124,111,255,0.06)', border: '1px solid rgba(124,111,255,0.25)', borderRadius: 12, padding: '16px 18px' }}>
+                        <p style={{ fontSize: 11, color: '#7c6fff', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.15em', margin: '0 0 12px' }}>
+                          Visual Continuity
+                        </p>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px' }}>
+                          {([
+                            ['Character', continuityScore.character],
+                            ['Environment', continuityScore.environment],
+                            ['Objects', continuityScore.object],
+                            ['Overall', continuityScore.overall],
+                          ] as [string, number][]).map(([label, val]) => (
+                            <div key={label}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                                <span style={{ fontSize: 11, color: '#8A7D92' }}>{label}</span>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: val >= 90 ? '#4ECB8C' : val >= 70 ? '#F0C040' : '#FF6B6B' }}>{val}%</span>
+                              </div>
+                              <div style={{ height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 2 }}>
+                                <div style={{ width: `${val}%`, height: '100%', borderRadius: 2, background: val >= 90 ? '#4ECB8C' : val >= 70 ? '#F0C040' : '#FF6B6B', transition: 'width 0.6s ease' }} />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        {continuityScore.overall < 90 && (
+                          <p style={{ fontSize: 11, color: '#8A7D92', margin: '10px 0 0', lineHeight: 1.5 }}>
+                            Tip: Upload a consistent character image to improve continuity across scenes.
+                          </p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

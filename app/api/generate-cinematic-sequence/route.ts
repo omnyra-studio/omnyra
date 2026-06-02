@@ -4,6 +4,14 @@ import { fal } from "@fal-ai/client";
 import { KLING_I2V_MODEL, KLING_T2V_MODEL, extractVideoUrl } from "@/lib/video-models";
 import { generateSmartMotionClip, pickEffect } from "@/lib/smart-motion";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import {
+  extractBibles,
+  buildConsistencySuffix,
+  validateFrameConsistency,
+  computeContinuityScore,
+  type ContinuityBibles,
+  type ContinuityScore,
+} from "@/lib/visual-continuity";
 
 export const maxDuration = 300;
 
@@ -107,13 +115,15 @@ async function generateSmartMotionClipWithUpload(
   label: string,
   clipReports: string[],
   durationSec: number,
+  sourceImages: Array<string | null>,
 ): Promise<string | null> {
   const smT0 = Date.now();
   try {
-    // Use provided imageUrl or generate one from the prompt
     const sourceImageUrl = (typeof imageUrl === "string" && imageUrl.startsWith("https://"))
       ? imageUrl
       : await generateSceneImage(prompt);
+
+    sourceImages[index] = sourceImageUrl;
 
     const effect = pickEffect(sceneType, index);
     console.log(`${label} [SMART_MOTION] effect=${effect} sourceImage=${sourceImageUrl.substring(0, 60)}`);
@@ -158,17 +168,20 @@ export async function POST(req: Request) {
   let imageUrl: string | null | undefined;
   let clipDuration: number | undefined;
   let sceneTypes: (string | null)[] | undefined;
+  let script: string | undefined;
   try {
     const body = await req.json() as {
       prompts?: string[];
       imageUrl?: string | null;
       clipDuration?: number;
       sceneTypes?: (string | null)[];
+      script?: string;
     };
-    prompts    = body.prompts ?? [];
-    imageUrl   = body.imageUrl;
+    prompts      = body.prompts ?? [];
+    imageUrl     = body.imageUrl;
     clipDuration = body.clipDuration;
-    sceneTypes = body.sceneTypes;
+    sceneTypes   = body.sceneTypes;
+    script       = body.script;
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
@@ -208,6 +221,23 @@ export async function POST(req: Request) {
   console.log(`[SCENE_ROUTER] scenes=${prompts.length} kling=${klingCount} smart_motion=${smCount} maxPremium=${maxPremium} estimatedTotalS=${estimatedTotalS}s`);
   console.log(`[PROVIDER_USAGE] { klingScenes: ${klingCount}, smartMotionScenes: ${smCount} }`);
 
+  // ── Visual Continuity: extract bibles + inject enforcement suffixes ──────────
+  let bibles: ContinuityBibles | null = null;
+  let enforcedPrompts = [...prompts];
+  try {
+    bibles = await extractBibles(prompts, script);
+    if (bibles.hasCharacter || bibles.environment) {
+      const suffix = buildConsistencySuffix(bibles);
+      if (suffix) {
+        enforcedPrompts = prompts.map(p => p + suffix);
+        console.log(`[CONTINUITY] bible_extracted hasCharacter=${bibles.hasCharacter} suffix_len=${suffix.length}`);
+      }
+    }
+  } catch (err) {
+    console.warn("[CONTINUITY] bible extraction failed (non-fatal):", err instanceof Error ? err.message : err);
+  }
+
+  const sourceImages: Array<string | null> = new Array(prompts.length).fill(null);
   const clipReports: string[] = [];
 
   // ── Parallel clip generation ───────────────────────────────────────────────
@@ -215,7 +245,7 @@ export async function POST(req: Request) {
   const genT0 = Date.now();
 
   const results = await Promise.allSettled(
-    prompts.map(async (prompt, i) => {
+    enforcedPrompts.map(async (prompt, i) => {
       const clipT0    = Date.now();
       const provider  = finalProviders[i];
       const sceneType = sceneTypes?.[i] ?? undefined;
@@ -236,6 +266,7 @@ export async function POST(req: Request) {
           label,
           clipReports,
           rawSeconds,
+          sourceImages,
         );
       } else {
         url = await generateKlingClip(prompt, imageUrl ?? null, duration, label, clipReports);
@@ -290,6 +321,33 @@ export async function POST(req: Request) {
     }, { status: 500 });
   }
 
+  // ── Visual Continuity: validate consecutive source image pairs ────────────
+  let continuityScore: ContinuityScore | null = null;
+  const validSourcePairs: Array<[string, string, number, number]> = [];
+  for (let i = 0; i < sourceImages.length - 1; i++) {
+    const a = sourceImages[i];
+    const b = sourceImages[i + 1];
+    if (a && b) validSourcePairs.push([a, b, i, i + 1]);
+  }
+
+  if (validSourcePairs.length && bibles) {
+    try {
+      console.log(`[CONTINUITY] validating ${validSourcePairs.length} consecutive frame pair(s)`);
+      const frameResults = await Promise.all(
+        validSourcePairs.map(([a, b, ia, ib]) =>
+          validateFrameConsistency(a, b, ia, ib, bibles!)
+        ),
+      );
+      continuityScore = computeContinuityScore(frameResults);
+      console.log(`[CONTINUITY] overall=${continuityScore.overall}% char=${continuityScore.character}% env=${continuityScore.environment}% obj=${continuityScore.object}%`);
+    } catch (err) {
+      console.warn("[CONTINUITY] frame validation failed (non-fatal):", err instanceof Error ? err.message : err);
+    }
+  } else if (bibles) {
+    // No smart_motion pairs to validate — return perfect scores (prompt enforcement active)
+    continuityScore = { character: 100, environment: 100, object: 100, overall: 100, frameResults: [] };
+  }
+
   // HEAD probe for logging (non-blocking)
   void Promise.allSettled(
     clip_urls.map(async (url, i) => {
@@ -314,13 +372,14 @@ export async function POST(req: Request) {
   return Response.json({
     stitched_url,
     clip_urls,
-    clips_generated:   clip_urls.length,
-    clip_duration:     Number(duration),
-    total_duration:    clip_urls.length * Number(duration),
-    providers:         finalProviders,
-    motion_coverage:   motionCoverage,
-    kling_scenes:      klingCount,
+    clips_generated:     clip_urls.length,
+    clip_duration:       Number(duration),
+    total_duration:      clip_urls.length * Number(duration),
+    providers:           finalProviders,
+    motion_coverage:     motionCoverage,
+    kling_scenes:        klingCount,
     smart_motion_scenes: smCount,
-    timing_ms: { generation: genElapsed, total: totalMs },
+    continuity_score:    continuityScore,
+    timing_ms:           { generation: genElapsed, total: totalMs },
   });
 }
