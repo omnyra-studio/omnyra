@@ -1,0 +1,213 @@
+{
+  "version": "2.0.0",
+  "generatedAt": "2026-06-02",
+  "allowedPipelines": [
+    "director_core"
+  ],
+  "allowedProviders": [
+    "hedra",
+    "kling",
+    "elevenlabs",
+    "anthropic",
+    "fal"
+  ],
+  "forbiddenPatterns": [
+    "synclabs",
+    "sync-lipsync",
+    "lipSyncVideo",
+    "legacyAvatarPipeline",
+    "generateLipSync",
+    "runLipSync",
+    "avatarLipsync"
+  ],
+  "dependencyGraph": {
+    "layers": [
+      {
+        "name": "providers",
+        "description": "External AI/media provider clients — only api_routes and services may import",
+        "pathPrefixes": ["lib/providers/"]
+      },
+      {
+        "name": "infrastructure",
+        "description": "Database, auth, guardrails — services and api_routes may import; UI must not import admin",
+        "pathPrefixes": ["lib/supabase/", "lib/guards/"]
+      },
+      {
+        "name": "api_routes",
+        "description": "Next.js API route handlers — invoked only via HTTP, never imported",
+        "pathPrefixes": ["app/api/"]
+      },
+      {
+        "name": "ui",
+        "description": "Client-facing pages, components, hooks",
+        "pathPrefixes": ["app/", "components/", "hooks/"]
+      },
+      {
+        "name": "services",
+        "description": "Internal business logic — default layer for all lib/** files",
+        "pathPrefixes": ["lib/"]
+      }
+    ],
+    "skipPaths": [
+      "scripts/",
+      "architecture/",
+      "supabase/"
+    ],
+    "allowedEdges": [
+      { "from": "ui",             "to": "ui"             },
+      { "from": "ui",             "to": "services"       },
+      { "from": "ui",             "to": "infrastructure" },
+      { "from": "api_routes",     "to": "api_routes"     },
+      { "from": "api_routes",     "to": "services"       },
+      { "from": "api_routes",     "to": "providers"      },
+      { "from": "api_routes",     "to": "infrastructure" },
+      { "from": "services",       "to": "services"       },
+      { "from": "services",       "to": "providers"      },
+      { "from": "services",       "to": "infrastructure" },
+      { "from": "providers",      "to": "providers"      },
+      { "from": "providers",      "to": "infrastructure" },
+      { "from": "infrastructure", "to": "infrastructure" }
+    ],
+    "forbiddenEdgeMessages": {
+      "ui->providers":              "UI must not import providers directly. Call via API route.",
+      "ui->api_routes":             "UI must not import API route modules. Use fetch() instead.",
+      "services->ui":               "Services must not import UI. Circular dependency.",
+      "providers->ui":              "Providers must not import UI components.",
+      "providers->api_routes":      "Providers must not import API routes.",
+      "infrastructure->ui":         "Infrastructure must not import UI.",
+      "infrastructure->api_routes": "Infrastructure must not import API routes.",
+      "api_routes->ui":             "API routes must not import UI components."
+    },
+    "externalSdkPatterns": [
+      "@anthropic-ai/",
+      "@fal-ai/",
+      "elevenlabs",
+      "hedra"
+    ],
+    "forbiddenExternalFromLayers": ["ui"],
+    "driftThresholds": {
+      "warnPercent":  5,
+      "failPercent":  15
+    }
+  },
+  "exceptions": {
+    "description": "Audited exceptions. Each entry requires id, reason, owner, createdAt, expiresAt. Use 'never' for permanent structural exceptions. No permanent exceptions for legacy systems — those get a deadline.",
+    "files": [
+      {
+        "id": "guard-fatal-implementation",
+        "path": "lib/guards/legacy-pipeline-guard.ts",
+        "reason": "Guard module — defines FORBIDDEN_PATTERNS as constants and throws on match. Never executes them.",
+        "owner": "platform-team",
+        "createdAt": "2026-06-01",
+        "expiresAt": "never"
+      },
+      {
+        "id": "providers-fatal-stubs",
+        "path": "lib/providers.js",
+        "reason": "Fatal guard stubs — callSyncLabs/pollSyncLabs throw [FATAL] immediately. No execution path to SyncLabs API.",
+        "owner": "platform-team",
+        "createdAt": "2026-06-01",
+        "expiresAt": "never"
+      },
+      {
+        "id": "deprecated-models-comment",
+        "path": "lib/video-models.ts",
+        "reason": "DEPRECATED_MODELS array — fal-ai/sync-lipsync is a string in a comment-annotated array, never referenced by execution code.",
+        "owner": "platform-team",
+        "createdAt": "2026-06-01",
+        "expiresAt": "never"
+      },
+      {
+        "id": "director-core-god-prompt",
+        "path": "lib/avatar-scene-planner.ts",
+        "reason": "Director Core system prompt — enumerates forbidden systems as negative constraints passed to LLM. Not executed.",
+        "owner": "platform-team",
+        "createdAt": "2026-06-01",
+        "expiresAt": "never"
+      },
+      {
+        "id": "manifest-self-reference",
+        "path": "architecture/allowed-pipelines.json",
+        "reason": "This manifest is the source of truth. Defines forbidden patterns by necessity.",
+        "owner": "architecture-team",
+        "createdAt": "2026-06-01",
+        "expiresAt": "never"
+      },
+      {
+        "id": "gate-script-self-reference",
+        "path": "scripts/architecture-gate.ts",
+        "reason": "The scanner reads forbidden patterns from the manifest to scan against. Self-referential by design.",
+        "owner": "architecture-team",
+        "createdAt": "2026-06-01",
+        "expiresAt": "never"
+      },
+      {
+        "id": "migration-docs-historical",
+        "path": "supabase/migrations/RUN_ORDER.md",
+        "reason": "Migration docs reference legacy provider names in historical context.",
+        "owner": "platform-team",
+        "createdAt": "2026-06-01",
+        "expiresAt": "never"
+      },
+      {
+        "id": "migration-avatar-pipeline-comment",
+        "path": "supabase/migrations/avatar_pipeline_tables.sql",
+        "reason": "SQL comment references synclabs as historical provider — not executable.",
+        "owner": "platform-team",
+        "createdAt": "2026-06-01",
+        "expiresAt": "never"
+      },
+      {
+        "id": "migration-heygen-column-rename",
+        "path": "supabase/migrations/rename_heygen_shots_column.sql",
+        "reason": "Migration comment references legacy provider names in historical context.",
+        "owner": "platform-team",
+        "createdAt": "2026-06-01",
+        "expiresAt": "never"
+      },
+      {
+        "id": "migration-renders-bucket-comment",
+        "path": "supabase/migrations/make_renders_bucket_public.sql",
+        "reason": "SQL comment explains historical reason for public bucket (legacy provider fetch requirement).",
+        "owner": "platform-team",
+        "createdAt": "2026-06-01",
+        "expiresAt": "never"
+      },
+      {
+        "id": "env-checklist-deprecated-vars",
+        "path": "ENV_CHECKLIST.md",
+        "reason": "Documents SYNCLABS_API_KEY as a deprecated variable to remove from env.",
+        "owner": "platform-team",
+        "createdAt": "2026-06-01",
+        "expiresAt": "never"
+      },
+      {
+        "id": "ui-cinematic-pending-migration",
+        "path": "app/dashboard/cinematic/page.js",
+        "reason": "UI page pending migration to Director Core avatar flow. Backend API /api/cinematic/lipsync returns 410 — no execution path.",
+        "owner": "product-team",
+        "createdAt": "2026-06-01",
+        "expiresAt": "2026-07-01",
+        "risk": "LOW"
+      },
+      {
+        "id": "ui-creator-pending-migration",
+        "path": "app/dashboard/creator/page.js",
+        "reason": "Creator dashboard pending migration. generateLipsync calls /api/lipsync which returns 410 — no execution path.",
+        "owner": "product-team",
+        "createdAt": "2026-06-01",
+        "expiresAt": "2026-07-01",
+        "risk": "LOW"
+      },
+      {
+        "id": "ui-lipsync-page-pending-removal",
+        "path": "app/dashboard/lipsync/page.js",
+        "reason": "Standalone lipsync page pending removal. Calls /api/lipsync which returns 410 — no execution path.",
+        "owner": "product-team",
+        "createdAt": "2026-06-01",
+        "expiresAt": "2026-07-01",
+        "risk": "LOW"
+      }
+    ]
+  }
+}

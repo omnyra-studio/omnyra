@@ -49,6 +49,8 @@ If you haven't already, run `setup.sql` once before any migration below.
 | 29 | `fix_render_assignment_constraint.sql` | drop `shots.render_assignment CHECK IN ('heygen','fal')`, re-add with `('avatar','fal')` | shots |
 | 30 | `make_renders_bucket_public.sql` | `UPDATE storage.buckets SET public = true WHERE id = 'renders'` — fal.ai cannot download private bucket URLs | — |
 | 31 | `system_insights_extend.sql` | ADD COLUMN: `insight_type`, `title`, `summary`, `metadata`, `severity`, `source`, `confidence_score`, `user_id`; 4 new indexes | system_insights |
+| 32 | `creator_profiles_table.sql` | `creator_profiles` — user-curated identity memory used by Director Core (niche, tone, hooks, CTAs, quality_score) | auth.users |
+| 33 | `brand_brain_tables.sql` | `generation_memory` (per-generation settings + outcome) + `preference_weights` (EMA weight maps per user) | auth.users |
 
 ## Notes
 

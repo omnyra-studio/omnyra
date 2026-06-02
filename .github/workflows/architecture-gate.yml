@@ -1,0 +1,79 @@
+name: Architecture Integrity Gate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  architecture:
+    name: Architecture Gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ── Layer 1: TypeScript type check ────────────────────────────────────────
+      - name: TypeScript
+        run: npm run typecheck
+
+      # ── Layer 2: Architecture pattern scan ───────────────────────────────────
+      # Reads forbidden patterns from architecture/allowed-pipelines.json.
+      # Fails (exit 1) if any forbidden execution path is found in source files.
+      # Blocks deployment before any code reaches Vercel.
+      - name: Architecture Gate
+        run: npm run architecture-gate
+
+      # ── Layer 3: Dependency graph + import layer enforcement ─────────────────
+      # Classifies every file into architecture layers (ui/api_routes/services/
+      # providers/infrastructure), enforces allowed import edges from the manifest,
+      # detects drift against the committed baseline, and writes a new
+      # architecture/dependency-graph.json for the next run's baseline.
+      - name: Dependency Graph
+        run: npm run dependency-graph
+
+      # ── Layer 4: Provider registry enforcement ───────────────────────────────
+      # Checks that forbidden init patterns (new ElevenLabs, new OpenAI, etc.)
+      # never appear, and that registered SDK imports (@fal-ai/, @anthropic-ai/,
+      # elevenlabs) only appear in their allowedCallerLayers.
+      - name: Provider Registry Gate
+        run: npm run provider-registry-gate
+
+      # ── Layer 5: Import boundary enforcement (ESLint) ─────────────────────────
+      - name: ESLint
+        run: npm run lint
+
+  # Deployment is only allowed after all three layers pass.
+  # Vercel's GitHub integration reads this job status before promoting.
+  deployment-gate:
+    name: Deployment Clearance
+    runs-on: ubuntu-latest
+    needs: [architecture]
+
+    steps:
+      - name: Deployment cleared
+        run: |
+          echo "✓ TypeScript passed"
+          echo "✓ Architecture Gate passed (forbidden patterns + expiry check)"
+          echo "✓ Dependency Graph passed (layer edges + drift check)"
+          echo "✓ ESLint passed"
+          echo ""
+          echo "Only valid execution path: Director Core → Scene Planner → Provider Router"
+          echo ""
+          echo "DEPLOYMENT CLEARED"

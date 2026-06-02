@@ -185,15 +185,17 @@ export async function POST(req: Request) {
   );
   console.log(`[TIMING] HEAD_PROBE complete ${Date.now() - probeT0}ms`);
 
+  // stitched_url is the FIRST clip only — it is NOT concatenated.
+  // Callers must use clip_urls[] + compose-video to assemble the full video.
   const stitched_url = clip_urls[0];
   const totalMs = Date.now() - routeT0;
-  console.log(`[TIMING] SEQUENCE TOTAL ${totalMs}ms clips=${clip_urls.length} first=${stitched_url.substring(0, 80)}`);
+  console.log(`[TIMING] SEQUENCE TOTAL ${totalMs}ms clips=${clip_urls.length} first_clip=${stitched_url.substring(0, 80)}`);
 
   return Response.json({
-    stitched_url,
-    clip_urls,
+    stitched_url,           // first clip only — NOT the full concatenated video
+    clip_urls,              // all N clips — pass to compose-video as clipUrls[]
     clips_generated: clip_urls.length,
-    clip_duration: Number(duration),           // always 5 or 10
+    clip_duration: Number(duration),   // always 5 or 10
     total_duration: clip_urls.length * Number(duration),
     timing_ms: { generation: genElapsed, total: totalMs },
   });

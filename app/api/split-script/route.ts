@@ -1,12 +1,12 @@
-import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { getBrandProfile, getBrandSystemPrompt } from "@/lib/brand";
 import { logUsageEvent } from "@/lib/cache";
 
 export async function POST(req: Request) {
-  if (!process.env.OPENAI_API_KEY) {
-    return Response.json({ error: "OPENAI_API_KEY missing" }, { status: 500 });
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return Response.json({ error: "ANTHROPIC_API_KEY missing" }, { status: 500 });
   }
 
   const { script, hook, num_segments, niche } = await req.json();
@@ -53,19 +53,16 @@ Return ONLY valid JSON. No markdown, no backticks:
   ]
 }`;
 
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   try {
-    const response = await client.chat.completions.create({
-      model: "gpt-4o",
+    const response = await client.messages.create({
+      model:     "claude-haiku-4-5-20251001",
       max_tokens: 1000,
-      messages: [
-        ...(brandContext ? [{ role: "system" as const, content: `You are a cinematic scriptwriter.${brandContext}` }] : []),
-        { role: "user", content: prompt },
-      ],
-      response_format: { type: "json_object" },
+      system:    brandContext ? `You are a cinematic scriptwriter.${brandContext}` : "You are a cinematic scriptwriter.",
+      messages:  [{ role: "user", content: prompt }],
     });
 
-    const text = response.choices[0].message.content ?? "{}";
+    const text   = response.content[0]?.type === "text" ? response.content[0].text : "{}";
     const parsed = JSON.parse(text);
 
     if (!parsed.segments?.length) {

@@ -1,0 +1,33 @@
+# Omnyra CODEOWNERS
+#
+# These rules require review from designated owners before merging.
+# Combined with branch protection requiring: 1 approved review + passing CI.
+#
+# Syntax: <pattern>  <owner> [<owner2> ...]
+# Last matching rule wins.
+
+# ── Architecture Governance ────────────────────────────────────────────────────
+# Any change to the architecture manifest, CI gates, or ESLint config
+# requires architecture team approval. This prevents silent weakening of
+# the enforcement layer.
+
+architecture/*                      @OmnyraAi
+scripts/architecture-gate.ts        @OmnyraAi
+scripts/dependency-graph.ts         @OmnyraAi
+eslint.config.mjs                   @OmnyraAi
+.github/workflows/architecture-gate.yml  @OmnyraAi
+.github/CODEOWNERS                  @OmnyraAi
+
+# ── Provider Registry ─────────────────────────────────────────────────────────
+# Adding new AI providers changes cost and compliance surface.
+# Requires architecture sign-off.
+
+architecture/providers.json         @OmnyraAi
+lib/providers/**                    @OmnyraAi
+
+# ── Security-Critical Infrastructure ─────────────────────────────────────────
+# Service role key usage and RLS bypass paths.
+
+lib/supabase/admin.ts               @OmnyraAi
+lib/guards/**                       @OmnyraAi
+middleware.ts                       @OmnyraAi

@@ -1,0 +1,5205 @@
+{
+  "generated": "2026-06-02T12:01:49.785Z",
+  "stats": {
+    "totalFiles": 313,
+    "totalEdges": 737,
+    "violations": 0,
+    "layers": {
+      "ui": 49,
+      "api_routes": 120,
+      "unknown": 5,
+      "services": 134,
+      "infrastructure": 4,
+      "providers": 1
+    }
+  },
+  "nodes": [
+    {
+      "layer": "ui",
+      "count": 49
+    },
+    {
+      "layer": "api_routes",
+      "count": 120
+    },
+    {
+      "layer": "unknown",
+      "count": 5
+    },
+    {
+      "layer": "services",
+      "count": 134
+    },
+    {
+      "layer": "infrastructure",
+      "count": 4
+    },
+    {
+      "layer": "providers",
+      "count": 1
+    }
+  ],
+  "edges": [
+    {
+      "from": "app/account/billing/page.tsx",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/account/billing/page.tsx",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/account/billing/page.tsx",
+      "fromLayer": "ui",
+      "to": "next/link",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/account/billing/page.tsx",
+      "fromLayer": "ui",
+      "to": "lib/supabase/client",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/account/billing/page.tsx",
+      "fromLayer": "ui",
+      "to": "components/AnimatedBackground",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/analytics/page.jsx",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/analytics/page.jsx",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/analytics/page.jsx",
+      "fromLayer": "ui",
+      "to": "next/link",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/analytics/page.jsx",
+      "fromLayer": "ui",
+      "to": "lib/supabase",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/analytics/page.jsx",
+      "fromLayer": "ui",
+      "to": "lib/db/query",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/analytics/page.jsx",
+      "fromLayer": "ui",
+      "to": "lib/db/schema",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/analytics/page.jsx",
+      "fromLayer": "ui",
+      "to": "components/AnimatedBackground",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/api/admin/db-health/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/admin/db-health/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/db/schema.version",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/admin/db-health/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/db/schema",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/admin/metrics/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/admin/metrics/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/admin/metrics/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/api/admin/render/[id]/inspect/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/admin/render/[id]/inspect/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/api/admin/render/[id]/inspect/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/pipeline/state",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/analytics/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/analytics/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/analytics/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/architecture/route.ts",
+      "fromLayer": "api_routes",
+      "to": "crypto",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/architecture/route.ts",
+      "fromLayer": "api_routes",
+      "to": "fs",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/architecture/route.ts",
+      "fromLayer": "api_routes",
+      "to": "path",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/auth/debug/route.js",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/auth/debug/route.js",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/auth/debug/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase-admin",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/auth/me/route.js",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/auth/me/route.js",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/auth/route.js",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/auth/signin/route.js",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/auth/signout/route.js",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/auth/signout/route.js",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/auth/signup/route.js",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/auth/signup/route.js",
+      "fromLayer": "api_routes",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/auth/signup/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/email",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/auth/signup/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/events/trackEvent",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/credits",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/providers",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-lipsync/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-lipsync/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-lipsync/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/providers/hedra",
+      "toLayer": "providers",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-pipeline/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-pipeline/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-pipeline/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-pipeline/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@fal-ai/client",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-pipeline/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/env/validate",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-worker/recover/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-worker/recover/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/avatar-consensus",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-worker/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-worker/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@ffmpeg-installer/ffmpeg",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-worker/route.ts",
+      "fromLayer": "api_routes",
+      "to": "fluent-ffmpeg",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-worker/route.ts",
+      "fromLayer": "api_routes",
+      "to": "os",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-worker/route.ts",
+      "fromLayer": "api_routes",
+      "to": "path",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-worker/route.ts",
+      "fromLayer": "api_routes",
+      "to": "fs",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-worker/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/storage-artifact",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-worker/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-worker/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/avatar-queue",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-worker/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/avatar-pipeline",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-worker/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/providers/hedra",
+      "toLayer": "providers",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-worker/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/avatar-scene-planner",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-worker/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/character-registry",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-worker/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/creator-profile",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-worker/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/prompt-memory-cache",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-worker/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/execution-control",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-worker/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/guards/legacy-pipeline-guard",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/api/background/poll/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/background/poll/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/credits",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/background/poll/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/providers",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/background/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/background/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/credits",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/background/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/providers",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/billing/portal.ts",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/billing/portal.ts",
+      "fromLayer": "api_routes",
+      "to": "stripe",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/billing/portal.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/billing/purchase-pack.ts",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/billing/purchase-pack.ts",
+      "fromLayer": "api_routes",
+      "to": "stripe",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/billing/purchase-pack.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/billing/usage.ts",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/billing/usage.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/brand/get/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/brand/get/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/brand/get/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/brand",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/brand/route.js",
+      "fromLayer": "api_routes",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/brand/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/brand/save/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/brand/save/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/brand/save/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/brand",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/can-show-offer/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/can-show-offer/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/revenue/throttle",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/characters/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/characters/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/characters/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/api/characters/[id]/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/characters/[id]/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/characters/[id]/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/api/check-kling/route.ts",
+      "fromLayer": "api_routes",
+      "to": "crypto",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/checkout/route.js",
+      "fromLayer": "api_routes",
+      "to": "stripe",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/checkout/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/cinematic/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/cinematic/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/credits",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/cinematic/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/providers",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/clone/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/clone-voice/route.js",
+      "fromLayer": "api_routes",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/clone-voice/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/compose-video/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/compose-video/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/compose-video/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/compose-video/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@ffmpeg-installer/ffmpeg",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/compose-video/route.ts",
+      "fromLayer": "api_routes",
+      "to": "fluent-ffmpeg",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/compose-video/route.ts",
+      "fromLayer": "api_routes",
+      "to": "os",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/compose-video/route.ts",
+      "fromLayer": "api_routes",
+      "to": "path",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/compose-video/route.ts",
+      "fromLayer": "api_routes",
+      "to": "fs",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/compose-video/route.ts",
+      "fromLayer": "api_routes",
+      "to": "crypto",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/compose-video/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/timeline/build-contract",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/compose-video/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/render/incremental-engine",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/compose-video/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/workers/shard-worker",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/compose-video/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/render/shard-cache",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/compose-video/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/render/merge",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/create/defaults/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/create/defaults/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/api/credits/route.js",
+      "fromLayer": "api_routes",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/credits/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/credits",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/cron/aggregate-analytics/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/analytics/snapshots",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/cron/company-strategy/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/strategy/company-memory",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/cron/company-strategy/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/strategy/strategic-actions",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/cron/generate-marketing-assets/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/marketing/asset-generator",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/cron/monthly-summary/route.js",
+      "fromLayer": "api_routes",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/cron/monthly-summary/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/email",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/cron/monthly-summary/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/credits",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/cron/optimize-funnel/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/api/cron/optimize-funnel/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/optimization/insights",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/cron/optimize-funnel/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/revenue/state",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/cron/optimize-system/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/optimization/metrics",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/cron/optimize-system/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/optimization/insights",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/cron/optimize-system/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/optimization/churn",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/cron/optimize-system/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/optimization/personalization",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/cron/optimize-system/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/optimization/templates",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/cron/optimize-system/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/optimization/appliers",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/cron/pipeline-worker/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/pipeline/jobs",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/cron/pipeline-worker/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/render-engine",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/cron/pipeline-worker/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/api/cron/product-intelligence/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/product-intel/graph",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/cron/product-intelligence/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/product-intel/lifecycle",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/cron/product-intelligence/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/product-intel/prd-generator",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/cron/product-intelligence/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/product-intel/flow-optimizer",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/cron/recalculate-scores/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/optimization/scoring",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/cron/scrape-trends/route.ts",
+      "fromLayer": "api_routes",
+      "to": "apify-client",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/cron/scrape-trends/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/dashboard/route.js",
+      "fromLayer": "api_routes",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/dashboard/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/credits",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/debug/auth/route.js",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/debug/auth/route.js",
+      "fromLayer": "api_routes",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/events/track/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/events/track/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/events/trackEvent",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/events/track/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/optimization/rewards",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/events/track/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/revenue/throttle",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/feature-flags/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/feature-flags/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/product-intel/feature-flags",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/brand",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/cache",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-avatar/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-avatar/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-avatar/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-avatar/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/avatar-queue",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-avatar/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/guards/legacy-pipeline-guard",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-brief/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@anthropic-ai/sdk",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-brief/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-brief/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-brief/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-brief/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/api/autopsy",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-brief/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/brand",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-brief/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/cache",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-brief-sync/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-brief-sync/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-brief-sync/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/brand",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-brief-sync/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/cache",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-cinematic/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-cinematic/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-cinematic/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/shot-executor",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-cinematic/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/api/response",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-cinematic/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/brand",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-cinematic/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/cache",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-cinematic-sequence/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-cinematic-sequence/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-cinematic-sequence/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@fal-ai/client",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-cinematic-sequence/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/video-models",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-image/route.js",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-image/route.js",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-image/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/brand",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-image/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/cache",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-script/route.ts",
+      "fromLayer": "api_routes",
+      "to": "openai",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-script/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-script/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-script/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/brand",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-script/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/cache",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-shot/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-shot/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-shot/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-shot/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@fal-ai/client",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-shot/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/shot-executor",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-shot/status-batch/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-shot/status-batch/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-shot/status-batch/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-shot/status-batch/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@fal-ai/client",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-shot/status-batch/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/shot-executor",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-shot-plan/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-shot-plan/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-shot-plan/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/orchestration/core/generate-shot-plan",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-shot-plan/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/api/response",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-shot-plan/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/api/autopsy",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-shot-plan/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/posthog-server",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-subtitles/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-subtitles/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-subtitles/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-video-fal/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@fal-ai/client",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-video-fal/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/video-models",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-video-fal/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-video-fal/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-video-fal/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/brand",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-video-fal/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/cache",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-video-kling/route.ts",
+      "fromLayer": "api_routes",
+      "to": "crypto",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-video-sequence/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@fal-ai/client",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-video-sequence/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/video-models",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-voiceover/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-voiceover/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-voiceover/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-voiceover/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-voiceover/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/cache",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/image/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/image/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/credits",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/image/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/api-guard",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/image/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/brand",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/image/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/cache",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/ingest/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/ingest/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/ingest/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/apify",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/ingest-performance/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/ingest-performance/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/ingest-performance/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/ingest-performance/route.ts",
+      "fromLayer": "api_routes",
+      "to": "apify-client",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/job-lineage/[id]/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/job-lineage/[id]/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/job-lineage/[id]/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/api/job-status/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/job-status/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/job-status/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/api/library/route.js",
+      "fromLayer": "api_routes",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/log-usage/route.js",
+      "fromLayer": "api_routes",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/merge-video-audio/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/merge-video-audio/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/merge-video-audio/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@ffmpeg-installer/ffmpeg",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/merge-video-audio/route.ts",
+      "fromLayer": "api_routes",
+      "to": "fluent-ffmpeg",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/merge-video-audio/route.ts",
+      "fromLayer": "api_routes",
+      "to": "os",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/merge-video-audio/route.ts",
+      "fromLayer": "api_routes",
+      "to": "path",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/merge-video-audio/route.ts",
+      "fromLayer": "api_routes",
+      "to": "fs",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/merge-video-audio/route.ts",
+      "fromLayer": "api_routes",
+      "to": "crypto",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/orchestrate-project/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/orchestrate-project/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/orchestrate-project/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/orchestrate-project/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/orchestration/mode-adapters",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/orchestrate-project/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/orchestration/core/orchestrate-project",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/orchestrate-project/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/posthog-server",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/orchestrate-project/[planId]/stream/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/orchestrate-project/[planId]/stream/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/orchestrate-project/[planId]/stream/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/orchestrate-project/[planId]/stream/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/api/response",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/orchestrate-project/[planId]/stream/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/orchestration/events",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/photo-animate/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/photo-animate/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/credits",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/photo-animate/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/kling",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/photo-animate/status/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/photo-animate/status/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/credits",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/photo-animate/status/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/kling",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/pipeline/draft/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/pipeline/draft/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/prompt-engine",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/pipeline/draft/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/scene-engine",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/pipeline/draft/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/api-guard",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/pipeline/draft/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/brand",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/pipeline/draft/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/cache",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/pipeline/render/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/pipeline/render/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/api/pipeline/render/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/api-guard",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/pipeline/render/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/script-engine",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/pipeline/render/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/render-engine",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/pipeline/render/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/events/trackEvent",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/pipeline/render/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/credit-calculator",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/pipeline/render/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/optimization/personalization",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/pipeline/render/[id]/approve/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/pipeline/render/[id]/approve/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/pipeline/render/[id]/approve/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/api/pipeline/render/[id]/approve/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/render-engine",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/pipeline/render/[id]/approve/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/events/trackEvent",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/pipeline/render/[id]/approve/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/credit-calculator",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/pipeline/render/[id]/regenerate/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/pipeline/render/[id]/regenerate/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/api/pipeline/render/[id]/regenerate/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/script-engine",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/pipeline/render/[id]/regenerate/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/render-engine",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/pipeline/render/[id]/regenerate/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/events/trackEvent",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/promo/redeem/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/promo/redeem/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/server",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/api/promo/redeem/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/api/promo/validate/route.js",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/promo/validate/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/api/pwa-icon/[size]/route.js",
+      "fromLayer": "api_routes",
+      "to": "next/og",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/render-status/[jobId]/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/render-status/[jobId]/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/render-status/[jobId]/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/render-video/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/render-video/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/render-video/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/render-video/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/shot-executor",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/render-video/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/composer",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/renders/[id]/events/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/renders/[id]/events/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/pipeline/state",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/renders/[id]/loop-suggestions/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/renders/[id]/loop-suggestions/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/api/renders/[id]/loop-suggestions/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/optimization/templates",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/revenue/evaluate/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/revenue/evaluate/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/revenue/decisions",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/save-voice/route.js",
+      "fromLayer": "api_routes",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/save-voice/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/select-hook/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/select-hook/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/select-hook/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/shots/[shotId]/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/shots/[shotId]/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/shots/[shotId]/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/social/callback/[platform]/route.js",
+      "fromLayer": "api_routes",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/social/callback/[platform]/route.js",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/social/connect/[platform]/route.js",
+      "fromLayer": "api_routes",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/social/connect/[platform]/route.js",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/social/connections/route.js",
+      "fromLayer": "api_routes",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/social/cron/route.js",
+      "fromLayer": "api_routes",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/social/cron/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/social/post-publisher",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/social/posts/route.js",
+      "fromLayer": "api_routes",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/social/posts/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/social/post-publisher",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/social/posts/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/events/emitter",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/split-script/route.ts",
+      "fromLayer": "api_routes",
+      "to": "openai",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/split-script/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/split-script/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/split-script/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/brand",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/split-script/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/cache",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/status/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/status/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/credits",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/status/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/providers",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/stripe/create-checkout/route.js",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/stripe/create-checkout/route.js",
+      "fromLayer": "api_routes",
+      "to": "stripe",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/stripe/create-checkout/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/posthog-server",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/stripe/route.js",
+      "fromLayer": "api_routes",
+      "to": "stripe",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/stripe/webhook/route.js",
+      "fromLayer": "api_routes",
+      "to": "stripe",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/stripe/webhook/route.js",
+      "fromLayer": "api_routes",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/stripe/webhook/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/email",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/stripe/webhook/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/events/trackEvent",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/templates/feed/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/optimization/templates",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/templates/recommended/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/templates/recommended/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/api/templates/recommended/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/optimization/templates",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/test-claude/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@anthropic-ai/sdk",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/upload/route.js",
+      "fromLayer": "api_routes",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/upload/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/video/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/video/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/credits",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/video/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/api-guard",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/video/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/providers",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/voice/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/voice/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/credits",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/voice/route.js",
+      "fromLayer": "api_routes",
+      "to": "lib/api-guard",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/weekly-insight/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/weekly-insight/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@anthropic-ai/sdk",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/weekly-insight/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/api/weekly-insight/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/api/autopsy",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/workers/composition/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/workers/composition/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/workers/composition-worker",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/workers/shot/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/workers/shot/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/workers/shot-worker",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/workers/voiceover/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/workers/voiceover/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/workers/voiceover-worker",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/_telemetry/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/api/autopsy",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/auth/callback/route.ts",
+      "fromLayer": "ui",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/auth/callback/route.ts",
+      "fromLayer": "ui",
+      "to": "lib/supabase/server",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/auth/callback/route.ts",
+      "fromLayer": "ui",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/brand/page.jsx",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/brand/page.jsx",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/brand/page.jsx",
+      "fromLayer": "ui",
+      "to": "lib/brand",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/brand/page.jsx",
+      "fromLayer": "ui",
+      "to": "components/AnimatedBackground",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/create/influencer/page.tsx",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/create/influencer/page.tsx",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/create/influencer/page.tsx",
+      "fromLayer": "ui",
+      "to": "next/link",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/create/influencer/page.tsx",
+      "fromLayer": "ui",
+      "to": "lib/supabase/client",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/create/influencer/page.tsx",
+      "fromLayer": "ui",
+      "to": "components/AssetUpload",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/create/page.tsx",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/create/page.tsx",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/create/page.tsx",
+      "fromLayer": "ui",
+      "to": "lib/supabase/client",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/create/page.tsx",
+      "fromLayer": "ui",
+      "to": "components/BrandContextFields",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/create/page.tsx",
+      "fromLayer": "ui",
+      "to": "components/PlatformSelector",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/create/page.tsx",
+      "fromLayer": "ui",
+      "to": "posthog-js/react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/create/page.tsx",
+      "fromLayer": "ui",
+      "to": "components/ImageGenerator",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/create/page.tsx",
+      "fromLayer": "ui",
+      "to": "components/AssetUpload",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/create/page.tsx",
+      "fromLayer": "ui",
+      "to": "lib/getUserTier",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/create/product-launch/page.tsx",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/create/product-launch/page.tsx",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/create/product-launch/page.tsx",
+      "fromLayer": "ui",
+      "to": "next/link",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/create/product-launch/page.tsx",
+      "fromLayer": "ui",
+      "to": "lib/supabase/client",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/create/product-launch/page.tsx",
+      "fromLayer": "ui",
+      "to": "components/AnimatedBackground",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/create/product-launch/page.tsx",
+      "fromLayer": "ui",
+      "to": "components/BrandContextFields",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/brand/page.tsx",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/brand/page.tsx",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/brand/page.tsx",
+      "fromLayer": "ui",
+      "to": "lib/supabase/client",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/brand/page.tsx",
+      "fromLayer": "ui",
+      "to": "components/AnimatedBackground",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/captions/page.js",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/captions/page.js",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/captions/page.js",
+      "fromLayer": "ui",
+      "to": "lib/supabase",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/captions/page.js",
+      "fromLayer": "ui",
+      "to": "components/AnimatedBackground",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/characters/page.tsx",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/characters/page.tsx",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/characters/page.tsx",
+      "fromLayer": "ui",
+      "to": "lib/supabase/client",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/cinematic/page.js",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/cinematic/page.js",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/cinematic/page.js",
+      "fromLayer": "ui",
+      "to": "lib/supabase",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/cinematic/page.js",
+      "fromLayer": "ui",
+      "to": "components/AnimatedBackground",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/creator/page.js",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/creator/page.js",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/creator/page.js",
+      "fromLayer": "ui",
+      "to": "lib/supabase",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/creator/page.js",
+      "fromLayer": "ui",
+      "to": "components/AnimatedBackground",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/credits/page.js",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/credits/page.js",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/credits/page.js",
+      "fromLayer": "ui",
+      "to": "components/AnimatedBackground",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/credits/page.js",
+      "fromLayer": "ui",
+      "to": "lib/supabase",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/credits/page.js",
+      "fromLayer": "ui",
+      "to": "posthog-js/react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/director/[planId]/page.tsx",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/director/[planId]/page.tsx",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/director/[planId]/page.tsx",
+      "fromLayer": "ui",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/founder/page.tsx",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/founder/page.tsx",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/image/page.js",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/image/page.js",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/image/page.js",
+      "fromLayer": "ui",
+      "to": "lib/supabase",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/image/page.js",
+      "fromLayer": "ui",
+      "to": "components/AnimatedBackground",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/lipsync/page.js",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/lipsync/page.js",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/lipsync/page.js",
+      "fromLayer": "ui",
+      "to": "lib/supabase",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/lipsync/page.js",
+      "fromLayer": "ui",
+      "to": "components/AnimatedBackground",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/page.jsx",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/page.jsx",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/page.jsx",
+      "fromLayer": "ui",
+      "to": "next/link",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/page.jsx",
+      "fromLayer": "ui",
+      "to": "posthog-js/react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/page.jsx",
+      "fromLayer": "ui",
+      "to": "lucide-react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/page.jsx",
+      "fromLayer": "ui",
+      "to": "lib/supabase/client",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/page.jsx",
+      "fromLayer": "ui",
+      "to": "lib/db/query",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/page.jsx",
+      "fromLayer": "ui",
+      "to": "lib/db/schema",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/page.jsx",
+      "fromLayer": "ui",
+      "to": "components/AnimatedBackground",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/page.jsx",
+      "fromLayer": "ui",
+      "to": "components/AnalyticsWidget",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/script/page.js",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/script/page.js",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/script/page.js",
+      "fromLayer": "ui",
+      "to": "lib/supabase",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/script/page.js",
+      "fromLayer": "ui",
+      "to": "components/AnimatedBackground",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/script/page.js",
+      "fromLayer": "ui",
+      "to": "lib/brand",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/settings/page.js",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/settings/page.js",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/settings/page.js",
+      "fromLayer": "ui",
+      "to": "lib/brand",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/settings/page.js",
+      "fromLayer": "ui",
+      "to": "components/AnimatedBackground",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/settings/page.js",
+      "fromLayer": "ui",
+      "to": "lib/supabase",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/video/page.js",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/video/page.js",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/video/page.js",
+      "fromLayer": "ui",
+      "to": "lib/supabase",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/video/page.js",
+      "fromLayer": "ui",
+      "to": "components/AnimatedBackground",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/voice/page.js",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/voice/page.js",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/voice/page.js",
+      "fromLayer": "ui",
+      "to": "lib/supabase/client",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/voice/page.js",
+      "fromLayer": "ui",
+      "to": "components/AnimatedBackground",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/layout.js",
+      "fromLayer": "ui",
+      "to": "next/font/google",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/layout.js",
+      "fromLayer": "ui",
+      "to": "app/pwa-register",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/layout.js",
+      "fromLayer": "ui",
+      "to": "components/AnimatedBackground",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/layout.js",
+      "fromLayer": "ui",
+      "to": "components/GlobalNav",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/layout.js",
+      "fromLayer": "ui",
+      "to": "components/PostHogProvider",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/layout.js",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/layout.js",
+      "fromLayer": "ui",
+      "to": "components/PostHogPageView",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/layout.js",
+      "fromLayer": "ui",
+      "to": "app/globals.css",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/lib/users.js",
+      "fromLayer": "ui",
+      "to": "fs",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/lib/users.js",
+      "fromLayer": "ui",
+      "to": "path",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/lib/users.js",
+      "fromLayer": "ui",
+      "to": "crypto",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/page.jsx",
+      "fromLayer": "ui",
+      "to": "next/link",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/profile/page.jsx",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/profile/page.jsx",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/profile/page.jsx",
+      "fromLayer": "ui",
+      "to": "lib/supabase",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/profile/page.jsx",
+      "fromLayer": "ui",
+      "to": "components/AnimatedBackground",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/pwa-register.js",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/settings/page.jsx",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/settings/page.jsx",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/settings/page.jsx",
+      "fromLayer": "ui",
+      "to": "components/AnimatedBackground",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/settings/page.jsx",
+      "fromLayer": "ui",
+      "to": "lib/supabase",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/signin/page.js",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/signin/page.js",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/signin/page.js",
+      "fromLayer": "ui",
+      "to": "lib/supabase",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/signin/page.js",
+      "fromLayer": "ui",
+      "to": "components/AnimatedBackground",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/signin/page.js",
+      "fromLayer": "ui",
+      "to": "posthog-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/signup/page.js",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/signup/page.js",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/signup/page.js",
+      "fromLayer": "ui",
+      "to": "lib/supabase",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/signup/page.js",
+      "fromLayer": "ui",
+      "to": "components/AnimatedBackground",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/signup/page.js",
+      "fromLayer": "ui",
+      "to": "posthog-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/success/page.js",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/success/page.js",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/success/page.js",
+      "fromLayer": "ui",
+      "to": "next/link",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/videos/page.jsx",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/videos/page.jsx",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/videos/page.jsx",
+      "fromLayer": "ui",
+      "to": "next/link",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/videos/page.jsx",
+      "fromLayer": "ui",
+      "to": "lucide-react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/videos/page.jsx",
+      "fromLayer": "ui",
+      "to": "lib/supabase",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/videos/page.jsx",
+      "fromLayer": "ui",
+      "to": "lib/db/query",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/videos/page.jsx",
+      "fromLayer": "ui",
+      "to": "lib/db/schema",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/videos/page.jsx",
+      "fromLayer": "ui",
+      "to": "components/AnimatedBackground",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/voice-studio/page.jsx",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/voice-studio/page.jsx",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/voice-studio/page.jsx",
+      "fromLayer": "ui",
+      "to": "lib/supabase/client",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/voice-studio/page.jsx",
+      "fromLayer": "ui",
+      "to": "components/AnimatedBackground",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/voice-studio/page.jsx",
+      "fromLayer": "ui",
+      "to": "posthog-js/react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/welcome/page.jsx",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/welcome/page.jsx",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/welcome/page.jsx",
+      "fromLayer": "ui",
+      "to": "next/link",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/welcome/page.jsx",
+      "fromLayer": "ui",
+      "to": "lib/supabase",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/welcome/page.jsx",
+      "fromLayer": "ui",
+      "to": "components/AnimatedBackground",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/welcome/page.jsx",
+      "fromLayer": "ui",
+      "to": "lucide-react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/welcome/page.jsx",
+      "fromLayer": "ui",
+      "to": "posthog-js/react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "components/AnalyticsWidget.tsx",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "components/AppNav.jsx",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "components/AppNav.jsx",
+      "fromLayer": "ui",
+      "to": "next/link",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "components/AppNav.jsx",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "components/AppNav.jsx",
+      "fromLayer": "ui",
+      "to": "lib/supabase",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "components/AssetUpload.tsx",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "components/AssetUpload.tsx",
+      "fromLayer": "ui",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "components/BrandContextFields.jsx",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "components/director-mode.jsx",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "components/GlobalNav.jsx",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "components/GlobalNav.jsx",
+      "fromLayer": "ui",
+      "to": "next/link",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "components/GlobalNav.jsx",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "components/GlobalNav.jsx",
+      "fromLayer": "ui",
+      "to": "lib/supabase",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "components/GlobalNav.jsx",
+      "fromLayer": "ui",
+      "to": "posthog-js/react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "components/ImageGenerator.jsx",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "components/pipeline-stages.jsx",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "components/pipeline-stages.jsx",
+      "fromLayer": "ui",
+      "to": "lucide-react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "components/pipeline-stages.jsx",
+      "fromLayer": "ui",
+      "to": "lib/supabase",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "components/PlatformSelector.jsx",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "components/PostHogPageView.jsx",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "components/PostHogPageView.jsx",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "components/PostHogPageView.jsx",
+      "fromLayer": "ui",
+      "to": "posthog-js/react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "components/PostHogProvider.jsx",
+      "fromLayer": "ui",
+      "to": "posthog-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "components/PostHogProvider.jsx",
+      "fromLayer": "ui",
+      "to": "posthog-js/react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "hooks/useVideoGeneration.ts",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "hooks/useVideoGeneration.ts",
+      "fromLayer": "ui",
+      "to": "lib/getUserTier",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "instrumentation-client.ts",
+      "fromLayer": "unknown",
+      "to": "posthog-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/analytics/snapshots.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/api/autopsy.ts",
+      "fromLayer": "services",
+      "to": "crypto",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/api/response.ts",
+      "fromLayer": "services",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/api-guard.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/apify.ts",
+      "fromLayer": "services",
+      "to": "apify-client",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/auth.js",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/avatar-consensus.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/avatar-consensus.ts",
+      "fromLayer": "services",
+      "to": "lib/avatar-queue",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/avatar-consensus.ts",
+      "fromLayer": "services",
+      "to": "lib/avatar-pipeline",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/avatar-consensus.ts",
+      "fromLayer": "services",
+      "to": "lib/storage-artifact",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/avatar-pipeline.ts",
+      "fromLayer": "services",
+      "to": "crypto",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/avatar-provider.ts",
+      "fromLayer": "services",
+      "to": "@fal-ai/client",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/avatar-provider.ts",
+      "fromLayer": "services",
+      "to": "lib/video-models",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/avatar-provider.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/avatar-queue.ts",
+      "fromLayer": "services",
+      "to": "crypto",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/avatar-queue.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/avatar-scene-planner.ts",
+      "fromLayer": "services",
+      "to": "@anthropic-ai/sdk",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/brand.js",
+      "fromLayer": "services",
+      "to": "lib/supabase",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/brand.ts",
+      "fromLayer": "services",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/cache.ts",
+      "fromLayer": "services",
+      "to": "crypto",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/cache.ts",
+      "fromLayer": "services",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/character-registry.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/artifact/schema-artifact.ts",
+      "fromLayer": "services",
+      "to": "artifacts/schema.json",
+      "toLayer": "unknown",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/artifact.ts",
+      "fromLayer": "services",
+      "to": "lib/compiler/ir",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/execution-engine.ts",
+      "fromLayer": "services",
+      "to": "crypto",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/execution-engine.ts",
+      "fromLayer": "services",
+      "to": "lib/compiler/validate-node-io",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/execution-engine.ts",
+      "fromLayer": "services",
+      "to": "lib/compiler/artifact-cache",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/parse.ts",
+      "fromLayer": "services",
+      "to": "lib/compiler/ir",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/parse.ts",
+      "fromLayer": "services",
+      "to": "lib/render/diff-contract",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/passes/dne.ts",
+      "fromLayer": "services",
+      "to": "lib/compiler/ir",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/passes/elo.ts",
+      "fromLayer": "services",
+      "to": "lib/compiler/ir",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/passes/index.ts",
+      "fromLayer": "services",
+      "to": "lib/compiler/passes/dne",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/passes/index.ts",
+      "fromLayer": "services",
+      "to": "lib/compiler/passes/pcr",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/passes/index.ts",
+      "fromLayer": "services",
+      "to": "lib/compiler/passes/nf",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/passes/index.ts",
+      "fromLayer": "services",
+      "to": "lib/compiler/passes/tec",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/passes/index.ts",
+      "fromLayer": "services",
+      "to": "lib/compiler/passes/elo",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/passes/nf.ts",
+      "fromLayer": "services",
+      "to": "lib/compiler/ir",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/passes/pcr.ts",
+      "fromLayer": "services",
+      "to": "lib/compiler/ir",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/passes/pcr.ts",
+      "fromLayer": "services",
+      "to": "lib/routing/provider-router",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/passes/tec.ts",
+      "fromLayer": "services",
+      "to": "lib/compiler/ir",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/pipeline.ts",
+      "fromLayer": "services",
+      "to": "lib/compiler/ir",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/pipeline.ts",
+      "fromLayer": "services",
+      "to": "lib/compiler/parse",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/pipeline.ts",
+      "fromLayer": "services",
+      "to": "lib/compiler/passes/index",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/pipeline.ts",
+      "fromLayer": "services",
+      "to": "lib/compiler/vce",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/pipeline.ts",
+      "fromLayer": "services",
+      "to": "lib/compiler/repair",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/pipeline.ts",
+      "fromLayer": "services",
+      "to": "lib/compiler/artifact",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/pipeline.ts",
+      "fromLayer": "services",
+      "to": "lib/compiler/semantic-hash",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/pipeline.ts",
+      "fromLayer": "services",
+      "to": "lib/compiler/pnl",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/pipeline.ts",
+      "fromLayer": "services",
+      "to": "lib/routing/route-contract",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/pipeline.ts",
+      "fromLayer": "services",
+      "to": "lib/render/execution-planner",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/pipeline.ts",
+      "fromLayer": "services",
+      "to": "lib/events/emitter",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/pnl.ts",
+      "fromLayer": "services",
+      "to": "lib/routing/provider-profiles",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/pnl.ts",
+      "fromLayer": "services",
+      "to": "lib/events/emitter",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/repair.ts",
+      "fromLayer": "services",
+      "to": "lib/compiler/ir",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/repair.ts",
+      "fromLayer": "services",
+      "to": "lib/compiler/passes/index",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/schema-registry.ts",
+      "fromLayer": "services",
+      "to": "lib/db/schema",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/validate-dag.ts",
+      "fromLayer": "services",
+      "to": "lib/compiler/validate-pipeline",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/compiler/vce.ts",
+      "fromLayer": "services",
+      "to": "lib/compiler/ir",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/composer.ts",
+      "fromLayer": "services",
+      "to": "fluent-ffmpeg",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/composer.ts",
+      "fromLayer": "services",
+      "to": "ffmpeg-static",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/composer.ts",
+      "fromLayer": "services",
+      "to": "node:fs",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/composer.ts",
+      "fromLayer": "services",
+      "to": "node:path",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/composer.ts",
+      "fromLayer": "services",
+      "to": "node:https",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/composer.ts",
+      "fromLayer": "services",
+      "to": "node:http",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/composer.ts",
+      "fromLayer": "services",
+      "to": "node:os",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/creator-profile.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/creditGate.ts",
+      "fromLayer": "services",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/creditGate.ts",
+      "fromLayer": "services",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/creditGate.ts",
+      "fromLayer": "services",
+      "to": "lib/credits",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/credits.js",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/credits.js",
+      "fromLayer": "services",
+      "to": "lib/email",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/db/query.ts",
+      "fromLayer": "services",
+      "to": "lib/db/schema",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/db/validate-schema.ts",
+      "fromLayer": "services",
+      "to": "lib/db/schema",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/db/validate-schema.ts",
+      "fromLayer": "services",
+      "to": "lib/db/schema.version",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/email.js",
+      "fromLayer": "services",
+      "to": "nodemailer",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/email.js",
+      "fromLayer": "services",
+      "to": "lib/credits",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/events/clientTrack.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/client",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/events/emitter.ts",
+      "fromLayer": "services",
+      "to": "lib/events/event-store",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/events/event-store.ts",
+      "fromLayer": "services",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/events/trackEvent.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/execution-control.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/getUserTier.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/client",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/kling.js",
+      "fromLayer": "services",
+      "to": "crypto",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/marketing/asset-generator.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/optimization/appliers.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/optimization/appliers.ts",
+      "fromLayer": "services",
+      "to": "lib/optimization/insights",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/optimization/churn.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/optimization/insights.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/optimization/metrics.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/optimization/personalization.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/optimization/rewards.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/optimization/scoring.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/optimization/templates.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/orchestration/core/generate-shot-plan.ts",
+      "fromLayer": "services",
+      "to": "@anthropic-ai/sdk",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/orchestration/core/generate-shot-plan.ts",
+      "fromLayer": "services",
+      "to": "lib/orchestration/mode-adapters",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/orchestration/core/generate-shot-plan.ts",
+      "fromLayer": "services",
+      "to": "lib/orchestration/core/timeline",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/orchestration/core/generate-shot-plan.ts",
+      "fromLayer": "services",
+      "to": "lib/orchestration/core/validators",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/orchestration/core/generate-shot-plan.ts",
+      "fromLayer": "services",
+      "to": "lib/events/emitter",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/orchestration/core/orchestrate-project.ts",
+      "fromLayer": "services",
+      "to": "lib/orchestration/mode-adapters",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/orchestration/core/orchestrate-project.ts",
+      "fromLayer": "services",
+      "to": "lib/orchestration/core/generate-shot-plan",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/orchestration/core/orchestrate-project.ts",
+      "fromLayer": "services",
+      "to": "lib/workers/queue",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/orchestration/core/orchestrate-project.ts",
+      "fromLayer": "services",
+      "to": "lib/events/emitter",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/orchestration/core/validators.ts",
+      "fromLayer": "services",
+      "to": "lib/orchestration/core/timeline",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/orchestration/use-orchestration-stream.ts",
+      "fromLayer": "services",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/orchestration/use-orchestration-stream.ts",
+      "fromLayer": "services",
+      "to": "lib/orchestration/events",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/orchestration/use-orchestration-stream.ts",
+      "fromLayer": "services",
+      "to": "lib/orchestration/core/state-reducer",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/pipeline/jobs.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/pipeline/state.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/posthog-server.ts",
+      "fromLayer": "services",
+      "to": "posthog-node",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/product-intel/feature-flags.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/product-intel/flow-optimizer.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/product-intel/graph.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/product-intel/lifecycle.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/product-intel/prd-generator.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/prompt-memory-cache.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/providers.js",
+      "fromLayer": "services",
+      "to": "crypto",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/render/diff-contract.ts",
+      "fromLayer": "services",
+      "to": "lib/compiler/semantic-hash",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/render/execution-planner.ts",
+      "fromLayer": "services",
+      "to": "lib/compiler/vce",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/render/execution-planner.ts",
+      "fromLayer": "services",
+      "to": "lib/render/diff-contract",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/render/incremental-engine.ts",
+      "fromLayer": "services",
+      "to": "lib/render/diff-contract",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/render/incremental-engine.ts",
+      "fromLayer": "services",
+      "to": "lib/render/execution-planner",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/render/incremental-engine.ts",
+      "fromLayer": "services",
+      "to": "lib/render/shard-cache",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/render/shard-cache.ts",
+      "fromLayer": "services",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/render-engine.ts",
+      "fromLayer": "services",
+      "to": "crypto",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/render-engine.ts",
+      "fromLayer": "services",
+      "to": "os",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/render-engine.ts",
+      "fromLayer": "services",
+      "to": "path",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/render-engine.ts",
+      "fromLayer": "services",
+      "to": "fs",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/render-engine.ts",
+      "fromLayer": "services",
+      "to": "@ffmpeg-installer/ffmpeg",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/render-engine.ts",
+      "fromLayer": "services",
+      "to": "fluent-ffmpeg",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/render-engine.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/render-engine.ts",
+      "fromLayer": "services",
+      "to": "lib/events/trackEvent",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/render-engine.ts",
+      "fromLayer": "services",
+      "to": "lib/pipeline/jobs",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/revenue/decisions.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/revenue/decisions.ts",
+      "fromLayer": "services",
+      "to": "lib/revenue/state",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/revenue/decisions.ts",
+      "fromLayer": "services",
+      "to": "lib/revenue/throttle",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/revenue/state.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/revenue/throttle.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/routing/budget-enforcer.ts",
+      "fromLayer": "services",
+      "to": "lib/routing/provider-profiles",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/routing/provider-router.ts",
+      "fromLayer": "services",
+      "to": "lib/routing/provider-profiles",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/routing/route-contract.ts",
+      "fromLayer": "services",
+      "to": "lib/routing/provider-router",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/routing/route-contract.ts",
+      "fromLayer": "services",
+      "to": "lib/routing/budget-enforcer",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/routing/route-contract.ts",
+      "fromLayer": "services",
+      "to": "lib/events/emitter",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/script-engine.ts",
+      "fromLayer": "services",
+      "to": "lib/prompt-engine",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/script-engine.ts",
+      "fromLayer": "services",
+      "to": "lib/scene-engine",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/shot-executor.ts",
+      "fromLayer": "services",
+      "to": "@fal-ai/client",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/shot-executor.ts",
+      "fromLayer": "services",
+      "to": "lib/video-models",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/social/post-publisher.js",
+      "fromLayer": "services",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/social/post-publisher.js",
+      "fromLayer": "services",
+      "to": "lib/social-publish",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/social/post-publisher.js",
+      "fromLayer": "services",
+      "to": "lib/events/emitter",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/storage-artifact.ts",
+      "fromLayer": "services",
+      "to": "crypto",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/storage-artifact.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/strategy/company-memory.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/strategy/strategic-actions.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/supabase/admin.ts",
+      "fromLayer": "infrastructure",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/supabase/client.ts",
+      "fromLayer": "infrastructure",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/supabase/server.ts",
+      "fromLayer": "infrastructure",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/supabase/server.ts",
+      "fromLayer": "infrastructure",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/supabase-admin.js",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/supabase.js",
+      "fromLayer": "services",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/timeline/build-contract.ts",
+      "fromLayer": "services",
+      "to": "lib/timeline/types",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/timeline/compile.ts",
+      "fromLayer": "services",
+      "to": "lib/timeline/types",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/timeline/normalize.ts",
+      "fromLayer": "services",
+      "to": "lib/timeline/types",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/timeline/validate.ts",
+      "fromLayer": "services",
+      "to": "lib/timeline/types",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/workers/composition-worker.ts",
+      "fromLayer": "services",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/workers/coordinator.ts",
+      "fromLayer": "services",
+      "to": "lib/events/emitter",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/workers/shard-worker.ts",
+      "fromLayer": "services",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/workers/shard-worker.ts",
+      "fromLayer": "services",
+      "to": "lib/render/shard-cache",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/workers/shard-worker.ts",
+      "fromLayer": "services",
+      "to": "lib/events/emitter",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/workers/shot-worker.ts",
+      "fromLayer": "services",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/workers/shot-worker.ts",
+      "fromLayer": "services",
+      "to": "@fal-ai/client",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/workers/shot-worker.ts",
+      "fromLayer": "services",
+      "to": "lib/shot-executor",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/workers/shot-worker.ts",
+      "fromLayer": "services",
+      "to": "lib/events/emitter",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/workers/voiceover-worker.ts",
+      "fromLayer": "services",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/workers/voiceover-worker.ts",
+      "fromLayer": "services",
+      "to": "lib/events/emitter",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "next-env.d.ts",
+      "fromLayer": "unknown",
+      "to": ".next/dev/types/routes.d",
+      "toLayer": "unknown",
+      "allowed": true
+    },
+    {
+      "from": "prisma.config.ts",
+      "fromLayer": "unknown",
+      "to": "dotenv",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "prisma.config.ts",
+      "fromLayer": "unknown",
+      "to": "prisma/config",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "store-assets/capture.js",
+      "fromLayer": "unknown",
+      "to": "puppeteer",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "store-assets/capture.js",
+      "fromLayer": "unknown",
+      "to": "path",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "store-assets/capture.js",
+      "fromLayer": "unknown",
+      "to": "fs",
+      "toLayer": "external",
+      "allowed": true
+    }
+  ],
+  "violations": [],
+  "drift": null
+}

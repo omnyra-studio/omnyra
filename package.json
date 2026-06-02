@@ -7,8 +7,12 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "architecture-gate": "ts-node --project tsconfig.scripts.json scripts/architecture-gate.ts",
     "freeze-schema": "ts-node --project tsconfig.scripts.json scripts/freeze-schema.ts",
     "check-schema": "ts-node --project tsconfig.scripts.json scripts/check-schema.ts",
+    "dependency-graph": "ts-node --project tsconfig.scripts.json scripts/dependency-graph.ts",
+    "provider-registry-gate": "ts-node --project tsconfig.scripts.json scripts/provider-registry-gate.ts",
     "test:pipeline": "ts-node --project tsconfig.scripts.json scripts/test-validate-pipeline.ts"
   },
   "dependencies": {

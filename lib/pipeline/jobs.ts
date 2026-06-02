@@ -18,6 +18,7 @@ export type PipelineStep =
   | "generate_voice"
   | "generate_video"
   | "generate_lipsync"
+  | "attach_voiceover"
   | "finalise_render";
 
 const STALE_LOCK_MS = 5 * 60 * 1000;

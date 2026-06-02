@@ -258,8 +258,19 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, phase: "DOWNLOAD", error: `clip[${emptyClip + 1}] is 0 bytes — URL expired` }, { status: 502 });
     }
 
+    // ── Always prepare local FFmpeg paths (used as Railway fallback too) ─────────
+    const clipPaths      = clipUrls.map((_, i) => join(tmpDirBase, `cv-cin-${id}-clip${i}.mp4`));
+    const concatListPath = join(tmpDirBase, `cv-cin-${id}-concat.txt`);
+    const stitchedPath   = join(tmpDirBase, `cv-cin-${id}-stitched.mp4`);
+    const audioPath      = join(tmpDirBase, `cv-cin-${id}-audio.mp3`);
+    const outputPath     = join(tmpDirBase, `cv-cin-${id}-output.mp4`);
+    const cleanupPaths   = [...clipPaths, concatListPath, stitchedPath, audioPath, outputPath];
+
+    // ── Try Railway Composer first (if configured) ────────────────────────────────
+    // On ANY Railway failure (validation, timeout, missing voiceover) we fall
+    // through to local FFmpeg rather than returning 502. This ensures all N clips
+    // are always concatenated regardless of Railway availability.
     if (composerUrl) {
-      // ── Railway Composer path ──────────────────────────────────────────────────
       const shotPlanShots = clipUrls.map(() => ({
         duration:            clipDuration,
         energy_curve:        "sustain",
@@ -269,202 +280,180 @@ export async function POST(request: Request) {
         zoom_effect:         false,
       }));
 
-      // PHASE 4: build + log form payload before sending
       console.log("[PHASE4] RAILWAY_REQUEST", JSON.stringify({
         composerUrl,
-        clipCount:     clipBuffers.length,
-        clipSizes:     clipBuffers.map((b, i) => ({ clip: i + 1, bytes: b.length })),
-        hasVoiceover:  !!voiceBuffer,
-        voiceBytes:    voiceBuffer?.length ?? 0,
-        shot_plan:     { shots: shotPlanShots },
+        clipCount:    clipBuffers.length,
+        clipSizes:    clipBuffers.map((b, i) => ({ clip: i + 1, bytes: b.length })),
+        hasVoiceover: !!voiceBuffer,
+        voiceBytes:   voiceBuffer?.length ?? 0,
+        shot_plan:    { shots: shotPlanShots },
       }, null, 2));
 
       const form = new FormData();
       for (let i = 0; i < clipBuffers.length; i++) {
-        form.append("clips", new Blob([new Uint8Array(clipBuffers[i])], { type: "video/mp4" }), `clip_${i}.mp4`);
+        form.append("clips", new Blob([Uint8Array.from(clipBuffers[i])], { type: "video/mp4" }), `clip_${i}.mp4`);
       }
       if (voiceBuffer) {
-        form.append("voiceover", new Blob([new Uint8Array(voiceBuffer)], { type: "audio/mpeg" }), "voiceover.mp3");
+        form.append("voiceover", new Blob([Uint8Array.from(voiceBuffer)], { type: "audio/mpeg" }), "voiceover.mp3");
       }
       form.append("shot_plan", JSON.stringify({ shots: shotPlanShots }));
 
-      // Composer timeout reduced 160s→90s: stitching 3×10s clips should complete in <30s.
-      // If Railway is unreachable or takes >90s, it's a infrastructure fault — fail fast.
       console.log("[TIMING] PHASE4 COMPOSER start");
       const phase4T0 = Date.now();
-      let composeResult: { success: boolean; video_url: string; duration_seconds?: number | null };
+      let composeResult: { success: boolean; video_url: string; duration_seconds?: number | null } | null = null;
       try {
         composeResult = await callComposer(composerUrl, composerKey, form, 90_000, "[PHASE4:cinematic]");
+        console.log(`[TIMING] PHASE4 COMPOSER complete ${Date.now() - phase4T0}ms`);
+        console.log("[PHASE4] RAILWAY_RESPONSE", JSON.stringify(composeResult, null, 2));
+        console.log(`[PHASE4] RAILWAY_REPORTED_DURATION=${composeResult.duration_seconds}s expected=${clipUrls.length * clipDuration}s`);
       } catch (err) {
-        const msg   = err instanceof Error ? err.message : "Composer call failed";
-        const stack = err instanceof Error ? err.stack : undefined;
-        console.error(`[TIMING] PHASE4 COMPOSER FAILED ${Date.now() - phase4T0}ms:`, msg);
-        return NextResponse.json({ success: false, phase: "COMPOSER", error: msg, stack }, { status: 502 });
-      }
-      console.log(`[TIMING] PHASE4 COMPOSER complete ${Date.now() - phase4T0}ms`);
-
-      // PHASE 4: log Railway response
-      console.log("[PHASE4] RAILWAY_RESPONSE", JSON.stringify(composeResult, null, 2));
-      console.log(`[PHASE4] RAILWAY_REPORTED_DURATION=${composeResult.duration_seconds}s expected=${clipUrls.length * clipDuration}s`);
-
-      // PHASE 5: download + ffprobe composer output
-      const composedUrl = composeResult.video_url.startsWith("http")
-        ? composeResult.video_url
-        : `${composerUrl}${composeResult.video_url}`;
-
-      // Output download timeout reduced 50s→30s: 30s video = ~15 MB, should download in <5s.
-      console.log("[TIMING] PHASE5 OUTPUT_DOWNLOAD start");
-      const phase5T0 = Date.now();
-      let composedBuffer: Buffer;
-      try {
-        composedBuffer = await downloadToBuffer(composedUrl, "composer output", 30_000);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "Composer output download failed";
-        console.error(`[TIMING] PHASE5 OUTPUT_DOWNLOAD FAILED ${Date.now() - phase5T0}ms:`, msg);
-        return NextResponse.json({ success: false, phase: "COMPOSER_DOWNLOAD", error: msg }, { status: 502 });
-      }
-      console.log(`[TIMING] PHASE5 OUTPUT_DOWNLOAD complete ${Date.now() - phase5T0}ms bytes=${composedBuffer.length}`);
-
-      const probePath = join(tmpDirBase, `cv-cin-probe-${id}.mp4`);
-      try {
-        writeFileSync(probePath, composedBuffer);
-        const meta = await probeWithTimeout(probePath, "cinematic composer output", 15_000);
-        if (meta) {
-          const dur      = meta.format?.duration ?? "unknown";
-          const vStreams = (meta.streams ?? []).filter(s => s.codec_type === "video");
-          const aStreams = (meta.streams ?? []).filter(s => s.codec_type === "audio");
-          console.log(`[PHASE5] COMPOSER_DURATION=${dur}s expected=${clipUrls.length * clipDuration}s clips=${clipUrls.length}`);
-          console.log(`[PHASE5] VIDEO_STREAMS=${vStreams.length} AUDIO_STREAMS=${aStreams.length} SIZE_BYTES=${composedBuffer.length}`);
-          if (vStreams[0]) console.log(`[PHASE5] VIDEO_STREAM codec=${vStreams[0].codec_name} duration=${vStreams[0].duration}s`);
-        } else {
-          console.warn("[PHASE5] ffprobe returned no metadata — continuing with upload");
-        }
-      } finally {
-        try { unlinkSync(probePath); } catch { /* temp cleanup */ }
+        const msg = err instanceof Error ? err.message : "Composer call failed";
+        // Railway failed — log and fall through to local FFmpeg rather than 502
+        console.warn(`[TIMING] PHASE4 COMPOSER FAILED ${Date.now() - phase4T0}ms (falling back to local FFmpeg): ${msg}`);
       }
 
-      // PHASE 6: upload to Supabase
-      console.log("[TIMING] PHASE6 UPLOAD start");
-      const phase6T0 = Date.now();
-      const storagePath = `renders/${user.id}/${Date.now()}/cinematic.mp4`;
-      let publicUrl: string;
-      try {
-        publicUrl = await uploadToStorage(supabase, composedBuffer, storagePath, "cinematic");
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "Storage upload failed";
-        console.error(`[TIMING] PHASE6 UPLOAD FAILED ${Date.now() - phase6T0}ms:`, msg);
-        return NextResponse.json({ success: false, phase: "UPLOAD_TO_SUPABASE", error: msg }, { status: 500 });
-      }
-      console.log(`[TIMING] PHASE6 UPLOAD complete ${Date.now() - phase6T0}ms`);
-      console.log(`[TIMING] compose-video TOTAL ${Date.now() - routeT0}ms clips=${clipUrls.length}`);
-      console.log(`[PHASE6] cinematic done → ${publicUrl.substring(0, 80)}`);
-      return NextResponse.json({
-        success:          true,
-        video_url:        publicUrl,
-        has_audio:        !!voiceBuffer,
-        duration_seconds: composeResult.duration_seconds ?? null,
-        timing_ms:        { download: Date.now() - phase2T0, total: Date.now() - routeT0 },
-      });
+      if (composeResult) {
+        // Railway succeeded — download output, probe, upload
+        const composedUrl = composeResult.video_url.startsWith("http")
+          ? composeResult.video_url
+          : `${composerUrl}${composeResult.video_url}`;
 
-    } else {
-      // ── Local FFmpeg concat path (no COMPOSER_SERVICE_URL) ─────────────────────
-      const clipPaths       = clipUrls.map((_, i) => join(tmpDirBase, `cv-cin-${id}-clip${i}.mp4`));
-      const concatListPath  = join(tmpDirBase, `cv-cin-${id}-concat.txt`);
-      const stitchedPath    = join(tmpDirBase, `cv-cin-${id}-stitched.mp4`);
-      const audioPath       = join(tmpDirBase, `cv-cin-${id}-audio.mp3`);
-      const outputPath      = join(tmpDirBase, `cv-cin-${id}-output.mp4`);
-      const cleanupPaths    = [...clipPaths, concatListPath, stitchedPath, audioPath, outputPath];
-
-      console.log("[PHASE4:local] COMPOSER_SERVICE_URL absent — local FFmpeg concat");
-
-      try {
-        // Write clips to disk
-        for (let i = 0; i < clipBuffers.length; i++) {
-          writeFileSync(clipPaths[i], clipBuffers[i]);
-        }
-
-        let finalVideoPath: string;
-
-        if (clipBuffers.length === 1) {
-          finalVideoPath = clipPaths[0];
-        } else {
-          const concatContent = clipPaths.map(p => `file '${p.replace(/\\/g, "/")}'`).join("\n");
-          writeFileSync(concatListPath, concatContent);
-          console.log(`[PHASE4:local] concat list (${clipPaths.length} entries):\n${concatContent}`);
-
-          await new Promise<void>((resolve, reject) => {
-            ffmpeg()
-              .input(concatListPath)
-              .inputOptions(["-f", "concat", "-safe", "0"])
-              .outputOptions(["-c", "copy"])
-              .output(stitchedPath)
-              .on("stderr", (line: string) => console.log("[PHASE4:local:ffmpeg:stderr]", line))
-              .on("end", () => resolve())
-              .on("error", (err: Error) => reject(new Error(`FFmpeg concat failed: ${err.message}`)))
-              .run();
-          });
-
-          if (!existsSync(stitchedPath)) {
-            throw new Error("FFmpeg concat completed but produced no output file");
-          }
-          finalVideoPath = stitchedPath;
-        }
-
-        if (voiceBuffer) {
-          writeFileSync(audioPath, voiceBuffer);
-          await new Promise<void>((resolve, reject) => {
-            ffmpeg()
-              .input(finalVideoPath)
-              .input(audioPath)
-              .outputOptions(["-c:v", "copy", "-c:a", "aac", "-map", "0:v:0", "-map", "1:a:0"])
-              .output(outputPath)
-              .on("stderr", (line: string) => console.log("[PHASE4:local:merge:stderr]", line))
-              .on("end", () => resolve())
-              .on("error", (err: Error) => reject(new Error(`FFmpeg audio merge failed: ${err.message}`)))
-              .run();
-          });
-
-          if (!existsSync(outputPath)) {
-            throw new Error("FFmpeg audio merge completed but produced no output file");
-          }
-          finalVideoPath = outputPath;
-        }
-
-        // PHASE 5: probe final output
-        const meta = await probeWithTimeout(finalVideoPath, "cinematic local output", 15_000);
-        if (meta) {
-          const dur      = meta.format?.duration ?? "unknown";
-          const vStreams = (meta.streams ?? []).filter(s => s.codec_type === "video");
-          const aStreams = (meta.streams ?? []).filter(s => s.codec_type === "audio");
-          console.log(`[PHASE5:local] STITCH_DURATION=${dur}s expected=${clipBuffers.length * clipDuration}s clips=${clipBuffers.length}`);
-          console.log(`[PHASE5:local] VIDEO_STREAMS=${vStreams.length} AUDIO_STREAMS=${aStreams.length}`);
-          if (vStreams[0]) console.log(`[PHASE5:local] VIDEO codec=${vStreams[0].codec_name} duration=${vStreams[0].duration}s`);
-        }
-
-        // PHASE 6: upload
-        const finalBuffer = readFileSync(finalVideoPath);
-        if (!finalBuffer.length) throw new Error("Final stitched file is 0 bytes");
-
-        const storagePath = `renders/${user.id}/${Date.now()}/cinematic.mp4`;
-        let publicUrl: string;
+        console.log("[TIMING] PHASE5 OUTPUT_DOWNLOAD start");
+        const phase5T0 = Date.now();
+        let composedBuffer: Buffer | null = null;
         try {
-          publicUrl = await uploadToStorage(supabase, finalBuffer, storagePath, "cinematic:local");
+          composedBuffer = await downloadToBuffer(composedUrl, "composer output", 30_000);
         } catch (err) {
-          const msg = err instanceof Error ? err.message : "Storage upload failed";
-          return NextResponse.json({ success: false, phase: "UPLOAD_TO_SUPABASE", error: msg }, { status: 500 });
+          const msg = err instanceof Error ? err.message : "Composer output download failed";
+          console.warn(`[TIMING] PHASE5 OUTPUT_DOWNLOAD FAILED ${Date.now() - phase5T0}ms (falling back to local FFmpeg): ${msg}`);
         }
 
-        console.log(`[PHASE6:local] done → ${publicUrl.substring(0, 80)}`);
-        return NextResponse.json({ success: true, video_url: publicUrl, has_audio: !!voiceBuffer });
+        if (composedBuffer) {
+          console.log(`[TIMING] PHASE5 OUTPUT_DOWNLOAD complete ${Date.now() - phase5T0}ms bytes=${composedBuffer.length}`);
 
-      } catch (err) {
-        const msg   = err instanceof Error ? err.message : "Local cinematic compose failed";
-        const stack = err instanceof Error ? err.stack : undefined;
-        console.error("[compose-video:cinematic:local] FAILED:", msg, stack);
-        return NextResponse.json({ success: false, phase: "LOCAL_FFMPEG", error: msg }, { status: 500 });
-      } finally {
-        for (const p of cleanupPaths) { try { unlinkSync(p); } catch { /* already gone */ } }
+          const probePath = join(tmpDirBase, `cv-cin-probe-${id}.mp4`);
+          try {
+            writeFileSync(probePath, composedBuffer);
+            const meta = await probeWithTimeout(probePath, "cinematic composer output", 15_000);
+            if (meta) {
+              const dur      = meta.format?.duration ?? "unknown";
+              const vStreams = (meta.streams ?? []).filter(s => s.codec_type === "video");
+              const aStreams = (meta.streams ?? []).filter(s => s.codec_type === "audio");
+              console.log(`[PHASE5] COMPOSER_DURATION=${dur}s expected=${clipUrls.length * clipDuration}s clips=${clipUrls.length}`);
+              console.log(`[PHASE5] VIDEO_STREAMS=${vStreams.length} AUDIO_STREAMS=${aStreams.length} SIZE_BYTES=${composedBuffer.length}`);
+              if (vStreams[0]) console.log(`[PHASE5] VIDEO_STREAM codec=${vStreams[0].codec_name} duration=${vStreams[0].duration}s`);
+            }
+          } finally {
+            try { unlinkSync(probePath); } catch { /* temp cleanup */ }
+          }
+
+          console.log("[TIMING] PHASE6 UPLOAD start");
+          const phase6T0 = Date.now();
+          const storagePath = `renders/${user.id}/${Date.now()}/cinematic.mp4`;
+          try {
+            const publicUrl = await uploadToStorage(supabase, composedBuffer, storagePath, "cinematic");
+            console.log(`[TIMING] PHASE6 UPLOAD complete ${Date.now() - phase6T0}ms`);
+            console.log(`[TIMING] compose-video TOTAL ${Date.now() - routeT0}ms clips=${clipUrls.length}`);
+            console.log(`[PHASE6] cinematic done (railway) → ${publicUrl.substring(0, 80)}`);
+            return NextResponse.json({
+              success:          true,
+              video_url:        publicUrl,
+              has_audio:        !!voiceBuffer,
+              duration_seconds: composeResult.duration_seconds ?? null,
+              timing_ms:        { download: Date.now() - phase2T0, total: Date.now() - routeT0 },
+            });
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "Storage upload failed";
+            console.warn(`[TIMING] PHASE6 UPLOAD FAILED ${Date.now() - phase6T0}ms (falling back to local FFmpeg): ${msg}`);
+          }
+        }
       }
+
+      console.log("[PHASE4:local] Railway path failed or skipped — falling back to local FFmpeg concat");
+    } else {
+      console.log("[PHASE4:local] COMPOSER_SERVICE_URL absent — local FFmpeg concat");
+    }
+
+    // ── Local FFmpeg concat path (primary when no Railway, fallback when Railway fails) ──
+    try {
+      for (let i = 0; i < clipBuffers.length; i++) {
+        writeFileSync(clipPaths[i], clipBuffers[i]);
+      }
+
+      let finalVideoPath: string;
+
+      if (clipBuffers.length === 1) {
+        finalVideoPath = clipPaths[0];
+      } else {
+        const concatContent = clipPaths.map(p => `file '${p.replace(/\\/g, "/")}'`).join("\n");
+        writeFileSync(concatListPath, concatContent);
+        console.log(`[PHASE4:local] concat list (${clipPaths.length} entries):\n${concatContent}`);
+
+        await new Promise<void>((resolve, reject) => {
+          ffmpeg()
+            .input(concatListPath)
+            .inputOptions(["-f", "concat", "-safe", "0"])
+            .outputOptions(["-c", "copy"])
+            .output(stitchedPath)
+            .on("stderr", (line: string) => console.log("[PHASE4:local:ffmpeg:stderr]", line))
+            .on("end", () => resolve())
+            .on("error", (err: Error) => reject(new Error(`FFmpeg concat failed: ${err.message}`)))
+            .run();
+        });
+
+        if (!existsSync(stitchedPath)) {
+          throw new Error("FFmpeg concat completed but produced no output file");
+        }
+        finalVideoPath = stitchedPath;
+      }
+
+      if (voiceBuffer) {
+        writeFileSync(audioPath, voiceBuffer);
+        await new Promise<void>((resolve, reject) => {
+          ffmpeg()
+            .input(finalVideoPath)
+            .input(audioPath)
+            .outputOptions(["-c:v", "copy", "-c:a", "aac", "-map", "0:v:0", "-map", "1:a:0"])
+            .output(outputPath)
+            .on("stderr", (line: string) => console.log("[PHASE4:local:merge:stderr]", line))
+            .on("end", () => resolve())
+            .on("error", (err: Error) => reject(new Error(`FFmpeg audio merge failed: ${err.message}`)))
+            .run();
+        });
+
+        if (!existsSync(outputPath)) {
+          throw new Error("FFmpeg audio merge completed but produced no output file");
+        }
+        finalVideoPath = outputPath;
+      }
+
+      const meta = await probeWithTimeout(finalVideoPath, "cinematic local output", 15_000);
+      if (meta) {
+        const dur      = meta.format?.duration ?? "unknown";
+        const vStreams = (meta.streams ?? []).filter(s => s.codec_type === "video");
+        const aStreams = (meta.streams ?? []).filter(s => s.codec_type === "audio");
+        console.log(`[PHASE5:local] STITCH_DURATION=${dur}s expected=${clipBuffers.length * clipDuration}s clips=${clipBuffers.length}`);
+        console.log(`[PHASE5:local] VIDEO_STREAMS=${vStreams.length} AUDIO_STREAMS=${aStreams.length}`);
+        if (vStreams[0]) console.log(`[PHASE5:local] VIDEO codec=${vStreams[0].codec_name} duration=${vStreams[0].duration}s`);
+      }
+
+      const finalBuffer = readFileSync(finalVideoPath);
+      if (!finalBuffer.length) throw new Error("Final stitched file is 0 bytes");
+
+      const storagePath = `renders/${user.id}/${Date.now()}/cinematic.mp4`;
+      const publicUrl = await uploadToStorage(supabase, finalBuffer, storagePath, "cinematic:local");
+
+      console.log(`[PHASE6:local] done → ${publicUrl.substring(0, 80)}`);
+      console.log(`[TIMING] compose-video TOTAL ${Date.now() - routeT0}ms clips=${clipUrls.length}`);
+      return NextResponse.json({ success: true, video_url: publicUrl, has_audio: !!voiceBuffer });
+
+    } catch (err) {
+      const msg   = err instanceof Error ? err.message : "Local cinematic compose failed";
+      const stack = err instanceof Error ? err.stack : undefined;
+      console.error("[compose-video:cinematic:local] FAILED:", msg, stack);
+      return NextResponse.json({ success: false, phase: "LOCAL_FFMPEG", error: msg }, { status: 500 });
+    } finally {
+      for (const p of cleanupPaths) { try { unlinkSync(p); } catch { /* already gone */ } }
     }
   }
 

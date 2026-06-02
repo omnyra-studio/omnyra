@@ -1080,16 +1080,39 @@ function CreatePageInner() {
           // Use actual clip duration returned by the sequence route (Kling forces "5"|"10"),
           // not the CLIP_SECONDS constant — avoids Railway Composer trimming clips short.
           const actualClipDuration = seqData.clip_duration ?? CLIP_SECONDS;
-          const voiceoverSent = !!(voiceAudioUrl && !voiceAudioUrl.startsWith('blob:'));
+
+          // Resolve voiceover URL — blob: URLs can't be fetched server-side.
+          // If upload failed and we only have a blob URL, re-upload now before composing.
+          let resolvedVoiceoverUrl: string | undefined;
+          if (voiceAudioUrl && !voiceAudioUrl.startsWith('blob:')) {
+            resolvedVoiceoverUrl = voiceAudioUrl;
+          } else if (voiceAudioUrl?.startsWith('blob:')) {
+            try {
+              const sb = createClient();
+              const blob = await fetch(voiceAudioUrl).then(r => r.blob());
+              const voicePath = `${userId}/voice/${Date.now()}.mp3`;
+              const { error: reupErr } = await sb.storage.from('user-uploads').upload(voicePath, blob, { contentType: 'audio/mpeg', upsert: true });
+              if (!reupErr) {
+                const { data: { publicUrl } } = sb.storage.from('user-uploads').getPublicUrl(voicePath);
+                resolvedVoiceoverUrl = publicUrl;
+                setVoiceAudioUrl(publicUrl);
+                console.log('[cinematic] re-uploaded blob voiceover → public URL');
+              }
+            } catch (reupErr) {
+              console.warn('[cinematic] failed to re-upload blob voiceover — composing without audio:', reupErr);
+            }
+          }
+
           const composeRes = await fetch('/api/compose-video', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               clipUrls: seqData.clip_urls,
               clipDuration: actualClipDuration,
-              voiceoverUrl: voiceoverSent ? voiceAudioUrl : undefined,
+              voiceoverUrl: resolvedVoiceoverUrl,
             }),
           });
+          const voiceoverSent = !!resolvedVoiceoverUrl;
           if (composeRes.ok) {
             const composeData = await composeRes.json();
             console.log('[cinematic] compose-video result:', JSON.stringify(composeData).substring(0, 200));
@@ -1101,13 +1124,19 @@ function CreatePageInner() {
               setMergedVideoUrl(finalUrl);
             }
           } else {
-            const errText = await composeRes.text();
-            console.error('[cinematic] compose-video failed:', composeRes.status, errText.substring(0, 200));
-            setVideoUrl(fallbackUrl);
+            // Surface compose-video failures — do NOT silently fall back to first clip only.
+            // Returning only clip_urls[0] would show 10s of motion then frozen frame with audio.
+            let composeErrMsg = `Video assembly failed (HTTP ${composeRes.status})`;
+            try {
+              const errJson = await composeRes.json() as { error?: string; phase?: string };
+              if (errJson.error) composeErrMsg = `Video assembly failed: ${errJson.error}`;
+            } catch { /* non-JSON error body */ }
+            console.error('[cinematic] compose-video failed:', composeRes.status, composeErrMsg);
+            throw new Error(composeErrMsg);
           }
         } catch (composeErr) {
           console.error('[cinematic] compose-video threw:', composeErr);
-          setVideoUrl(fallbackUrl);
+          throw composeErr;
         }
         setVideoProgress(100);
       } catch (err) {

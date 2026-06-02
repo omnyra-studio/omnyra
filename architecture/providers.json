@@ -1,0 +1,47 @@
+{
+  "version": "1.0.0",
+  "description": "Registered AI/media providers. Any provider SDK initialization outside registered modules fails CI.",
+  "registeredProviders": [
+    {
+      "name": "hedra",
+      "description": "Hedra avatar generation — talking head video from image + audio",
+      "module": "lib/providers/hedra.ts",
+      "sdkPatterns": [],
+      "allowedCallerLayers": ["api_routes", "services"]
+    },
+    {
+      "name": "elevenlabs",
+      "description": "ElevenLabs TTS — text to speech synthesis",
+      "module": "lib/avatar-worker (inline fetch)",
+      "sdkPatterns": ["elevenlabs"],
+      "allowedCallerLayers": ["api_routes", "services"]
+    },
+    {
+      "name": "kling",
+      "description": "Kling image-to-video — animated scene generation",
+      "module": "lib/avatar-provider.ts",
+      "sdkPatterns": [],
+      "allowedCallerLayers": ["api_routes", "services"]
+    },
+    {
+      "name": "fal",
+      "description": "fal.ai — image generation and video models",
+      "module": "lib/avatar-provider.ts",
+      "sdkPatterns": ["@fal-ai/"],
+      "allowedCallerLayers": ["api_routes", "services", "providers"]
+    },
+    {
+      "name": "anthropic",
+      "description": "Anthropic Claude — Director Core scene planning, script generation",
+      "module": "lib/avatar-scene-planner.ts, lib/brand-brain/profile.ts",
+      "sdkPatterns": ["@anthropic-ai/"],
+      "allowedCallerLayers": ["api_routes", "services", "providers"]
+    }
+  ],
+  "forbiddenInitPatterns": [
+    "new ElevenLabs(",
+    "new OpenAI(",
+    "new SyncLabs(",
+    "new HeyGen("
+  ]
+}

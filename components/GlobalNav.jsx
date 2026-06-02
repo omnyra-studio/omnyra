@@ -30,7 +30,8 @@ export default function GlobalNav() {
     HIDE_ROUTES.includes(pathname) ||
     (pathname.startsWith("/dashboard/") &&
       pathname !== "/dashboard/credits" &&
-      pathname !== "/dashboard/brand");
+      pathname !== "/dashboard/brand" &&
+      pathname !== "/dashboard/intelligence");
 
   useEffect(() => {
     if (isHidden) return;
@@ -115,6 +116,7 @@ export default function GlobalNav() {
               { href: "/analytics", label: "Analytics" },
               { href: "/profile", label: "Profile" },
               { href: "/dashboard/brand", label: "Brand" },
+              { href: "/dashboard/intelligence", label: "Intelligence" },
             ].map(({ href, label }) => {
               const active = pathname === href || pathname.startsWith(href + "/");
               return (
@@ -223,6 +225,7 @@ export default function GlobalNav() {
                     { label: "📹 My Creations", href: "/videos" },
                     { label: "👤 Profile", href: "/profile" },
                     { label: "🏷️ Brand Memory", href: "/dashboard/brand" },
+                    { label: "🧠 Intelligence", href: "/dashboard/intelligence" },
                     { label: "⚙️ Settings", href: "/settings" },
                     { label: "🚀 Upgrade", href: "/dashboard/credits" },
                   ].map((item) => (

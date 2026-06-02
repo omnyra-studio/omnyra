@@ -1,13 +1,13 @@
-import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { getBrandProfile, getBrandSystemPrompt } from "@/lib/brand";
 import { logUsageEvent } from "@/lib/cache";
 
 export async function POST(req: Request) {
-  if (!process.env.OPENAI_API_KEY) {
+  if (!process.env.ANTHROPIC_API_KEY) {
     return Response.json(
-      { error: "server_misconfiguration", message: "OPENAI_API_KEY missing" },
+      { error: "server_misconfiguration", message: "ANTHROPIC_API_KEY missing" },
       { status: 500 },
     );
   }
@@ -49,9 +49,9 @@ export async function POST(req: Request) {
     }
   } catch { /* brand injection is optional */ }
 
-  const userPrompt = `You are an expert scriptwriter for short-form social content.
+  const systemPrompt = `You are an expert scriptwriter for short-form social content.${brandSystemPrompt ? `\n\n${brandSystemPrompt}` : ""}`;
 
-Expand this content brief into a full ready-to-record script.
+  const userPrompt = `Expand this content brief into a full ready-to-record script.
 
 Hook: ${hookText}
 Core Script: ${scriptText}
@@ -70,9 +70,9 @@ Write a complete natural-sounding script:
 - Conversational, not corporate
 - End with the CTA naturally woven in
 
-Return only the script. No explanation. No title. Just the script.${brandSystemPrompt}`;
+Return only the script. No explanation. No title. Just the script.`;
 
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const encoder = new TextEncoder();
 
   if (userId) {
@@ -82,22 +82,20 @@ Return only the script. No explanation. No title. Just the script.${brandSystemP
   const stream = new ReadableStream({
     async start(controller) {
       try {
-        const openaiStream = await client.chat.completions.create({
-          model:      "gpt-4o",
+        const anthropicStream = await client.messages.create({
+          model:      "claude-haiku-4-5-20251001",
           max_tokens: 1500,
           stream:     true,
-          messages:   [
-            ...(brandSystemPrompt
-              ? [{ role: "system" as const, content: `You are a brand-aligned scriptwriter.${brandSystemPrompt}` }]
-              : []),
-            { role: "user", content: userPrompt },
-          ],
+          system:     systemPrompt,
+          messages:   [{ role: "user", content: userPrompt }],
         });
 
-        for await (const chunk of openaiStream) {
-          const delta = chunk.choices[0]?.delta?.content;
-          if (delta) {
-            controller.enqueue(encoder.encode(delta));
+        for await (const event of anthropicStream) {
+          if (
+            event.type === "content_block_delta" &&
+            event.delta.type === "text_delta"
+          ) {
+            controller.enqueue(encoder.encode(event.delta.text));
           }
         }
         controller.close();
