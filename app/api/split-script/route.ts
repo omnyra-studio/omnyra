@@ -39,17 +39,32 @@ Script: ${script}
 Hook: ${hook ?? ""}
 Niche: ${niche ?? "general"}
 
-For each segment create a cinematic image-to-video prompt that:
-- Describes the visual scene matching that script moment
-- Includes camera movement (slow push-in, dolly, drift, orbital)
-- Includes lighting and mood
-- Is 15-20 words max
-- Flows naturally from the previous segment
+For each segment create a cinematic image-to-video prompt and classify the scene type.
+
+SCENE TYPE RULES:
+- talking_head: presenter speaking directly to camera
+- lifestyle_broll: dynamic lifestyle footage, environments, people in action
+- product_demo: product being shown or demonstrated
+- emotional: high-impact emotional moment, dramatic
+- quote: text overlay, inspirational message, statistic
+- educational: explanation, diagram, concept visualization
+- cta: call-to-action, subscribe/follow prompt
+- background: ambient backdrop, establishing shot
+- transition: scene transition, time lapse
+
+ROUTING (use this to assign provider):
+- talking_head, lifestyle_broll, product_demo, emotional → "kling"
+- quote, educational, cta, background, transition → "smart_motion"
+
+For each segment:
+- visual_prompt: 15-20 word cinematic scene description with camera movement, lighting, mood
+- scene_type: one of the types above
+- provider: "kling" or "smart_motion"
 
 Return ONLY valid JSON. No markdown, no backticks:
 {
   "segments": [
-    { "text": "script portion", "visual_prompt": "cinematic scene prompt" }
+    { "text": "script portion", "visual_prompt": "cinematic scene prompt", "scene_type": "lifestyle_broll", "provider": "kling" }
   ]
 }`;
 

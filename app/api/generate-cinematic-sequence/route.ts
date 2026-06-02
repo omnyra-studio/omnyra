@@ -2,13 +2,138 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { fal } from "@fal-ai/client";
 import { KLING_I2V_MODEL, KLING_T2V_MODEL, extractVideoUrl } from "@/lib/video-models";
+import { generateSmartMotionClip, pickEffect } from "@/lib/smart-motion";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 
 export const maxDuration = 300;
 
-// Kling v1.6 standard: only "5" | "10" accepted. Anything else → 422.
-// We always request "10" for maximum scene duration. 3 clips = 30s scene.
 const CLIP_SECONDS = 10;
-const ROUTE_VERSION = "2026-05-31T00:00:00Z-v3";
+const ROUTE_VERSION = "2026-06-02T00:00:00Z-v4-hybrid";
+
+const FLUX_MODEL = "fal-ai/flux/schnell";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+type SceneProvider = "kling" | "smart_motion";
+
+// ── Storage upload helper ─────────────────────────────────────────────────────
+
+async function uploadSmartMotionClip(
+  buffer: Buffer,
+  userId: string,
+  index: number,
+): Promise<string> {
+  const path = `${userId}/smart-motion/${Date.now()}-clip${index}.mp4`;
+  const { error } = await supabaseAdmin.storage
+    .from("renders")
+    .upload(path, buffer, { contentType: "video/mp4", upsert: true });
+  if (error) throw new Error(`smart-motion upload: ${error.message}`);
+  const { data: { publicUrl } } = supabaseAdmin.storage.from("renders").getPublicUrl(path);
+  return publicUrl;
+}
+
+// ── Image generation for smart_motion without a source image ─────────────────
+
+async function generateSceneImage(prompt: string): Promise<string> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const result = await (fal as any).subscribe(FLUX_MODEL, {
+    input: {
+      prompt: `${prompt}, ultra realistic, cinematic, 9:16 portrait, professional photography`,
+      image_size: { width: 720, height: 1280 },
+      num_inference_steps: 4,
+      num_images: 1,
+    },
+    logs: false,
+  });
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const url = (result as any)?.images?.[0]?.url;
+  if (!url) throw new Error("FLUX: no image URL returned");
+  return url as string;
+}
+
+// ── Clip generators ───────────────────────────────────────────────────────────
+
+async function generateKlingClip(
+  prompt: string,
+  imageUrl: string | null,
+  duration: "5" | "10",
+  label: string,
+  clipReports: string[],
+): Promise<string | null> {
+  const hasImage = typeof imageUrl === "string" && imageUrl.startsWith("https://");
+
+  if (hasImage) {
+    const i2vInput = { prompt, image_url: imageUrl, duration, aspect_ratio: "9:16", generate_audio: false };
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const result = await (fal as any).subscribe(KLING_I2V_MODEL, { input: i2vInput, logs: false, pollInterval: 4000 });
+      const url = extractVideoUrl(result);
+      if (!url) throw new Error("no video URL from i2v");
+      clipReports.push(`${label} | ${KLING_I2V_MODEL} | OK | ${url.substring(0, 80)}`);
+      return url;
+    } catch (err) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const e = err as any;
+      clipReports.push(`${label} | ${KLING_I2V_MODEL} | FAIL | ${e?.message ?? String(err)}`);
+      console.warn(`${label} i2v FAILED — falling back to t2v`);
+    }
+  }
+
+  // text-to-video fallback
+  const t2vInput = { prompt, duration, aspect_ratio: "9:16", generate_audio: false };
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await (fal as any).subscribe(KLING_T2V_MODEL, { input: t2vInput, logs: false, pollInterval: 4000 });
+    const url = extractVideoUrl(result);
+    if (!url) throw new Error("no video URL from t2v");
+    clipReports.push(`${label} | ${KLING_T2V_MODEL} | OK | ${url.substring(0, 80)}`);
+    return url;
+  } catch (err) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const e = err as any;
+    const detail = `${e?.message ?? String(err)}`;
+    clipReports.push(`${label} | ${KLING_T2V_MODEL} | FAIL | ${detail}`);
+    console.error(`${label} t2v FAILED: ${detail}`);
+    return null;
+  }
+}
+
+async function generateSmartMotionClipWithUpload(
+  prompt: string,
+  imageUrl: string | null,
+  sceneType: string,
+  index: number,
+  userId: string,
+  label: string,
+  clipReports: string[],
+  durationSec: number,
+): Promise<string | null> {
+  const smT0 = Date.now();
+  try {
+    // Use provided imageUrl or generate one from the prompt
+    const sourceImageUrl = (typeof imageUrl === "string" && imageUrl.startsWith("https://"))
+      ? imageUrl
+      : await generateSceneImage(prompt);
+
+    const effect = pickEffect(sceneType, index);
+    console.log(`${label} [SMART_MOTION] effect=${effect} sourceImage=${sourceImageUrl.substring(0, 60)}`);
+
+    const buffer = await generateSmartMotionClip({ imageUrl: sourceImageUrl, effect, durationSec });
+    const url    = await uploadSmartMotionClip(buffer, userId, index);
+
+    const elapsed = Date.now() - smT0;
+    clipReports.push(`${label} | smart_motion:${effect} | OK | ${url.substring(0, 80)} | ${elapsed}ms`);
+    console.log(`${label} [SMART_MOTION] DONE effect=${effect} elapsed=${elapsed}ms url=${url.substring(0, 60)}`);
+    return url;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    clipReports.push(`${label} | smart_motion | FAIL | ${msg}`);
+    console.error(`${label} smart_motion FAILED: ${msg}`);
+    return null;
+  }
+}
+
+// ── POST handler ──────────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
   const routeT0 = Date.now();
@@ -32,11 +157,18 @@ export async function POST(req: Request) {
   let prompts: string[];
   let imageUrl: string | null | undefined;
   let clipDuration: number | undefined;
+  let sceneTypes: (string | null)[] | undefined;
   try {
-    const body = await req.json() as { prompts?: string[]; imageUrl?: string | null; clipDuration?: number };
-    prompts = body.prompts ?? [];
-    imageUrl = body.imageUrl;
+    const body = await req.json() as {
+      prompts?: string[];
+      imageUrl?: string | null;
+      clipDuration?: number;
+      sceneTypes?: (string | null)[];
+    };
+    prompts    = body.prompts ?? [];
+    imageUrl   = body.imageUrl;
     clipDuration = body.clipDuration;
+    sceneTypes = body.sceneTypes;
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
@@ -45,87 +177,76 @@ export async function POST(req: Request) {
     return Response.json({ error: "prompts required" }, { status: 400 });
   }
 
-  // Always request "10" — Kling v1.6 standard enum is "5" | "10" only.
-  // Input of 10 → always maps to "10". Guarantees 10s per clip.
   const rawSeconds = Math.round(clipDuration ?? CLIP_SECONDS);
   const duration = rawSeconds <= 7 ? "5" : "10";
-  const hasImage = typeof imageUrl === "string" && imageUrl.startsWith("https://");
 
-  console.log(`[TIMING] SEQUENCE start clips=${prompts.length} duration_enum=${duration} hasImage=${hasImage}`);
-  console.log(`[cinematic-sequence] clipDuration_in=${clipDuration} rawSeconds=${rawSeconds} duration_enum=${duration} imageUrlPrefix=${typeof imageUrl === "string" ? imageUrl.substring(0, 60) : imageUrl}`);
+  // ── Motion Budget: enforce max 2 premium (Kling) scenes per 30s ────────────
+  // Total duration estimate: prompts.length * rawSeconds
+  const estimatedTotalS = prompts.length * rawSeconds;
+  const maxPremium = Math.max(2, Math.ceil((estimatedTotalS / 30) * 2));
+  let premiumUsed = 0;
+
+  // Resolve provider per scene (use sceneTypes if provided, else default to kling)
+  const resolvedProviders: SceneProvider[] = prompts.map((_, i) => {
+    const rawType = sceneTypes?.[i];
+    const smartMotionTypes = ["quote", "educational", "cta", "background", "transition"];
+    if (rawType && smartMotionTypes.includes(rawType)) return "smart_motion";
+    return "kling";
+  });
+
+  // Apply motion budget: downgrade excess kling → smart_motion
+  const finalProviders: SceneProvider[] = resolvedProviders.map((p) => {
+    if (p === "kling") {
+      if (premiumUsed < maxPremium) { premiumUsed++; return "kling"; }
+      return "smart_motion";
+    }
+    return p;
+  });
+
+  const klingCount = finalProviders.filter(p => p === "kling").length;
+  const smCount    = finalProviders.filter(p => p === "smart_motion").length;
+  console.log(`[SCENE_ROUTER] scenes=${prompts.length} kling=${klingCount} smart_motion=${smCount} maxPremium=${maxPremium} estimatedTotalS=${estimatedTotalS}s`);
+  console.log(`[PROVIDER_USAGE] { klingScenes: ${klingCount}, smartMotionScenes: ${smCount} }`);
 
   const clipReports: string[] = [];
 
-  // ── Parallel clip generation ────────────────────────────────────────────────
+  // ── Parallel clip generation ───────────────────────────────────────────────
   console.log(`[TIMING] CLIP_GENERATION start clips=${prompts.length}`);
   const genT0 = Date.now();
 
   const results = await Promise.allSettled(
     prompts.map(async (prompt, i) => {
-      const clipT0 = Date.now();
-      const label = `[clip ${i + 1}/${prompts.length}]`;
-      console.log(`${label} prompt="${prompt.substring(0, 100)}" hasImage=${hasImage}`);
+      const clipT0    = Date.now();
+      const provider  = finalProviders[i];
+      const sceneType = sceneTypes?.[i] ?? undefined;
+      const label     = `[clip ${i + 1}/${prompts.length}][${provider}]`;
 
-      if (hasImage) {
-        const i2vInput = { prompt, image_url: imageUrl, duration, aspect_ratio: "9:16", generate_audio: false };
-        console.log(`[TIMING] CLIP_${i+1} i2v start`);
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const result = await (fal as any).subscribe(KLING_I2V_MODEL, {
-            input: i2vInput,
-            logs: false,
-            pollInterval: 4000,
-          });
-          const url = extractVideoUrl(result);
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const r = result as any;
-          console.log(`[TIMING] CLIP_${i+1} i2v complete ${Date.now() - clipT0}ms url=${url?.substring(0,60)}`);
-          if (!url) {
-            const msg = `clip ${i + 1}: no video URL from i2v — result=${JSON.stringify(result).substring(0, 300)}`;
-            clipReports.push(`Clip ${i + 1} | i2v | FAIL (no url) | ${msg}`);
-            throw new Error(msg);
-          }
-          clipReports.push(`Clip ${i + 1} | ${KLING_I2V_MODEL} | OK | ${url.substring(0, 80)}`);
-          console.log(`${label} i2v OK extractedUrl=${url.substring(0, 80)} elapsed=${Date.now() - clipT0}ms`);
-          void r; // suppress unused warning
-          return url;
-        } catch (err) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const e = err as any;
-          const detail = `status=${e?.status ?? "?"} message=${e?.message ?? String(err)} body=${JSON.stringify(e?.body ?? null).substring(0, 300)}`;
-          console.warn(`[TIMING] CLIP_${i+1} i2v FAILED ${Date.now() - clipT0}ms — ${detail} — falling back to t2v`);
-          clipReports.push(`Clip ${i + 1} | ${KLING_I2V_MODEL} | FAIL | ${detail}`);
-        }
+      console.log(`${label} sceneType=${sceneType ?? "unknown"} prompt="${prompt.substring(0, 80)}"`);
+      console.log(`[SCENE_ROUTER] scene=${i + 1} provider=${provider} sceneType=${sceneType ?? "unknown"}`);
+
+      let url: string | null = null;
+
+      if (provider === "smart_motion") {
+        url = await generateSmartMotionClipWithUpload(
+          prompt,
+          imageUrl ?? null,
+          sceneType ?? "default",
+          i,
+          user.id,
+          label,
+          clipReports,
+          rawSeconds,
+        );
+      } else {
+        url = await generateKlingClip(prompt, imageUrl ?? null, duration, label, clipReports);
       }
 
-      // ── text-to-video path ──────────────────────────────────────────────────
-      const t2vInput = { prompt, duration, aspect_ratio: "9:16", generate_audio: false };
-      console.log(`[TIMING] CLIP_${i+1} t2v start`);
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const result = await (fal as any).subscribe(KLING_T2V_MODEL, {
-          input: t2vInput,
-          logs: false,
-          pollInterval: 4000,
-        });
-        const url = extractVideoUrl(result);
-        console.log(`[TIMING] CLIP_${i+1} t2v complete ${Date.now() - clipT0}ms url=${url?.substring(0,60)}`);
-        if (!url) {
-          const msg = `clip ${i + 1}: no video URL from t2v — result=${JSON.stringify(result).substring(0, 300)}`;
-          clipReports.push(`Clip ${i + 1} | t2v | FAIL (no url) | ${msg}`);
-          throw new Error(msg);
-        }
-        clipReports.push(`Clip ${i + 1} | ${KLING_T2V_MODEL} | OK | ${url.substring(0, 80)}`);
-        console.log(`${label} t2v OK extractedUrl=${url.substring(0, 80)} elapsed=${Date.now() - clipT0}ms`);
+      const elapsed = Date.now() - clipT0;
+      if (url) {
+        console.log(`${label} DONE elapsed=${elapsed}ms url=${url.substring(0, 60)}`);
         return url;
-      } catch (err) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const e = err as any;
-        const detail = `status=${e?.status ?? "?"} message=${e?.message ?? String(err)} body=${JSON.stringify(e?.body ?? null).substring(0, 300)}`;
-        console.error(`[TIMING] CLIP_${i+1} t2v FAILED ${Date.now() - clipT0}ms — ${detail}`);
-        clipReports.push(`Clip ${i + 1} | ${KLING_T2V_MODEL} | FAIL | ${detail}`);
-        throw new Error(detail);
       }
+      throw new Error(`${label} no output URL after ${elapsed}ms`);
     }),
   );
 
@@ -145,12 +266,20 @@ export async function POST(req: Request) {
   }
 
   const successfulClips = clip_urls.length;
-  const failedClips = prompts.length - successfulClips;
+  const failedClips     = prompts.length - successfulClips;
 
+  // Motion coverage check
+  const motionCoverage = successfulClips > 0 ? Math.round((successfulClips / prompts.length) * 100) : 0;
+  console.log(`[QUALITY_GUARDRAIL] { motionScenes: ${successfulClips}, totalScenes: ${prompts.length}, coverage: ${motionCoverage}% }`);
+  if (motionCoverage < 100) {
+    console.warn(`[QUALITY_GUARDRAIL] coverage=${motionCoverage}% — ${failedClips} scenes failed`);
+  }
+
+  console.log(`[RENDER_BREAKDOWN] { klingScenes: ${klingCount}, smartMotionScenes: ${smCount}, genMs: ${genElapsed} }`);
   console.log(`[TIMING] SEQUENCE SUMMARY clipsAttempted=${prompts.length} success=${successfulClips} failed=${failedClips} genMs=${genElapsed}`);
 
   if (!clip_urls.length) {
-    const errorPayload = {
+    return Response.json({
       error: "All clips failed to generate",
       SEQUENCE_ROUTE_VERSION: ROUTE_VERSION,
       clipsAttempted: prompts.length,
@@ -158,15 +287,11 @@ export async function POST(req: Request) {
       failedClips,
       extractedUrls,
       clipReports,
-    };
-    console.error("[cinematic-sequence] FATAL PAYLOAD", JSON.stringify(errorPayload, null, 2));
-    return Response.json(errorPayload, { status: 500 });
+    }, { status: 500 });
   }
 
-  // ── PHASE 1: HEAD-probe each clip URL for duration + size ──────────────────
-  console.log(`[TIMING] HEAD_PROBE start clips=${clip_urls.length}`);
-  const probeT0 = Date.now();
-  await Promise.allSettled(
+  // HEAD probe for logging (non-blocking)
+  void Promise.allSettled(
     clip_urls.map(async (url, i) => {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 5_000);
@@ -174,29 +299,28 @@ export async function POST(req: Request) {
         const headRes = await fetch(url, { method: "HEAD", signal: controller.signal });
         clearTimeout(timer);
         const size = headRes.headers.get("content-length") ?? "unknown";
-        const ct   = headRes.headers.get("content-type") ?? "unknown";
-        console.log(`[PHASE1] CLIP_${i + 1} duration_enum=${duration}s size=${size}bytes ct=${ct} http=${headRes.status}`);
+        console.log(`[PHASE1] CLIP_${i + 1} size=${size}bytes http=${headRes.status}`);
       } catch (e) {
         clearTimeout(timer);
-        const reason = e instanceof Error && e.name === "AbortError" ? "timeout" : (e instanceof Error ? e.message : e);
-        console.warn(`[PHASE1] CLIP_${i + 1} HEAD failed: ${reason}`);
+        console.warn(`[PHASE1] CLIP_${i + 1} HEAD failed: ${e instanceof Error ? e.message : e}`);
       }
     }),
   );
-  console.log(`[TIMING] HEAD_PROBE complete ${Date.now() - probeT0}ms`);
 
-  // stitched_url is the FIRST clip only — it is NOT concatenated.
-  // Callers must use clip_urls[] + compose-video to assemble the full video.
   const stitched_url = clip_urls[0];
   const totalMs = Date.now() - routeT0;
-  console.log(`[TIMING] SEQUENCE TOTAL ${totalMs}ms clips=${clip_urls.length} first_clip=${stitched_url.substring(0, 80)}`);
+  console.log(`[TIMING] SEQUENCE TOTAL ${totalMs}ms clips=${clip_urls.length} kling=${klingCount} smart_motion=${smCount}`);
 
   return Response.json({
-    stitched_url,           // first clip only — NOT the full concatenated video
-    clip_urls,              // all N clips — pass to compose-video as clipUrls[]
-    clips_generated: clip_urls.length,
-    clip_duration: Number(duration),   // always 5 or 10
-    total_duration: clip_urls.length * Number(duration),
+    stitched_url,
+    clip_urls,
+    clips_generated:   clip_urls.length,
+    clip_duration:     Number(duration),
+    total_duration:    clip_urls.length * Number(duration),
+    providers:         finalProviders,
+    motion_coverage:   motionCoverage,
+    kling_scenes:      klingCount,
+    smart_motion_scenes: smCount,
     timing_ms: { generation: genElapsed, total: totalMs },
   });
 }

@@ -999,30 +999,39 @@ function CreatePageInner() {
         const clipCount = Math.ceil(effectiveDuration / CLIP_SECONDS); // always ≥ 3
         console.log(`[cinematic] voiceDuration=${voiceDuration.toFixed(1)}s effectiveDuration=${effectiveDuration}s clipCount=${clipCount} TARGET_SCENE=${TARGET_SCENE_SECONDS}s`);
 
-        const tagMatches = [...scriptText.matchAll(/\[SCENE:\s*([^\]]+)\]/gi)].map(m => m[1].trim());
-        const basePrompts: string[] = Array.from({ length: clipCount }, (_, i) =>
-          tagMatches[i % Math.max(tagMatches.length, 1)] || hookText || scriptText.substring(0, 200)
-        );
+        // Use split-script to get per-scene visual prompts + scene type classification
+        let enhancedPrompts: string[] = [];
+        let sceneTypes: (string | null)[] = [];
 
-        setVideoProgress(20);
+        try {
+          const splitRes = await fetch('/api/split-script', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ script: scriptText, hook: hookText, num_segments: clipCount, niche }),
+          });
+          if (splitRes.ok) {
+            const { segments } = await splitRes.json() as {
+              segments: Array<{ text: string; visual_prompt: string; scene_type?: string | null; provider?: string | null }>
+            };
+            if (Array.isArray(segments) && segments.length) {
+              enhancedPrompts = segments.map(s => s.visual_prompt || hookText || scriptText.substring(0, 200));
+              sceneTypes      = segments.map(s => s.scene_type ?? null);
+              console.log('[cinematic] split-script scene types:', sceneTypes);
+            }
+          }
+        } catch { /* split-script failure is non-fatal */ }
 
-        // Enhance all prompts in parallel
-        const enhancedPrompts = await Promise.all(
-          basePrompts.map(async (p) => {
-            try {
-              const r = await fetch('/api/enhance-prompt', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ concept: p, template, niche, style: 'lifestyle', platforms: selectedPlatforms }),
-              });
-              const d = r.ok ? await r.json() : null;
-              return (d?.prompt as string | undefined) || p;
-            } catch { return p; }
-          })
-        );
+        // Fallback to tag-based prompts if split-script failed
+        if (!enhancedPrompts.length) {
+          const tagMatches = [...scriptText.matchAll(/\[SCENE:\s*([^\]]+)\]/gi)].map(m => m[1].trim());
+          enhancedPrompts = Array.from({ length: clipCount }, (_, i) =>
+            tagMatches[i % Math.max(tagMatches.length, 1)] || hookText || scriptText.substring(0, 200)
+          );
+        }
 
         setVideoProgress(40);
-        console.log('[cinematic] enhanced prompts:', enhancedPrompts.map(p => p.substring(0, 60)));
+        console.log('[cinematic] prompts:', enhancedPrompts.map(p => p.substring(0, 60)));
+        console.log('[PROVIDER_USAGE] scene_types:', sceneTypes);
 
         const seqRes = await fetch('/api/generate-cinematic-sequence', {
           method: 'POST',
@@ -1031,6 +1040,7 @@ function CreatePageInner() {
             prompts: enhancedPrompts,
             imageUrl: selectedImage || null,
             clipDuration: CLIP_SECONDS,
+            sceneTypes: sceneTypes.length ? sceneTypes : undefined,
           }),
         });
 

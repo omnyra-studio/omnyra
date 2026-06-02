@@ -19,7 +19,18 @@ import type { Character } from "./character-registry";
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 export type SceneArc = "hook" | "presenter" | "visual" | "social_proof" | "cta";
-export type SceneProvider = "hedra" | "kling" | "tts";
+export type SceneProvider = "hedra" | "kling" | "smart_motion" | "tts";
+export type SceneType =
+  | "talking_head"
+  | "avatar"
+  | "lifestyle_broll"
+  | "product_demo"
+  | "emotional"
+  | "quote"
+  | "educational"
+  | "cta"
+  | "background"
+  | "transition";
 
 export interface SceneSpec {
   index:              number;
@@ -31,11 +42,12 @@ export interface SceneSpec {
   estimatedDurationS: number;          // target seconds ≤ MAX_SCENE_S
   // Director Core extensions
   arc:                SceneArc;
+  sceneType:          SceneType;       // classification for intelligent routing
   energy:             1 | 2 | 3 | 4 | 5;
   pacing:             "slow" | "measured" | "fast";
   deliveryStyle:      "direct" | "storytelling" | "conversational" | "rhetorical";
   emphasis:           string[];        // words to stress in TTS
-  provider:           SceneProvider;   // routing signal: hedra=presenter, kling=b-roll
+  provider:           SceneProvider;   // routing: hedra=avatar, kling=premium broll, smart_motion=lightweight
 }
 
 export interface CreatorContext {
@@ -57,7 +69,7 @@ const DEFAULT_VISUAL_PROMPT =
 // Retention arc cycle — used by the deterministic fallback
 const ARC_CYCLE: SceneArc[] = ["hook", "presenter", "visual", "presenter", "social_proof", "presenter", "cta"];
 
-// Provider routing by arc type
+// Provider routing by arc type (baseline — overridden by scene type routing below)
 const ARC_PROVIDER: Record<SceneArc, SceneProvider> = {
   hook:         "hedra",
   presenter:    "hedra",
@@ -65,6 +77,53 @@ const ARC_PROVIDER: Record<SceneArc, SceneProvider> = {
   social_proof: "kling",
   cta:          "hedra",
 };
+
+// Scene type → provider routing (overrides arc-based routing)
+const SCENE_TYPE_PROVIDER: Record<SceneType, SceneProvider> = {
+  talking_head:   "hedra",
+  avatar:         "hedra",
+  lifestyle_broll:"kling",
+  product_demo:   "kling",
+  emotional:      "kling",
+  quote:          "smart_motion",
+  educational:    "smart_motion",
+  cta:            "smart_motion",
+  background:     "smart_motion",
+  transition:     "smart_motion",
+};
+
+// Arc → scene type fallback when LLM doesn't classify
+const ARC_SCENE_TYPE: Record<SceneArc, SceneType> = {
+  hook:         "talking_head",
+  presenter:    "avatar",
+  visual:       "lifestyle_broll",
+  social_proof: "lifestyle_broll",
+  cta:          "cta",
+};
+
+// Motion budget: max premium scenes (hedra + kling) per 30-second video.
+// Smart motion scenes are always allowed regardless of budget.
+const PREMIUM_SCENES_PER_30S = 2;
+
+function computeMotionBudget(scenes: SceneSpec[]): SceneSpec[] {
+  const totalDurationS = scenes.reduce((s, sc) => s + sc.estimatedDurationS, 0);
+  const budgetUnits = Math.ceil((totalDurationS / 30) * PREMIUM_SCENES_PER_30S);
+  const maxPremium  = Math.max(budgetUnits, 2); // always allow at least 2
+
+  let premiumUsed = 0;
+  return scenes.map((sc) => {
+    const isPremium = sc.provider === "hedra" || sc.provider === "kling";
+    if (isPremium && premiumUsed < maxPremium) {
+      premiumUsed++;
+      return sc;
+    }
+    if (isPremium) {
+      // Downgrade to smart_motion
+      return { ...sc, provider: "smart_motion" as SceneProvider };
+    }
+    return sc;
+  });
+}
 
 // ── Director Core God Prompt ───────────────────────────────────────────────────
 
@@ -130,9 +189,18 @@ Every output MUST follow this arc unless quality_score < 0.4 (then simplify to 3
   7. CTA           — clear next action
 
 ROUTING RULES (CRITICAL)
-hedra  → presenter scenes, face-forward speaking, character performance
-kling  → visual proof, B-roll, environmental / cinematic inserts
-tts    → audio-only narration, voice-only segments
+hedra        → talking_head, avatar (presenter, face-forward, character performance)
+kling        → lifestyle_broll, product_demo, emotional (premium motion B-roll)
+smart_motion → quote, educational, cta, background, transition (lightweight cinematic motion)
+tts          → audio-only narration, voice-only segments
+
+MOTION BUDGET
+Max 2 premium scenes (hedra + kling) per 30 seconds of video.
+All other scenes MUST use smart_motion or tts. Never default all scenes to kling.
+
+SCENE TYPE CLASSIFICATION
+Every scene MUST include a "sceneType" field from:
+  talking_head | avatar | lifestyle_broll | product_demo | emotional | quote | educational | cta | background | transition
 
 PERFORMANCE LOGIC
 Condition energy on communication_style and pacing from creator memory:
@@ -147,16 +215,17 @@ OUTPUT FORMAT (STRICT — return ONLY valid JSON, no markdown, no commentary)
     {
       "scene": <1-indexed number>,
       "arc": "hook | presenter | visual | social_proof | cta",
+      "sceneType": "talking_head | avatar | lifestyle_broll | product_demo | emotional | quote | educational | cta | background | transition",
       "script": "<exact words spoken in this scene>",
       "emotion": "confident | curious | authoritative | urgent | reflective | enthusiastic | skeptical",
       "energy": <integer 1–5>,
       "pacing": "slow | measured | fast",
       "deliveryStyle": "direct | storytelling | conversational | rhetorical",
       "emphasis": ["word1", "word2"],
-      "provider": "hedra | kling | tts",
+      "provider": "hedra | kling | smart_motion | tts",
       "visualPrompt": "<cinematic prompt: subject, environment, action, lighting, composition>",
       "shotType": "wide | medium | closeup | action | cutaway",
-      "motion": "static | slow-pan | zoom-in | handheld",
+      "motion": "static | slow-pan | zoom-in | handheld | push-in | pull-out | pan-left | pan-right | tilt | parallax",
       "estimatedDurationS": <number ${MIN_SCENE_S}–${MAX_SCENE_S}>
     }
   ]
@@ -179,6 +248,7 @@ OUTPUT RULE: Return ONLY JSON. No commentary. No markdown. No explanation.`;
 interface RawGodScene {
   scene:              number;
   arc:                string;
+  sceneType?:         string;
   script:             string;
   emotion:            string;
   energy:             number;
@@ -212,9 +282,20 @@ function coerceArc(a: unknown): SceneArc {
   return "presenter";
 }
 
-function coerceProvider(p: unknown, arc: SceneArc): SceneProvider {
-  if (p === "hedra" || p === "kling" || p === "tts") return p;
+function coerceProvider(p: unknown, arc: SceneArc, sceneType?: SceneType): SceneProvider {
+  if (p === "hedra" || p === "kling" || p === "smart_motion" || p === "tts") return p;
+  // Fall back to scene type routing, then arc routing
+  if (sceneType) return SCENE_TYPE_PROVIDER[sceneType];
   return ARC_PROVIDER[arc];
+}
+
+function coerceSceneType(t: unknown, arc: SceneArc): SceneType {
+  const valid: SceneType[] = [
+    "talking_head", "avatar", "lifestyle_broll", "product_demo", "emotional",
+    "quote", "educational", "cta", "background", "transition",
+  ];
+  if (valid.includes(t as SceneType)) return t as SceneType;
+  return ARC_SCENE_TYPE[arc];
 }
 
 async function planScenesLLM(
@@ -241,10 +322,12 @@ async function planScenesLLM(
     const parsed = JSON.parse(raw.trim()) as { scenes: RawGodScene[] };
     if (!Array.isArray(parsed.scenes) || !parsed.scenes.length) return null;
 
-    return parsed.scenes.slice(0, cap).map((s, i) => {
-      const arc      = coerceArc(s.arc);
-      const energy   = clampEnergy(s.energy);
-      const provider = coerceProvider(s.provider, arc);
+    const rawScenes = parsed.scenes.slice(0, cap).map((s, i) => {
+      const arc       = coerceArc(s.arc);
+      const sceneType = coerceSceneType(s.sceneType, arc);
+      const energy    = clampEnergy(s.energy);
+      const provider  = coerceProvider(s.provider, arc, sceneType);
+      console.log(`[SCENE_CLASSIFICATION] { scene: ${i + 1}, type: "${sceneType}", provider: "${provider}" }`);
       return {
         index:              i,
         text:               s.script || "",
@@ -254,13 +337,21 @@ async function planScenesLLM(
         motion:             s.motion        || "static",
         estimatedDurationS: Math.max(MIN_SCENE_S, Math.min(MAX_SCENE_S, s.estimatedDurationS ?? 8)),
         arc,
+        sceneType,
         energy,
         pacing:             coercePacing(s.pacing),
         deliveryStyle:      coerceDelivery(s.deliveryStyle),
         emphasis:           Array.isArray(s.emphasis) ? s.emphasis : [],
         provider,
-      };
+      } satisfies SceneSpec;
     });
+
+    const budgeted = computeMotionBudget(rawScenes);
+    const hedra    = budgeted.filter(s => s.provider === "hedra").length;
+    const kling    = budgeted.filter(s => s.provider === "kling").length;
+    const sm       = budgeted.filter(s => s.provider === "smart_motion").length;
+    console.log(`[PROVIDER_USAGE] { hedraScenes: ${hedra}, klingScenes: ${kling}, smartMotionScenes: ${sm} }`);
+    return budgeted;
   } catch {
     return null;
   }
@@ -281,8 +372,10 @@ export function planScenesDeterministic(script: string, ctx?: CreatorContext): S
 
   const flush = () => {
     if (!current.trim()) return;
-    const idx = scenes.length;
-    const arc = ARC_CYCLE[Math.min(idx, ARC_CYCLE.length - 1)];
+    const idx       = scenes.length;
+    const arc       = ARC_CYCLE[Math.min(idx, ARC_CYCLE.length - 1)];
+    const sceneType = ARC_SCENE_TYPE[arc];
+    const provider  = SCENE_TYPE_PROVIDER[sceneType];
     scenes.push({
       index:              idx,
       text:               current.trim(),
@@ -292,11 +385,12 @@ export function planScenesDeterministic(script: string, ctx?: CreatorContext): S
       motion:             "static",
       estimatedDurationS: Math.max(MIN_SCENE_S, Math.min(MAX_SCENE_S, wordCount / WPS)),
       arc,
+      sceneType,
       energy:             defaultEnergy as 1 | 2 | 3 | 4 | 5,
       pacing:             coercePacing(ctx?.profile?.pacing),
       deliveryStyle:      coerceDelivery(ctx?.profile?.communication_style),
       emphasis:           [],
-      provider:           ARC_PROVIDER[arc],
+      provider,
     });
     current   = "";
     wordCount = 0;
@@ -321,6 +415,7 @@ export function planScenesDeterministic(script: string, ctx?: CreatorContext): S
       motion:             "static",
       estimatedDurationS: Math.max(MIN_SCENE_S, Math.min(MAX_SCENE_S, script.split(/\s+/).length / WPS)),
       arc:                "presenter",
+      sceneType:          "avatar",
       energy:             3,
       pacing:             "measured",
       deliveryStyle:      "direct",
@@ -329,7 +424,7 @@ export function planScenesDeterministic(script: string, ctx?: CreatorContext): S
     });
   }
 
-  return scenes;
+  return computeMotionBudget(scenes);
 }
 
 // ── Public entry point ─────────────────────────────────────────────────────────
