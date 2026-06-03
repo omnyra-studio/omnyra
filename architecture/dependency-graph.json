@@ -1,14 +1,14 @@
 {
-  "generated": "2026-06-03T08:37:30.446Z",
+  "generated": "2026-06-03T08:40:27.259Z",
   "stats": {
-    "totalFiles": 382,
-    "totalEdges": 854,
+    "totalFiles": 383,
+    "totalEdges": 855,
     "violations": 0,
     "layers": {
       "ui": 57,
       "api_routes": 130,
       "unknown": 29,
-      "services": 161,
+      "services": 162,
       "infrastructure": 4,
       "providers": 1
     }
@@ -28,7 +28,7 @@
     },
     {
       "layer": "services",
-      "count": 161
+      "count": 162
     },
     {
       "layer": "infrastructure",
@@ -4556,6 +4556,13 @@
       "allowed": true
     },
     {
+      "from": "lib/avatar/cinematic-sequencer.ts",
+      "fromLayer": "services",
+      "to": "lib/avatar/scene-classifier",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
       "from": "lib/avatar/model-router.ts",
       "fromLayer": "services",
       "to": "lib/avatar/scene-classifier",
@@ -6022,7 +6029,7 @@
   "violations": [],
   "drift": {
     "score": 0,
-    "addedEdges": 0,
-    "removedEdges": 2
+    "addedEdges": 1,
+    "removedEdges": 0
   }
 }
