@@ -2,7 +2,20 @@
 -- Backs lib/credits/withCreditState.ts
 -- Three-phase protocol: reserve → commit (or rollback)
 
--- ── Add txn_id column to credit_reservations ─────────────────────────────────
+-- ── Create credit_reservations table ─────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS public.credit_reservations (
+  id         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id    uuid        NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  credits    int         NOT NULL CHECK (credits > 0),
+  status     text        NOT NULL DEFAULT 'reserved'
+               CHECK (status IN ('reserved', 'finalized', 'rolled_back')),
+  txn_id     uuid        UNIQUE,
+  expires_at timestamptz NOT NULL DEFAULT (now() + interval '15 minutes'),
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- ── Add txn_id column if table pre-existed without it ─────────────────────────
 
 ALTER TABLE public.credit_reservations
   ADD COLUMN IF NOT EXISTS txn_id uuid UNIQUE;
@@ -10,6 +23,9 @@ ALTER TABLE public.credit_reservations
 CREATE INDEX IF NOT EXISTS credit_reservations_txn_id
   ON public.credit_reservations(txn_id)
   WHERE txn_id IS NOT NULL;
+
+CREATE INDEX IF NOT EXISTS credit_reservations_user_status
+  ON public.credit_reservations(user_id, status);
 
 -- ── credit_reserve_atomic ────────────────────────────────────────────────────
 -- Check balance, deduct amount, create reservation record.
