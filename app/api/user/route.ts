@@ -23,8 +23,8 @@ export async function GET() {
   return Response.json({
     id:             profile.id,
     email:          profile.email,
-    planType:       profile.plan_type,
-    creditsBalance: profile.credits_balance,
+    planType:       profile.plan,
+    creditsBalance: profile.credits,
     createdAt:      profile.created_at,
   });
 }

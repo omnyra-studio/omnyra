@@ -4,15 +4,15 @@ import type { PlanType } from "@/lib/stripe/plans";
 export interface OmnyraUser {
   id: string;
   email: string;
-  plan_type: PlanType;
-  credits_balance: number;
+  plan: PlanType;
+  credits: number;
   created_at: string;
 }
 
 export async function getUserById(userId: string): Promise<OmnyraUser | null> {
   const { data, error } = await supabaseAdmin
-    .from("users")
-    .select("id, email, plan_type, credits_balance, created_at")
+    .from("profiles")
+    .select("id, email, plan, credits, created_at")
     .eq("id", userId)
     .maybeSingle();
 
@@ -25,8 +25,8 @@ export async function getUserById(userId: string): Promise<OmnyraUser | null> {
 
 export async function getUserByEmail(email: string): Promise<OmnyraUser | null> {
   const { data, error } = await supabaseAdmin
-    .from("users")
-    .select("id, email, plan_type, credits_balance, created_at")
+    .from("profiles")
+    .select("id, email, plan, credits, created_at")
     .eq("email", email)
     .maybeSingle();
 
@@ -42,7 +42,7 @@ export async function upsertUser(
   email: string,
 ): Promise<void> {
   const { error } = await supabaseAdmin
-    .from("users")
+    .from("profiles")
     .upsert({ id: userId, email }, { onConflict: "id", ignoreDuplicates: true });
 
   if (error) {
@@ -56,8 +56,8 @@ export async function setUserPlan(
   creditsBalance: number,
 ): Promise<void> {
   const { error } = await supabaseAdmin
-    .from("users")
-    .update({ plan_type: plan, credits_balance: creditsBalance })
+    .from("profiles")
+    .update({ plan, credits: creditsBalance })
     .eq("id", userId);
 
   if (error) {

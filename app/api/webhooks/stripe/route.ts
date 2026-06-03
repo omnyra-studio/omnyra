@@ -13,7 +13,7 @@ export const runtime = "nodejs";
 
 async function getUserIdByEmail(email: string): Promise<string | null> {
   const { data } = await supabaseAdmin
-    .from("users")
+    .from("profiles")
     .select("id")
     .eq("email", email)
     .maybeSingle();
@@ -31,8 +31,8 @@ async function getUserIdByCustomer(customerId: string): Promise<string | null> {
 async function setUserPlan(userId: string, plan: PlanType): Promise<void> {
   const credits = getCreditsForPlan(plan);
   await supabaseAdmin
-    .from("users")
-    .update({ plan_type: plan, credits_balance: credits })
+    .from("profiles")
+    .update({ plan, credits })
     .eq("id", userId);
 }
 
@@ -43,8 +43,8 @@ async function downgradeToFree(userId: string): Promise<void> {
 async function replenishCredits(userId: string, plan: PlanType): Promise<void> {
   const credits = getCreditsForPlan(plan);
   await supabaseAdmin
-    .from("users")
-    .update({ credits_balance: credits })
+    .from("profiles")
+    .update({ credits })
     .eq("id", userId);
 }
 

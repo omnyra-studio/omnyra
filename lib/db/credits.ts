@@ -7,16 +7,16 @@ export interface CreditBalance {
 
 export async function getCreditBalance(userId: string): Promise<CreditBalance | null> {
   const { data, error } = await supabaseAdmin
-    .from("users")
-    .select("credits_balance, plan_type")
+    .from("profiles")
+    .select("credits, plan")
     .eq("id", userId)
     .maybeSingle();
 
   if (error || !data) return null;
 
   return {
-    balance: data.credits_balance,
-    planType: data.plan_type,
+    balance: data.credits,
+    planType: data.plan,
   };
 }
 
@@ -51,8 +51,8 @@ export async function replenishCredits(
   creditsAmount: number,
 ): Promise<void> {
   const { error } = await supabaseAdmin
-    .from("users")
-    .update({ credits_balance: creditsAmount })
+    .from("profiles")
+    .update({ credits: creditsAmount })
     .eq("id", userId);
 
   if (error) {

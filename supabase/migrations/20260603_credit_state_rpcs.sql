@@ -1,12 +1,16 @@
 -- Credit State Machine RPCs
 -- Backs lib/credits/withCreditState.ts
 -- Three-phase protocol: reserve → commit (or rollback)
+--
+-- Source of truth: public.profiles
+--   credits  integer  — current balance
+--   plan     text     — plan type (free / starter / creator / studio)
 
 -- ── Create credit_reservations table ─────────────────────────────────────────
 
 CREATE TABLE IF NOT EXISTS public.credit_reservations (
   id         uuid        PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id    uuid        NOT NULL REFERENCES public.users(id) ON DELETE CASCADE,
+  user_id    uuid        NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
   credits    int         NOT NULL CHECK (credits > 0),
   status     text        NOT NULL DEFAULT 'reserved'
                CHECK (status IN ('reserved', 'finalized', 'rolled_back')),
@@ -30,6 +34,7 @@ CREATE INDEX IF NOT EXISTS credit_reservations_user_status
 -- ── credit_reserve_atomic ────────────────────────────────────────────────────
 -- Check balance, deduct amount, create reservation record.
 -- Returns: { success, balance, plan_type }
+-- Source of truth: public.profiles.credits / public.profiles.plan
 
 CREATE OR REPLACE FUNCTION public.credit_reserve_atomic(
   p_user_id uuid,
@@ -41,9 +46,9 @@ DECLARE
   v_balance int;
   v_plan    text;
 BEGIN
-  SELECT credits_balance, plan_type
+  SELECT credits, plan
     INTO v_balance, v_plan
-    FROM public.users
+    FROM public.profiles
     WHERE id = p_user_id
     FOR UPDATE;
 
@@ -55,8 +60,8 @@ BEGIN
     RETURN json_build_object('success', false, 'balance', v_balance, 'plan_type', v_plan);
   END IF;
 
-  UPDATE public.users
-    SET credits_balance = credits_balance - p_amount
+  UPDATE public.profiles
+    SET credits = credits - p_amount
     WHERE id = p_user_id;
 
   INSERT INTO public.credit_reservations (user_id, credits, status, txn_id, expires_at)
@@ -92,8 +97,8 @@ BEGIN
 
   v_refund := v_reserved - p_actual_cost;
   IF v_refund > 0 THEN
-    UPDATE public.users
-      SET credits_balance = credits_balance + v_refund
+    UPDATE public.profiles
+      SET credits = credits + v_refund
       WHERE id = v_user_id;
   END IF;
 
@@ -124,8 +129,8 @@ BEGIN
     RAISE EXCEPTION 'credit_rollback_atomic: reservation not found or already settled (txn_id=%)', p_txn_id;
   END IF;
 
-  UPDATE public.users
-    SET credits_balance = credits_balance + v_reserved
+  UPDATE public.profiles
+    SET credits = credits + v_reserved
     WHERE id = v_user_id;
 
   UPDATE public.credit_reservations
