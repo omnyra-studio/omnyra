@@ -1,14 +1,14 @@
 {
-  "generated": "2026-06-03T04:31:41.828Z",
+  "generated": "2026-06-03T08:37:30.446Z",
   "stats": {
-    "totalFiles": 377,
-    "totalEdges": 847,
+    "totalFiles": 382,
+    "totalEdges": 854,
     "violations": 0,
     "layers": {
       "ui": 57,
       "api_routes": 130,
       "unknown": 29,
-      "services": 156,
+      "services": 161,
       "infrastructure": 4,
       "providers": 1
     }
@@ -28,7 +28,7 @@
     },
     {
       "layer": "services",
-      "count": 156
+      "count": 161
     },
     {
       "layer": "infrastructure",
@@ -360,6 +360,34 @@
       "fromLayer": "api_routes",
       "to": "lib/providers/hedra",
       "toLayer": "providers",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-lipsync/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/avatar/scene-classifier",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-lipsync/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/avatar/model-router",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-lipsync/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/avatar/quality-scorer",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-lipsync/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/avatar/failure-taxonomy",
+      "toLayer": "services",
       "allowed": true
     },
     {
@@ -4521,6 +4549,27 @@
       "allowed": true
     },
     {
+      "from": "lib/avatar/asset-validator.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/avatar/model-router.ts",
+      "fromLayer": "services",
+      "to": "lib/avatar/scene-classifier",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/avatar/quality-scorer.ts",
+      "fromLayer": "services",
+      "to": "lib/avatar/asset-validator",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
       "from": "lib/avatar-consensus.ts",
       "fromLayer": "services",
       "to": "lib/supabase/admin",
@@ -5974,6 +6023,6 @@
   "drift": {
     "score": 0,
     "addedEdges": 0,
-    "removedEdges": 0
+    "removedEdges": 2
   }
 }

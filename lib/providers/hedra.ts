@@ -1,12 +1,9 @@
-/**
- * Hedra direct API provider.
- *
- * Accepts an original portrait image + combined audio URL, submits a
- * generation job to Hedra, polls until completion, and returns the
- * final video URL.
- *
- * Env var: HEDRA_API_KEY
- */
+// Hedra direct API provider — thin HTTP client only.
+//
+// Asset validation and URL resolution happen in the caller before this is invoked.
+// This module makes no decisions; it submits, polls, and returns.
+//
+// Env var: HEDRA_API_KEY
 
 const HEDRA_BASE = "https://api.hedra.ai/v1";
 const POLL_INTERVAL_MS = 5_000;
@@ -50,7 +47,7 @@ export async function generateHedraAvatar(input: HedraInput): Promise<HedraOutpu
   const jobId = job.id ?? job.job_id;
   if (!jobId) throw new Error(`Hedra submit returned no job id: ${JSON.stringify(job).substring(0, 200)}`);
 
-  console.log(`[hedra] job submitted id=${jobId}`);
+  console.info(`[hedra] job submitted id=${jobId}`);
 
   // Poll
   for (let i = 0; i < MAX_POLL_ATTEMPTS; i++) {
@@ -72,7 +69,7 @@ export async function generateHedraAvatar(input: HedraInput): Promise<HedraOutpu
       url?:        string;
     };
 
-    console.log(`[hedra] poll ${i + 1} status=${data.status}`);
+    console.info(`[hedra] poll ${i + 1} status=${data.status}`);
 
     if (data.status === "completed" || data.status === "Completed") {
       const url = data.output_url ?? data.video_url ?? data.url;
