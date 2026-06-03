@@ -246,7 +246,7 @@ function ProductLaunchInner() {
   // ── Loading step animation ────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (!submitting) { setLoadingStep(0); return; }
+    if (!submitting) { setTimeout(() => setLoadingStep(0), 0); return; }
     const t1 = setTimeout(() => setLoadingStep(1), 1800);
     const t2 = setTimeout(() => setLoadingStep(2), 3800);
     return () => { clearTimeout(t1); clearTimeout(t2); };

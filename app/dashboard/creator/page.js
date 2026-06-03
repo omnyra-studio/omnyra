@@ -1,5 +1,6 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabase";
 import AnimatedBackground from "@/components/AnimatedBackground";
@@ -106,7 +107,13 @@ export default function CreatorStudio() {
     });
 
     const saved = localStorage.getItem("omnyra_script");
-    if (saved) { setScript(saved); setBriefMode("paste"); setPastedScript(saved); }
+    if (saved) {
+      setTimeout(() => {
+        setScript(saved);
+        setBriefMode("paste");
+        setPastedScript(saved);
+      }, 0);
+    }
   }, []);
 
   function cleanForVoice(text) {
@@ -628,8 +635,9 @@ HASHTAGS:
                   <input ref={fileInputRef} type="file" accept="image/*"
                     onChange={handlePhotoChange} style={{ display: "none" }} />
                   {photoPreview && (
-                    <img src={photoPreview} alt="Your photo"
-                      style={{ width: 60, height: 60, borderRadius: 8, objectFit: "cover" }} />
+                    <Image src={photoPreview} alt="Your photo"
+                      width={60} height={60} unoptimized
+                      style={{ borderRadius: 8, objectFit: "cover" }} />
                   )}
                   {photoPreview && (
                     <span style={{ color: C.violet, fontSize: 13 }}>✓ Photo ready</span>

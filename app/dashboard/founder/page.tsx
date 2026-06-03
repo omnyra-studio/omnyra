@@ -174,7 +174,7 @@ export default function FounderDashboard() {
     }
   }, [router]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { setTimeout(() => { void load(); }, 0); }, [load]);
 
   // Auto-refresh every 30 seconds
   useEffect(() => {

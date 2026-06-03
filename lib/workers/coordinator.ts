@@ -9,7 +9,7 @@
 
 import { emitAndForget } from "@/lib/events/emitter";
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 type AnyClient = any;
 
 export async function checkAndEnqueueComposition(

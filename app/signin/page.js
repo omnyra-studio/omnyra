@@ -1,6 +1,7 @@
 "use client";
 import { useRouter } from "next/navigation";
 import { useState, useEffect } from "react";
+import Image from "next/image";
 import { supabase } from "../../lib/supabase";
 import AnimatedBackground from "@/components/AnimatedBackground";
 import posthog from "posthog-js";
@@ -53,7 +54,8 @@ export default function SigninPage() {
       <div style={{ width: "100%", maxWidth: 420, padding: "2.5rem",
         background: "rgba(45,10,62,0.75)", backdropFilter: "blur(12px)", borderRadius: 20, border: "1px solid rgba(255,255,255,0.1)" }}>
         <div style={{ marginBottom: 24 }}>
-          <img src="/logo-nav.png" alt="Omnyra AI"
+          <Image src="/logo-nav.png" alt="Omnyra AI"
+            width={0} height={0} sizes="100vw"
             style={{ height: 64, width: "auto", objectFit: "contain", display: "block" }} />
         </div>
         <h1 style={{ color: "#fff", fontSize: 26, fontWeight: 700, marginBottom: 6 }}>

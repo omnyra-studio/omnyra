@@ -198,7 +198,8 @@ Generate 3-5 insights. Focus on patterns that are statistically meaningful (not 
     });
 
     const text = response.content[0]?.type === "text" ? response.content[0].text : "{}";
-    const parsed = JSON.parse(text) as BrandBrainInsights;
+    const { tryParseJson } = await import("../safe-parse-json");
+    const parsed = (tryParseJson<BrandBrainInsights>(text) ?? {}) as BrandBrainInsights;
 
     return {
       insights:    parsed.insights ?? [],

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { usePostHog } from "posthog-js/react";
 import {
   Film,
@@ -299,7 +300,7 @@ export default function DashboardHome() {
     })();
 
     return () => { cancelled = true; };
-  }, [router]);
+  }, [router, posthog]);
 
   const firstName =
     user?.user_metadata?.first_name ||
@@ -319,9 +320,12 @@ export default function DashboardHome() {
         {/* Greeting */}
         <section className="mb-6">
           <div style={{ textAlign: 'center', marginBottom: '24px' }}>
-            <img
+            <Image
               src="/omnyra-logo.png"
               alt="Omnyra"
+              width={0}
+              height={0}
+              sizes="100vw"
               style={{
                 height: '120px',
                 width: 'auto',

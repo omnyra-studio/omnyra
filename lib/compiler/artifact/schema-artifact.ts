@@ -18,7 +18,7 @@ export function loadSchemaArtifact(): SchemaArtifact {
   if (_cached) return _cached;
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+     
     const artifact = require("../../../artifacts/schema.json") as SchemaArtifact;
     _cached = Object.freeze(artifact);
     return _cached;

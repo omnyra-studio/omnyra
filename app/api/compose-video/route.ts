@@ -115,7 +115,7 @@ async function downloadToBuffer(url: string, label: string, timeoutMs = 60_000):
  * Returns the public URL on success; throws on any failure.
  */
 async function uploadToStorage(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   supabase: any,
   buffer: Buffer,
   storagePath: string,
@@ -925,7 +925,7 @@ export async function POST(request: Request) {
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
 async function markJobFailed(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   supabase: any,
   jobId: string | null,
   errorMessage: string,

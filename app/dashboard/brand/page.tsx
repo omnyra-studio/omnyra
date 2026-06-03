@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import AnimatedBackground from "@/components/AnimatedBackground";
@@ -250,10 +251,13 @@ export default function BrandMemoryPage() {
                 <div style={SECTION_TITLE}>Logo</div>
                 <div style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
                   {form.logo_url && (
-                    <img
+                    <Image
                       src={form.logo_url}
                       alt="Brand logo"
-                      style={{ width: 80, height: 80, objectFit: "contain", borderRadius: "8px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(207,164,47,0.2)" }}
+                      width={80}
+                      height={80}
+                      unoptimized
+                      style={{ objectFit: "contain", borderRadius: "8px", background: "rgba(255,255,255,0.05)", border: "1px solid rgba(207,164,47,0.2)" }}
                     />
                   )}
                   <input type="file" accept="image/*" ref={fileInputRef} style={{ display: "none" }} onChange={handleLogoUpload} />

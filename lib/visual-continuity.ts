@@ -1,4 +1,5 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { tryParseJson } from "./safe-parse-json";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -108,7 +109,12 @@ If no specific environment is repeated, set environment to null.`,
   }
 
   try {
-    const parsed = JSON.parse(text);
+    type RawBibles = {
+      character?: { present?: boolean; gender?: string; ageRange?: string; hair?: string; clothing?: string[]; accessories?: string[]; raw?: string };
+      environment?: { locationType?: string; timeOfDay?: string; keyElements?: string[]; atmosphere?: string; raw?: string } | null;
+      objects?: { props?: Array<{ name: string; count: number }> };
+    };
+    const parsed = (tryParseJson<RawBibles>(text) ?? {}) as RawBibles;
     const hasCharacter = parsed.character?.present === true;
     return {
       character: hasCharacter ? {
@@ -134,31 +140,38 @@ If no specific environment is repeated, set environment to null.`,
   }
 }
 
-// ── Consistency suffix builder ────────────────────────────────────────────────
+// ── Character prefix (PREPEND to each prompt for maximum Kling weight) ────────
+
+/**
+ * Returns a compact identity string to place BEFORE the scene description.
+ * Putting character details first ensures Kling locks on them before reading scene content.
+ */
+export function buildCharacterPrefix(bibles: ContinuityBibles): string {
+  if (!bibles.character) return "";
+  const c = bibles.character;
+  const details = c.raw
+    || [c.gender, c.ageRange, c.hair, ...c.clothing, ...c.accessories].filter(Boolean).join(", ");
+  return `the same ${details}, `;
+}
+
+// ── Consistency suffix (environment + objects only — character handled by prefix) ──
 
 export function buildConsistencySuffix(bibles: ContinuityBibles): string {
   const parts: string[] = [];
 
-  if (bibles.character) {
-    const c = bibles.character;
-    const desc = c.raw || [c.gender, c.hair, c.clothing.join(", ")].filter(Boolean).join(", ");
-    parts.push(`MAINTAIN EXACT CHARACTER: ${desc}.`);
-    if (c.clothing.length)    parts.push(`SAME CLOTHING: ${c.clothing.join(", ")}.`);
-    if (c.accessories.length) parts.push(`SAME ACCESSORIES: ${c.accessories.join(", ")}.`);
-  }
-
   if (bibles.environment) {
     const e = bibles.environment;
-    if (e.raw)              parts.push(`MAINTAIN ENVIRONMENT: ${e.raw}.`);
-    if (e.keyElements.length) parts.push(`KEEP ELEMENTS: ${e.keyElements.join(", ")}.`);
+    const envDesc = e.raw || [e.locationType, e.timeOfDay, e.atmosphere].filter(Boolean).join(", ");
+    parts.push(`same ${envDesc}`);
+    if (e.keyElements.length) parts.push(`keep ${e.keyElements.join(", ")}`);
   }
 
   if (bibles.objects.props.length) {
     const objList = bibles.objects.props.map(p => `${p.count}x ${p.name}`).join(", ");
-    parts.push(`OBJECT COUNT: ${objList}.`);
+    parts.push(`exact objects: ${objList}`);
   }
 
-  return parts.length ? " " + parts.join(" ") : "";
+  return parts.length ? ", " + parts.join(", ") : "";
 }
 
 // ── Frame comparison via Claude Vision ───────────────────────────────────────
@@ -219,7 +232,8 @@ Return ONLY valid JSON:
   }
 
   try {
-    const parsed = JSON.parse(text);
+    type RawConsistency = { characterScore?: number; environmentScore?: number; objectScore?: number; issues?: string[] };
+    const parsed = (tryParseJson<RawConsistency>(text) ?? {}) as RawConsistency;
     return {
       characterScore:    Math.min(100, Math.max(0, Number(parsed.characterScore    ?? 100))),
       environmentScore:  Math.min(100, Math.max(0, Number(parsed.environmentScore  ?? 100))),

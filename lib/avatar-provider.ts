@@ -83,7 +83,7 @@ export async function resolvePublicAudioUrl(audioUrl: string, ctx: string): Prom
   const audioBlob = new Blob([await blob.arrayBuffer()], { type: "audio/mpeg" });
   console.log(`${ctx} FAL_STORAGE_UPLOAD size=${audioBlob.size}`);
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const falUrl = await (fal as any).storage.upload(audioBlob) as string;
   console.log(`${ctx} FAL_CDN_URL=${falUrl}`);
   return falUrl;
@@ -99,7 +99,7 @@ export async function animateImage(imageUrl: string, visualPrompt?: string): Pro
   console.log(`[FAL_REQUEST] animateImage fal_key_set=${!!(process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY)}`);
   configureFal();
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const result = await (fal as any).subscribe(KLING_I2V_PRO, {
     input: {
       image_url:       imageUrl,

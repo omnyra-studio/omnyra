@@ -17,12 +17,12 @@ export async function POST(req: Request) {
   }
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const clipPromises = prompts.map(async (prompt: string, i: number) => {
       const image_url = image_urls?.[i] ?? image_urls?.[0];
 
       if (model === "fast") {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         const result = await (fal as any).subscribe("fal-ai/ltx-video", {
           input: {
             prompt: `${prompt}, cinematic quality, smooth motion`,
@@ -36,7 +36,7 @@ export async function POST(req: Request) {
         });
         return result?.video?.url ?? result?.url ?? result?.data?.video?.url ?? null;
       } else {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         const result = await (fal as any).subscribe(
           KLING_I2V_MODEL,
           {
@@ -63,7 +63,7 @@ export async function POST(req: Request) {
     }
 
     // Stitch multiple clips via fal.ai concatenate
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const stitched = await (fal as any).subscribe("fal-ai/ffmpeg-api/concatenate", {
       input: { video_urls: clipUrls },
     });

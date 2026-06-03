@@ -43,7 +43,7 @@ export async function GET(request: Request, { params }: RouteContext) {
     .eq("id", planId)
     .single();
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   if (!plan || (plan as any).projects?.user_id !== user.id) {
     return fail("Not found", 404);
   }
@@ -84,7 +84,7 @@ export async function GET(request: Request, { params }: RouteContext) {
       ]);
 
       // Script created
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const script = (planResult.data as any)?.scripts;
       if (script) {
         push({

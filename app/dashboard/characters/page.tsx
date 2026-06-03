@@ -91,7 +91,7 @@ export default function CharactersPage() {
     }
   }
 
-  useEffect(() => { void loadCharacters(); }, []);
+  useEffect(() => { setTimeout(() => { void loadCharacters(); }, 0); }, []);
 
   function resetForm() {
     setForm({ name: "", core_prompt: "", visual_signature: "", neg_prompt: "" });
@@ -197,7 +197,7 @@ export default function CharactersPage() {
                 placeholder="professional woman in her 30s, confident expression, business casual attire, neutral background"
               />
               <p style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", margin: "5px 0 0" }}>
-                Describe the character's appearance, clothing, and expression. This becomes the foundation of every Kling prompt.
+                Describe the character&apos;s appearance, clothing, and expression. This becomes the foundation of every Kling prompt.
               </p>
             </div>
 

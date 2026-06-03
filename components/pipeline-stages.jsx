@@ -431,7 +431,7 @@ export function DraftStage({
   // Initial bootstrap + realtime trigger → server refetch.
   useEffect(() => {
     if (!renderId) {
-      setLoading(false);
+      setTimeout(() => setLoading(false), 0);
       return;
     }
 
@@ -471,7 +471,7 @@ export function DraftStage({
     };
   }, [renderId, supabase]);
 
-  const events = snapshot?.events ?? [];
+  const events = useMemo(() => snapshot?.events ?? [], [snapshot]);
   const phase = useMemo(() => derivePhase(events), [events]);
   const failureMessage = useMemo(() => deriveFailure(events, snapshot), [events, snapshot]);
 

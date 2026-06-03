@@ -69,7 +69,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Shot not found" }, { status: 404 });
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const ownerId = (shot as any).shot_plans?.projects?.user_id as string | undefined;
   if (ownerId !== user.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
@@ -116,7 +116,7 @@ export async function POST(request: Request) {
 
     let falRequestId: string;
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const submitted = await (fal as any).queue.submit(model, { input }) as { request_id: string };
       falRequestId = submitted.request_id;
     } catch (err) {

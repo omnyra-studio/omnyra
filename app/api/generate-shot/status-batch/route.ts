@@ -64,7 +64,7 @@ export async function POST(request: Request) {
   }
 
   // Filter to only the caller's shots
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const userShots = shots.filter(s => (s as any).shot_plans?.projects?.user_id === user.id);
 
   // Check each shot — run fal status checks in parallel
@@ -91,14 +91,14 @@ export async function POST(request: Request) {
 
       // Check fal queue status
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         const falStatus = await (fal as any).queue.status(shot.fal_model, {
           requestId: shot.fal_request_id,
           logs: false,
         }) as { status: string; error?: { message?: string } };
 
         if (falStatus?.status === "COMPLETED") {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+           
           const result = await (fal as any).queue.result(shot.fal_model, {
             requestId: shot.fal_request_id,
           });

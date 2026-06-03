@@ -4,7 +4,7 @@
  * Called by /api/generate-shot-plan and /api/orchestrate-project.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import Anthropic from "@anthropic-ai/sdk";
 import { getModeConfig } from "@/lib/orchestration/mode-adapters";
@@ -398,8 +398,8 @@ export async function generateShotPlan(
   // ── Parse JSON ────────────────────────────────────────────────────────────────
   let directorOutput: DirectorOutput;
   try {
-    const cleaned = textBlock.text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "").trim();
-    directorOutput = JSON.parse(cleaned);
+    const { safeParseJson } = await import("../../safe-parse-json");
+    directorOutput = safeParseJson<DirectorOutput>(textBlock.text);
   } catch (err) {
     throw new Error(`Failed to parse shot plan: ${err instanceof Error ? err.message : String(err)}`);
   }

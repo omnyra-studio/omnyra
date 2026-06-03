@@ -101,7 +101,7 @@ export async function POST(request: Request) {
 // ── Background render pipeline ────────────────────────────────────────────────
 
 async function runRenderPipeline(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   supabase: any,
   jobId: string,
   shots: ShotPacket[],

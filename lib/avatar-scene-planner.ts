@@ -331,7 +331,8 @@ async function planScenesLLM(
     const raw = response.content[0]?.type === "text" ? response.content[0].text : null;
     if (!raw) return null;
 
-    const parsed = JSON.parse(raw.trim()) as { scenes: RawGodScene[] };
+    const { safeParseJson } = await import("./safe-parse-json");
+    const parsed = safeParseJson<{ scenes: RawGodScene[] }>(raw);
     if (!Array.isArray(parsed.scenes) || !parsed.scenes.length) return null;
 
     const rawScenes = parsed.scenes.slice(0, cap).map((s, i) => {

@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../../lib/supabase";
 import AnimatedBackground from "@/components/AnimatedBackground";
@@ -104,7 +105,9 @@ export default function ImagePage() {
         {imageUrl && (
           <div style={{ marginTop: 24 }}>
             <div style={{ fontSize: 12, color: C.sub, marginBottom: 12, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em" }}>Generated Image</div>
-            <img src={imageUrl} alt="Generated" style={{ width: "100%", borderRadius: 16, border: "1px solid rgba(255,255,255,0.1)" }} />
+            <Image src={imageUrl} alt="Generated"
+              width={0} height={0} sizes="100vw" unoptimized
+              style={{ width: "100%", height: "auto", borderRadius: 16, border: "1px solid rgba(255,255,255,0.1)" }} />
             <a href={imageUrl} target="_blank" rel="noreferrer" download
               style={{ display: "block", marginTop: 12, textAlign: "center", padding: "12px", borderRadius: 12,
                 background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: C.text, textDecoration: "none", fontSize: 13, fontWeight: 600 }}>

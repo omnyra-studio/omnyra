@@ -112,7 +112,7 @@ export default function AssetUpload({
     } finally {
       setUploading(false);
     }
-  }, [cfg, userId, onUploaded]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [cfg, userId, onUploaded]);  
 
   const handleFiles = useCallback((files: FileList | null) => {
     if (!files?.length) return;

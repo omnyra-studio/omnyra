@@ -36,8 +36,10 @@ export function useOrchestrationStream(
     if (!planId) return;
 
     // Reset state when planId changes
-    setState(initialState(projectId, mode, planId));
-    setError(null);
+    setTimeout(() => {
+      setState(initialState(projectId, mode, planId));
+      setError(null);
+    }, 0);
 
     const es = new EventSource(`/api/orchestrate-project/${planId}/stream`);
     esRef.current = es;

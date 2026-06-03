@@ -168,7 +168,7 @@ async function pollUntil(
 // ── fal.ai stages ─────────────────────────────────────────────────────────────
 
 async function enhanceImage(imageUrl: string): Promise<string> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const result = await (fal as any).subscribe("fal-ai/clarity-upscaler", {
     input: {
       image_url: imageUrl,
@@ -192,7 +192,7 @@ async function enhanceImage(imageUrl: string): Promise<string> {
 }
 
 async function animateImage(imageUrl: string): Promise<string> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const result = await (fal as any).subscribe("fal-ai/kling-video/v2.1/pro/image-to-video", {
     input: {
       image_url: imageUrl,

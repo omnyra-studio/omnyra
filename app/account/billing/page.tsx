@@ -167,7 +167,7 @@ function BillingPageInner() {
 
   useEffect(() => {
     if (searchParams.get("purchase") === "success") {
-      setToast("Payment successful — your credits have been added.");
+      setTimeout(() => setToast("Payment successful — your credits have been added."), 0);
     }
   }, [searchParams]);
 

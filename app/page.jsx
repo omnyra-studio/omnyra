@@ -1,4 +1,6 @@
 import Link from "next/link";
+import Image from "next/image";
+import { LegalFooter } from "@/components/legal-footer";
 
 export default function Landing() {
   return (
@@ -14,7 +16,7 @@ export default function Landing() {
           <div className="hidden md:flex items-center gap-10 text-sm font-medium" style={{ color: '#E8DEFF' }}>
             <a href="#how-it-works" className="hover:text-[#E879F9] transition-colors duration-300">How It Works</a>
             <a href="#features" className="hover:text-[#E879F9] transition-colors duration-300">Features</a>
-            <a href="#pricing" className="hover:text-[#E879F9] transition-colors duration-300">Pricing</a>
+            <Link href="/pricing" className="hover:text-[#E879F9] transition-colors duration-300">Pricing</Link>
           </div>
           <Link
             href="#pricing"
@@ -54,9 +56,12 @@ export default function Landing() {
           </div>
 
           {/* 2 — logo */}
-          <img
+          <Image
             src="/omnyra-logo.png"
             alt="Omnyra"
+            width={0}
+            height={0}
+            sizes="100vw"
             style={{
               height: '200px',
               width: 'auto',
@@ -83,13 +88,13 @@ export default function Landing() {
 
           {/* 5 — subtext */}
           <p className="text-lg md:text-xl max-w-3xl mx-auto mb-10 leading-relaxed animate-fade-up" style={{ color: '#E8DDD0', animationDelay: "0.45s", textShadow: '0 1px 8px rgba(0,0,0,0.9)' }}>
-            Omnyra compares what it predicted to what actually happened — then adjusts. The only creative intelligence system that understands what you should make next and why.
+            Omnyra improves what you create by improving what you choose to create — 6 ranked content directions per idea, scored and ready before you produce a single frame.
           </p>
 
           {/* 6 — buttons */}
           <div className="flex flex-col sm:flex-row items-center justify-center gap-5 animate-fade-up" style={{ animationDelay: "0.6s" }}>
-            <Link href="#pricing" className="w-full sm:w-auto px-10 py-5 gold-btn font-bold rounded-full text-lg">
-              Understand What Works
+            <Link href="/pricing" className="w-full sm:w-auto px-10 py-5 gold-btn font-bold rounded-full text-lg">
+              Start Free
             </Link>
             <a href="#how-it-works" className="w-full sm:w-auto px-10 py-5 rounded-full text-lg font-semibold" style={{ border: '1px solid #E8DEFF', color: '#E8DEFF' }}>
               See How It Works →
@@ -101,6 +106,62 @@ export default function Landing() {
       </section>
 
       <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, rgba(204,171,175,0.4), transparent)' }} />
+
+      {/* WHY NOT TEMPLATE TOOLS */}
+      <section className="relative py-20 px-6" style={{ background: 'rgba(45,10,62,0.4)' }}>
+        <div className="max-w-4xl mx-auto">
+          <p className="text-xs font-bold tracking-[0.2em] uppercase mb-4 text-center" style={{ color: '#E879F9' }}>The Real Problem</p>
+          <h2 className="font-display text-3xl md:text-4xl font-bold text-center mb-6" style={{ color: '#F5EFE6' }}>
+            Most creators don&apos;t fail at editing.<br />They fail at choosing ideas.
+          </h2>
+          <p className="text-center text-lg mb-14" style={{ color: '#C0A4C8', maxWidth: '600px', margin: '0 auto 56px' }}>
+            Template tools give you content. Omnyra helps you decide what content is worth making.
+          </p>
+          <div className="grid md:grid-cols-2 gap-6">
+            <div className="glass-card rounded-2xl p-7">
+              <p className="text-xs uppercase tracking-widest mb-5" style={{ color: '#BBA8C8' }}>Template Tools</p>
+              <ul className="space-y-3 text-sm" style={{ color: '#8B7A8E' }}>
+                {['Speed without strategy', 'Single output — no comparison', 'No scoring or ranking', 'Fixed templates, no adaptation', 'Same output for every creator'].map(t => (
+                  <li key={t} className="flex items-start gap-3"><span style={{ color: '#4A3A50' }}>—</span> {t}</li>
+                ))}
+              </ul>
+            </div>
+            <div className="rounded-2xl p-7" style={{ background: 'rgba(192,132,252,0.06)', border: '1px solid rgba(192,132,252,0.2)' }}>
+              <p className="text-xs uppercase tracking-widest mb-5" style={{ color: '#C084FC' }}>Omnyra</p>
+              <ul className="space-y-3 text-sm" style={{ color: '#E8DEFF' }}>
+                {['Structured decision before creation', '6 ranked directions per idea', 'Fixed scoring formula — transparent', 'Session-aware preference biasing', 'Built around your content identity'].map(t => (
+                  <li key={t} className="flex items-start gap-3"><span style={{ color: '#50B388' }}>✓</span> {t}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, rgba(204,171,175,0.2), transparent)' }} />
+
+      {/* HONEST REALITY BLOCK */}
+      <section className="relative py-16 px-6">
+        <div className="max-w-2xl mx-auto text-center">
+          <div className="rounded-2xl p-8" style={{ background: 'rgba(212,168,67,0.06)', border: '1px solid rgba(212,168,67,0.2)' }}>
+            <p className="text-xs font-bold tracking-[0.2em] uppercase mb-4" style={{ color: '#D4A843' }}>Honest</p>
+            <h2 className="font-display text-2xl font-bold mb-4" style={{ color: '#F5EFE6' }}>
+              We do not guarantee virality.
+            </h2>
+            <p className="text-base mb-3" style={{ color: '#C0A4C8', lineHeight: 1.7 }}>
+              No AI tool can guarantee performance. Platform algorithms, audience behavior, and timing are outside any system&apos;s control.
+            </p>
+            <p className="text-base mb-5" style={{ color: '#C0A4C8', lineHeight: 1.7 }}>
+              Omnyra improves direction, not outcomes. Better decisions before creation increase the likelihood of performance — not certainty of it.
+            </p>
+            <p className="text-sm" style={{ color: '#8B7A8E' }}>
+              Virality is not guaranteed — outputs only increase the likelihood of performance based on predictive modeling.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, rgba(204,171,175,0.2), transparent)' }} />
 
       {/* THE STRATEGIC SHIFT */}
       <section id="how-it-works" className="relative py-24 px-6 scroll-mt-20">
@@ -353,6 +414,31 @@ export default function Landing() {
 
       <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, rgba(204,171,175,0.4), transparent)' }} />
 
+      {/* USE CASE BLOCK */}
+      <section className="relative py-20 px-6" style={{ background: 'rgba(45,10,62,0.3)' }}>
+        <div className="max-w-5xl mx-auto">
+          <p className="text-xs font-bold tracking-[0.2em] uppercase mb-4 text-center" style={{ color: '#E879F9' }}>Who It&apos;s For</p>
+          <h2 className="font-display text-3xl md:text-4xl font-bold text-center mb-14" style={{ color: '#F5EFE6' }}>
+            Built for people who want to be known,<br />not just seen.
+          </h2>
+          <div className="grid md:grid-cols-4 gap-5">
+            {[
+              { title: 'Creators', desc: 'Stop guessing your next hook. Get 6 structured options with scores — choose the strongest before you film.' },
+              { title: 'Marketers', desc: 'Brief faster. Fewer revision cycles. Structured direction before production means less wasted spend.' },
+              { title: 'Small Agencies', desc: 'Scale content decision-making across clients without scaling headcount or template dependency.' },
+              { title: 'Content Teams', desc: 'Replace internal brainstorming chaos with a ranked, scored shortlist every time.' },
+            ].map(({ title, desc }) => (
+              <div key={title} className="glass-card rounded-2xl p-6">
+                <p className="font-bold mb-3" style={{ color: '#C084FC', fontSize: 14 }}>{title}</p>
+                <p className="text-sm leading-relaxed" style={{ color: '#C0A4C8' }}>{desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <div style={{ height: '1px', background: 'linear-gradient(90deg, transparent, rgba(204,171,175,0.3), transparent)' }} />
+
       {/* PRICING */}
       <section id="pricing" className="relative py-24 px-6 scroll-mt-20" style={{ background: 'rgba(45,10,62,0.55)' }}>
         <div className="max-w-6xl mx-auto">
@@ -474,20 +560,26 @@ export default function Landing() {
       </section>
 
       {/* FOOTER */}
-      <footer className="border-t border-softgold/10 py-12 px-6" style={{ background: 'rgba(45,10,62,0.55)' }}>
-        <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <span className="gold-text font-display text-xl font-bold">Omnyra</span>
-            <span className="text-xs text-warmgray">Adaptive Creative Intelligence</span>
+      <div style={{ background: 'rgba(45,10,62,0.55)' }}>
+        {/* Brand bar */}
+        <div className="border-t border-softgold/10 py-8 px-6">
+          <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <span className="gold-text font-display text-xl font-bold">Omnyra</span>
+              <span className="text-xs text-warmgray">Adaptive Creative Intelligence</span>
+            </div>
+            <div className="flex items-center gap-6 text-sm" style={{ color: '#E8DEFF' }}>
+              <a href="/legal/privacy" className="hover:text-[#E879F9] transition-colors">Privacy</a>
+              <a href="/legal/terms" className="hover:text-[#E879F9] transition-colors">Terms</a>
+              <a href="/legal/refund" className="hover:text-[#E879F9] transition-colors">Refund Policy</a>
+              <a href="/faq" className="hover:text-[#E879F9] transition-colors">FAQ</a>
+              <a href="mailto:info@omnyra.studio" className="hover:text-[#E879F9] transition-colors" style={{ color: '#E8DEFF' }}>Contact</a>
+            </div>
           </div>
-          <div className="flex items-center gap-6 text-sm" style={{ color: '#E8DEFF' }}>
-            <a href="#" className="hover:text-[#E879F9] transition-colors">Privacy</a>
-            <a href="#" className="hover:text-[#E879F9] transition-colors">Terms</a>
-            <a href="mailto:info@omnyra.studio" className="hover:text-[#E879F9] transition-colors" style={{ color: '#E8DEFF' }}>Contact: info@omnyra.studio</a>
-          </div>
-          <p className="text-xs" style={{ color: '#E8DEFF' }}>© 2026 Omnyra. All rights reserved.</p>
         </div>
-      </footer>
+        {/* Legal disclaimer */}
+        <LegalFooter />
+      </div>
 
     </main>
   );

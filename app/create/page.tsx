@@ -309,18 +309,20 @@ function CreatePageInner() {
     restoredFromSession.current = true;
     try {
       const state = JSON.parse(saved);
-      if (state.goal) setGoal(state.goal);
-      if (state.niche) setNiche(state.niche);
-      if (state.targetAudience) setTargetAudience(state.targetAudience);
-      if (state.pastWins) setPastWins(state.pastWins);
-      if (state.competitors) setCompetitors(state.competitors);
-      if (state.uniqueAngle) setUniqueAngle(state.uniqueAngle);
-      if (state.selectedPlatforms?.length) setSelectedPlatforms(state.selectedPlatforms);
-      if (state.briefResponse) {
-        setBriefResponse(state.briefResponse);
-        setShowInput(false);
-        setSelectedVersion(state.selectedVersion ?? 0);
-      }
+      setTimeout(() => {
+        if (state.goal) setGoal(state.goal);
+        if (state.niche) setNiche(state.niche);
+        if (state.targetAudience) setTargetAudience(state.targetAudience);
+        if (state.pastWins) setPastWins(state.pastWins);
+        if (state.competitors) setCompetitors(state.competitors);
+        if (state.uniqueAngle) setUniqueAngle(state.uniqueAngle);
+        if (state.selectedPlatforms?.length) setSelectedPlatforms(state.selectedPlatforms);
+        if (state.briefResponse) {
+          setBriefResponse(state.briefResponse);
+          setShowInput(false);
+          setSelectedVersion(state.selectedVersion ?? 0);
+        }
+      }, 0);
     } catch {}
     sessionStorage.removeItem('omnyra_create_state');
   }, []);
@@ -374,7 +376,7 @@ function CreatePageInner() {
 
   // Cycling loading messages
   useEffect(() => {
-    if (!submitting) { setLoadingMessageIndex(0); return; }
+    if (!submitting) { setTimeout(() => setLoadingMessageIndex(0), 0); return; }
     const interval = setInterval(() => {
       setLoadingMessageIndex(prev => (prev + 1) % LOADING_MESSAGES.length);
     }, 3000);
@@ -383,8 +385,8 @@ function CreatePageInner() {
 
   // Progress bar animation (~25s to reach 92%)
   useEffect(() => {
-    if (!submitting) { setLoadingProgress(0); return; }
-    setLoadingProgress(0);
+    if (!submitting) { setTimeout(() => setLoadingProgress(0), 0); return; }
+    setTimeout(() => setLoadingProgress(0), 0);
     const interval = setInterval(() => {
       setLoadingProgress(prev => Math.min(prev + 2, 92));
     }, 500);

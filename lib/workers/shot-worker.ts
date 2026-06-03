@@ -98,7 +98,7 @@ export async function processShotJob(job: RenderShotJob): Promise<WorkerResult> 
       : { prompt, duration: dur, aspect_ratio: "9:16", generate_audio: false };
 
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const submitted = await (fal as any).queue.submit(model, { input }) as { request_id: string };
       await supabase
         .from("shots")

@@ -50,7 +50,7 @@ export async function upsertBrandProfile(
   data: Partial<BrandProfile>,
 ): Promise<BrandProfile> {
   const db = adminClient();
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+   
   const { id: _id, user_id: _uid, created_at: _ca, ...rest } = data as Record<string, unknown>;
   const { data: row, error } = await db
     .from("brand_profiles")

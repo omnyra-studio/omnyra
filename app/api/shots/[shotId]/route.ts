@@ -58,7 +58,7 @@ export async function PATCH(
     return NextResponse.json({ error: "Shot not found" }, { status: 404 });
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const ownerId = (shot as any).shot_plans?.projects?.user_id as string | undefined;
   if (ownerId !== user.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });

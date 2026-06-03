@@ -79,19 +79,19 @@ export async function POST(req: Request) {
       const activeModel = KLING_I2V_MODEL;
       console.log('[generate-video-fal] model=', activeModel);
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         const result = await (fal as any).subscribe(activeModel, {
           input: { image_url, prompt: cinemaPrompt, duration: "5", aspect_ratio: "9:16" },
           onQueueUpdate: (u: unknown) => console.log('[generate-video-fal] i2v status:', (u as { status?: string })?.status),
         });
         console.log('[generate-video-fal] i2v result:', JSON.stringify(result).slice(0, 200));
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         const videoUrl = extractVideoUrl(result);
         if (!videoUrl) throw new Error(`${activeModel} returned no video URL`);
         if (userId) { saveCache(userId, "generate-video-fal", cacheInput, JSON.stringify({ video_url: videoUrl, status: "completed" })); logUsageEvent(userId, "generate-video-fal", "generate", 8, { model: "i2v" }); }
         return Response.json({ video_url: videoUrl, status: "completed" });
       } catch (err) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+         
         const e = err as any;
         console.error('[generate-video-fal] i2v FAILED — model:', activeModel, '| status:', e?.status, '| msg:', e?.message, '| body:', JSON.stringify(e?.body ?? null));
         // Fall through to text-to-video
@@ -102,19 +102,19 @@ export async function POST(req: Request) {
     const activeModel = KLING_T2V_MODEL;
     console.log('[generate-video-fal] model=', activeModel);
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const result = await (fal as any).subscribe(activeModel, {
         input: { prompt: cinemaPrompt, duration: "5", aspect_ratio: "9:16" },
         onQueueUpdate: (u: unknown) => console.log('[generate-video-fal] t2v status:', (u as { status?: string })?.status),
       });
       console.log('[generate-video-fal] t2v result:', JSON.stringify(result).slice(0, 300));
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const videoUrl = extractVideoUrl(result);
       if (!videoUrl) throw new Error(`${activeModel} returned no video URL`);
       if (userId) { saveCache(userId, "generate-video-fal", cacheInput, JSON.stringify({ video_url: videoUrl, status: "completed" })); logUsageEvent(userId, "generate-video-fal", "generate", 8, { model: "t2v" }); }
       return Response.json({ video_url: videoUrl, status: "completed" });
     } catch (err) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       const e = err as any;
       console.error('[generate-video-fal] t2v FAILED — model:', activeModel, '| status:', e?.status, '| msg:', e?.message, '| body:', JSON.stringify(e?.body ?? null));
       return falError(activeModel, e?.status, e?.message ?? String(err), e?.body);
@@ -130,9 +130,9 @@ export async function POST(req: Request) {
   );
 
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const result = await Promise.race([
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       (fal as any).subscribe(selectedModel, {
         input: {
           prompt: cinemaPrompt,
@@ -146,7 +146,7 @@ export async function POST(req: Request) {
     ]);
 
     console.log('[generate-video-fal] explicit model result:', JSON.stringify(result).slice(0, 300));
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const r = result as any;
     const videoUrl: string | undefined =
       r?.video?.url ?? r?.url ?? r?.output?.[0] ?? r?.data?.video?.url ??
@@ -160,7 +160,7 @@ export async function POST(req: Request) {
     if (userId) { saveCache(userId, "generate-video-fal", cacheInput, JSON.stringify({ video_url: videoUrl, status: "completed" })); logUsageEvent(userId, "generate-video-fal", "generate", 10, { model }); }
     return Response.json({ video_url: videoUrl, status: "completed" });
   } catch (err) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const e = err as any;
     console.error('[generate-video-fal] explicit model FAILED — model:', selectedModel, '| status:', e?.status, '| msg:', e?.message);
     return falError(selectedModel, e?.status, e?.message ?? String(err), e?.body);

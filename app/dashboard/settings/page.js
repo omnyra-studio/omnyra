@@ -5,6 +5,21 @@ import { getBrandProfile, saveBrandProfile } from "@/lib/brand";
 import AnimatedBackground from "@/components/AnimatedBackground";
 import { supabase } from "@/lib/supabase";
 
+const PAGE_LOAD_TIME = Date.now();
+
+function timeAgo(iso, now) {
+  if (!iso) return "";
+  const diff = now - new Date(iso).getTime();
+  const m = Math.floor(diff / 60000);
+  if (m < 1)  return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 7)  return `${d}d ago`;
+  return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
 const C = { text: "#E8DEFF", sub: "#BBA8C8" };
 const CARD = {
   background: "rgba(75,30,130,0.65)",
@@ -301,19 +316,6 @@ export default function BrandSettings() {
     avatar:  { icon: "👤", label: "Avatar",            color: "#F0C040" },
   };
 
-  function timeAgo(iso) {
-    if (!iso) return "";
-    const diff = Date.now() - new Date(iso).getTime();
-    const m = Math.floor(diff / 60000);
-    if (m < 1)  return "just now";
-    if (m < 60) return `${m}m ago`;
-    const h = Math.floor(m / 60);
-    if (h < 24) return `${h}h ago`;
-    const d = Math.floor(h / 24);
-    if (d < 7)  return `${d}d ago`;
-    return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  }
-
   if (loading) return (
     <div style={{ minHeight: "100vh", background: "transparent", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div style={{ width: 28, height: 28, borderRadius: "50%", border: "2px solid rgba(207,164,47,0.2)", borderTopColor: "#CFA42F", animation: "spin 1s linear infinite" }} />
@@ -572,7 +574,7 @@ export default function BrandSettings() {
                             {log.credits_used != null ? `${log.credits_used} cr` : log.estimated_cost_usd != null ? `~$${log.estimated_cost_usd}` : "—"}
                           </td>
                           <td style={{ padding: "9px 8px", fontSize: 12, color: "#8A7D92", textAlign: "left", whiteSpace: "nowrap" }}>
-                            {timeAgo(log.created_at)}
+                            {timeAgo(log.created_at, PAGE_LOAD_TIME)}
                           </td>
                         </tr>
                       );

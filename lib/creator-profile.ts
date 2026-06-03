@@ -1,3 +1,7 @@
+// Creator profile — read/write basic brand identity data.
+// Reinforcement/learning functions removed in pre-launch cleanup.
+// Only static profile data (tone, style, preferences) remains.
+
 import { supabaseAdmin } from "./supabase/admin";
 
 export interface CreatorProfile {
@@ -39,40 +43,4 @@ export async function upsertCreatorProfile(
       { user_id: userId, ...fields, updated_at: new Date().toISOString() },
       { onConflict: "user_id" },
     );
-}
-
-/**
- * Reinforce a hook type that was used in a published video.
- * Called by the quality loop when was_published=true AND user_edit_count=0.
- */
-export async function reinforceHookPattern(userId: string, hookType: string): Promise<void> {
-  const profile = await loadCreatorProfile(userId);
-  if (!profile) return;
-  const hooks = profile.preferred_hooks ?? [];
-  if (!hooks.includes(hookType)) {
-    await upsertCreatorProfile(userId, { preferred_hooks: [...hooks, hookType] });
-  }
-}
-
-/**
- * Increment total_videos and recompute quality_score after a video publishes.
- * quality_score is a rolling average: higher = more videos published without edits.
- */
-export async function recordVideoOutcome(
-  userId: string,
-  wasPublished: boolean,
-  wasEdited: boolean,
-): Promise<void> {
-  const profile = await loadCreatorProfile(userId);
-  if (!profile) return;
-
-  const total   = profile.total_videos + 1;
-  const success = wasPublished && !wasEdited ? 1 : 0;
-  // Exponential moving average: alpha=0.2 keeps last ~5 videos influential
-  const score   = profile.quality_score * 0.8 + success * 0.2;
-
-  await upsertCreatorProfile(userId, {
-    total_videos:  total,
-    quality_score: Math.round(score * 1000) / 1000,
-  });
 }

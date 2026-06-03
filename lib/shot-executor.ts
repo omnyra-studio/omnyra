@@ -10,6 +10,7 @@
 import { fal } from "@fal-ai/client";
 import type { ShotPacket } from "./types/shot";
 import { extractVideoUrl } from "./video-models";
+import { compileKlingPrompt } from "./video-quality";
 
 // ── fal.ai config ─────────────────────────────────────────────────────────────
 
@@ -35,34 +36,11 @@ export const SEEDANCE_I2V_MODEL = "fal-ai/kling-video/v1.6/standard/image-to-vid
 export const KLING_I2V_MODEL    = "fal-ai/kling-video/v1.6/standard/image-to-video";
 
 /**
- * Injects camera direction into the visual prompt so fal models follow it.
+ * Builds a structured Kling prompt — camera direction first, motion verbs injected.
+ * Delegates to compileKlingPrompt from video-quality for full logic.
  */
 export function augmentPrompt(shot: ShotPacket): string {
-  const cameraDirections: Record<ShotPacket["camera_behavior"], string> = {
-    static:         "static locked-off camera",
-    slow_push_in:   "slow push-in dolly move toward subject",
-    dolly_in:       "dolly-in camera moving forward",
-    handheld_drift: "subtle handheld camera drift, organic motion",
-    crane_up:       "crane up — camera rising vertically",
-    whip_pan:       "fast whip-pan left to right",
-    orbital_slow:   "slow orbital 180° camera move around subject",
-  };
-
-  const framingNotes: Record<ShotPacket["framing"], string> = {
-    extreme_closeup: "extreme close-up, macro",
-    closeup:         "close-up",
-    medium_closeup:  "medium close-up",
-    medium:          "medium shot",
-    wide:            "wide shot",
-  };
-
-  return [
-    shot.visual_prompt,
-    `Camera: ${cameraDirections[shot.camera_behavior]}.`,
-    `Framing: ${framingNotes[shot.framing]}.`,
-    `Motion intensity: ${shot.motion_intensity}.`,
-    "Aspect ratio: 9:16. Cinematic quality.",
-  ].join(" ");
+  return compileKlingPrompt(shot, null);
 }
 
 // Seedance 2 accepts integers 5–10 only. Clamp hard — passing 4 or 11+ causes API errors.
@@ -82,7 +60,7 @@ async function executeFalShot(shot: ShotPacket): Promise<ShotExecutionResult> {
     const input = { prompt, duration, aspect_ratio: "9:16", generate_audio: false };
     console.log(`[Shot ${shot.shot_number}] model=${SEEDANCE_T2V_MODEL}`, JSON.stringify(input));
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     const result = await (fal as any).subscribe(SEEDANCE_T2V_MODEL, {
       input,
       logs: false,
@@ -109,7 +87,7 @@ async function executeFalShot(shot: ShotPacket): Promise<ShotExecutionResult> {
 
   let result: unknown;
   try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     result = await (fal as any).subscribe(SEEDANCE_I2V_MODEL, {
       input: i2vInput,
       logs: false,
@@ -120,7 +98,7 @@ async function executeFalShot(shot: ShotPacket): Promise<ShotExecutionResult> {
     // Kling v3 accepts numeric duration
     const klingInput = { prompt, image_url: shot.scene_image_url, duration: Number(duration), aspect_ratio: "9:16" };
     console.log(`[Shot ${shot.shot_number}] model=${KLING_I2V_MODEL} (fallback)`, JSON.stringify({ ...klingInput, image_url: klingInput.image_url.substring(0, 80) }));
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+     
     result = await (fal as any).subscribe(KLING_I2V_MODEL, {
       input: klingInput,
       logs: false,
@@ -143,7 +121,7 @@ async function executeTextOverlay(shot: ShotPacket): Promise<ShotExecutionResult
     "9:16 portrait format, high contrast, clean minimalist design",
   ].join(" ");
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const result = await (fal as any).subscribe("fal-ai/flux/schnell", {
     input: {
       prompt,

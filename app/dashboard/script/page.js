@@ -9,6 +9,19 @@ const PLATFORMS = ["TikTok","Instagram Reels","YouTube Shorts","YouTube","Linked
 const DURATIONS = ["15 seconds","30 seconds","60 seconds","90 seconds","3 minutes","5 minutes","10 minutes"];
 const TONES     = ["Engaging","Professional","Funny","Educational","Inspirational","Casual","Storytelling"];
 
+function Dropdown({ opts, val, set }) {
+  return (
+    <select value={val} onChange={e => set(e.target.value)} style={{
+      padding:"10px 14px", borderRadius:8,
+      border:"1px solid rgba(204,171,175,0.25)",
+      background:"#0D0010", color:"#C084FC", fontSize:14, width:"100%", cursor:"pointer",
+      fontFamily:"inherit",
+    }}>
+      {opts.map(o => <option key={o}>{o}</option>)}
+    </select>
+  );
+}
+
 export default function ScriptStudio() {
   const router = useRouter();
   const [topic,    setTopic]   = useState("");
@@ -61,17 +74,6 @@ Make it natural, conversational, and optimised for ${platform}.`,
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
   }
-
-  const Dropdown = ({ opts, val, set }) => (
-    <select value={val} onChange={e => set(e.target.value)} style={{
-      padding:"10px 14px", borderRadius:8,
-      border:"1px solid rgba(204,171,175,0.25)",
-      background:"#0D0010", color:"#C084FC", fontSize:14, width:"100%", cursor:"pointer",
-      fontFamily:"inherit",
-    }}>
-      {opts.map(o => <option key={o}>{o}</option>)}
-    </select>
-  );
 
   return (
     <div style={{ minHeight:"100vh", background:"transparent", position:"relative", color:"#fff" }}>

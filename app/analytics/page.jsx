@@ -74,28 +74,33 @@ function DonutChart({ segments, total }) {
   if (!total) return <div style={{ width: 140, height: 140, borderRadius: "50%", background: "rgba(75,30,130,0.4)", border: "1px solid rgba(207,164,47,0.2)" }} />;
   const r = 50;
   const circ = 2 * Math.PI * r;
-  let offset = -circ / 4; // start at top
+
+  // Pre-compute per-segment values outside JSX to avoid render-phase mutation
+  const segmentData = (() => {
+    const result = [];
+    let off = -circ / 4; // start at top
+    for (const seg of segments) {
+      const dash = (seg.value / total) * circ;
+      result.push({ offset: off, dash, gap: circ - dash, color: seg.color });
+      off -= dash;
+    }
+    return result;
+  })();
 
   return (
     <svg width="140" height="140" viewBox="0 0 140 140">
-      {segments.map((seg, i) => {
-        const dash = (seg.value / total) * circ;
-        const gap  = circ - dash;
-        const el = (
-          <circle
-            key={i}
-            cx="70" cy="70" r={r}
-            fill="none"
-            stroke={seg.color}
-            strokeWidth="20"
-            strokeDasharray={`${dash} ${gap}`}
-            strokeDashoffset={offset}
-            strokeLinecap="butt"
-          />
-        );
-        offset -= dash;
-        return el;
-      })}
+      {segmentData.map(({ offset, dash, gap, color }, i) => (
+        <circle
+          key={i}
+          cx="70" cy="70" r={r}
+          fill="none"
+          stroke={color}
+          strokeWidth="20"
+          strokeDasharray={`${dash} ${gap}`}
+          strokeDashoffset={offset}
+          strokeLinecap="butt"
+        />
+      ))}
       <circle cx="70" cy="70" r="38" fill="rgba(13,0,16,0.85)" />
       <text x="70" y="74" textAnchor="middle" fill={GOLD} fontSize="13" fontWeight="700">
         {segments.length} types

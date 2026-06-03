@@ -107,7 +107,7 @@ export async function POST(request: Request) {
     saveCache(user.id, "generate-cinematic", cacheInput, JSON.stringify(payload));
     logUsageEvent(user.id, "generate-cinematic", "generate", 8, { duration });
     return ok(payload);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   } catch (error: any) {
     console.error("[generate-cinematic] RAW ERROR:", error);
     console.error("[generate-cinematic] ERROR MESSAGE:", error?.message);

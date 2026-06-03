@@ -12,7 +12,7 @@
  * after this returns — this function exits as soon as the shot plan is persisted.
  */
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getModeConfig } from "@/lib/orchestration/mode-adapters";
 import type { OrchestratorMode, OrchestrateResult } from "@/lib/orchestration/types";

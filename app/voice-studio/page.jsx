@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import AnimatedBackground from '@/components/AnimatedBackground'
@@ -10,7 +10,7 @@ import { usePostHog } from 'posthog-js/react'
 export default function VoiceStudioPage() {
   const router = useRouter()
   const posthog = usePostHog()
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
 
   // Auth
   const [userId, setUserId] = useState(null)
@@ -40,6 +40,7 @@ export default function VoiceStudioPage() {
   const countdownRef = useRef(null)
   const analyserRef = useRef(null)
   const animFrameRef = useRef(null)
+  const drawWaveformRef = useRef(null)
   const [barHeights, setBarHeights] = useState(Array(20).fill(4))
 
   // Upload
@@ -78,7 +79,7 @@ export default function VoiceStudioPage() {
         setSelectedVoiceId(profile.voice_id)
       }
     })
-  }, [router])
+  }, [router, supabase])
 
   // Fetch voices
   useEffect(() => {
@@ -97,7 +98,7 @@ export default function VoiceStudioPage() {
       }
       setVoicesLoading(false)
     })
-  }, [authLoading])
+  }, [authLoading, supabase])
 
   function handlePreview(voice) {
     if (!voice.previewUrl) return
@@ -142,8 +143,9 @@ export default function VoiceStudioPage() {
       return Math.max(4, (val / 255) * 48)
     })
     setBarHeights(heights)
-    animFrameRef.current = requestAnimationFrame(drawWaveform)
+    animFrameRef.current = requestAnimationFrame(drawWaveformRef.current)
   }, [])
+  useEffect(() => { drawWaveformRef.current = drawWaveform; }, [drawWaveform])
 
   async function startRecording() {
     posthog?.capture('voice_clone_started')
@@ -603,7 +605,7 @@ export default function VoiceStudioPage() {
             {cloneSuccess && (
               <div style={{ marginTop: 24, textAlign: 'center' }}>
                 <p style={{ color: '#4ECB8C', fontWeight: 700, fontSize: 18, marginBottom: 6 }}>✓ Voice clone ready</p>
-                <p style={{ color: '#BBA8C8', fontSize: 13, marginBottom: 24 }}>"{cloneName || 'My Voice'}" is now your default voice for all generations.</p>
+                <p style={{ color: '#BBA8C8', fontSize: 13, marginBottom: 24 }}>&quot;{cloneName || 'My Voice'}&quot; is now your default voice for all generations.</p>
 
                 <div style={{ display: 'flex', gap: 12, justifyContent: 'center', alignItems: 'center', flexWrap: 'wrap' }}>
                   <input
