@@ -1,14 +1,14 @@
 {
-  "generated": "2026-06-03T08:40:27.259Z",
+  "generated": "2026-06-03T08:45:26.188Z",
   "stats": {
-    "totalFiles": 383,
-    "totalEdges": 855,
+    "totalFiles": 385,
+    "totalEdges": 866,
     "violations": 0,
     "layers": {
       "ui": 57,
-      "api_routes": 130,
+      "api_routes": 131,
       "unknown": 29,
-      "services": 162,
+      "services": 163,
       "infrastructure": 4,
       "providers": 1
     }
@@ -20,7 +20,7 @@
     },
     {
       "layer": "api_routes",
-      "count": 130
+      "count": 131
     },
     {
       "layer": "unknown",
@@ -28,7 +28,7 @@
     },
     {
       "layer": "services",
-      "count": 162
+      "count": 163
     },
     {
       "layer": "infrastructure",
@@ -3100,6 +3100,27 @@
       "allowed": true
     },
     {
+      "from": "app/api/workers/avatar/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/workers/avatar/route.ts",
+      "fromLayer": "api_routes",
+      "to": "crypto",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/workers/avatar/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/avatar/job-orchestrator",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
       "from": "app/api/workers/composition/route.ts",
       "fromLayer": "api_routes",
       "to": "next/server",
@@ -4560,6 +4581,62 @@
       "fromLayer": "services",
       "to": "lib/avatar/scene-classifier",
       "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/avatar/job-orchestrator.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/avatar/job-orchestrator.ts",
+      "fromLayer": "services",
+      "to": "lib/avatar/asset-validator",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/avatar/job-orchestrator.ts",
+      "fromLayer": "services",
+      "to": "lib/avatar/cinematic-sequencer",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/avatar/job-orchestrator.ts",
+      "fromLayer": "services",
+      "to": "lib/avatar/scene-classifier",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/avatar/job-orchestrator.ts",
+      "fromLayer": "services",
+      "to": "lib/avatar/model-router",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/avatar/job-orchestrator.ts",
+      "fromLayer": "services",
+      "to": "lib/avatar/quality-scorer",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/avatar/job-orchestrator.ts",
+      "fromLayer": "services",
+      "to": "lib/avatar/failure-taxonomy",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/avatar/job-orchestrator.ts",
+      "fromLayer": "services",
+      "to": "lib/providers/hedra",
+      "toLayer": "providers",
       "allowed": true
     },
     {
@@ -6028,8 +6105,8 @@
   ],
   "violations": [],
   "drift": {
-    "score": 0,
-    "addedEdges": 1,
+    "score": 1,
+    "addedEdges": 11,
     "removedEdges": 0
   }
 }
