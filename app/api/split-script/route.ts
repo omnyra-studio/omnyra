@@ -4,18 +4,114 @@ import { cookies } from "next/headers";
 import { getBrandProfile, getBrandSystemPrompt } from "@/lib/brand";
 import { logUsageEvent } from "@/lib/cache";
 
+// ── Types ─────────────────────────────────────────────────────────────────────
+
+export type SceneType =
+  | "talking_head"
+  | "emotional"
+  | "educational"
+  | "lifestyle_broll"
+  | "product_demo"
+  | "transition"
+  | "background"
+  | "cta"
+  | "quote";
+
+export interface SplitScene {
+  id:           number;
+  text:         string;
+  type:         SceneType;
+  visual_prompt: string;
+}
+
+export interface SplitScriptResult {
+  scenes:   SplitScene[];
+  segments: SplitScene[]; // compat alias
+}
+
+const VALID_TYPES = new Set<string>([
+  "talking_head", "emotional", "educational", "lifestyle_broll",
+  "product_demo", "transition", "background", "cta", "quote",
+]);
+
+// ── Safe parser — NEVER throws ────────────────────────────────────────────────
+
+function safeParseSplitScript(input: string): { scenes?: unknown[]; error?: string; raw?: unknown } {
+  try {
+    const cleaned = input
+      .replace(/^```json\s*/m, "")
+      .replace(/^```\s*/m, "")
+      .replace(/\s*```\s*$/m, "")
+      .trim();
+
+    const match = cleaned.match(/\{[\s\S]*\}/);
+    if (!match) return { error: "NO_JSON_FOUND", raw: input };
+
+    const parsed = JSON.parse(match[0]) as Record<string, unknown>;
+
+    if (!parsed.scenes || !Array.isArray(parsed.scenes)) {
+      return { error: "INVALID_SCHEMA", raw: parsed };
+    }
+
+    return { scenes: parsed.scenes as unknown[] };
+  } catch (err) {
+    return {
+      error: "PARSE_FAILURE",
+      raw: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+// ── Self-healing repair — always returns a usable result ──────────────────────
+
+function repairSplitScript(
+  result: ReturnType<typeof safeParseSplitScript>,
+  script: string,
+  numSegments: number,
+): SplitScene[] {
+  if (result.error) {
+    console.error("[SPLIT_SCRIPT_ERROR]", { error: result.error, raw: result.raw });
+  }
+
+  if (result.scenes && Array.isArray(result.scenes) && result.scenes.length > 0) {
+    return (result.scenes as unknown[]).map((s: unknown, i: number) => {
+      const raw = (s ?? {}) as Record<string, unknown>;
+      const type = VALID_TYPES.has(String(raw.type ?? "")) ? raw.type as SceneType : "lifestyle_broll";
+      return {
+        id:           i + 1,
+        text:         String(raw.text ?? ""),
+        type,
+        visual_prompt: String(raw.visual_prompt ?? raw.text ?? ""),
+      };
+    });
+  }
+
+  // Fallback: split the script evenly across N scenes
+  console.warn(`[SPLIT_SCRIPT_REPAIR] producing ${numSegments} fallback scenes from raw script`);
+  const words   = script.split(/\s+/);
+  const perScene = Math.ceil(words.length / numSegments);
+  return Array.from({ length: numSegments }, (_, i): SplitScene => ({
+    id:            i + 1,
+    text:          words.slice(i * perScene, (i + 1) * perScene).join(" "),
+    type:          "lifestyle_broll",
+    visual_prompt: words.slice(i * perScene, (i + 1) * perScene).join(" ").substring(0, 200),
+  }));
+}
+
+// ── Route ─────────────────────────────────────────────────────────────────────
+
 export async function POST(req: Request) {
   if (!process.env.ANTHROPIC_API_KEY) {
     return Response.json({ error: "ANTHROPIC_API_KEY missing" }, { status: 500 });
   }
 
-  const { script, hook, num_segments, niche } = await req.json();
+  const { script, hook, num_segments: rawSegments, niche } = await req.json();
 
-  if (!script || !num_segments) {
+  if (!script || !rawSegments) {
     return Response.json({ error: "script and num_segments required" }, { status: 400 });
   }
+  const num_segments = Math.min(10, Math.max(1, Number(rawSegments)));
 
-  // Brand context — graceful fallback if unauthenticated
   let brandContext = "";
   let userId: string | null = null;
   try {
@@ -33,69 +129,54 @@ export async function POST(req: Request) {
     }
   } catch { /* brand injection is optional */ }
 
-  const systemPrompt = `You are Omnyra's Cinematic Motion Director.
+  // ── System prompt: strict JSON mode ──────────────────────────────────────────
 
-Your job is NOT to write a screenplay. Your job is to create visual scene descriptions that generate compelling AI video.
+  const systemPrompt = `You are a script segmentation engine for AI video generation.${brandContext}
 
-RULE: Every scene MUST contain all three:
-1. Human movement (walking, reaching, laughing, spinning, embracing — never just standing/watching/posing)
-2. Environmental movement (waves, wind, rain, traffic, birds, trees, water, light changes)
-3. Camera movement (tracking shot, push-in, orbit, slow dolly, handheld, crane, cinematic pan)
+OUTPUT RULE — CRITICAL: Return ONLY valid JSON. Do NOT use markdown, backticks, code fences, labels, or any text outside the JSON object.
 
-BAD: "A couple stands on the beach watching the sunset."
-GOOD: "A couple walks barefoot along the shoreline at golden hour. Wind moves through their hair. Waves roll in. Camera tracks alongside them as the sun drops."
+SCENE TYPE RULES — set "type" using best inference:
+  talking_head   — presenter speaking to camera, natural head/body movement
+  emotional      — embrace, reaction, tears, celebration, high-impact moment
+  educational    — concept visualised, diagram, demonstration, tutorial
+  lifestyle_broll — people in motion, walking, laughing, dancing, cooking, working
+  product_demo   — product being used, handled, demonstrated
+  transition     — motion blur, time-lapse, visual cut
+  background     — atmospheric environment with no main subject
+  cta            — call-to-action with energetic background
+  quote          — inspirational text overlay
 
-MOTION REQUIREMENTS per scene:
-- Human motion ≥ 70 — visible physical action within first 2 seconds
-- Environmental motion ≥ 60 — world is alive and moving
-- Camera motion ≥ 60 — camera never locked off
+If unsure: use "lifestyle_broll". NEVER output null, undefined, unknown, or empty string for type.
 
-EMOTIONAL ESCALATION across scenes:
-Scene 1 → Curiosity
-Scene 2 → Connection
-Scene 3 → Emotion
-Scene 4 → Payoff / Climax
-Scene 5+ → Reflection → CTA
+VISUAL PROMPT RULES — every scene needs a cinematic motion description:
+  - 20–30 words
+  - Must include: human action + environmental motion + camera movement
+  - Bad: "A person stands at a desk."
+  - Good: "A creator leans forward at a standing desk, gesturing confidently. Natural window light shifts. Camera slowly pushes in from medium to close."
 
-If any scene lacks visible movement, automatically rewrite it before returning.${brandContext}`;
+HARD CONSTRAINTS:
+  Output MUST be parseable by JSON.parse()
+  Double quotes only. No trailing commas. No comments. No markdown wrapping.
 
-  const prompt = `Split this script into exactly ${num_segments} visual scene segments optimised for AI video generation (Kling, Runway, Veo).
+FAILURE CONDITION: If you cannot comply, output exactly: {"error":"invalid_input"}`;
+
+  // ── User prompt ───────────────────────────────────────────────────────────────
+
+  const userPrompt = `Split this script into exactly ${num_segments} scenes for AI video generation.
 
 Script: ${script}
-Hook: ${hook ?? ""}
+Hook: ${hook ?? "(none)"}
 Niche: ${niche ?? "general"}
 
-SCENE TYPE CLASSIFICATION:
-- talking_head: presenter speaking directly to camera with natural head/body movement
-- lifestyle_broll: people in motion — walking, laughing, dancing, playing, working
-- product_demo: product being used, handled, demonstrated with movement
-- emotional: high-impact moment — embrace, reaction, tears, celebration
-- quote: inspirational text with dynamic background movement
-- educational: concept visualised with motion — diagrams, demonstrations
-- cta: call-to-action with energetic motion background
-- background: atmospheric environment — waves, cityscape, nature with movement
-- transition: motion blur, time-lapse, visual transition
+Return this exact JSON structure. The first character MUST be { and the last MUST be }:
 
-ROUTING:
-- talking_head, lifestyle_broll, product_demo, emotional → "kling" (premium AI motion)
-- quote, educational, cta, background, transition → "smart_motion" (lightweight cinematic)
-
-For each segment output:
-- text: the exact script words for this scene
-- visual_prompt: 20-30 words describing the scene with SPECIFIC human action + environmental action + camera movement
-- scene_type: one type from above
-- provider: "kling" or "smart_motion"
-- motion_score: estimated 0-100 motion intensity
-
-Return ONLY valid JSON. No markdown, no backticks:
 {
-  "segments": [
+  "scenes": [
     {
-      "text": "script portion",
-      "visual_prompt": "20-30 word motion-rich cinematic description",
-      "scene_type": "lifestyle_broll",
-      "provider": "kling",
-      "motion_score": 85
+      "id": 1,
+      "text": "exact script words for this scene",
+      "type": "lifestyle_broll",
+      "visual_prompt": "20-30 word cinematic motion description with human action + environment + camera"
     }
   ]
 }`;
@@ -104,23 +185,23 @@ Return ONLY valid JSON. No markdown, no backticks:
   try {
     const response = await client.messages.create({
       model:      "claude-haiku-4-5-20251001",
-      max_tokens: 1500,
+      max_tokens: 1800,
       system:     systemPrompt,
-      messages:   [{ role: "user", content: prompt }],
+      messages:   [{ role: "user", content: userPrompt }],
     });
 
-    const text   = response.content[0]?.type === "text" ? response.content[0].text : "{}";
-    const parsed = JSON.parse(text);
+    const raw = response.content[0]?.type === "text" ? response.content[0].text : "";
+    if (!raw) return Response.json({ error: "Empty response from model" }, { status: 500 });
 
-    if (!parsed.segments?.length) {
-      return Response.json({ error: "No segments returned" }, { status: 500 });
-    }
+    const parsed  = safeParseSplitScript(raw);
+    const scenes  = repairSplitScript(parsed, script, num_segments);
 
     if (userId) {
       logUsageEvent(userId, "split-script", "generate", 1, { num_segments, niche });
     }
 
-    return Response.json(parsed);
+    const result: SplitScriptResult = { scenes, segments: scenes };
+    return Response.json(result);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[split-script] error:", msg);
