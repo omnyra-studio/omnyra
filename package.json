@@ -13,6 +13,7 @@
     "check-schema": "ts-node --project tsconfig.scripts.json scripts/check-schema.ts",
     "dependency-graph": "ts-node --project tsconfig.scripts.json scripts/dependency-graph.ts",
     "provider-registry-gate": "ts-node --project tsconfig.scripts.json scripts/provider-registry-gate.ts",
+    "ast-gate": "ts-node --project tsconfig.scripts.json scripts/ast-gate/index.ts",
     "test:pipeline": "ts-node --project tsconfig.scripts.json scripts/test-validate-pipeline.ts"
   },
   "dependencies": {

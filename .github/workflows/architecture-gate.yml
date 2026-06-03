@@ -26,7 +26,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: "24"
           cache: "npm"
 
       - name: Install dependencies
@@ -58,7 +58,13 @@ jobs:
       - name: Provider Registry Gate
         run: npm run provider-registry-gate
 
-      # ── Layer 5: Import boundary enforcement (ESLint) ─────────────────────────
+      # ── Layer 5: AST-level structural enforcement ─────────────────────────────
+      # Checks: admin imports in client files, AI SDK calls outside API routes,
+      # NEXT_PUBLIC_ on service role keys, ElevenLabs outside API routes.
+      - name: AST Gate v2
+        run: npm run ast-gate
+
+      # ── Layer 6: Import boundary enforcement (ESLint) ─────────────────────────
       - name: ESLint
         run: npm run lint
 
@@ -75,6 +81,8 @@ jobs:
           echo "✓ TypeScript passed"
           echo "✓ Architecture Gate passed (forbidden patterns + expiry check)"
           echo "✓ Dependency Graph passed (layer edges + drift check)"
+          echo "✓ Provider Registry Gate passed"
+          echo "✓ AST Gate v2 passed (import graph + hook discipline + model call placement)"
           echo "✓ ESLint passed"
           echo ""
           echo "Only valid execution path: Director Core → Scene Planner → Provider Router"

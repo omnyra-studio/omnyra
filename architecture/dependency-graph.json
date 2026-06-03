@@ -1,14 +1,14 @@
 {
-  "generated": "2026-06-02T12:01:49.785Z",
+  "generated": "2026-06-03T04:31:41.828Z",
   "stats": {
-    "totalFiles": 313,
-    "totalEdges": 737,
+    "totalFiles": 377,
+    "totalEdges": 847,
     "violations": 0,
     "layers": {
-      "ui": 49,
-      "api_routes": 120,
-      "unknown": 5,
-      "services": 134,
+      "ui": 57,
+      "api_routes": 130,
+      "unknown": 29,
+      "services": 156,
       "infrastructure": 4,
       "providers": 1
     }
@@ -16,19 +16,19 @@
   "nodes": [
     {
       "layer": "ui",
-      "count": 49
+      "count": 57
     },
     {
       "layer": "api_routes",
-      "count": 120
+      "count": 130
     },
     {
       "layer": "unknown",
-      "count": 5
+      "count": 29
     },
     {
       "layer": "services",
-      "count": 134
+      "count": 156
     },
     {
       "layer": "infrastructure",
@@ -685,6 +685,111 @@
       "allowed": true
     },
     {
+      "from": "app/api/brand-brain/analytics/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/brand-brain/analytics/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/brand-brain/analytics/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/brand-brain/analytics/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/brand-brain/profile",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/brand-brain/analytics/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/brand-brain/learning",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/brand-brain/analytics/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/brand-brain/store",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/brand-brain/analytics/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/api/brand-brain/profile/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/brand-brain/profile/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/brand-brain/profile/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/brand-brain/profile/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/brand-brain/profile",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/brand-brain/record-outcome/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/server",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/brand-brain/record-outcome/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/brand-brain/record-outcome/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/brand-brain/record-outcome/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/brand-brain/learning",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
       "from": "app/api/can-show-offer/route.ts",
       "fromLayer": "api_routes",
       "to": "lib/auth",
@@ -748,16 +853,30 @@
       "allowed": true
     },
     {
-      "from": "app/api/checkout/route.js",
+      "from": "app/api/checkout/route.ts",
       "fromLayer": "api_routes",
-      "to": "stripe",
+      "to": "@supabase/ssr",
       "toLayer": "external",
       "allowed": true
     },
     {
-      "from": "app/api/checkout/route.js",
+      "from": "app/api/checkout/route.ts",
       "fromLayer": "api_routes",
-      "to": "lib/auth",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/checkout/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/stripe/stripeClient",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/checkout/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/stripe/plans",
       "toLayer": "services",
       "allowed": true
     },
@@ -783,23 +902,72 @@
       "allowed": true
     },
     {
-      "from": "app/api/clone/route.js",
+      "from": "app/api/clone/route.ts",
       "fromLayer": "api_routes",
-      "to": "lib/auth",
-      "toLayer": "services",
-      "allowed": true
-    },
-    {
-      "from": "app/api/clone-voice/route.js",
-      "fromLayer": "api_routes",
-      "to": "@supabase/supabase-js",
+      "to": "@supabase/ssr",
       "toLayer": "external",
       "allowed": true
     },
     {
-      "from": "app/api/clone-voice/route.js",
+      "from": "app/api/clone/route.ts",
       "fromLayer": "api_routes",
-      "to": "lib/auth",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/clone/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/api/clone/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/rules/creditRules",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/clone/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/voice-quality",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/clone-voice/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/clone-voice/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/clone-voice/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/api/clone-voice/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/rules/creditRules",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/clone-voice/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/voice-quality",
       "toLayer": "services",
       "allowed": true
     },
@@ -926,6 +1094,27 @@
       "from": "app/api/credits/route.js",
       "fromLayer": "api_routes",
       "to": "lib/credits",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/credits/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/credits/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/credits/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/db/credits",
       "toLayer": "services",
       "allowed": true
     },
@@ -1094,6 +1283,13 @@
       "from": "app/api/cron/recalculate-scores/route.ts",
       "fromLayer": "api_routes",
       "to": "lib/optimization/scoring",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/cron/refresh-trends/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/trends/trendIngestion",
       "toLayer": "services",
       "allowed": true
     },
@@ -1385,37 +1581,100 @@
       "allowed": true
     },
     {
-      "from": "app/api/generate-image/route.js",
+      "from": "app/api/generate-cinematic-sequence/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/smart-motion",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-cinematic-sequence/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-cinematic-sequence/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/visual-continuity",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-cinematic-sequence/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/generation-guardrail",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-cinematic-sequence/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/abuse-protection",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-cinematic-sequence/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/rules/creditRules",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-cinematic-sequence/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/credits/withCreditState",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-image/route.ts",
       "fromLayer": "api_routes",
       "to": "@supabase/ssr",
       "toLayer": "external",
       "allowed": true
     },
     {
-      "from": "app/api/generate-image/route.js",
+      "from": "app/api/generate-image/route.ts",
       "fromLayer": "api_routes",
       "to": "next/headers",
       "toLayer": "external",
       "allowed": true
     },
     {
-      "from": "app/api/generate-image/route.js",
+      "from": "app/api/generate-image/route.ts",
       "fromLayer": "api_routes",
       "to": "lib/brand",
       "toLayer": "services",
       "allowed": true
     },
     {
-      "from": "app/api/generate-image/route.js",
+      "from": "app/api/generate-image/route.ts",
       "fromLayer": "api_routes",
       "to": "lib/cache",
       "toLayer": "services",
       "allowed": true
     },
     {
+      "from": "app/api/generate-image/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/rules/creditRules",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-image/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/credits/withCreditState",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
       "from": "app/api/generate-script/route.ts",
       "fromLayer": "api_routes",
-      "to": "openai",
+      "to": "@anthropic-ai/sdk",
       "toLayer": "external",
       "allowed": true
     },
@@ -1675,6 +1934,20 @@
       "from": "app/api/generate-voiceover/route.ts",
       "fromLayer": "api_routes",
       "to": "lib/cache",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-voiceover/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/rules/creditRules",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-voiceover/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/credits/withCreditState",
       "toLayer": "services",
       "allowed": true
     },
@@ -2444,7 +2717,7 @@
     {
       "from": "app/api/split-script/route.ts",
       "fromLayer": "api_routes",
-      "to": "openai",
+      "to": "@anthropic-ai/sdk",
       "toLayer": "external",
       "allowed": true
     },
@@ -2589,6 +2862,20 @@
       "allowed": true
     },
     {
+      "from": "app/api/test-voice/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/test-voice/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
       "from": "app/api/upload/route.js",
       "fromLayer": "api_routes",
       "to": "@supabase/supabase-js",
@@ -2599,6 +2886,27 @@
       "from": "app/api/upload/route.js",
       "fromLayer": "api_routes",
       "to": "lib/auth",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/user/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/user/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/user/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/db/users",
       "toLayer": "services",
       "allowed": true
     },
@@ -2631,6 +2939,69 @@
       "allowed": true
     },
     {
+      "from": "app/api/viral-strategy/generate/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/viral-strategy/generate/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/viral-strategy/generate/route.ts",
+      "fromLayer": "api_routes",
+      "to": "packages/viral-strategy",
+      "toLayer": "unknown",
+      "allowed": true
+    },
+    {
+      "from": "app/api/viral-strategy/generate/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/abuse-protection",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/viral-strategy/generate/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/rules/creditRules",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/viral-strategy/generate/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/db/generations",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/viral-strategy/select/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/ssr",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/viral-strategy/select/route.ts",
+      "fromLayer": "api_routes",
+      "to": "next/headers",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/viral-strategy/select/route.ts",
+      "fromLayer": "api_routes",
+      "to": "packages/selection-feedback",
+      "toLayer": "unknown",
+      "allowed": true
+    },
+    {
       "from": "app/api/voice/route.js",
       "fromLayer": "api_routes",
       "to": "lib/auth",
@@ -2648,6 +3019,27 @@
       "from": "app/api/voice/route.js",
       "fromLayer": "api_routes",
       "to": "lib/api-guard",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/webhooks/stripe/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/stripe/stripeClient",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/webhooks/stripe/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/api/webhooks/stripe/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/stripe/plans",
       "toLayer": "services",
       "allowed": true
     },
@@ -2927,6 +3319,13 @@
     {
       "from": "app/dashboard/brand/page.tsx",
       "fromLayer": "ui",
+      "to": "next/image",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/brand/page.tsx",
+      "fromLayer": "ui",
       "to": "next/navigation",
       "toLayer": "external",
       "allowed": true
@@ -3026,6 +3425,13 @@
       "from": "app/dashboard/creator/page.js",
       "fromLayer": "ui",
       "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/creator/page.js",
+      "fromLayer": "ui",
+      "to": "next/image",
       "toLayer": "external",
       "allowed": true
     },
@@ -3130,6 +3536,13 @@
     {
       "from": "app/dashboard/image/page.js",
       "fromLayer": "ui",
+      "to": "next/image",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/image/page.js",
+      "fromLayer": "ui",
       "to": "next/navigation",
       "toLayer": "external",
       "allowed": true
@@ -3143,6 +3556,34 @@
     },
     {
       "from": "app/dashboard/image/page.js",
+      "fromLayer": "ui",
+      "to": "components/AnimatedBackground",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/intelligence/page.tsx",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/intelligence/page.tsx",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/intelligence/page.tsx",
+      "fromLayer": "ui",
+      "to": "lib/supabase/client",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/intelligence/page.tsx",
       "fromLayer": "ui",
       "to": "components/AnimatedBackground",
       "toLayer": "ui",
@@ -3194,6 +3635,13 @@
       "from": "app/dashboard/page.jsx",
       "fromLayer": "ui",
       "to": "next/link",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/page.jsx",
+      "fromLayer": "ui",
+      "to": "next/image",
       "toLayer": "external",
       "allowed": true
     },
@@ -3345,6 +3793,27 @@
       "allowed": true
     },
     {
+      "from": "app/dashboard/viral-strategy/page.jsx",
+      "fromLayer": "ui",
+      "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/viral-strategy/page.jsx",
+      "fromLayer": "ui",
+      "to": "next/navigation",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/dashboard/viral-strategy/page.jsx",
+      "fromLayer": "ui",
+      "to": "lib/supabase",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
       "from": "app/dashboard/voice/page.js",
       "fromLayer": "ui",
       "to": "react",
@@ -3457,6 +3926,34 @@
       "allowed": true
     },
     {
+      "from": "app/page.jsx",
+      "fromLayer": "ui",
+      "to": "next/image",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/page.jsx",
+      "fromLayer": "ui",
+      "to": "components/legal-footer",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
+      "from": "app/pricing/page.tsx",
+      "fromLayer": "ui",
+      "to": "next/link",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/pricing/page.tsx",
+      "fromLayer": "ui",
+      "to": "components/legal-footer",
+      "toLayer": "ui",
+      "allowed": true
+    },
+    {
       "from": "app/profile/page.jsx",
       "fromLayer": "ui",
       "to": "react",
@@ -3530,6 +4027,13 @@
       "from": "app/signin/page.js",
       "fromLayer": "ui",
       "to": "react",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/signin/page.js",
+      "fromLayer": "ui",
+      "to": "next/image",
       "toLayer": "external",
       "allowed": true
     },
@@ -3748,6 +4252,34 @@
       "fromLayer": "ui",
       "to": "posthog-js/react",
       "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "archive/packages/self-healing/index.ts",
+      "fromLayer": "unknown",
+      "to": "archive/packages/prompt-compiler/mutators",
+      "toLayer": "unknown",
+      "allowed": true
+    },
+    {
+      "from": "archive/packages/self-healing/index.ts",
+      "fromLayer": "unknown",
+      "to": "archive/packages/drift-intelligence",
+      "toLayer": "unknown",
+      "allowed": true
+    },
+    {
+      "from": "archive/packages/self-healing/index.ts",
+      "fromLayer": "unknown",
+      "to": "archive/packages/prompt-versioning",
+      "toLayer": "unknown",
+      "allowed": true
+    },
+    {
+      "from": "archive/packages/self-healing/index.ts",
+      "fromLayer": "unknown",
+      "to": "archive/packages/prompt-compiler/ast",
+      "toLayer": "unknown",
       "allowed": true
     },
     {
@@ -3940,6 +4472,13 @@
       "allowed": true
     },
     {
+      "from": "lib/abuse-protection.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
       "from": "lib/analytics/snapshots.ts",
       "fromLayer": "services",
       "to": "lib/supabase/admin",
@@ -4056,6 +4595,48 @@
       "fromLayer": "services",
       "to": "@anthropic-ai/sdk",
       "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/brand-brain/profile.ts",
+      "fromLayer": "services",
+      "to": "@anthropic-ai/sdk",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/brand-brain/profile.ts",
+      "fromLayer": "services",
+      "to": "lib/brand",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/brand-brain/profile.ts",
+      "fromLayer": "services",
+      "to": "lib/creator-profile",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/brand-brain/profile.ts",
+      "fromLayer": "services",
+      "to": "lib/brand-brain/store",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/brand-brain/profile.ts",
+      "fromLayer": "services",
+      "to": "lib/brand-brain/learning",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/brand-brain/store.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
       "allowed": true
     },
     {
@@ -4423,6 +5004,20 @@
       "allowed": true
     },
     {
+      "from": "lib/credits/withCreditState.ts",
+      "fromLayer": "services",
+      "to": "crypto",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/credits/withCreditState.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
       "from": "lib/credits.js",
       "fromLayer": "services",
       "to": "lib/supabase/admin",
@@ -4437,10 +5032,31 @@
       "allowed": true
     },
     {
+      "from": "lib/db/credits.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/db/generations.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
       "from": "lib/db/query.ts",
       "fromLayer": "services",
       "to": "lib/db/schema",
       "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/db/users.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
       "allowed": true
     },
     {
@@ -4469,6 +5085,13 @@
       "fromLayer": "services",
       "to": "lib/credits",
       "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/engine/generateVariants.ts",
+      "fromLayer": "services",
+      "to": "packages/viral-strategy",
+      "toLayer": "unknown",
       "allowed": true
     },
     {
@@ -4934,6 +5557,20 @@
       "allowed": true
     },
     {
+      "from": "lib/rules/creditRules.ts",
+      "fromLayer": "services",
+      "to": "lib/db/credits",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/rules/creditRules.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
       "from": "lib/script-engine.ts",
       "fromLayer": "services",
       "to": "lib/prompt-engine",
@@ -4959,6 +5596,55 @@
       "fromLayer": "services",
       "to": "lib/video-models",
       "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/shot-executor.ts",
+      "fromLayer": "services",
+      "to": "lib/video-quality",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/smart-motion.ts",
+      "fromLayer": "services",
+      "to": "@ffmpeg-installer/ffmpeg",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/smart-motion.ts",
+      "fromLayer": "services",
+      "to": "fluent-ffmpeg",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/smart-motion.ts",
+      "fromLayer": "services",
+      "to": "os",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/smart-motion.ts",
+      "fromLayer": "services",
+      "to": "path",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/smart-motion.ts",
+      "fromLayer": "services",
+      "to": "fs",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/smart-motion.ts",
+      "fromLayer": "services",
+      "to": "crypto",
+      "toLayer": "external",
       "allowed": true
     },
     {
@@ -5008,6 +5694,13 @@
       "fromLayer": "services",
       "to": "lib/supabase/admin",
       "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/stripe/stripeClient.ts",
+      "fromLayer": "services",
+      "to": "stripe",
+      "toLayer": "external",
       "allowed": true
     },
     {
@@ -5077,6 +5770,34 @@
       "from": "lib/timeline/validate.ts",
       "fromLayer": "services",
       "to": "lib/timeline/types",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/trends/trendIngestion.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "lib/trends/trendIngestion.ts",
+      "fromLayer": "services",
+      "to": "lib/trends/trendAggregator",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "lib/visual-continuity.ts",
+      "fromLayer": "services",
+      "to": "@anthropic-ai/sdk",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/visual-continuity.ts",
+      "fromLayer": "services",
+      "to": "lib/safe-parse-json",
       "toLayer": "services",
       "allowed": true
     },
@@ -5165,6 +5886,55 @@
       "allowed": true
     },
     {
+      "from": "packages/caching/index.ts",
+      "fromLayer": "unknown",
+      "to": "crypto",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "packages/event-bus/index.ts",
+      "fromLayer": "unknown",
+      "to": "events",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "packages/generative-syntax/index.ts",
+      "fromLayer": "unknown",
+      "to": "packages/scene-language",
+      "toLayer": "unknown",
+      "allowed": true
+    },
+    {
+      "from": "packages/prompt-compiler/index.ts",
+      "fromLayer": "unknown",
+      "to": "packages/prompt-compiler/ast",
+      "toLayer": "unknown",
+      "allowed": true
+    },
+    {
+      "from": "packages/prompt-compiler/index.ts",
+      "fromLayer": "unknown",
+      "to": "packages/prompt-compiler/mutators",
+      "toLayer": "unknown",
+      "allowed": true
+    },
+    {
+      "from": "packages/viral-strategy/index.ts",
+      "fromLayer": "unknown",
+      "to": "packages/distribution-intelligence",
+      "toLayer": "unknown",
+      "allowed": true
+    },
+    {
+      "from": "packages/viral-strategy/index.ts",
+      "fromLayer": "unknown",
+      "to": "packages/selection-feedback",
+      "toLayer": "unknown",
+      "allowed": true
+    },
+    {
       "from": "prisma.config.ts",
       "fromLayer": "unknown",
       "to": "dotenv",
@@ -5201,5 +5971,9 @@
     }
   ],
   "violations": [],
-  "drift": null
+  "drift": {
+    "score": 0,
+    "addedEdges": 0,
+    "removedEdges": 0
+  }
 }

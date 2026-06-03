@@ -94,7 +94,7 @@ const GRAMMAR_RULES: VisualGrammarRule[] = [
     depthField: "deep",
     paceRhythm: "continuous",
     observedSuccessRate: 71,
-    associatedClusters: ["cinematic_sequence", "documentary", "journey"],
+    associatedClusters: ["cinematic_sequence", "documentary", "lifestyle_broll"],
   },
   {
     id: "negative_space_rhythmic",

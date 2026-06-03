@@ -207,6 +207,14 @@
         "createdAt": "2026-06-01",
         "expiresAt": "2026-07-01",
         "risk": "LOW"
+      },
+      {
+        "id": "avatar-lipsync-hedra-replacement",
+        "path": "app/api/avatar-lipsync/route.ts",
+        "reason": "generateLipsyncWithFallback is the new Hedra-based lipsync provider (Hedra → static fallback). Matches the banned 'generateLipSync' pattern because the forbidden pattern targeted SyncLabs. This function has zero SyncLabs execution path.",
+        "owner": "platform-team",
+        "createdAt": "2026-06-03",
+        "expiresAt": "never"
       }
     ]
   }

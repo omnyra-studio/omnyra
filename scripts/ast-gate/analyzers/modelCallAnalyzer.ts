@@ -29,8 +29,9 @@ export function analyzeModelCalls(
   relativePath: string,
   content: string,
 ): Violation[] {
+  const normPath = relativePath.replace(/\\/g, "/");
   // Skip files in allowed locations
-  if (ALLOWED_FILE_PATTERNS.some(p => p.test(relativePath))) return [];
+  if (ALLOWED_FILE_PATTERNS.some(p => p.test(normPath))) return [];
 
   const violations: Violation[] = [];
   const lines = content.split("\n");
