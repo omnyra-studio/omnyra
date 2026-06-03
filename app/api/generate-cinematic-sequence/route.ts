@@ -282,7 +282,7 @@ function inferSceneType(prompt: string): string {
 const MOTION_VERB_RE = /\b(walk|run|mov|turn|sway|breath|gestur|spin|danc|flow|driv|fall|rise|lift|reach|step|leap|jump|throw|pour|apply|embrac|laugh|cry|react)\w*\b/i;
 
 const SCENE_BASE_SCORES: Record<string, number> = {
-  talking_head:    0.65,  // presenter motion + camera drift — needs Kling
+  talking_head:    0.20,  // lipsync/face-only — Hedra route (not Kling); below 0.4 threshold
   lifestyle_broll: 0.85,  // high kinetic — always Kling
   product_demo:    0.70,  // handling + close-up — Kling
   emotional:       0.80,  // impact moments — Kling
@@ -398,6 +398,16 @@ export async function POST(req: Request) {
 
         const rawSeconds = Math.round(clipDuration ?? CLIP_SECONDS);
         const duration   = rawSeconds <= 7 ? "5" : "10";
+        const plannedTotalSec = prompts.length * Number(duration);
+        console.info("[DURATION_PLAN]", {
+          clip_duration_requested: rawSeconds,
+          clip_duration_snapped:   Number(duration),
+          scene_count:             prompts.length,
+          planned_total_sec:       plannedTotalSec,
+        });
+        if (rawSeconds !== Number(duration)) {
+          console.warn(`[DURATION_SNAP] requested ${rawSeconds}s per clip → snapped to ${duration}s (Kling/Seedance only supports 5 or 10). Planned total: ${plannedTotalSec}s`);
+        }
 
         // ── Motion Budget: enforce max 2 premium (Kling) scenes per 30s ────────
         const estimatedTotalS = prompts.length * rawSeconds;

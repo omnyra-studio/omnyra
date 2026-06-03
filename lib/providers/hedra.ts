@@ -24,6 +24,33 @@ export async function generateHedraAvatar(input: HedraInput): Promise<HedraOutpu
   const apiKey = process.env.HEDRA_API_KEY;
   if (!apiKey) throw new Error("HEDRA_API_KEY not configured");
 
+  // ── URL integrity log — must appear in logs before ANY fetch ─────────────────
+  // If HEDRA_FAILED occurs immediately after this log, root cause is network/DNS.
+  // If this log never appears, the call site is the problem.
+  const { createHash } = await import("crypto");
+  const imageHash = createHash("sha256").update(input.image_url).digest("hex").substring(0, 16);
+  const audioHash = createHash("sha256").update(input.audio_url).digest("hex").substring(0, 16);
+  console.info("[hedra] pre-submit integrity", {
+    api_base:          HEDRA_BASE,
+    image_url_length:  input.image_url.length,
+    image_url_tail:    input.image_url.slice(-100),
+    image_url_hash:    imageHash,
+    audio_url_length:  input.audio_url.length,
+    audio_url_tail:    input.audio_url.slice(-100),
+    audio_url_hash:    audioHash,
+  });
+
+  const submitPayload = {
+    image_url:  input.image_url,
+    audio_url:  input.audio_url,
+    resolution: input.resolution ?? "720p",
+  };
+  const submitBody = JSON.stringify(submitPayload);
+  console.info("[hedra] submit payload", {
+    payload_bytes:     submitBody.length,
+    payload_hash:      createHash("sha256").update(submitBody).digest("hex").substring(0, 16),
+  });
+
   // Submit generation
   const submitRes = await fetch(`${HEDRA_BASE}/generate`, {
     method:  "POST",
@@ -40,7 +67,13 @@ export async function generateHedraAvatar(input: HedraInput): Promise<HedraOutpu
 
   if (!submitRes.ok) {
     const text = await submitRes.text().catch(() => "");
-    throw new Error(`Hedra submit failed HTTP ${submitRes.status}: ${text.substring(0, 300)}`);
+    console.error("[hedra] submit FAILED", {
+      status:   submitRes.status,
+      headers:  Object.fromEntries(submitRes.headers.entries()),
+      body:     text,  // full body — not truncated
+      api_base: HEDRA_BASE,
+    });
+    throw new Error(`Hedra submit failed HTTP ${submitRes.status}: ${text}`);
   }
 
   const job = await submitRes.json() as { id?: string; job_id?: string };
