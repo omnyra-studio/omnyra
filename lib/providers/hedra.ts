@@ -445,16 +445,25 @@ async function reHostImageToSupabase(imageUrl: string, jobId: string): Promise<s
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
-export async function generateHedraAvatar(
+// ── Internal submit helper ────────────────────────────────────────────────────
+// Shared by generateHedraAvatar (submit+poll) and submitHedraJob (submit-only).
+// Returns { generationId, apiKey, fingerprint } so the caller can decide whether
+// to poll or return immediately.
+
+interface PrepareResult {
+  generationId: string;
+  apiKey:       string;
+  fingerprint:  HedraFingerprint;
+}
+
+async function prepareAndSubmit(
   input:                HedraInput,
   onGenerationStarted?: (generationId: string) => Promise<void>,
-): Promise<HedraOutput> {
+): Promise<PrepareResult> {
   const apiKey = cleanEnv(process.env.HEDRA_API_KEY);
   if (!apiKey) throw new Error("HEDRA_API_KEY not configured");
 
   // Re-host image to Supabase if it comes from an external domain.
-  // Hedra fetches asset bytes itself; fal.media / fal.ai URLs may be inaccessible
-  // from Hedra's infra and will always fail assertMediaPayload's domain check.
   let resolvedInput = input;
   if (
     input.image_url.includes("fal.media") ||
@@ -474,7 +483,6 @@ export async function generateHedraAvatar(
 
   const fingerprint = buildFingerprint(resolvedInput.image_url, resolvedInput.audio_url);
 
-  // Runtime audit — emitted once per invocation before any network call
   const rawEnvBase = process.env.HEDRA_API_BASE;
   console.log("[HEDRA_RUNTIME_AUDIT]", {
     deployment:      process.env.VERCEL_DEPLOYMENT_ID ?? "local",
@@ -482,33 +490,30 @@ export async function generateHedraAvatar(
     first_char_code: HEDRA_BASE.charCodeAt(0),
     source:          rawEnvBase ? "env" : "fallback",
     env_raw_length:  rawEnvBase?.length ?? 0,
-    function:        "generateHedraAvatar",
   });
 
-  // ── DNS preflight ─────────────────────────────────────────────────────────
   await dnsPrecheck();
 
-  // ── Resume path — skip submit entirely ───────────────────────────────────
+  // Resume path — generation already submitted; caller decides what to do with the ID
   if (resolvedInput._resumeGenerationId) {
-    console.info("[hedra] resuming existing generation", {
+    console.info("[hedra] resume: returning existing generation_id", {
       generation_id: resolvedInput._resumeGenerationId,
       fingerprint,
     });
-    return pollGeneration(apiKey, resolvedInput._resumeGenerationId, fingerprint);
+    return { generationId: resolvedInput._resumeGenerationId, apiKey, fingerprint };
   }
 
-  // ── In-process dedup guard ────────────────────────────────────────────────
+  // In-process dedup guard
   const registryKey = resolvedInput._jobId ?? `auto-${Date.now()}`;
   const existing = outboundRegistry.get(registryKey);
   if (existing?.generation_id) {
-    console.info("[hedra] in-process dedup: resuming existing generation", {
+    console.info("[hedra] in-process dedup: returning existing generation_id", {
       generation_id: existing.generation_id,
       fingerprint,
     });
-    return pollGeneration(apiKey, existing.generation_id, fingerprint);
+    return { generationId: existing.generation_id, apiKey, fingerprint };
   }
 
-  // ── Fetch asset bytes from Supabase signed URLs ───────────────────────────
   const [imageAsset, audioAsset] = await Promise.all([
     fetchBytes(resolvedInput.image_url),
     fetchBytes(resolvedInput.audio_url),
@@ -519,7 +524,6 @@ export async function generateHedraAvatar(
     audio_bytes: audioAsset.bytes.byteLength,
   });
 
-  // ── Upload to Hedra (POST /assets → POST /assets/{id}/upload) ────────────
   const jobTag = resolvedInput._jobId?.slice(0, 8) ?? "unknown";
   const [imageId, audioId] = await Promise.all([
     uploadHedraAsset(apiKey, "image", imageAsset.bytes, imageAsset.contentType, `image-${jobTag}`, fingerprint),
@@ -528,8 +532,6 @@ export async function generateHedraAvatar(
 
   console.info("[hedra] assets registered", { imageId, audioId, fingerprint });
 
-  // ── Submit generation (POST /generations) ────────────────────────────────
-  // Official payload from generate-avatar-video.md and generate-asset.md
   const videoInputs: Record<string, unknown> = {
     text_prompt:  resolvedInput.text_prompt ?? "A person talking directly to the camera",
     resolution:   resolvedInput.resolution  ?? "720p",
@@ -541,14 +543,11 @@ export async function generateHedraAvatar(
 
   const generationPayload = {
     type:              "video",
-    ai_model_id:       HEDRA_AVATAR_MODEL_ID,  // Hedra Avatar — official talking-head model
+    ai_model_id:       HEDRA_AVATAR_MODEL_ID,
     start_keyframe_id: imageId,
     audio_id:          audioId,
     generated_video_inputs: videoInputs,
   };
-
-  const submitBody     = JSON.stringify(generationPayload);
-  const submitEndpoint = `${HEDRA_BASE}/generations`;
 
   const t0Submit = Date.now();
   console.info("[HEDRA_GENERATION_CREATE]", {
@@ -563,11 +562,11 @@ export async function generateHedraAvatar(
   });
 
   const submitRes = await hedraFetch(
-    submitEndpoint,
+    `${HEDRA_BASE}/generations`,
     {
       method:  "POST",
       headers: { "X-API-Key": apiKey, "Content-Type": "application/json" },
-      body:    submitBody,
+      body:    JSON.stringify(generationPayload),
     },
     fingerprint,
     "generation_submit",
@@ -587,7 +586,6 @@ export async function generateHedraAvatar(
     throw new Error(`${code}: Hedra submit failed HTTP ${submitRes.status}: ${submitText}`);
   }
 
-  // Official response: {id: UUID, asset_id: UUID, status, progress, ...}
   let submitResJson: { id?: string; generation_id?: string; job_id?: string };
   try {
     submitResJson = JSON.parse(submitText);
@@ -600,13 +598,12 @@ export async function generateHedraAvatar(
     throw new Error(`Hedra submit returned no generation id: ${submitText.substring(0, 200)}`);
   }
 
-  console.info("[HEDRA_GENERATION_CREATE]", {
+  console.info("[HEDRA_GENERATION_SUBMITTED]", {
     generation_id: generationId,
     timing_ms:     Date.now() - t0Submit,
     fingerprint,
   });
 
-  // Persist generation ID in in-process registry
   const prev = outboundRegistry.get(registryKey);
   outboundRegistry.set(registryKey, {
     audio_hash:    prev?.audio_hash   ?? hash(resolvedInput.audio_url),
@@ -615,15 +612,76 @@ export async function generateHedraAvatar(
     timestamp:     Date.now(),
   });
 
-  // Persist to durable storage before polling so a timeout doesn't lose the ID
   if (onGenerationStarted) {
-    try {
-      await onGenerationStarted(generationId);
-    } catch (cbErr) {
-      console.warn("[hedra] onGenerationStarted callback failed (non-fatal):", cbErr);
-    }
+    try { await onGenerationStarted(generationId); }
+    catch (cbErr) { console.warn("[hedra] onGenerationStarted callback failed (non-fatal):", cbErr); }
   }
 
+  return { generationId, apiKey, fingerprint };
+}
+
+// ── Public: single-shot status check (used by hedra-cron) ─────────────────────
+
+export async function checkHedraGenerationStatus(generationId: string): Promise<{
+  status:       string;
+  videoUrl:     string | null;
+  errorMessage: string | null;
+}> {
+  const apiKey = cleanEnv(process.env.HEDRA_API_KEY);
+  if (!apiKey) throw new Error("HEDRA_API_KEY not configured");
+
+  const endpoint = `${HEDRA_BASE}/generations/${generationId}/status`;
+  const res = await hedraFetchOnce(endpoint, { headers: { "X-API-Key": apiKey } });
+
+  if (!res || !res.ok) {
+    return {
+      status:       "unknown",
+      videoUrl:     null,
+      errorMessage: `HTTP ${res?.status ?? "no-response"}`,
+    };
+  }
+
+  const data = await res.json() as {
+    status:         string;
+    url?:           string | null;
+    download_url?:  string | null;
+    streaming_url?: string | null;
+    error_message?: string;
+  };
+
+  const videoUrl = data.url ?? data.download_url ?? data.streaming_url ?? null;
+
+  console.info("[HEDRA_STATUS_CHECK]", {
+    generation_id: generationId,
+    status:        data.status,
+    has_url:       !!videoUrl,
+  });
+
+  return {
+    status:       data.status,
+    videoUrl:     data.status === "complete" ? videoUrl : null,
+    errorMessage: data.error_message ?? null,
+  };
+}
+
+// ── Public: submit only — returns generation_id immediately, no polling ───────
+// Use this for fire-and-forget pipelines where a cron completes the job.
+
+export async function submitHedraJob(
+  input:                HedraInput,
+  onGenerationStarted?: (generationId: string) => Promise<void>,
+): Promise<string> {
+  const { generationId } = await prepareAndSubmit(input, onGenerationStarted);
+  return generationId;
+}
+
+// ── Public: submit + poll (original behaviour, kept for legacy callers) ───────
+
+export async function generateHedraAvatar(
+  input:                HedraInput,
+  onGenerationStarted?: (generationId: string) => Promise<void>,
+): Promise<HedraOutput> {
+  const { generationId, apiKey, fingerprint } = await prepareAndSubmit(input, onGenerationStarted);
   return pollGeneration(apiKey, generationId, fingerprint);
 }
 

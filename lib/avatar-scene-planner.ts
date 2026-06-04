@@ -60,7 +60,7 @@ export interface CreatorContext {
 const MAX_SCENE_S = 10;
 const MIN_SCENE_S = 6;
 const WPS         = 2.2;
-const MAX_SCENES  = 8;
+const MAX_SCENES  = 12; // raised from 8: Studio targets 10 scenes (~60s), Creator targets 5 (~30s)
 
 const DEFAULT_VISUAL_PROMPT =
   "cinematic medium shot of person speaking, natural lighting, ultra-realistic, " +

@@ -313,6 +313,73 @@ export async function setPipelineStatus(
 }
 
 /**
+ * Release the worker lease after a fire-and-forget Hedra submit.
+ * Sets locked_by=null so the cron can find and complete the job.
+ */
+export async function releaseLeaseAfterSubmit(
+  jobId: string,
+  workerId: string,
+): Promise<void> {
+  await supabaseAdmin
+    .from("avatar_jobs")
+    .update({
+      locked_by:        null,
+      locked_at:        null,
+      lease_expires_at: null,
+      updated_at:       new Date().toISOString(),
+    })
+    .eq("id", jobId)
+    .eq("locked_by", workerId);
+}
+
+/**
+ * Complete a job from the Hedra cron — no locked_by check since the
+ * original worker already released its lease after the fire-and-forget submit.
+ */
+export async function completeJobFromCron(
+  jobId: string,
+  resultUrl: string,
+  animatedVideoUrl: string,
+): Promise<void> {
+  await supabaseAdmin
+    .from("avatar_jobs")
+    .update({
+      status:             "completed",
+      result_url:         resultUrl,
+      animated_video_url: animatedVideoUrl,
+      stage:              "done",
+      error:              null,
+      locked_by:          null,
+      locked_at:          null,
+      lease_expires_at:   null,
+      updated_at:         new Date().toISOString(),
+    })
+    .eq("id", jobId)
+    .eq("status", "processing");
+}
+
+/**
+ * Fail a job from the cron when Hedra reports an error.
+ */
+export async function failJobFromCron(
+  jobId: string,
+  errorMessage: string,
+): Promise<void> {
+  await supabaseAdmin
+    .from("avatar_jobs")
+    .update({
+      status:           "failed",
+      error:            errorMessage,
+      locked_by:        null,
+      locked_at:        null,
+      lease_expires_at: null,
+      updated_at:       new Date().toISOString(),
+    })
+    .eq("id", jobId)
+    .eq("status", "processing");
+}
+
+/**
  * Permanently fail a job — called when a reclaimed job has no retries left.
  */
 export async function permanentlyFailJob(

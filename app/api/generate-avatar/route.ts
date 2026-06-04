@@ -53,7 +53,7 @@ export async function POST(req: Request) {
     throw e;
   }
 
-  const { script, voice_id, background_image, avatar_image_url, plan, character_id } = body;
+  const { script, voice_id, background_image, avatar_image_url, character_id } = body;
 
   if (!script?.trim()) {
     return Response.json({ error: "script is required" }, { status: 400 });
@@ -73,8 +73,15 @@ export async function POST(req: Request) {
     return Response.json({ error: "FAL_API_KEY not configured" }, { status: 500 });
   }
 
-  const validPlan = (["starter", "creator", "studio"] as const).includes(plan as "starter" | "creator" | "studio")
-    ? (plan as "starter" | "creator" | "studio")
+  // Resolve plan from user profile — authoritative, not client-provided
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("plan")
+    .eq("id", user.id)
+    .single();
+  const rawPlan = profile?.plan as string | undefined;
+  const validPlan = (["starter", "creator", "studio"] as const).includes(rawPlan as "starter" | "creator" | "studio")
+    ? (rawPlan as "starter" | "creator" | "studio")
     : "starter";
   const input = {
     script:            script.trim(),

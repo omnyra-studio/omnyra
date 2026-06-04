@@ -49,6 +49,7 @@ import {
   registerCostIntent,
   markCostCharged,
   setPipelineStatus,
+  releaseLeaseAfterSubmit,
 } from "@/lib/avatar-queue";
 import {
   getDagNode,
@@ -57,12 +58,12 @@ import {
   animateRequestHash,
   hedraRequestHash,
 } from "@/lib/avatar-pipeline";
-import { generateHedraAvatar } from "@/lib/providers/hedra";
+import { submitHedraJob } from "@/lib/providers/hedra";
 import { toSignedUrlForProvider } from "@/lib/avatar/asset-validator";
 import { planScenes, type SceneSpec, type CreatorContext } from "@/lib/avatar-scene-planner";
-import { loadCharacter, buildCharacterPromptSuffix, updateCharacterRefFrame } from "@/lib/character-registry";
+import { loadCharacter, buildCharacterPromptSuffix } from "@/lib/character-registry";
 import { loadCreatorProfile } from "@/lib/creator-profile";
-import { lookupCachedPrompt, cachePrompt } from "@/lib/prompt-memory-cache";
+import { lookupCachedPrompt } from "@/lib/prompt-memory-cache";
 import { getExecutionPlan } from "@/lib/execution-control";
 import {
   assertNoLegacyLipsync,
@@ -200,7 +201,7 @@ async function executeTtsStage(
   const execPlan = await getExecutionPlan();
   // Plan entitlement floor: studio targets 6 scenes (60s), others target 3 (30s).
   // We take the max of the execution health cap and the plan minimum.
-  const planFloor = job.input.plan === "studio" ? 6 : 3;
+  const planFloor = job.input.plan === "studio" ? 10 : job.input.plan === "creator" ? 5 : 3;
   const effectiveMaxScenes = Math.max(planFloor, execPlan.maxScenes);
   log(`[EXEC_CONTROL] mode=${execPlan.mode} maxScenes=${execPlan.maxScenes} planFloor=${planFloor} effective=${effectiveMaxScenes} reason=${execPlan.reason}`);
 
@@ -556,159 +557,67 @@ async function executeLipsyncStage(
   }
 
   log(`[HEDRA_START] image_len=${signedImageUrl.length} audio_len=${signedAudioUrl.length} avatar_source=${avatarImageSource}`);
-
   log(`[PIPELINE_ORDER] audio_source=${audioSource} segment_count=${allSegments.length} duration_sec=${audioDurationSec ?? "unknown"} audio_url=${combinedAudioUrl.substring(0, 80)}`);
 
-  // ── Cost safety: resume existing generation if one was already submitted ──
-  // If a previous invocation submitted to Hedra but timed out during polling,
-  // the generation_id was persisted to stage_outputs. Reuse it — no re-submit.
-  const resumeGenerationId = (job.stage_outputs as Record<string, string> | undefined)
-    ?.hedra_generation_id ?? undefined;
-  if (resumeGenerationId) {
-    log(`[HEDRA_RESUME] found persisted generation_id=${resumeGenerationId} — skipping re-submit`);
+  // If this job already has a generation_id (from a previous submit that survived),
+  // skip re-submission. The cron will pick it up and complete it.
+  const existingGenId = (job.stage_outputs as Record<string, string> | undefined)
+    ?.hedra_generation_id;
+  if (existingGenId) {
+    log(`[HEDRA_ALREADY_SUBMITTED] generation_id=${existingGenId} — cron will complete`);
+    await releaseLeaseAfterSubmit(job.id, workerId);
+    void setPipelineStatus(job.id, "awaiting_hedra");
+    return;
   }
 
-  let finalVideoUrl: string;
+  // ── Fire-and-forget: submit to Hedra, persist ID, release lease, exit ─────
+  // The hedra-cron route polls every minute, downloads the result, and completes
+  // the job — this function returns immediately so Vercel never times out.
   try {
-    const result = await generateHedraAvatar(
+    const generationId = await submitHedraJob(
       {
-        image_url:            signedImageUrl,
-        audio_url:            signedAudioUrl,
-        resolution:           "720p",
-        aspect_ratio:         "9:16",
-        duration_s:           audioDurationSec ?? undefined,
-        _jobId:               job.id,
-        _resumeGenerationId:  resumeGenerationId,
+        image_url:    signedImageUrl,
+        audio_url:    signedAudioUrl,
+        resolution:   "720p",
+        aspect_ratio: "9:16",
+        duration_s:   audioDurationSec ?? undefined,
+        _jobId:       job.id,
       },
-      // Persist the generation ID immediately after submit, before polling.
-      // Survives timeouts: next retry will find this ID and resume polling.
-      async (generationId: string) => {
+      // Persist generation_id + req_hash for the cron to use on completion
+      async (genId: string) => {
         await supabaseAdmin
           .from("avatar_jobs")
           .update({
             stage_outputs: {
               ...(job.stage_outputs ?? {}),
-              hedra_generation_id: generationId,
+              hedra_generation_id: genId,
+              hedra_req_hash:      reqHash,
+              hedra_submitted_at:  new Date().toISOString(),
             },
             updated_at: new Date().toISOString(),
           })
           .eq("id", job.id);
-        log(`[HEDRA_GENERATION_ID_PERSISTED] ${generationId}`);
+        log(`[HEDRA_SUBMITTED] generation_id=${genId}`);
       },
     );
-    const hedraS3Url = result.video_url;
-    log(`[HEDRA_DONE] elapsed=${Date.now() - hedraT0}ms request_id=${result.request_id} s3_url_len=${hedraS3Url.length}`);
 
-    // Hedra S3 URLs are ephemeral — download immediately and re-host in Supabase.
-    log(`[VIDEO_REHOST] downloading from Hedra S3...`);
-    const videoRes = await fetch(hedraS3Url, { signal: AbortSignal.timeout(120_000) });
-    if (!videoRes.ok) throw new Error(`HEDRA_VIDEO_DOWNLOAD_FAILED: S3 returned ${videoRes.status}`);
-    const videoBuffer = await videoRes.arrayBuffer();
-    const videoBytes  = new Uint8Array(videoBuffer);
-    log(`[VIDEO_REHOST] downloaded bytes=${videoBytes.length}`);
+    log(`[HEDRA_SUBMITTED] generation_id=${generationId} — releasing lease, cron takes over`);
 
-    const storagePath = `${job.id}/final/avatar-video.mp4`;
-    const { error: uploadErr } = await supabaseAdmin.storage
-      .from("renders")
-      .upload(storagePath, videoBytes, { contentType: "video/mp4", upsert: true });
-    if (uploadErr) throw new Error(`HEDRA_VIDEO_UPLOAD_FAILED: ${uploadErr.message}`);
+    // Release lock so cron can find this job
+    await releaseLeaseAfterSubmit(job.id, workerId);
+    void setPipelineStatus(job.id, "awaiting_hedra");
 
-    const { data: urlData } = supabaseAdmin.storage.from("renders").getPublicUrl(storagePath);
-    finalVideoUrl = urlData.publicUrl;
-    log(`[VIDEO_REHOST] permanent_url=${finalVideoUrl.substring(0, 80)}`);
+    log(`[HEDRA_HANDOFF] lease released, pipeline_status=awaiting_hedra, elapsed=${Date.now() - stageT0}ms`);
   } catch (err) {
-    const e    = err instanceof Error ? err : new Error(String(err));
+    const e   = err instanceof Error ? err : new Error(String(err));
     const node = e as NodeJS.ErrnoException & { cause?: { code?: string; message?: string } };
-    log(`[HEDRA_FAILED] ${e.message}`);
+    log(`[HEDRA_SUBMIT_FAILED] ${e.message}`);
     log(`[HEDRA_DEBUG] name=${e.name} code=${node.code ?? "none"} cause_code=${node.cause?.code ?? "none"} cause_msg=${node.cause?.message ?? "none"}`);
-    const msg = e.message;
-    await failLedgerEntry(job.id, "lipsync", workerId, msg);
-    const { shouldRetry } = await recordStageFailure(job.id, workerId, "lipsync", msg, job.retry_count_per_stage ?? {});
+    await failLedgerEntry(job.id, "lipsync", workerId, e.message);
+    const { shouldRetry } = await recordStageFailure(job.id, workerId, "lipsync", e.message, job.retry_count_per_stage ?? {});
     if (shouldRetry) await retrigger(origin, job.id, log);
     return;
   }
-
-  const totalMs = Date.now() - stageT0;
-  const hedraMs = Date.now() - hedraT0;
-  log(`[TELEMETRY] hedra_ms=${hedraMs} total_stage_ms=${totalMs}`);
-
-  // ── Persist Hedra-specific metadata ────────────────────────────────────────
-  void supabaseAdmin
-    .from("avatar_jobs")
-    .update({
-      stage_outputs: {
-        ...(job.stage_outputs ?? {}),
-        hedra_output_url:    finalVideoUrl,
-        hedra_latency_ms:    String(hedraMs),
-        // hedra_generation_id already written by onGenerationStarted callback
-      },
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", job.id);
-
-  // ── Commit ─────────────────────────────────────────────────────────────────
-  // Wrapped — a Supabase failure here after a successful Hedra generation must
-  // not leave the job stuck in "processing" with the credit already charged.
-  try {
-    await markCostCharged(job.id, "lipsync", reqHash, finalVideoUrl);
-    await completeLedgerEntry(job.id, "lipsync", workerId, finalVideoUrl);
-    await completeJobWithLease(job.id, workerId, finalVideoUrl, finalVideoUrl);
-  } catch (commitErr) {
-    const msg = commitErr instanceof Error ? commitErr.message : String(commitErr);
-    log(`COMMIT_ERROR: ${msg} — Hedra succeeded but DB commit failed`);
-    // Trigger retry so the job isn't permanently stuck.
-    // The generation_id is persisted in stage_outputs — retry will resume polling
-    // and re-attempt the commit without re-calling Hedra.
-    const { shouldRetry } = await recordStageFailure(
-      job.id, workerId, "lipsync", `COMMIT_ERROR: ${msg}`, job.retry_count_per_stage ?? {},
-    ).catch(() => ({ shouldRetry: false }));
-    if (shouldRetry) await retrigger(origin, job.id, log);
-    throw commitErr;
-  }
-
-  // ── Write to renders table so the video appears in the user library ──────────
-  void (async () => {
-    try {
-      const { error: renderInsertErr } = await supabaseAdmin
-        .from("renders")
-        .insert({
-          user_id:    job.user_id,
-          status:     "complete",
-          video_url:  finalVideoUrl,
-          script:     job.input.script,
-          voice_id:   job.input.voice_id,
-          template:   "avatar",
-          created_at: new Date().toISOString(),
-        });
-      if (renderInsertErr) {
-        log(`[VIDEO_SAVED] ERROR inserting renders row: ${renderInsertErr.message}`);
-      } else {
-        log(`[VIDEO_SAVED] user_id=${job.user_id} job_id=${job.id} url=${finalVideoUrl.substring(0, 80)}`);
-      }
-    } catch (e) {
-      log(`[VIDEO_SAVED] unexpected error: ${(e as Error).message}`);
-    }
-  })();
-
-  // Update character ref_frame_url
-  if (job.input.character_id) {
-    void updateCharacterRefFrame(job.input.character_id, finalVideoUrl);
-    log(`[CHARACTER] updated ref_frame character_id=${job.input.character_id}`);
-  }
-
-  // Populate prompt memory cache for non-character jobs
-  if (!job.input.character_id) {
-    const specsJson = job.stage_outputs?.scene_specs;
-    if (specsJson) {
-      const completedSpecs = JSON.parse(specsJson) as SceneSpec[];
-      void Promise.all(
-        completedSpecs.map(s => cachePrompt(job.user_id, s.shotType, s.emotion, s.visualPrompt, 1.0)),
-      ).catch(e => log(`[CACHE] populate error: ${(e as Error).message}`));
-      log(`[CACHE] queued ${completedSpecs.length} prompt(s) for caching`);
-    }
-  }
-
-  log("pipeline COMPLETE");
 }
 
 // ── Internal ──────────────────────────────────────────────────────────────────

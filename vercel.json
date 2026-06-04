@@ -4,6 +4,7 @@
   "installCommand": "npm install",
   "functions": {
     "app/api/avatar-worker/route.ts": { "maxDuration": 300 },
+    "app/api/hedra-cron/route.ts": { "maxDuration": 60 },
     "app/api/generate-video-sequence/route.ts": { "maxDuration": 300 },
     "app/api/generate-video-kling/route.ts": { "maxDuration": 300 },
     "app/api/generate-video-fal/route.ts": { "maxDuration": 300 },
@@ -17,6 +18,7 @@
     "app/api/voices/route.js": { "maxDuration": 30 }
   },
   "crons": [
+    { "path": "/api/hedra-cron", "schedule": "*/1 * * * *" },
     { "path": "/api/avatar-worker/recover", "schedule": "0 0 * * *" },
     { "path": "/api/cron/scrape-trends", "schedule": "0 6 * * *" },
     { "path": "/api/cron/aggregate-analytics", "schedule": "0 7 * * *" },
