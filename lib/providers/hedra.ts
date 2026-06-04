@@ -65,10 +65,9 @@ const HEDRA_AVATAR_MODEL_ID = "26f0fc66-152b-40ab-abed-76c43df99bc8";
   }
 }
 
-// Poll budget tuned to fit within 300s Vercel function limit.
-// Asset fetch + upload + submit ≈ 60s worst case → 240s left for polling.
+// Poll budget: asset fetch + upload + submit ≈ 60s worst case → up to 360s left for polling.
 const POLL_INTERVAL_MS   = 5_000;
-const MAX_POLL_ATTEMPTS  = 40;    // 40 × 5s = 200s polling budget
+const MAX_POLL_ATTEMPTS  = 72;    // 72 × 5s = 360s polling budget
 const FETCH_TIMEOUT_MS   = 12_000;
 const DNS_TIMEOUT_MS     = 3_000;
 const MAX_FETCH_ATTEMPTS = 2;

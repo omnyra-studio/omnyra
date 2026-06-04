@@ -11,7 +11,7 @@ export async function GET(req: Request) {
   }
 
   const apiKey = cleanEnv(process.env.HEDRA_API_KEY)
-  const apiBase = (cleanEnv(process.env.HEDRA_API_BASE) ?? 'https://api.hedra.com/web-app/public').replace(/\/$/, '')
+  const apiBase = (cleanEnv(process.env.HEDRA_API_BASE) || 'https://api.hedra.com/web-app/public').replace(/\/$/, '')
 
   if (!apiKey) {
     return Response.json({ error: 'HEDRA_API_KEY not set', api_base: apiBase })
