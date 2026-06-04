@@ -335,13 +335,21 @@ export async function releaseLeaseAfterSubmit(
 /**
  * Complete a job from the Hedra cron — no locked_by check since the
  * original worker already released its lease after the fire-and-forget submit.
+ *
+ * Returns { completed: true } only when this call actually flipped the row
+ * from processing → completed.  Returns { completed: false } when another
+ * cron tick already completed it (concurrent invocations race on the
+ * .eq("status", "processing") predicate; exactly one wins).
+ *
+ * Callers MUST check the return value before inserting into downstream tables
+ * (e.g. renders) to prevent duplicate rows on concurrent cron runs.
  */
 export async function completeJobFromCron(
   jobId: string,
   resultUrl: string,
   animatedVideoUrl: string,
-): Promise<void> {
-  await supabaseAdmin
+): Promise<{ completed: boolean }> {
+  const { data } = await supabaseAdmin
     .from("avatar_jobs")
     .update({
       status:             "completed",
@@ -355,7 +363,10 @@ export async function completeJobFromCron(
       updated_at:         new Date().toISOString(),
     })
     .eq("id", jobId)
-    .eq("status", "processing");
+    .eq("status", "processing")  // predicate: only one concurrent winner
+    .select("id")
+    .single();
+  return { completed: !!data };
 }
 
 /**

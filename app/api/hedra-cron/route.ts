@@ -94,11 +94,19 @@ export async function GET(req: NextRequest) {
         if (reqHash) await markCostCharged(job.id, "lipsync", reqHash, permanentUrl);
         await reconcileStageFromCost(job.id, "lipsync", permanentUrl);
 
-        // 4. Complete the job record
-        await completeJobFromCron(job.id, permanentUrl, permanentUrl);
+        // 4. Atomically complete the job — exactly one concurrent cron tick wins.
+        // completeJobFromCron uses .eq("status","processing") as the predicate;
+        // whichever tick updates the row first gets completed=true; others get false.
+        const { completed: jobCompleted } = await completeJobFromCron(job.id, permanentUrl, permanentUrl);
+        if (!jobCompleted) {
+          log(`[RACE_LOST] another cron tick already completed this job — skipping renders insert`);
+          completed++;
+          continue;
+        }
         log(`[JOB_COMPLETED] result_url=${permanentUrl.substring(0, 80)}`);
 
-        // 5. Insert into renders table so the video appears in My Videos
+        // 5. Insert into renders table so the video appears in My Videos.
+        // Only reached when we won the race above — no duplicate rows possible.
         await supabaseAdmin.from("renders").insert({
           user_id:      job.user_id,
           status:       "completed",
