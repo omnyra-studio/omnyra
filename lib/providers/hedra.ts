@@ -552,12 +552,13 @@ export async function generateHedraAvatar(
 
   const t0Submit = Date.now();
   console.info("[HEDRA_GENERATION_CREATE]", {
-    endpoint:  "/generations",
-    model_id:  HEDRA_AVATAR_MODEL_ID,
-    image_id:  imageId,
-    audio_id:  audioId,
-    resolution: input.resolution ?? "720p",
+    endpoint:     "/generations",
+    model_id:     HEDRA_AVATAR_MODEL_ID,
+    image_id:     imageId,
+    audio_id:     audioId,
+    resolution:   input.resolution ?? "720p",
     aspect_ratio: input.aspect_ratio ?? "9:16",
+    duration_ms:  videoInputs.duration_ms ?? "not_set",
     fingerprint,
   });
 

@@ -406,12 +406,30 @@ async function executeLipsyncStage(
     return;
   }
 
+  // Estimate MP3 duration from byte count (ElevenLabs eleven_turbo_v2 = 128kbps CBR)
+  function estimateMp3DurationSec(bytes: number): number {
+    return Math.round((bytes / 16_000) * 10) / 10; // 128kbps = 16000 bytes/s
+  }
+
   // Stitch audio segments into one file if there are multiple, otherwise use
   // the single audio URL directly.
   let combinedAudioUrl: string;
+  let audioDurationSec: number | null = null;
+
   if (audioSegments.length <= 1) {
     combinedAudioUrl = firstAudioUrl;
     log(`[HEDRA_AUDIO] single segment — using audio_url directly`);
+    // Probe size via HEAD to estimate duration without a full download
+    try {
+      const headRes = await fetch(firstAudioUrl, { method: 'HEAD', signal: AbortSignal.timeout(6_000) });
+      const contentLen = parseInt(headRes.headers.get('content-length') ?? '0', 10);
+      if (contentLen > 0) {
+        audioDurationSec = estimateMp3DurationSec(contentLen);
+        log(`[HEDRA_AUDIO_DURATION] duration_sec=${audioDurationSec} source=single_segment bytes=${contentLen}`);
+      }
+    } catch {
+      log(`[HEDRA_AUDIO_DURATION] skipped — HEAD request failed`);
+    }
   } else {
     log(`[HEDRA_AUDIO] stitching ${audioSegments.length} segments`);
     const stitchT0  = Date.now();
@@ -449,6 +467,9 @@ async function executeLipsyncStage(
 
       const stitchedBuffer = readFileSync(outPath);
       if (stitchedBuffer.byteLength === 0) throw new Error("ffmpeg audio stitch produced 0-byte output");
+
+      audioDurationSec = estimateMp3DurationSec(stitchedBuffer.byteLength);
+      log(`[HEDRA_AUDIO_DURATION] duration_sec=${audioDurationSec} source=stitched bytes=${stitchedBuffer.byteLength}`);
 
       combinedAudioUrl = await uploadArtifact({
         jobId:        job.id,
@@ -538,6 +559,8 @@ async function executeLipsyncStage(
         image_url:            signedImageUrl,
         audio_url:            signedAudioUrl,
         resolution:           "720p",
+        aspect_ratio:         "9:16",
+        duration_s:           audioDurationSec ?? undefined,
         _jobId:               job.id,
         _resumeGenerationId:  resumeGenerationId,
       },
