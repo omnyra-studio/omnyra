@@ -46,12 +46,25 @@ const VARIANT_CONFIG = {
     isVideo:       false,
     mimeCheck:     (f: File) => f.type.startsWith("image/"),
   },
+  face: {
+    accept:        "image/jpeg,image/png,image/webp",
+    subPath:       (userId: string, file: File) => {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      return `${userId}/avatar/face_${Date.now()}_${safeName}`;
+    },
+    label:         "Upload your face photo",
+    hint:          "JPEG, PNG, or WebP · clear front-facing shot · under 10 MB",
+    maxBytes:      10 * 1024 * 1024,
+    maxBytesLabel: "10 MB",
+    isVideo:       false,
+    mimeCheck:     (f: File) => f.type.startsWith("image/"),
+  },
 } as const;
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 
 interface AssetUploadProps {
-  variant: "avatar" | "scene";
+  variant: "avatar" | "scene" | "face";
   userId: string;
   /** Called with the public URL after a successful upload */
   onUploaded: (url: string) => void;

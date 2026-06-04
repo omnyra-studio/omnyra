@@ -19,11 +19,12 @@ export const STAGE_MAX_RETRIES: Record<PipelineStage, number> = {
 const STAGE_LEASE_MS = 12 * 60 * 1000; // 12 minutes
 
 export interface AvatarJobInput {
-  script:        string;
-  voice_id:      string | null;
-  image_url:     string;
-  plan?:         "starter" | "creator" | "studio";
-  character_id?: string | null;
+  script:            string;
+  voice_id:          string | null;
+  image_url:         string;
+  avatar_image_url?: string; // explicit face photo; takes priority over image_url for Hedra
+  plan?:             "starter" | "creator" | "studio";
+  character_id?:     string | null;
 }
 
 export interface AvatarJob {

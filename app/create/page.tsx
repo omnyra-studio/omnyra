@@ -300,6 +300,9 @@ function CreatePageInner() {
   // Avatar reference video upload
   const [avatarRefVideoUrl, setAvatarRefVideoUrl] = useState<string | null>(null);
 
+  // Explicit face photo for Hedra avatar (takes priority over selectedImage)
+  const [avatarImageUrl, setAvatarImageUrl] = useState<string | null>(null);
+
   // Poll cleanup ref
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -879,8 +882,8 @@ function CreatePageInner() {
   async function handleGenerateVideoAvatar() {
     if (!briefResponse) return;
 
-    if (!selectedImage) {
-      setError('An image is required for Avatar mode — generate or upload a character image first.');
+    if (!avatarImageUrl && !selectedImage) {
+      setError('An image is required for Avatar mode — upload a face photo or select a scene image first.');
       return;
     }
 
@@ -897,10 +900,11 @@ function CreatePageInner() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           script,
-          voice_id:         selectedVoiceId || userVoice?.voice_id || null,
-          background_image: selectedImage,
-          plan:             userTier,
-          character_id:     selectedCharacterId || null,
+          voice_id:          selectedVoiceId || userVoice?.voice_id || null,
+          background_image:  selectedImage || avatarImageUrl,
+          avatar_image_url:  avatarImageUrl || undefined,
+          plan:              userTier,
+          character_id:      selectedCharacterId || null,
         }),
       });
       const data = await res.json();
@@ -2205,6 +2209,29 @@ function CreatePageInner() {
                   </button>
 
                 </div>
+
+                {/* Face photo upload — used as Hedra avatar image; takes priority over scene */}
+                {videoType === 'avatar' && userId && (
+                  <div style={{ marginBottom: 16 }}>
+                    <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', margin: '0 0 4px' }}>
+                      Face Photo <span style={{ color: '#C9A84C', fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(required — your face, not a product image)</span>
+                    </p>
+                    <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11, margin: '0 0 8px' }}>
+                      Upload this to ensure Hedra animates YOUR face, not a generated scene.
+                    </p>
+                    <AssetUpload
+                      variant="face"
+                      userId={userId}
+                      onUploaded={(url) => setAvatarImageUrl(url)}
+                      initialUrl={avatarImageUrl ?? undefined}
+                    />
+                    {!avatarImageUrl && selectedImage && (
+                      <p style={{ fontSize: 11, color: 'rgba(255,193,7,0.8)', marginTop: 6 }}>
+                        ⚠ No face photo uploaded — will use selected scene image instead.
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {/* Avatar reference video upload — shown when avatar type is selected */}
                 {videoType === 'avatar' && userId && (

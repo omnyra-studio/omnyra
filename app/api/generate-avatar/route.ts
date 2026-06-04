@@ -33,7 +33,7 @@ export async function POST(req: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { script?: string; voice_id?: string; background_image?: string; plan?: string; character_id?: string };
+  let body: { script?: string; voice_id?: string; background_image?: string; avatar_image_url?: string; plan?: string; character_id?: string };
   try {
     body = await req.json();
   } catch {
@@ -53,14 +53,15 @@ export async function POST(req: Request) {
     throw e;
   }
 
-  const { script, voice_id, background_image, plan, character_id } = body;
+  const { script, voice_id, background_image, avatar_image_url, plan, character_id } = body;
 
   if (!script?.trim()) {
     return Response.json({ error: "script is required" }, { status: 400 });
   }
-  if (!background_image?.startsWith("https://")) {
+  const resolvedImage = avatar_image_url?.startsWith("https://") ? avatar_image_url : background_image;
+  if (!resolvedImage?.startsWith("https://")) {
     return Response.json({
-      error: "A character image is required. Generate or upload an image first.",
+      error: "A character image is required. Upload a face photo or select a scene image first.",
       missing: "background_image",
     }, { status: 400 });
   }
@@ -76,11 +77,12 @@ export async function POST(req: Request) {
     ? (plan as "starter" | "creator" | "studio")
     : "starter";
   const input = {
-    script:       script.trim(),
-    voice_id:     voice_id || null,
-    image_url:    background_image,
-    plan:         validPlan,
-    character_id: character_id || null,
+    script:            script.trim(),
+    voice_id:          voice_id || null,
+    image_url:         resolvedImage,
+    avatar_image_url:  avatar_image_url?.startsWith("https://") ? avatar_image_url : undefined,
+    plan:              validPlan,
+    character_id:      character_id || null,
   };
 
   let job;

@@ -516,16 +516,34 @@ async function executeLipsyncStage(
   log(`[PROVIDER_SELECTION] provider=hedra stage=lipsync`);
   const hedraT0 = Date.now();
 
+  // Resolve avatar image with explicit priority:
+  // 1. job.input.avatar_image_url — user uploaded their own face photo
+  // 2. job.input.image_url        — user selected a specific scene/image
+  // Never silently fall back to an unrelated image.
+  let avatarImageRaw: string;
+  let avatarImageSource: string;
+  if (job.input.avatar_image_url) {
+    avatarImageRaw = job.input.avatar_image_url;
+    avatarImageSource = "uploaded";
+  } else if (job.input.image_url) {
+    avatarImageRaw = job.input.image_url;
+    avatarImageSource = "selected";
+  } else {
+    const msg = "AVATAR_IMAGE_REQUIRED: no avatar_image_url or image_url in job input";
+    log(`[AVATAR_SOURCE] ERROR: ${msg}`);
+    await failLedgerEntry(job.id, "lipsync", workerId, msg);
+    const { shouldRetry } = await recordStageFailure(job.id, workerId, "lipsync", msg, job.retry_count_per_stage ?? {});
+    if (shouldRetry) await retrigger(origin, job.id, log);
+    return;
+  }
+  log(`[AVATAR_SOURCE] source=${avatarImageSource} url=${avatarImageRaw.substring(0, 80)}`);
+
   // Sign both URLs immediately before the Hedra call.
-  // job.input.image_url is a raw public or client-supplied URL — it MUST be
-  // converted to a fresh signed URL so Hedra can fetch it even if the bucket
-  // is not publicly accessible.  combinedAudioUrl comes from uploadArtifact
-  // which returns publicUrl; same treatment required.
   let signedImageUrl: string;
   let signedAudioUrl: string;
   try {
     [signedImageUrl, signedAudioUrl] = await Promise.all([
-      toSignedUrlForProvider(job.input.image_url),
+      toSignedUrlForProvider(avatarImageRaw),
       toSignedUrlForProvider(combinedAudioUrl),
     ]);
   } catch (signErr) {
@@ -537,7 +555,7 @@ async function executeLipsyncStage(
     return;
   }
 
-  log(`[HEDRA_START] image_len=${signedImageUrl.length} audio_len=${signedAudioUrl.length}`);
+  log(`[HEDRA_START] image_len=${signedImageUrl.length} audio_len=${signedAudioUrl.length} avatar_source=${avatarImageSource}`);
 
   log(`[PIPELINE_ORDER] audio_source=${audioSource} segment_count=${allSegments.length} duration_sec=${audioDurationSec ?? "unknown"} audio_url=${combinedAudioUrl.substring(0, 80)}`);
 
@@ -578,8 +596,26 @@ async function executeLipsyncStage(
         log(`[HEDRA_GENERATION_ID_PERSISTED] ${generationId}`);
       },
     );
-    finalVideoUrl = result.video_url;
-    log(`[HEDRA_DONE] elapsed=${Date.now() - hedraT0}ms request_id=${result.request_id} video_url_len=${finalVideoUrl.length}`);
+    const hedraS3Url = result.video_url;
+    log(`[HEDRA_DONE] elapsed=${Date.now() - hedraT0}ms request_id=${result.request_id} s3_url_len=${hedraS3Url.length}`);
+
+    // Hedra S3 URLs are ephemeral — download immediately and re-host in Supabase.
+    log(`[VIDEO_REHOST] downloading from Hedra S3...`);
+    const videoRes = await fetch(hedraS3Url, { signal: AbortSignal.timeout(120_000) });
+    if (!videoRes.ok) throw new Error(`HEDRA_VIDEO_DOWNLOAD_FAILED: S3 returned ${videoRes.status}`);
+    const videoBuffer = await videoRes.arrayBuffer();
+    const videoBytes  = new Uint8Array(videoBuffer);
+    log(`[VIDEO_REHOST] downloaded bytes=${videoBytes.length}`);
+
+    const storagePath = `${job.id}/final/avatar-video.mp4`;
+    const { error: uploadErr } = await supabaseAdmin.storage
+      .from("renders")
+      .upload(storagePath, videoBytes, { contentType: "video/mp4", upsert: true });
+    if (uploadErr) throw new Error(`HEDRA_VIDEO_UPLOAD_FAILED: ${uploadErr.message}`);
+
+    const { data: urlData } = supabaseAdmin.storage.from("renders").getPublicUrl(storagePath);
+    finalVideoUrl = urlData.publicUrl;
+    log(`[VIDEO_REHOST] permanent_url=${finalVideoUrl.substring(0, 80)}`);
   } catch (err) {
     const e    = err instanceof Error ? err : new Error(String(err));
     const node = e as NodeJS.ErrnoException & { cause?: { code?: string; message?: string } };
@@ -629,6 +665,30 @@ async function executeLipsyncStage(
     if (shouldRetry) await retrigger(origin, job.id, log);
     throw commitErr;
   }
+
+  // ── Write to renders table so the video appears in the user library ──────────
+  void (async () => {
+    try {
+      const { error: renderInsertErr } = await supabaseAdmin
+        .from("renders")
+        .insert({
+          user_id:    job.user_id,
+          status:     "complete",
+          video_url:  finalVideoUrl,
+          script:     job.input.script,
+          voice_id:   job.input.voice_id,
+          template:   "avatar",
+          created_at: new Date().toISOString(),
+        });
+      if (renderInsertErr) {
+        log(`[VIDEO_SAVED] ERROR inserting renders row: ${renderInsertErr.message}`);
+      } else {
+        log(`[VIDEO_SAVED] user_id=${job.user_id} job_id=${job.id} url=${finalVideoUrl.substring(0, 80)}`);
+      }
+    } catch (e) {
+      log(`[VIDEO_SAVED] unexpected error: ${(e as Error).message}`);
+    }
+  })();
 
   // Update character ref_frame_url
   if (job.input.character_id) {
