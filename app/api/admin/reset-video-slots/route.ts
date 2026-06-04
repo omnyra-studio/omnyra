@@ -34,27 +34,41 @@ export async function POST(req: NextRequest) {
     userId = body.userId ?? null;
   } catch { /* body is optional */ }
 
-  // Reset both the concurrent counter AND the video cooldown timestamp.
-  // The cooldown check fires BEFORE the concurrent check — if video_cooldown_until
-  // is still in the future, the request is blocked before the auto-heal can run.
-  let query = supabaseAdmin
-    .from("rate_limit_state")
-    .update({ concurrent_video_jobs: 0, video_cooldown_until: null });
+  const resetPayload = {
+    concurrent_video_jobs: 0,
+    video_cooldown_until:  null,
+    updated_at:            new Date().toISOString(),
+  };
+
+  let data: unknown[] = [];
+  let error: { message: string } | null = null;
 
   if (userId) {
-    query = (query as any).eq("user_id", userId);
+    // Upsert a specific user — creates the row if missing, guaranteeing clean DB state
+    // even when the in-process cache has stale values (cache TTL = 5s now).
+    const res = await supabaseAdmin
+      .from("rate_limit_state")
+      .upsert({ user_id: userId, ...resetPayload }, { onConflict: "user_id" })
+      .select("user_id, concurrent_video_jobs, video_cooldown_until");
+    data  = (res.data as unknown[]) ?? [];
+    error = res.error as { message: string } | null;
   } else {
-    query = (query as any).gte("concurrent_video_jobs", 0); // match all rows
+    // Update ALL rows
+    const res = await supabaseAdmin
+      .from("rate_limit_state")
+      .update(resetPayload)
+      .gte("id", "00000000-0000-0000-0000-000000000000") // match all rows
+      .select("user_id, concurrent_video_jobs, video_cooldown_until");
+    data  = (res.data as unknown[]) ?? [];
+    error = res.error as { message: string } | null;
   }
-
-  const { data, error, count } = await (query as any).select("user_id, concurrent_video_jobs, video_cooldown_until");
 
   if (error) {
     console.error("[reset-video-slots] DB error:", error.message);
     return Response.json({ ok: false, error: error.message }, { status: 500 });
   }
 
-  const resetCount = Array.isArray(data) ? data.length : (count ?? 0);
+  const resetCount = Array.isArray(data) ? data.length : 0;
   console.log(`[reset-video-slots] reset ${resetCount} row(s)${userId ? ` for user=${userId}` : " (all users)"}`);
 
   return Response.json({

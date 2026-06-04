@@ -40,7 +40,7 @@ interface CachedState {
 }
 
 const localCache = new Map<string, CachedState>();
-const CACHE_TTL_MS = 30_000; // 30s local cache; re-reads from DB after that
+const CACHE_TTL_MS = 5_000; // 5s local cache; re-reads from DB after that
 
 // ── Plan daily limits ─────────────────────────────────────────────────────────
 
