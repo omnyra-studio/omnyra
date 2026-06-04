@@ -66,19 +66,34 @@ async function readState(userId: string): Promise<CachedState> {
   const cached = localCache.get(userId);
   if (cached && Date.now() - cached.cachedAt < CACHE_TTL_MS) return cached;
 
-  const { data } = await supabaseAdmin
-    .from("rate_limit_state")
-    .select("*")
-    .eq("user_id", userId)
-    .maybeSingle();
-
   const now = Date.now();
+
+  let data: Record<string, unknown> | null = null;
+  try {
+    const res = await supabaseAdmin
+      .from("rate_limit_state")
+      .select("*")
+      .eq("user_id", userId)
+      .maybeSingle();
+    data = res.data as Record<string, unknown> | null;
+  } catch {
+    // DB unreachable — return clean defaults (fail-open) so users aren't blocked
+    // when Supabase is down. Existing cache entry (if any) is also cleared.
+    console.warn("[abuse-protection] readState DB error — failing open for userId=" + userId);
+    const clean: CachedState = {
+      cooldownUntil: 0, videoCooldownUntil: 0, concurrentVideoJobs: 0,
+      hardFlagCount: 0, dailyRequestCount: 0, dailyWindowStart: now, cachedAt: now,
+    };
+    localCache.set(userId, clean);
+    return clean;
+  }
+
   const state: CachedState = {
     cooldownUntil:        data?.cooldown_until       ? new Date(data.cooldown_until as string).getTime() : 0,
     videoCooldownUntil:   data?.video_cooldown_until  ? new Date(data.video_cooldown_until as string).getTime() : 0,
-    concurrentVideoJobs:  data?.concurrent_video_jobs ?? 0,
-    hardFlagCount:        data?.hard_flag_count       ?? 0,
-    dailyRequestCount:    data?.daily_request_count   ?? 0,
+    concurrentVideoJobs:  data?.concurrent_video_jobs as number ?? 0,
+    hardFlagCount:        data?.hard_flag_count       as number ?? 0,
+    dailyRequestCount:    data?.daily_request_count   as number ?? 0,
     dailyWindowStart:     data?.daily_window_start    ? new Date(data.daily_window_start as string).getTime() : now,
     cachedAt: now,
   };
