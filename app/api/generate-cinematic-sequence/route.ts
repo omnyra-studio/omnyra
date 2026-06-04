@@ -64,7 +64,7 @@ async function uploadSmartMotionClip(
 // ── Image generation for smart_motion without a source image ─────────────────
 
 async function generateSceneImage(prompt: string): Promise<string> {
-   
+
   const result = await (fal as any).subscribe(FLUX_MODEL, {
     input: {
       prompt: `${prompt}, ultra realistic, cinematic, 9:16 portrait, professional photography`,
@@ -74,10 +74,12 @@ async function generateSceneImage(prompt: string): Promise<string> {
     },
     logs: false,
   });
-   
-  const url = (result as any)?.images?.[0]?.url;
+  // fal.ai wraps output in result.data on some SDK versions
+  const url: string | undefined =
+    (result as any)?.images?.[0]?.url ??
+    (result as any)?.data?.images?.[0]?.url;
   if (!url) throw new Error("FLUX: no image URL returned");
-  return url as string;
+  return url;
 }
 
 // ── Clip generators ───────────────────────────────────────────────────────────
