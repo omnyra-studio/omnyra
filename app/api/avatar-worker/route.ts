@@ -415,9 +415,11 @@ async function executeLipsyncStage(
   // the single audio URL directly.
   let combinedAudioUrl: string;
   let audioDurationSec: number | null = null;
+  let audioSource: "single_segment" | "stitched_combined" = "single_segment";
 
   if (audioSegments.length <= 1) {
     combinedAudioUrl = firstAudioUrl;
+    audioSource = "single_segment";
     log(`[HEDRA_AUDIO] single segment — using audio_url directly`);
     // Probe size via HEAD to estimate duration without a full download
     try {
@@ -479,6 +481,7 @@ async function executeLipsyncStage(
         extension:    "mp3",
         modelVersion: "eleven_turbo_v2",
       });
+      audioSource = "stitched_combined";
       log(`[HEDRA_AUDIO] stitched elapsed=${Date.now() - stitchT0}ms url=${combinedAudioUrl.substring(0, 80)}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -542,6 +545,8 @@ async function executeLipsyncStage(
   }
 
   log(`[HEDRA_START] image_len=${signedImageUrl.length} audio_len=${signedAudioUrl.length}`);
+
+  log(`[PIPELINE_ORDER] railway_complete=${audioSource === "stitched_combined"} audio_source=${audioSource} segments=${audioSegments.length} duration_sec=${audioDurationSec ?? "unknown"} audio_url=${combinedAudioUrl.substring(0, 80)}`);
 
   // ── Cost safety: resume existing generation if one was already submitted ──
   // If a previous invocation submitted to Hedra but timed out during polling,
