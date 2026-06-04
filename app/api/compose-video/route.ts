@@ -225,6 +225,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: false, error: "Invalid JSON body" }, { status: 400 });
   }
 
+  console.log("[VOICE_TRACE_COMPOSE_RECEIVED]", {
+    bodyKeys: Object.keys(body),
+    voiceoverUrl: body.voiceoverUrl?.substring(0, 80),
+    hasVoiceover: !!(body.voiceoverUrl?.trim()),
+    clipUrls: body.clipUrls?.length,
+    videoUrl: body.videoUrl?.substring(0, 60),
+  });
+
   const { projectId, shotPlanId, voiceoverUrl: bodyVoiceoverUrl } = body;
   const composerUrl = process.env.COMPOSER_SERVICE_URL ?? null;
   const composerKey = process.env.COMPOSER_API_KEY ?? "";

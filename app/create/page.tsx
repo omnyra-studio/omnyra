@@ -1163,6 +1163,11 @@ function CreatePageInner() {
               if (upRes.ok) {
                 const { url } = await upRes.json() as { url?: string };
                 resolvedVoiceUrl = url ?? null;
+                console.log('[VOICE_UPLOAD_RESULT] ok=true resolvedVoiceUrl=' + resolvedVoiceUrl?.substring(0, 80));
+              } else {
+                let errBody = '';
+                try { errBody = await upRes.text(); } catch { /* */ }
+                console.error('[VOICE_UPLOAD_RESULT] FAILED status=' + upRes.status + ' body=' + errBody.substring(0, 200));
               }
               setVoiceAudioUrl(resolvedVoiceUrl ?? URL.createObjectURL(blob));
             }
@@ -1180,9 +1185,16 @@ function CreatePageInner() {
             if (upRes.ok) {
               const { url } = await upRes.json() as { url?: string };
               resolvedVoiceUrl = url ?? null;
+              console.log('[VOICE_REUPLOAD_RESULT] ok=true resolvedVoiceUrl=' + resolvedVoiceUrl?.substring(0, 80));
               setVoiceAudioUrl(resolvedVoiceUrl ?? voiceAudioUrl);
+            } else {
+              let errBody = '';
+              try { errBody = await upRes.text(); } catch { /* */ }
+              console.error('[VOICE_REUPLOAD_RESULT] FAILED status=' + upRes.status + ' body=' + errBody.substring(0, 200));
             }
-          } catch { /* non-fatal */ }
+          } catch (reupErr) {
+            console.error('[VOICE_REUPLOAD_RESULT] threw:', reupErr);
+          }
         }
 
         console.log(`[cinematic] voiceover ready: url=${resolvedVoiceUrl?.substring(0, 60) ?? 'none'} duration=${voiceDurLocal.toFixed(1)}s`);
@@ -1293,16 +1305,28 @@ function CreatePageInner() {
         }, null, 2));
         try {
           const actualClipDuration = seqData.clip_duration ?? CLIP_SECONDS;
-          const resolvedVoiceoverUrl = resolvedVoiceUrl ?? undefined;
+          // resolvedVoiceUrl is null → JSON.stringify drops voiceoverUrl key → server sees no voice
+          // Use empty-string guard: pass null explicitly so we can log it, but keep undefined for JSON
+          const resolvedVoiceoverUrl = resolvedVoiceUrl || undefined;
+
+          const composePayload = {
+            clipUrls: seqData.clip_urls,
+            clipDuration: actualClipDuration,
+            voiceoverUrl: resolvedVoiceoverUrl,
+          };
+          console.log('[VOICE_TRACE_FRONTEND]', {
+            resolvedVoiceUrl,
+            resolvedVoiceoverUrl,
+            hasVoiceover: !!resolvedVoiceoverUrl,
+            payloadKeys: Object.keys(composePayload),
+            voiceoverInPayload: 'voiceoverUrl' in composePayload && composePayload.voiceoverUrl !== undefined,
+          });
+          console.log('[VOICE_TRACE_PAYLOAD]', JSON.stringify(composePayload).substring(0, 300));
 
           const composeRes = await fetch('/api/compose-video', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              clipUrls: seqData.clip_urls,
-              clipDuration: actualClipDuration,
-              voiceoverUrl: resolvedVoiceoverUrl,
-            }),
+            body: JSON.stringify(composePayload),
           });
           const voiceoverSent = !!resolvedVoiceoverUrl;
           if (composeRes.ok) {
