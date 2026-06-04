@@ -1116,8 +1116,16 @@ function CreatePageInner() {
               }
               scriptForCinematic = text;
             }
-          } catch { /* non-fatal — fall back to brief script */ }
-          if (!scriptForCinematic) scriptForCinematic = v.script || '';
+          } catch (sErr) {
+            console.warn('[cinematic][SCRIPT_FALLBACK] generate-script threw — falling back to brief v.script:', sErr);
+          }
+          if (!scriptForCinematic) {
+            scriptForCinematic = v.script || '';
+            console.warn('[cinematic][SCRIPT_FALLBACK] using brief v.script as fallback', {
+              word_count: scriptForCinematic.trim().split(/\s+/).length,
+              estimated_sec: (scriptForCinematic.trim().split(/\s+/).length / 2.5).toFixed(1),
+            });
+          }
         }
 
         const wordCount = scriptForCinematic.trim().split(/\s+/).length;
@@ -1187,7 +1195,7 @@ function CreatePageInner() {
           voiceDurLocal > 0 ? voiceDurLocal : TARGET_SCENE_SECONDS,
           TARGET_SCENE_SECONDS,
         );
-        const clipCount = Math.ceil(effectiveDuration / CLIP_SECONDS);
+        const clipCount = Math.max(3, Math.ceil(effectiveDuration / CLIP_SECONDS));
         console.log(`[cinematic] voiceDuration=${voiceDurLocal.toFixed(1)}s effectiveDuration=${effectiveDuration}s clipCount=${clipCount} TARGET_SCENE=${TARGET_SCENE_SECONDS}s`);
 
         // Use split-script to get per-scene visual prompts + scene type classification
