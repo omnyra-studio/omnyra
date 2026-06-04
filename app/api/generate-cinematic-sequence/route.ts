@@ -313,16 +313,44 @@ export async function POST(req: Request) {
   const routeT0 = Date.now();
   console.log("SEQUENCE_ROUTE_VERSION", ROUTE_VERSION);
 
+  console.log("[CINEMATIC_AUTH] cookies_start");
   const cookieStore = await cookies();
+  console.log("[CINEMATIC_AUTH] supabase_init");
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     { cookies: { getAll: () => cookieStore.getAll(), setAll: () => {} } },
   );
-  const { data: { user }, error: authErr } = await supabase.auth.getUser();
-  if (authErr || !user) {
-    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  console.log("[CINEMATIC_AUTH] getUser_start");
+  let user: { id: string } | null = null;
+  try {
+    const { data, error: authErr } = await supabase.auth.getUser();
+    if (authErr || !data.user) {
+      console.warn(`[CINEMATIC_AUTH] unauthorized authErr=${authErr?.message ?? "no_user"}`);
+      return Response.json({ error: "Unauthorized" }, { status: 401 });
+    }
+    user = data.user;
+  } catch (authEx) {
+    const msg = authEx instanceof Error ? authEx.message : String(authEx);
+    console.error(`[CINEMATIC_AUTH] getUser_threw: ${msg}`);
+    return Response.json({ error: "Auth service error", detail: msg }, { status: 500 });
   }
+  console.log(`[CINEMATIC_AUTH] ok user=${user.id}`);
+
+  // Resolve plan from DB — Studio gets Kling; all other plans use smart_motion only
+  let userPlan = "creator";
+  try {
+    const { data: profileRow } = await supabaseAdmin
+      .from("profiles")
+      .select("plan")
+      .eq("id", user.id)
+      .maybeSingle();
+    userPlan = (profileRow?.plan as string | undefined) ?? "creator";
+  } catch {
+    console.warn("[PLAN_GATE] profile fetch failed — defaulting to creator");
+  }
+  const isStudio = userPlan === "studio";
+  console.log(`[PLAN_GATE] user=${user.id} plan=${userPlan} kling_allowed=${isStudio}`);
 
   const falKey = process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY;
   if (!falKey) return Response.json({ error: "FAL_API_KEY not configured" }, { status: 500 });
@@ -362,6 +390,7 @@ export async function POST(req: Request) {
   });
   if (!videoAbuse.allowed) {
     const retryAfterSec = Math.ceil(videoAbuse.cooldownRemainingMs / 1000);
+    console.warn(`[429_REASON] flagLevel=${videoAbuse.flagLevel} cooldownRemainingMs=${videoAbuse.cooldownRemainingMs} retryAfterSec=${retryAfterSec}`);
     return Response.json(
       { error: "Video generation is temporarily queued. Please try again shortly." },
       { status: 429, headers: { "Retry-After": String(retryAfterSec) } },
@@ -428,6 +457,8 @@ export async function POST(req: Request) {
         );
 
         const finalProviders: SceneProvider[] = resolvedProviders.map((p) => {
+          // Non-Studio plans: smart_motion only — Kling takes 178s per clip on standard tier
+          if (!isStudio) return "smart_motion";
           if (p === "kling") {
             if (premiumUsed < maxPremium) { premiumUsed++; return "kling"; }
             return "smart_motion";

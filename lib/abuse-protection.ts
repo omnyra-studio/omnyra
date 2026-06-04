@@ -161,11 +161,21 @@ export async function checkAbuse(params: AbuseCheckInput): Promise<AbuseCheckRes
       };
     }
     if (state.concurrentVideoJobs >= VIDEO_MAX_CONCURRENT) {
-      return {
-        allowed: false, flagLevel: "soft", creditMultiplier: 1,
-        cooldownRemainingMs: VIDEO_MIN_COOLDOWN_MS,
-        userMessage: null, queueDelayMs: VIDEO_MIN_COOLDOWN_MS,
-      };
+      // Auto-heal: if the last video started >6 minutes ago, Vercel maxDuration
+      // (300s) guarantees it has either completed or been killed. Reset the stuck counter.
+      const lastStartAt  = state.videoCooldownUntil - VIDEO_MIN_COOLDOWN_MS;
+      const staleSinceMs = now - lastStartAt;
+      if (staleSinceMs > 360_000) {
+        console.warn(`[abuse-protection] auto-heal stuck concurrent counter userId=${userId} stale=${Math.round(staleSinceMs / 1000)}s — resetting to 0`);
+        state = { ...state, concurrentVideoJobs: 0 };
+      } else {
+        console.warn(`[abuse-protection] concurrent cap hit userId=${userId} jobs=${state.concurrentVideoJobs} stale=${Math.round(staleSinceMs / 1000)}s`);
+        return {
+          allowed: false, flagLevel: "soft", creditMultiplier: 1,
+          cooldownRemainingMs: VIDEO_MIN_COOLDOWN_MS,
+          userMessage: null, queueDelayMs: VIDEO_MIN_COOLDOWN_MS,
+        };
+      }
     }
   }
 
@@ -246,6 +256,7 @@ export async function checkAbuse(params: AbuseCheckInput): Promise<AbuseCheckRes
 (checkAbuse as any).__sync_compat = true;
 
 export function releaseVideoSlot(userId: string): void {
+  // Update local cache if present on this instance
   const state = localCache.get(userId);
   if (state) {
     const updated = { ...state, concurrentVideoJobs: Math.max(0, state.concurrentVideoJobs - 1), cachedAt: Date.now() };
@@ -253,7 +264,30 @@ export function releaseVideoSlot(userId: string): void {
     void supabaseAdmin
       .from("rate_limit_state")
       .update({ concurrent_video_jobs: updated.concurrentVideoJobs })
-      .eq("user_id", userId);
+      .eq("user_id", userId)
+      .then(({ error }) => {
+        if (error) console.error("[abuse-protection] releaseVideoSlot write error:", error.message);
+      });
+  } else {
+    // No local cache — different Vercel instance or post-crash path.
+    // Read DB first so we don't underflow, then decrement.
+    void supabaseAdmin
+      .from("rate_limit_state")
+      .select("concurrent_video_jobs")
+      .eq("user_id", userId)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        if (error) { console.error("[abuse-protection] releaseVideoSlot read error:", error.message); return; }
+        const current = (data?.concurrent_video_jobs as number | null) ?? 0;
+        const next    = Math.max(0, current - 1);
+        return supabaseAdmin
+          .from("rate_limit_state")
+          .update({ concurrent_video_jobs: next })
+          .eq("user_id", userId)
+          .then(({ error: wErr }) => {
+            if (wErr) console.error("[abuse-protection] releaseVideoSlot update error:", wErr.message);
+          });
+      });
   }
 }
 

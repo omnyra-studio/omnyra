@@ -15,6 +15,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/supabase/admin";
 import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
 import ffmpeg from "fluent-ffmpeg";
 import { tmpdir } from "os";
@@ -132,13 +133,11 @@ async function downloadToBuffer(url: string, label: string, timeoutMs = 60_000):
 }
 
 /**
- * Upload a Buffer to Supabase "videos" bucket.
+ * Upload a Buffer to Supabase "renders" bucket using the admin client.
  * Validates buffer is non-empty before uploading.
  * Returns the public URL on success; throws on any failure.
  */
 async function uploadToStorage(
-   
-  supabase: any,
   buffer: Buffer,
   storagePath: string,
   label: string,
@@ -147,15 +146,15 @@ async function uploadToStorage(
     throw new Error(`[STORAGE] ${label}: refusing to upload 0-byte buffer → ${storagePath}`);
   }
   console.log(`[STORAGE] ${label}: uploading ${buffer.length}bytes → ${storagePath}`);
-  const { error } = await supabase.storage
-    .from("videos")
+  const { error } = await supabaseAdmin.storage
+    .from("renders")
     .upload(storagePath, buffer, { contentType: "video/mp4", upsert: true });
   if (error) {
     throw new Error(`[STORAGE] ${label}: upload failed — ${error.message}`);
   }
-  const { data: { publicUrl } } = supabase.storage.from("videos").getPublicUrl(storagePath);
+  const { data: { publicUrl } } = supabaseAdmin.storage.from("renders").getPublicUrl(storagePath);
   if (!publicUrl) {
-    throw new Error(`[STORAGE] ${label}: getPublicUrl returned empty string — is the 'videos' bucket set to public?`);
+    throw new Error(`[STORAGE] ${label}: getPublicUrl returned empty string — is the 'renders' bucket set to public?`);
   }
   console.log(`[STORAGE] ${label}: done → ${publicUrl.substring(0, 100)}`);
   return publicUrl;
@@ -288,11 +287,10 @@ export async function POST(request: Request) {
     const outputPath     = join(tmpDirBase, `cv-cin-${id}-output.mp4`);
     const cleanupPaths   = [...clipPaths, concatListPath, stitchedPath, audioPath, outputPath];
 
-    // ── Try Railway Composer first (if configured) ────────────────────────────────
-    // On ANY Railway failure (validation, timeout, missing voiceover) we fall
-    // through to local FFmpeg rather than returning 502. This ensures all N clips
-    // are always concatenated regardless of Railway availability.
-    if (composerUrl) {
+    // ── Try Railway Composer first (if configured AND voiceover is present) ─────
+    // Skip Railway entirely when there's no voiceover — Railway requires it.
+    // On ANY Railway failure we fall through to local FFmpeg rather than returning 502.
+    if (composerUrl && voiceBuffer) {
       const shotPlanShots = clipUrls.map(() => ({
         duration:            clipDuration,
         energy_curve:        "sustain",
@@ -380,7 +378,7 @@ export async function POST(request: Request) {
           const phase6T0 = Date.now();
           const storagePath = `renders/${user.id}/${Date.now()}/cinematic.mp4`;
           try {
-            const publicUrl = await uploadToStorage(supabase, composedBuffer, storagePath, "cinematic");
+            const publicUrl = await uploadToStorage(composedBuffer, storagePath, "cinematic");
             console.log(`[TIMING] PHASE6 UPLOAD complete ${Date.now() - phase6T0}ms`);
             console.log(`[TIMING] compose-video TOTAL ${Date.now() - routeT0}ms clips=${clipUrls.length}`);
             console.log(`[PHASE6] cinematic done (railway) → ${publicUrl.substring(0, 80)}`);
@@ -504,7 +502,7 @@ export async function POST(request: Request) {
       if (!finalBuffer.length) throw new Error("Final stitched file is 0 bytes");
 
       const storagePath = `renders/${user.id}/${Date.now()}/cinematic.mp4`;
-      const publicUrl = await uploadToStorage(supabase, finalBuffer, storagePath, "cinematic:local");
+      const publicUrl = await uploadToStorage(finalBuffer, storagePath, "cinematic:local");
 
       console.log(`[PHASE6:local] done → ${publicUrl.substring(0, 80)}`);
       console.log(`[TIMING] compose-video TOTAL ${Date.now() - routeT0}ms clips=${clipUrls.length}`);
@@ -601,7 +599,7 @@ export async function POST(request: Request) {
       const storagePath = `renders/${user.id}/${Date.now()}/preview.mp4`;
       let publicUrl: string;
       try {
-        publicUrl = await uploadToStorage(supabase, composedBuffer, storagePath, "single:railway");
+        publicUrl = await uploadToStorage(composedBuffer, storagePath, "single:railway");
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Storage upload failed";
         console.error("[PHASE6:single] FAILED:", msg);
@@ -686,7 +684,7 @@ export async function POST(request: Request) {
         const storagePath = `renders/${user.id}/${Date.now()}/preview.mp4`;
         let publicUrl: string;
         try {
-          publicUrl = await uploadToStorage(supabase, outputBuffer, storagePath, "single:local");
+          publicUrl = await uploadToStorage(outputBuffer, storagePath, "single:local");
         } catch (err) {
           const msg = err instanceof Error ? err.message : "Storage upload failed";
           console.error("[PHASE6:single] FAILED:", msg);
@@ -933,7 +931,7 @@ export async function POST(request: Request) {
 
   let publicUrl: string;
   try {
-    publicUrl = await uploadToStorage(supabase, finalVideoBuffer, storagePath, "final");
+    publicUrl = await uploadToStorage(finalVideoBuffer, storagePath, "final");
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Storage upload failed";
     console.error("[compose-video:shotplan] Upload error:", msg);
