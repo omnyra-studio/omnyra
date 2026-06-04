@@ -21,7 +21,7 @@ import { withCreditState, InsufficientCreditsError, CreditReservationError } fro
 export const maxDuration = 300;
 
 const CLIP_SECONDS = 10;
-const ROUTE_VERSION = "2026-06-03-v5-sla-credit-fix";
+const ROUTE_VERSION = "2026-06-04-v6-kling-all-plans";
 
 const FLUX_MODEL = "fal-ai/flux/schnell";
 
@@ -357,7 +357,7 @@ export async function POST(req: Request) {
     console.warn("[PLAN_GATE] profile fetch failed — defaulting to creator");
   }
   const isStudio = userPlan === "studio";
-  console.log(`[PLAN_GATE] user=${user.id} plan=${userPlan} kling_allowed=${isStudio}`);
+  console.log(`[PLAN_GATE] user=${user.id} plan=${userPlan} studio=${isStudio}`);
 
   const falKey = process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY;
   if (!falKey) return Response.json({ error: "FAL_API_KEY not configured" }, { status: 500 });
@@ -448,9 +448,8 @@ export async function POST(req: Request) {
           console.warn(`[DURATION_SNAP] requested ${rawSeconds}s per clip → snapped to ${duration}s (Kling/Seedance only supports 5 or 10). Planned total: ${plannedTotalSec}s`);
         }
 
-        // ── Motion Budget: enforce max 2 premium (Kling) scenes per 30s ────────
-        const estimatedTotalS = prompts.length * rawSeconds;
-        const maxPremium = Math.max(2, Math.ceil((estimatedTotalS / 30) * 2));
+        // All scenes are Kling-eligible — motion score determines provider, SLA kills stragglers
+        const maxPremium = prompts.length;
         let premiumUsed = 0;
 
         const resolvedSceneTypes: string[] = prompts.map((prompt, i) =>
@@ -464,8 +463,6 @@ export async function POST(req: Request) {
         );
 
         const finalProviders: SceneProvider[] = resolvedProviders.map((p) => {
-          // Non-Studio plans: smart_motion only — Kling takes 178s per clip on standard tier
-          if (!isStudio) return "smart_motion";
           if (p === "kling") {
             if (premiumUsed < maxPremium) { premiumUsed++; return "kling"; }
             return "smart_motion";
