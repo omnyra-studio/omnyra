@@ -817,7 +817,11 @@ function CreatePageInner() {
     setVoiceAudioUrl(null);
     try {
       const v = briefResponse.versions[selectedVersion];
-      const scriptText = v.script || v.hook;
+      // Use expanded Claude script when available — brief v.script is ~30 words (13s); generatedScript is 75+ words (30s)
+      const scriptText = generatedScript || v.script || v.hook;
+      const wordCount  = scriptText.trim().split(/\s+/).length;
+      const estimatedSec = (wordCount / 2.5).toFixed(1);
+      console.log(`[SCRIPT_AUDIT] word_count=${wordCount} estimated_sec=${estimatedSec} source=${generatedScript ? 'generatedScript' : 'brief_script'}`);
       const res = await fetch('/api/test-voice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

@@ -140,9 +140,10 @@ async function generateSmartMotionClipWithUpload(
 ): Promise<string | null> {
   const smT0 = Date.now();
   try {
-    const sourceImageUrl = (typeof imageUrl === "string" && imageUrl.startsWith("https://"))
-      ? imageUrl
-      : await generateSceneImage(prompt);
+    // Always generate a scene-specific image from the visual prompt.
+    // The imageUrl from the client is a reference/brand image — reusing it for every
+    // scene causes all clips to animate the same frame (identical output).
+    const sourceImageUrl = await generateSceneImage(prompt);
 
     sourceImages[index] = sourceImageUrl;
 

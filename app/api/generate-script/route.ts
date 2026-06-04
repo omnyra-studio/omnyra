@@ -75,9 +75,9 @@ Write a complete natural-sounding script:
 - Conversational, not corporate
 - End with the CTA naturally woven in
 
-WORD COUNT REQUIREMENT: Your response must contain at least 75 spoken words.
-At 2.5 words/second natural TTS pace: 75 words = 30 seconds, 150 words = 60 seconds.
-Count your words before submitting. Do not write fewer than 75 words.
+CRITICAL: Write exactly 70-80 spoken words. This must produce 28-32 seconds of audio at natural speech pace. Count your words. Do not write fewer than 70 words under any circumstances.
+At 2.5 words/second natural TTS pace: 70 words = 28 seconds, 80 words = 32 seconds.
+Count your words before submitting. Do not write fewer than 70 words.
 
 Return only the spoken script. No explanation. No title. Just the words.`;
 
