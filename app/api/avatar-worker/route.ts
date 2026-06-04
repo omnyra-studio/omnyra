@@ -406,93 +406,86 @@ async function executeLipsyncStage(
     return;
   }
 
-  // Estimate MP3 duration from byte count (ElevenLabs eleven_turbo_v2 = 128kbps CBR)
-  function estimateMp3DurationSec(bytes: number): number {
-    return Math.round((bytes / 16_000) * 10) / 10; // 128kbps = 16000 bytes/s
-  }
+  // All audio — even a single segment — goes through ffmpeg concat.
+  // This gives us exact duration from ffmpeg stderr (time=HH:MM:SS.mm) and
+  // eliminates the 128kbps byte-estimation hack.
+  const allSegments: AudioSegment[] =
+    audioSegments.length > 0
+      ? audioSegments
+      : [{ index: 0, text: "", audio_url: firstAudioUrl, char_count: 0 }];
 
-  // Stitch audio segments into one file if there are multiple, otherwise use
-  // the single audio URL directly.
-  let combinedAudioUrl: string;
+  log(`[HEDRA_AUDIO] ffmpeg concat — ${allSegments.length} segment(s)`);
+  const stitchT0   = Date.now();
+  const tmpDir     = tmpdir();
+  const sid        = job.id.replace(/-/g, "").substring(0, 8);
+  const segPaths   = allSegments.map((_, i) => join(tmpDir, `ha-${sid}-s${i}.mp3`));
+  const concatPath = join(tmpDir, `ha-${sid}-concat.txt`);
+  const outPath    = join(tmpDir, `ha-${sid}-out.mp3`);
+  const cleanup    = [...segPaths, concatPath, outPath];
+
+  let combinedAudioUrl = "";
   let audioDurationSec: number | null = null;
-  let audioSource: "single_segment" | "stitched_combined" = "single_segment";
+  const audioSource = "ffmpeg_concat";
 
-  if (audioSegments.length <= 1) {
-    combinedAudioUrl = firstAudioUrl;
-    audioSource = "single_segment";
-    log(`[HEDRA_AUDIO] single segment — using audio_url directly`);
-    // Probe size via HEAD to estimate duration without a full download
-    try {
-      const headRes = await fetch(firstAudioUrl, { method: 'HEAD', signal: AbortSignal.timeout(6_000) });
-      const contentLen = parseInt(headRes.headers.get('content-length') ?? '0', 10);
-      if (contentLen > 0) {
-        audioDurationSec = estimateMp3DurationSec(contentLen);
-        log(`[HEDRA_AUDIO_DURATION] duration_sec=${audioDurationSec} source=single_segment bytes=${contentLen}`);
-      }
-    } catch {
-      log(`[HEDRA_AUDIO_DURATION] skipped — HEAD request failed`);
+  try {
+    const buffers = await Promise.all(
+      allSegments.map(async (seg, i) => {
+        const r = await fetch(seg.audio_url, { signal: AbortSignal.timeout(30_000) });
+        if (!r.ok) throw new Error(`audio seg ${i} download ${r.status}`);
+        return Buffer.from(await r.arrayBuffer());
+      }),
+    );
+
+    for (let i = 0; i < buffers.length; i++) writeFileSync(segPaths[i], buffers[i]);
+
+    const concatContent = allSegments.map((_, i) => `file '${segPaths[i].replace(/\\/g, "/")}'`).join("\n");
+    writeFileSync(concatPath, concatContent);
+
+    let lastFfmpegTime = "";
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg()
+        .input(concatPath)
+        .inputOptions(["-f", "concat", "-safe", "0"])
+        .outputOptions(["-c", "copy"])
+        .output(outPath)
+        .on("stderr", (line: string) => {
+          const m = line.match(/time=(\d+:\d+:\d+\.?\d*)/);
+          if (m) lastFfmpegTime = m[1];
+        })
+        .on("end", () => resolve())
+        .on("error", (err: Error) => reject(new Error(`ffmpeg audio concat: ${err.message}`)))
+        .run();
+    });
+
+    // Parse HH:MM:SS.mm into seconds
+    if (lastFfmpegTime) {
+      const parts = lastFfmpegTime.split(":").map(Number);
+      audioDurationSec = Math.round((parts[0] * 3600 + parts[1] * 60 + parts[2]) * 10) / 10;
     }
-  } else {
-    log(`[HEDRA_AUDIO] stitching ${audioSegments.length} segments`);
-    const stitchT0  = Date.now();
-    const tmpDir    = tmpdir();
-    const sid       = job.id.replace(/-/g, "").substring(0, 8);
-    const segPaths  = audioSegments.map((_, i) => join(tmpDir, `ha-${sid}-s${i}.mp3`));
-    const concatPath = join(tmpDir, `ha-${sid}-concat.txt`);
-    const outPath   = join(tmpDir, `ha-${sid}-out.mp3`);
-    const cleanup   = [...segPaths, concatPath, outPath];
 
-    try {
-      const buffers = await Promise.all(
-        audioSegments.map(async (seg, i) => {
-          const r = await fetch(seg.audio_url, { signal: AbortSignal.timeout(30_000) });
-          if (!r.ok) throw new Error(`audio seg ${i} download ${r.status}`);
-          return Buffer.from(await r.arrayBuffer());
-        }),
-      );
+    const stitchedBuffer = readFileSync(outPath);
+    if (stitchedBuffer.byteLength === 0) throw new Error("ffmpeg audio concat produced 0-byte output");
 
-      for (let i = 0; i < buffers.length; i++) writeFileSync(segPaths[i], buffers[i]);
+    log(`[HEDRA_AUDIO_DURATION] duration_sec=${audioDurationSec ?? "unknown"} source=ffmpeg_concat bytes=${stitchedBuffer.byteLength}`);
 
-      const concatContent = segPaths.map(p => `file '${p.replace(/\\/g, "/")}'`).join("\n");
-      writeFileSync(concatPath, concatContent);
-
-      await new Promise<void>((resolve, reject) => {
-        ffmpeg()
-          .input(concatPath)
-          .inputOptions(["-f", "concat", "-safe", "0"])
-          .outputOptions(["-c", "copy"])
-          .output(outPath)
-          .on("end", () => resolve())
-          .on("error", (err: Error) => reject(new Error(`ffmpeg audio stitch: ${err.message}`)))
-          .run();
-      });
-
-      const stitchedBuffer = readFileSync(outPath);
-      if (stitchedBuffer.byteLength === 0) throw new Error("ffmpeg audio stitch produced 0-byte output");
-
-      audioDurationSec = estimateMp3DurationSec(stitchedBuffer.byteLength);
-      log(`[HEDRA_AUDIO_DURATION] duration_sec=${audioDurationSec} source=stitched bytes=${stitchedBuffer.byteLength}`);
-
-      combinedAudioUrl = await uploadArtifact({
-        jobId:        job.id,
-        stage:        "tts_combined",
-        buffer:       stitchedBuffer,
-        contentType:  "audio/mpeg",
-        extension:    "mp3",
-        modelVersion: "eleven_turbo_v2",
-      });
-      audioSource = "stitched_combined";
-      log(`[HEDRA_AUDIO] stitched elapsed=${Date.now() - stitchT0}ms url=${combinedAudioUrl.substring(0, 80)}`);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      log(`audio stitch ERROR: ${msg}`);
-      await failLedgerEntry(job.id, "lipsync", workerId, msg);
-      const { shouldRetry } = await recordStageFailure(job.id, workerId, "lipsync", msg, job.retry_count_per_stage ?? {});
-      if (shouldRetry) await retrigger(origin, job.id, log);
-      return;
-    } finally {
-      for (const p of cleanup) { try { unlinkSync(p); } catch { /* already gone */ } }
-    }
+    combinedAudioUrl = await uploadArtifact({
+      jobId:        job.id,
+      stage:        "tts_combined",
+      buffer:       stitchedBuffer,
+      contentType:  "audio/mpeg",
+      extension:    "mp3",
+      modelVersion: "eleven_turbo_v2",
+    });
+    log(`[HEDRA_AUDIO] concat done elapsed=${Date.now() - stitchT0}ms url=${combinedAudioUrl.substring(0, 80)}`);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log(`audio concat ERROR: ${msg}`);
+    await failLedgerEntry(job.id, "lipsync", workerId, msg);
+    const { shouldRetry } = await recordStageFailure(job.id, workerId, "lipsync", msg, job.retry_count_per_stage ?? {});
+    if (shouldRetry) await retrigger(origin, job.id, log);
+    return;
+  } finally {
+    for (const p of cleanup) { try { unlinkSync(p); } catch { /* already gone */ } }
   }
 
   // ── Cost firewall / ledger ────────────────────────────────────────────────
@@ -546,7 +539,7 @@ async function executeLipsyncStage(
 
   log(`[HEDRA_START] image_len=${signedImageUrl.length} audio_len=${signedAudioUrl.length}`);
 
-  log(`[PIPELINE_ORDER] railway_complete=${audioSource === "stitched_combined"} audio_source=${audioSource} segments=${audioSegments.length} duration_sec=${audioDurationSec ?? "unknown"} audio_url=${combinedAudioUrl.substring(0, 80)}`);
+  log(`[PIPELINE_ORDER] audio_source=${audioSource} segment_count=${allSegments.length} duration_sec=${audioDurationSec ?? "unknown"} audio_url=${combinedAudioUrl.substring(0, 80)}`);
 
   // ── Cost safety: resume existing generation if one was already submitted ──
   // If a previous invocation submitted to Hedra but timed out during polling,

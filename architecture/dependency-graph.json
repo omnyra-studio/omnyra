@@ -1,12 +1,12 @@
 {
-  "generated": "2026-06-03T08:45:26.188Z",
+  "generated": "2026-06-04T08:31:12.222Z",
   "stats": {
-    "totalFiles": 385,
-    "totalEdges": 866,
+    "totalFiles": 389,
+    "totalEdges": 892,
     "violations": 0,
     "layers": {
       "ui": 57,
-      "api_routes": 131,
+      "api_routes": 135,
       "unknown": 29,
       "services": 163,
       "infrastructure": 4,
@@ -20,7 +20,7 @@
     },
     {
       "layer": "api_routes",
-      "count": 131
+      "count": 135
     },
     {
       "layer": "unknown",
@@ -209,6 +209,13 @@
       "allowed": true
     },
     {
+      "from": "app/api/analytics/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
       "from": "app/api/architecture/route.ts",
       "fromLayer": "api_routes",
       "to": "crypto",
@@ -360,6 +367,13 @@
       "fromLayer": "api_routes",
       "to": "lib/providers/hedra",
       "toLayer": "providers",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-lipsync/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/avatar/asset-validator",
+      "toLayer": "services",
       "allowed": true
     },
     {
@@ -519,6 +533,13 @@
     {
       "from": "app/api/avatar-worker/route.ts",
       "fromLayer": "api_routes",
+      "to": "lib/avatar/asset-validator",
+      "toLayer": "services",
+      "allowed": true
+    },
+    {
+      "from": "app/api/avatar-worker/route.ts",
+      "fromLayer": "api_routes",
       "to": "lib/avatar-scene-planner",
       "toLayer": "services",
       "allowed": true
@@ -622,6 +643,13 @@
       "allowed": true
     },
     {
+      "from": "app/api/billing/portal.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
       "from": "app/api/billing/purchase-pack.ts",
       "fromLayer": "api_routes",
       "to": "next/server",
@@ -643,6 +671,13 @@
       "allowed": true
     },
     {
+      "from": "app/api/billing/purchase-pack.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
       "from": "app/api/billing/usage.ts",
       "fromLayer": "api_routes",
       "to": "next/server",
@@ -654,6 +689,13 @@
       "fromLayer": "api_routes",
       "to": "@supabase/supabase-js",
       "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/billing/usage.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
       "allowed": true
     },
     {
@@ -1336,6 +1378,13 @@
       "allowed": true
     },
     {
+      "from": "app/api/cron/scrape-trends/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
       "from": "app/api/dashboard/route.js",
       "fromLayer": "api_routes",
       "to": "@supabase/supabase-js",
@@ -1462,6 +1511,13 @@
       "allowed": true
     },
     {
+      "from": "app/api/generate-avatar/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
       "from": "app/api/generate-brief/route.ts",
       "fromLayer": "api_routes",
       "to": "@anthropic-ai/sdk",
@@ -1480,6 +1536,13 @@
       "fromLayer": "api_routes",
       "to": "@supabase/ssr",
       "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-brief/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
       "allowed": true
     },
     {
@@ -1954,6 +2017,13 @@
     {
       "from": "app/api/generate-voiceover/route.ts",
       "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/api/generate-voiceover/route.ts",
+      "fromLayer": "api_routes",
       "to": "next/server",
       "toLayer": "external",
       "allowed": true
@@ -2241,6 +2311,13 @@
     {
       "from": "app/api/orchestrate-project/[planId]/stream/route.ts",
       "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
+      "from": "app/api/orchestrate-project/[planId]/stream/route.ts",
+      "fromLayer": "api_routes",
       "to": "lib/api/response",
       "toLayer": "services",
       "allowed": true
@@ -2509,6 +2586,20 @@
       "fromLayer": "api_routes",
       "to": "next/og",
       "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/recover-hedra/route.ts",
+      "fromLayer": "api_routes",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "app/api/recover-hedra/route.ts",
+      "fromLayer": "api_routes",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
       "allowed": true
     },
     {
@@ -4787,6 +4878,13 @@
       "allowed": true
     },
     {
+      "from": "lib/brand.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
       "from": "lib/cache.ts",
       "fromLayer": "services",
       "to": "crypto",
@@ -4798,6 +4896,13 @@
       "fromLayer": "services",
       "to": "@supabase/supabase-js",
       "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/cache.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
       "allowed": true
     },
     {
@@ -5137,6 +5242,13 @@
       "allowed": true
     },
     {
+      "from": "lib/creditGate.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
       "from": "lib/credits/withCreditState.ts",
       "fromLayer": "services",
       "to": "crypto",
@@ -5246,6 +5358,13 @@
       "fromLayer": "services",
       "to": "@supabase/supabase-js",
       "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/events/event-store.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
       "allowed": true
     },
     {
@@ -5501,6 +5620,27 @@
       "allowed": true
     },
     {
+      "from": "lib/providers/hedra.ts",
+      "fromLayer": "providers",
+      "to": "dns/promises",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/providers/hedra.ts",
+      "fromLayer": "providers",
+      "to": "crypto",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/providers/hedra.ts",
+      "fromLayer": "providers",
+      "to": "@supabase/supabase-js",
+      "toLayer": "external",
+      "allowed": true
+    },
+    {
       "from": "lib/providers.js",
       "fromLayer": "services",
       "to": "crypto",
@@ -5554,6 +5694,13 @@
       "fromLayer": "services",
       "to": "@supabase/supabase-js",
       "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/render/shard-cache.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
       "allowed": true
     },
     {
@@ -5865,6 +6012,13 @@
       "allowed": true
     },
     {
+      "from": "lib/supabase/server.ts",
+      "fromLayer": "infrastructure",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
       "from": "lib/supabase-admin.js",
       "fromLayer": "services",
       "to": "lib/supabase/admin",
@@ -5942,6 +6096,13 @@
       "allowed": true
     },
     {
+      "from": "lib/workers/composition-worker.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
       "from": "lib/workers/coordinator.ts",
       "fromLayer": "services",
       "to": "lib/events/emitter",
@@ -5970,10 +6131,24 @@
       "allowed": true
     },
     {
+      "from": "lib/workers/shard-worker.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
       "from": "lib/workers/shot-worker.ts",
       "fromLayer": "services",
       "to": "@supabase/supabase-js",
       "toLayer": "external",
+      "allowed": true
+    },
+    {
+      "from": "lib/workers/shot-worker.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
       "allowed": true
     },
     {
@@ -6012,9 +6187,16 @@
       "allowed": true
     },
     {
+      "from": "lib/workers/voiceover-worker.ts",
+      "fromLayer": "services",
+      "to": "lib/supabase/admin",
+      "toLayer": "infrastructure",
+      "allowed": true
+    },
+    {
       "from": "next-env.d.ts",
       "fromLayer": "unknown",
-      "to": ".next/dev/types/routes.d",
+      "to": ".next/types/routes.d",
       "toLayer": "unknown",
       "allowed": true
     },
@@ -6105,8 +6287,8 @@
   ],
   "violations": [],
   "drift": {
-    "score": 1,
-    "addedEdges": 11,
+    "score": 0,
+    "addedEdges": 0,
     "removedEdges": 0
   }
 }
