@@ -32,16 +32,20 @@ import type { SceneSpec } from "@/lib/avatar-scene-planner";
 export const maxDuration = 60;
 
 export async function GET(req: NextRequest) {
+  const invoked = new Date().toISOString();
+  console.log(`[hedra-cron] [CRON_INVOKED] at=${invoked}`);
+
   const secret = process.env.CRON_SECRET;
   if (secret) {
     const auth = req.headers.get("authorization");
     if (auth !== `Bearer ${secret}`) {
+      console.log(`[hedra-cron] [CRON_AUTH_FAIL] expected Bearer token`);
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
   }
 
   // Find all jobs in lipsync stage that the worker handed off (lock released after submit)
-  const { data: rawJobs } = await supabaseAdmin
+  const { data: rawJobs, error: queryErr } = await supabaseAdmin
     .from("avatar_jobs")
     .select("*")
     .eq("status", "processing")
@@ -49,9 +53,16 @@ export async function GET(req: NextRequest) {
     .eq("stage", "lipsync")
     .limit(20);
 
+  if (queryErr) {
+    console.log(`[hedra-cron] [CRON_QUERY_ERROR] ${queryErr.message}`);
+    return Response.json({ error: queryErr.message }, { status: 500 });
+  }
+
   const jobs = ((rawJobs ?? []) as AvatarJob[]).filter(
     (j) => !!(j.stage_outputs as Record<string, string>)?.hedra_generation_id,
   );
+
+  console.log(`[hedra-cron] [CRON_START] raw_rows=${rawJobs?.length ?? 0} with_gen_id=${jobs.length}`);
 
   if (!jobs.length) {
     return Response.json({ processed: 0, message: "no pending hedra jobs" });
@@ -65,11 +76,13 @@ export async function GET(req: NextRequest) {
     const outputs  = job.stage_outputs as Record<string, string>;
     const genId    = outputs.hedra_generation_id;
     const reqHash  = outputs.hedra_req_hash ?? "";
-    const log      = (msg: string) => console.log(`[hedra-cron] [${job.id}] ${msg}`);
+    const log      = (msg: string) => console.log(`[hedra-cron] [${job.id.slice(0, 8)}] ${msg}`);
+
+    log(`[CRON_JOB] generation_id=${genId} submitted_at=${outputs.hedra_submitted_at ?? "unknown"}`);
 
     try {
       const result = await checkHedraGenerationStatus(genId);
-      log(`status=${result.status}`);
+      log(`[CRON_JOB] status=${result.status} has_url=${!!result.videoUrl}`);
 
       if (result.status === "complete" && result.videoUrl) {
         // 1. Download ephemeral S3 video before it expires
@@ -77,6 +90,7 @@ export async function GET(req: NextRequest) {
         const videoRes = await fetch(result.videoUrl, { signal: AbortSignal.timeout(120_000) });
         if (!videoRes.ok) throw new Error(`video download HTTP ${videoRes.status}`);
         const videoBuffer = await videoRes.arrayBuffer();
+        log(`[DOWNLOAD_OK] bytes=${videoBuffer.byteLength}`);
 
         // 2. Re-host in Supabase renders bucket (permanent URL)
         const rehostedPath = `${job.id}/final/avatar-video.mp4`;
@@ -95,28 +109,40 @@ export async function GET(req: NextRequest) {
         await reconcileStageFromCost(job.id, "lipsync", permanentUrl);
 
         // 4. Atomically complete the job — exactly one concurrent cron tick wins.
-        // completeJobFromCron uses .eq("status","processing") as the predicate;
-        // whichever tick updates the row first gets completed=true; others get false.
+        // completeJobFromCron uses .eq("status","processing") + .maybeSingle() as the
+        // predicate; whichever tick updates the row first gets completed=true; others false.
         const { completed: jobCompleted } = await completeJobFromCron(job.id, permanentUrl, permanentUrl);
+        log(`[CRON_COMPLETE] job_id=${job.id} won_race=${jobCompleted}`);
+
         if (!jobCompleted) {
           log(`[RACE_LOST] another cron tick already completed this job — skipping renders insert`);
           completed++;
           continue;
         }
-        log(`[JOB_COMPLETED] result_url=${permanentUrl.substring(0, 80)}`);
 
         // 5. Insert into renders table so the video appears in My Videos.
+        // IMPORTANT: renders.status CHECK constraint = ('queued','drafting','rendering','complete','failed')
+        // Must use "complete" not "completed".
         // Only reached when we won the race above — no duplicate rows possible.
-        await supabaseAdmin.from("renders").insert({
+        const { error: renderErr } = await supabaseAdmin.from("renders").insert({
           user_id:      job.user_id,
-          status:       "completed",
+          status:       "complete",      // DB CHECK constraint — NOT "completed"
           script:       job.input.script,
           video_url:    permanentUrl,
           audio_url:    outputs.audio_url ?? null,
           template:     "avatar",
           completed_at: new Date().toISOString(),
         });
-        log(`[VIDEO_SAVED] user_id=${job.user_id}`);
+
+        if (renderErr) {
+          // Surface the error — this is why My Videos may be empty
+          log(`[CRON_RENDERS_INSERT] ERROR code=${renderErr.code} msg=${renderErr.message}`);
+          // Don't throw — job is completed, video is accessible via result_url.
+          // A repair pass can re-insert the renders row from completed avatar_jobs.
+        } else {
+          log(`[CRON_RENDERS_INSERT] success user_id=${job.user_id}`);
+          log(`[VIDEO_SAVED] user_id=${job.user_id} video_url=${permanentUrl.substring(0, 80)}`);
+        }
 
         // 6. Side effects — character ref_frame + prompt cache (non-fatal)
         void (async () => {
@@ -147,21 +173,21 @@ export async function GET(req: NextRequest) {
         completed++;
       } else if (result.status === "error") {
         const errMsg = result.errorMessage ?? "Hedra generation failed";
-        log(`[HEDRA_ERROR] ${errMsg}`);
+        log(`[CRON_JOB] HEDRA_ERROR: ${errMsg}`);
         await failJobFromCron(job.id, errMsg);
         failed++;
       } else {
         // processing | queued | finalizing | unknown — retry on next cron tick
-        log(`[HEDRA_PENDING] status=${result.status}`);
+        log(`[CRON_JOB] HEDRA_PENDING status=${result.status}`);
         pending++;
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      log(`[CRON_ERROR] ${msg}`);
+      log(`[CRON_ERROR] job_id=${job.id} error=${msg}`);
       // Transient error — do not fail the job; next cron will retry
     }
   }
 
-  console.log(`[hedra-cron] done completed=${completed} failed=${failed} pending=${pending} total=${jobs.length}`);
+  console.log(`[hedra-cron] [CRON_DONE] completed=${completed} failed=${failed} pending=${pending} total=${jobs.length}`);
   return Response.json({ processed: jobs.length, completed, failed, pending });
 }

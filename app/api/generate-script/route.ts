@@ -61,16 +61,25 @@ Niche: ${nicheText}
 Target Audience: ${audienceText}
 Platforms: ${platformText}
 
+CRITICAL: This script will be read aloud by a text-to-speech engine.
+Write ONLY the words to be spoken. Do NOT include:
+- Stage directions: [pause], [breathe], [she breathes], [a tear rolls]
+- Action descriptions in [brackets] or (parentheses)
+- Emphasis markers: *word* or **word**
+- Any annotation that is not a spoken word
+
 Write a complete natural-sounding script:
 - Start immediately with the hook — no preamble
-- Add [PAUSE] markers where the creator should pause for effect
-- Use **bold** for emphasis words
-- Add [SCENE: description] for visual direction
-- Platform-optimised length — 60-90 seconds for TikTok/Reels
+- Use natural sentence rhythm for pauses — do not write [PAUSE]
+- Platform-optimised length: MINIMUM 75 spoken words, target 80-100 words (= 30-40 seconds at natural pace)
 - Conversational, not corporate
 - End with the CTA naturally woven in
 
-Return only the script. No explanation. No title. Just the script.`;
+WORD COUNT REQUIREMENT: Your response must contain at least 75 spoken words.
+At 2.5 words/second natural TTS pace: 75 words = 30 seconds, 150 words = 60 seconds.
+Count your words before submitting. Do not write fewer than 75 words.
+
+Return only the spoken script. No explanation. No title. Just the words.`;
 
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   const encoder = new TextEncoder();

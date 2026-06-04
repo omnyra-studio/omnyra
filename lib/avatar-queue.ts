@@ -365,7 +365,7 @@ export async function completeJobFromCron(
     .eq("id", jobId)
     .eq("status", "processing")  // predicate: only one concurrent winner
     .select("id")
-    .single();
+    .maybeSingle();              // null (not an error) when no row matched
   return { completed: !!data };
 }
 

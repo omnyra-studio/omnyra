@@ -229,6 +229,13 @@ async function executeTtsStage(
     return;
   }
   log(`[DIRECTOR] scenes=${scenes.length} elapsed=${Date.now() - directorT0}ms`);
+  {
+    const totalWords  = scenes.reduce((acc, s) => acc + s.text.split(/\s+/).filter(Boolean).length, 0);
+    const estimateSec = Math.round((totalWords / 2.5) * 10) / 10;
+    const targetSec   = Math.round(scenes.reduce((acc, s) => acc + s.estimatedDurationS, 0) * 10) / 10;
+    log(`[SCRIPT_AUDIT] plan=${job.input.plan ?? "starter"} scene_count=${scenes.length} total_words=${totalWords} estimated_sec=${estimateSec}`);
+    log(`[SCRIPT_DURATION_TARGET] plan=${job.input.plan ?? "starter"} target_sec=${targetSec} scenes=${scenes.length} word_count=${totalWords}`);
+  }
 
   // ── Prompt memory cache lookup (only for non-character jobs) ──────────────
   // Character jobs skip the cache entirely to avoid cross-character contamination.
@@ -268,9 +275,24 @@ async function executeTtsStage(
   let rawSegments: Array<{ index: number; text: string; buffer: ArrayBuffer; char_count: number }>;
 
   try {
-    rawSegments = await Promise.all(
+    const ttsResults = await Promise.all(
       scenes.map(async (scene) => {
-        log(`[TTS_SEGMENT_START] seg=${scene.index} chars=${scene.text.length}`);
+        // Strip all stage directions before sending to TTS.
+        // Anything inside [brackets], (parentheses), or *asterisks* is a director
+        // note — not spoken words. ElevenLabs reads them literally if left in.
+        const spokenText = scene.text
+          .replace(/\[[\s\S]*?\]/g, "")   // [pause] [she breathes] [a tear rolls]
+          .replace(/\([\s\S]*?\)/g, "")   // (sighs) (whispering)
+          .replace(/\*[^*]*\*/g, "")  // *action* or *emphasis*
+          .replace(/\s+/g, " ")
+          .trim();
+
+        if (!spokenText) {
+          log(`[TTS_SEGMENT_SKIP] seg=${scene.index} — empty after stripping stage directions`);
+          return null;
+        }
+
+        log(`[TTS_SEGMENT_START] seg=${scene.index} chars=${spokenText.length}`);
         const t1  = Date.now();
         const res = await fetch(
           `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
@@ -278,7 +300,7 @@ async function executeTtsStage(
             method:  "POST",
             headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY!, "Content-Type": "application/json" },
             body:    JSON.stringify({
-              text:           scene.text,
+              text:           spokenText,
               model_id:       "eleven_turbo_v2",
               voice_settings: voiceSettingsForScene(scene.energy ?? 3, scene.pacing ?? "measured"),
             }),
@@ -290,9 +312,14 @@ async function executeTtsStage(
         }
         const buffer = await res.arrayBuffer();
         log(`[TTS_SEGMENT_DONE] seg=${scene.index} bytes=${buffer.byteLength} elapsed=${Date.now() - t1}ms`);
-        return { index: scene.index, text: scene.text, buffer, char_count: scene.text.length };
+        return { index: scene.index, text: spokenText, buffer, char_count: spokenText.length };
       }),
     );
+
+    rawSegments = ttsResults.filter((r): r is NonNullable<typeof r> => r !== null);
+    if (!rawSegments.length) {
+      throw new Error("All TTS segments empty after stripping stage directions — script contains only non-spoken content");
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     log(`elevenlabs ERROR: ${msg}`);

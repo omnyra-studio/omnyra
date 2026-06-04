@@ -220,6 +220,22 @@ Condition energy on communication_style and pacing from creator memory:
   energy 3 → neutral, explanatory
   energy 1 → reflective, calm, measured
 
+CRITICAL — TTS SPOKEN TEXT RULE (NON-NEGOTIABLE)
+The "script" field is fed directly into a text-to-speech engine.
+It MUST contain ONLY the words the voice will literally speak aloud.
+A TTS engine reads everything verbatim — stage directions become audible words.
+
+FORBIDDEN in "script":
+  [pause] [breathe] [she breathes] [a tear rolls] [beat] [silence] [any brackets]
+  (sighs) (whispering) (laughs) [any parentheses]
+  *action* **emphasis** [any asterisk markers]
+  — Any non-spoken annotation of any kind —
+
+CORRECT: "I never thought this moment would come, but here we are."
+WRONG:   "I never thought this moment would come [pause] but here we are. [she wipes a tear]"
+
+Stage directions belong ONLY in "visualPrompt". Never in "script".
+
 OUTPUT FORMAT (STRICT — return ONLY valid JSON, no markdown, no commentary)
 {
   "arcType": "retention_arc",
@@ -228,7 +244,7 @@ OUTPUT FORMAT (STRICT — return ONLY valid JSON, no markdown, no commentary)
       "scene": <1-indexed number>,
       "arc": "hook | presenter | visual | social_proof | cta",
       "sceneType": "talking_head | avatar | lifestyle_broll | product_demo | emotional | quote | educational | cta | background | transition",
-      "script": "<exact words spoken in this scene>",
+      "script": "<ONLY the spoken words — no brackets, no parentheses, no stage directions, no emphasis markers>",
       "emotion": "confident | curious | authoritative | urgent | reflective | enthusiastic | skeptical",
       "energy": <integer 1–5>,
       "pacing": "slow | measured | fast",
@@ -251,6 +267,15 @@ HARD CONSTRAINTS
 - Never exceed ~${MAX_SCENE_S}s per scene (at 2.2 words/second)
 - Never create scenes shorter than ~${MIN_SCENE_S}s
 - If script is unclear: infer simplest coherent interpretation — do NOT ask questions
+
+SCENE WORD COUNT (ENFORCED — determines actual video duration)
+At 2.2 words/second (ElevenLabs TTS natural pace):
+  Min scene: ${MIN_SCENE_S}s → must contain ≥ ${Math.ceil(MIN_SCENE_S * 2.2)} spoken words
+  Max scene: ${MAX_SCENE_S}s → must contain ≤ ${Math.floor(MAX_SCENE_S * 2.2)} spoken words
+If the source script lacks content for ${maxScenes} substantive scenes:
+  → Create FEWER scenes — each must hit the ≥ ${Math.ceil(MIN_SCENE_S * 2.2)} word minimum
+  → NEVER fragment into tiny scenes to reach the scene count target
+estimatedDurationS = round(word_count(script) / 2.2, 1) — not a guess
 
 OUTPUT RULE: Return ONLY JSON. No commentary. No markdown. No explanation.`;
 }
