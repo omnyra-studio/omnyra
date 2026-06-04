@@ -1085,22 +1085,110 @@ function CreatePageInner() {
 
     if (type === 'cinematic') {
       setIsGeneratingVideo(true);
-      setVideoProgress(10);
+      setVideoProgress(5);
       try {
-        const scriptText = v.script || '';
         const hookText = v.hook || '';
 
-        // Build per-clip prompts from [SCENE:] tags; fall back to hook if none.
-        // Kling v1.6 standard produces exactly 10s clips (enum "5"|"10").
-        // Studio gets 60s (6 clips); creator/starter get 30s (3 clips).
+        // ── Step 1: Ensure expanded script ─────────────────────────────────
+        let scriptForCinematic = generatedScript;
+        if (!scriptForCinematic) {
+          console.log('[cinematic] no generatedScript — fetching from generate-script');
+          setVideoProgress(8);
+          try {
+            const sRes = await fetch('/api/generate-script', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                hook: v.hook, script: v.script, cta: v.cta, title: v.title,
+                template, niche, targetAudience,
+                platforms: template === 'storytime' ? ['tiktok'] : selectedPlatforms,
+              }),
+            });
+            if (sRes.ok && sRes.body) {
+              const reader = sRes.body.getReader();
+              const decoder = new TextDecoder();
+              let text = '';
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                text += decoder.decode(value, { stream: true });
+                setGeneratedScript(text);
+              }
+              scriptForCinematic = text;
+            }
+          } catch { /* non-fatal — fall back to brief script */ }
+          if (!scriptForCinematic) scriptForCinematic = v.script || '';
+        }
+
+        const wordCount = scriptForCinematic.trim().split(/\s+/).length;
+        const estimatedSec = (wordCount / 2.5).toFixed(1);
+        console.log('[SCRIPT_AUDIT]', { word_count: wordCount, estimated_sec: estimatedSec, source: generatedScript ? 'state_generatedScript' : 'fetched_inline' });
+
+        // ── Step 2: Generate voiceover BEFORE clips ─────────────────────────
+        const voiceId = selectedVoiceId || userVoice?.voice_id;
+        let resolvedVoiceUrl: string | null = (voiceAudioUrl && !voiceAudioUrl.startsWith('blob:')) ? voiceAudioUrl : null;
+        let voiceDurLocal = voiceDuration;
+
+        if (!resolvedVoiceUrl && voiceId) {
+          console.log('[cinematic] generating voiceover before clips — voice_id=' + voiceId);
+          setVideoProgress(15);
+          setIsGeneratingVoice(true);
+          try {
+            const vRes = await fetch('/api/test-voice', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ text: scriptForCinematic, voice_id: voiceId }),
+            });
+            if (vRes.ok) {
+              const blob = await vRes.blob();
+              voiceDurLocal = await new Promise<number>((resolve) => {
+                const audio = new Audio();
+                const blobUrl = URL.createObjectURL(blob);
+                audio.onloadedmetadata = () => { URL.revokeObjectURL(blobUrl); resolve(audio.duration); };
+                audio.onerror = () => { URL.revokeObjectURL(blobUrl); resolve(0); };
+                audio.src = blobUrl;
+              });
+              setVoiceDuration(voiceDurLocal);
+              const form = new FormData();
+              form.append('file', blob, 'voice.mp3');
+              const upRes = await fetch('/api/upload/voice', { method: 'POST', body: form });
+              if (upRes.ok) {
+                const { url } = await upRes.json() as { url?: string };
+                resolvedVoiceUrl = url ?? null;
+              }
+              setVoiceAudioUrl(resolvedVoiceUrl ?? URL.createObjectURL(blob));
+            }
+          } catch (vErr) {
+            console.warn('[cinematic] voiceover generation failed — continuing without audio:', vErr);
+          } finally {
+            setIsGeneratingVoice(false);
+          }
+        } else if (voiceAudioUrl?.startsWith('blob:') && voiceId) {
+          try {
+            const blob = await fetch(voiceAudioUrl).then(r => r.blob());
+            const form = new FormData();
+            form.append('file', blob, 'voice.mp3');
+            const upRes = await fetch('/api/upload/voice', { method: 'POST', body: form });
+            if (upRes.ok) {
+              const { url } = await upRes.json() as { url?: string };
+              resolvedVoiceUrl = url ?? null;
+              setVoiceAudioUrl(resolvedVoiceUrl ?? voiceAudioUrl);
+            }
+          } catch { /* non-fatal */ }
+        }
+
+        console.log(`[cinematic] voiceover ready: url=${resolvedVoiceUrl?.substring(0, 60) ?? 'none'} duration=${voiceDurLocal.toFixed(1)}s`);
+
+        // ── Step 3: Clip sizing ──────────────────────────────────────────────
+        const scriptText = scriptForCinematic;
         const TARGET_SCENE_SECONDS = userTier === 'studio' ? 60 : 30;
-        const CLIP_SECONDS = 10; // matches Kling's actual output
+        const CLIP_SECONDS = 10;
         const effectiveDuration = Math.max(
-          voiceDuration > 0 ? voiceDuration : TARGET_SCENE_SECONDS,
+          voiceDurLocal > 0 ? voiceDurLocal : TARGET_SCENE_SECONDS,
           TARGET_SCENE_SECONDS,
         );
-        const clipCount = Math.ceil(effectiveDuration / CLIP_SECONDS); // always ≥ 3
-        console.log(`[cinematic] voiceDuration=${voiceDuration.toFixed(1)}s effectiveDuration=${effectiveDuration}s clipCount=${clipCount} TARGET_SCENE=${TARGET_SCENE_SECONDS}s`);
+        const clipCount = Math.ceil(effectiveDuration / CLIP_SECONDS);
+        console.log(`[cinematic] voiceDuration=${voiceDurLocal.toFixed(1)}s effectiveDuration=${effectiveDuration}s clipCount=${clipCount} TARGET_SCENE=${TARGET_SCENE_SECONDS}s`);
 
         // Use split-script to get per-scene visual prompts + scene type classification
         let enhancedPrompts: string[] = [];
@@ -1185,44 +1273,19 @@ function CreatePageInner() {
         if (!seqData?.clip_urls?.length) throw new Error('No clip URLs returned from sequence generation');
         setVideoProgress(80);
 
-        // Compose all clips + voiceover via compose-video (passes clip array, not single stitched URL)
+        // Compose all clips + voiceover via compose-video
         console.log('[PHASE2] PRE_COMPOSE', JSON.stringify({
           clipCount: seqData.clip_urls?.length,
           clipUrls: seqData.clip_urls,
           clipDuration: CLIP_SECONDS,
           seqClipDuration: seqData.clip_duration,
-          voiceDuration,
-          hasVoiceAudioUrl: !!voiceAudioUrl,
-          voiceAudioUrlPrefix: voiceAudioUrl?.substring(0, 80),
+          voiceDuration: voiceDurLocal,
+          hasVoiceAudioUrl: !!resolvedVoiceUrl,
+          voiceAudioUrlPrefix: resolvedVoiceUrl?.substring(0, 80),
         }, null, 2));
         try {
-          // Use actual clip duration returned by the sequence route (Kling forces "5"|"10"),
-          // not the CLIP_SECONDS constant — avoids Railway Composer trimming clips short.
           const actualClipDuration = seqData.clip_duration ?? CLIP_SECONDS;
-
-          // Resolve voiceover URL — blob: URLs can't be fetched server-side.
-          // If upload failed and we only have a blob URL, re-upload now before composing.
-          let resolvedVoiceoverUrl: string | undefined;
-          if (voiceAudioUrl && !voiceAudioUrl.startsWith('blob:')) {
-            resolvedVoiceoverUrl = voiceAudioUrl;
-          } else if (voiceAudioUrl?.startsWith('blob:')) {
-            try {
-              const blob = await fetch(voiceAudioUrl).then(r => r.blob());
-              const form = new FormData();
-              form.append('file', blob, 'voice.mp3');
-              const reupRes = await fetch('/api/upload/voice', { method: 'POST', body: form });
-              if (reupRes.ok) {
-                const { url } = await reupRes.json();
-                if (url) {
-                  resolvedVoiceoverUrl = url;
-                  setVoiceAudioUrl(url);
-                  console.log('[cinematic] re-uploaded blob voiceover → signed URL');
-                }
-              }
-            } catch (reupErr) {
-              console.warn('[cinematic] failed to re-upload blob voiceover — composing without audio:', reupErr);
-            }
-          }
+          const resolvedVoiceoverUrl = resolvedVoiceUrl ?? undefined;
 
           const composeRes = await fetch('/api/compose-video', {
             method: 'POST',
