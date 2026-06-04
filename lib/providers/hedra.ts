@@ -33,6 +33,7 @@
 
 import { lookup as dnsLookup } from "dns/promises";
 import { createHash } from "crypto";
+import { createClient } from "@supabase/supabase-js";
 
 // Strip UTF-8 BOM (U+FEFF, char 65279) and surrounding whitespace from env values.
 // PowerShell's echo pipeline can inject a BOM that breaks URL fetch headers.
@@ -147,7 +148,7 @@ function assertMediaPayload(
     throw new Error("MEDIA_URL_INVALID_TYPE");
   }
 
-  if (audio_url.includes("/object/p") || image_url.includes("/object/p")) {
+  if (/\/object\/public\/?$/.test(audio_url) || /\/object\/public\/?$/.test(image_url)) {
     throw new Error("MEDIA_URL_TRUNCATED_DETECTED");
   }
 
@@ -414,6 +415,35 @@ async function uploadHedraAsset(
   return assetId;
 }
 
+// ── Image re-hosting ──────────────────────────────────────────────────────────
+// Hedra's asset upload pipeline fetches bytes directly from the URL we provide.
+// External domains (fal.media, fal.ai, etc.) may be blocked or rate-limited from
+// Hedra's infra. Re-hosting to Supabase ensures a stable, accessible origin.
+
+async function reHostImageToSupabase(imageUrl: string, jobId: string): Promise<string> {
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+
+  const res = await fetch(imageUrl, { signal: AbortSignal.timeout(30_000) });
+  if (!res.ok) throw new Error(`HEDRA_REHOST_FETCH_FAILED: ${res.status} from ${imageUrl.substring(0, 80)}`);
+
+  const buffer = await res.arrayBuffer();
+  const bytes  = new Uint8Array(buffer);
+
+  const path = `${jobId}/image/avatar-source.jpg`;
+  const { error } = await supabase.storage
+    .from("renders")
+    .upload(path, bytes, { contentType: "image/jpeg", upsert: true });
+
+  if (error) throw new Error(`HEDRA_REHOST_UPLOAD_FAILED: ${error.message}`);
+
+  const { data } = supabase.storage.from("renders").getPublicUrl(path);
+  console.log("[HEDRA_IMAGE_REHOSTED]", data.publicUrl.substring(0, 80));
+  return data.publicUrl;
+}
+
 // ── Main export ───────────────────────────────────────────────────────────────
 
 export async function generateHedraAvatar(
@@ -423,9 +453,27 @@ export async function generateHedraAvatar(
   const apiKey = cleanEnv(process.env.HEDRA_API_KEY);
   if (!apiKey) throw new Error("HEDRA_API_KEY not configured");
 
-  assertMediaPayload(input, input._jobId);
+  // Re-host image to Supabase if it comes from an external domain.
+  // Hedra fetches asset bytes itself; fal.media / fal.ai URLs may be inaccessible
+  // from Hedra's infra and will always fail assertMediaPayload's domain check.
+  let resolvedInput = input;
+  if (
+    input.image_url.includes("fal.media") ||
+    input.image_url.includes("fal.ai") ||
+    !input.image_url.includes("supabase")
+  ) {
+    console.log("[HEDRA_REHOST] re-hosting image from:", input.image_url.substring(0, 60));
+    const hostedImageUrl = await reHostImageToSupabase(
+      input.image_url,
+      input._jobId ?? `hedra-${Date.now()}`,
+    );
+    console.log("[HEDRA_REHOST] now using:", hostedImageUrl.substring(0, 60));
+    resolvedInput = { ...input, image_url: hostedImageUrl };
+  }
 
-  const fingerprint = buildFingerprint(input.image_url, input.audio_url);
+  assertMediaPayload(resolvedInput, resolvedInput._jobId);
+
+  const fingerprint = buildFingerprint(resolvedInput.image_url, resolvedInput.audio_url);
 
   // Runtime audit — emitted once per invocation before any network call
   const rawEnvBase = process.env.HEDRA_API_BASE;
@@ -442,16 +490,16 @@ export async function generateHedraAvatar(
   await dnsPrecheck();
 
   // ── Resume path — skip submit entirely ───────────────────────────────────
-  if (input._resumeGenerationId) {
+  if (resolvedInput._resumeGenerationId) {
     console.info("[hedra] resuming existing generation", {
-      generation_id: input._resumeGenerationId,
+      generation_id: resolvedInput._resumeGenerationId,
       fingerprint,
     });
-    return pollGeneration(apiKey, input._resumeGenerationId, fingerprint);
+    return pollGeneration(apiKey, resolvedInput._resumeGenerationId, fingerprint);
   }
 
   // ── In-process dedup guard ────────────────────────────────────────────────
-  const registryKey = input._jobId ?? `auto-${Date.now()}`;
+  const registryKey = resolvedInput._jobId ?? `auto-${Date.now()}`;
   const existing = outboundRegistry.get(registryKey);
   if (existing?.generation_id) {
     console.info("[hedra] in-process dedup: resuming existing generation", {
@@ -463,8 +511,8 @@ export async function generateHedraAvatar(
 
   // ── Fetch asset bytes from Supabase signed URLs ───────────────────────────
   const [imageAsset, audioAsset] = await Promise.all([
-    fetchBytes(input.image_url),
-    fetchBytes(input.audio_url),
+    fetchBytes(resolvedInput.image_url),
+    fetchBytes(resolvedInput.audio_url),
   ]);
 
   console.info("[hedra] asset bytes fetched", {
@@ -473,7 +521,7 @@ export async function generateHedraAvatar(
   });
 
   // ── Upload to Hedra (POST /assets → POST /assets/{id}/upload) ────────────
-  const jobTag = input._jobId?.slice(0, 8) ?? "unknown";
+  const jobTag = resolvedInput._jobId?.slice(0, 8) ?? "unknown";
   const [imageId, audioId] = await Promise.all([
     uploadHedraAsset(apiKey, "image", imageAsset.bytes, imageAsset.contentType, `image-${jobTag}`, fingerprint),
     uploadHedraAsset(apiKey, "audio", audioAsset.bytes, audioAsset.contentType, `audio-${jobTag}`, fingerprint),
@@ -484,12 +532,12 @@ export async function generateHedraAvatar(
   // ── Submit generation (POST /generations) ────────────────────────────────
   // Official payload from generate-avatar-video.md and generate-asset.md
   const videoInputs: Record<string, unknown> = {
-    text_prompt:  input.text_prompt ?? "A person talking directly to the camera",
-    resolution:   input.resolution  ?? "720p",
-    aspect_ratio: input.aspect_ratio ?? "9:16",
+    text_prompt:  resolvedInput.text_prompt ?? "A person talking directly to the camera",
+    resolution:   resolvedInput.resolution  ?? "720p",
+    aspect_ratio: resolvedInput.aspect_ratio ?? "9:16",
   };
-  if (input.duration_s != null) {
-    videoInputs.duration_ms = Math.round(input.duration_s * 1000);
+  if (resolvedInput.duration_s != null) {
+    videoInputs.duration_ms = Math.round(resolvedInput.duration_s * 1000);
   }
 
   const generationPayload = {
@@ -561,8 +609,8 @@ export async function generateHedraAvatar(
   // Persist generation ID in in-process registry
   const prev = outboundRegistry.get(registryKey);
   outboundRegistry.set(registryKey, {
-    audio_hash:    prev?.audio_hash   ?? hash(input.audio_url),
-    image_hash:    prev?.image_hash   ?? hash(input.image_url),
+    audio_hash:    prev?.audio_hash   ?? hash(resolvedInput.audio_url),
+    image_hash:    prev?.image_hash   ?? hash(resolvedInput.image_url),
     generation_id: generationId,
     timestamp:     Date.now(),
   });
