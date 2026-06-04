@@ -27,7 +27,8 @@ export async function POST(req: Request) {
   console.log('[generate-video-fal] FAL_API_KEY present:', !!process.env.FAL_API_KEY, '| FALAI_API_KEY present:', !!process.env.FALAI_API_KEY);
   console.log('[generate-video-fal] key length:', falKey?.length ?? 0, '| last4:', falKey ? falKey.slice(-4) : 'none');
 
-  const { prompt, image_url, model = "fast", niche } = await req.json();
+  const { prompt, image_url, model = "fast", niche, duration } = await req.json();
+  const klingDuration: "5" | "10" = Number(duration) > 5 ? "10" : "5";
   console.log('[generate-video-fal] payload:', { model, prompt: prompt?.substring(0, 80), has_image: !!image_url, niche });
 
   if (!falKey) {
@@ -81,7 +82,7 @@ export async function POST(req: Request) {
       try {
          
         const result = await (fal as any).subscribe(activeModel, {
-          input: { image_url, prompt: cinemaPrompt, duration: "5", aspect_ratio: "9:16" },
+          input: { image_url, prompt: cinemaPrompt, duration: klingDuration, aspect_ratio: "9:16" },
           onQueueUpdate: (u: unknown) => console.log('[generate-video-fal] i2v status:', (u as { status?: string })?.status),
         });
         console.log('[generate-video-fal] i2v result:', JSON.stringify(result).slice(0, 200));
@@ -104,7 +105,7 @@ export async function POST(req: Request) {
     try {
        
       const result = await (fal as any).subscribe(activeModel, {
-        input: { prompt: cinemaPrompt, duration: "5", aspect_ratio: "9:16" },
+        input: { prompt: cinemaPrompt, duration: klingDuration, aspect_ratio: "9:16" },
         onQueueUpdate: (u: unknown) => console.log('[generate-video-fal] t2v status:', (u as { status?: string })?.status),
       });
       console.log('[generate-video-fal] t2v result:', JSON.stringify(result).slice(0, 300));
@@ -137,7 +138,7 @@ export async function POST(req: Request) {
         input: {
           prompt: cinemaPrompt,
           ...(image_url ? { image_url } : {}),
-          duration: "5",
+          duration: klingDuration,
           aspect_ratio: "9:16",
         },
         onQueueUpdate: (u: unknown) => console.log('[generate-video-fal] explicit model status:', JSON.stringify(u)),

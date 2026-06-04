@@ -7,7 +7,7 @@ const ACTION_COSTS: Record<string, number> = {
   image_hd:       6,
   voice_30s:      3,
   voice_60s:      6,
-  video_30s:      20,
+  video_30s:      40,
   video_60s:      40,
   avatar_30s:     40,
   avatar_60s:     80,
@@ -21,7 +21,7 @@ const TIER_CREDITS: Record<string, number> = {
 const TIER_LIMITS: Record<string, Record<string, number | 'unlimited'>> = {
   free:    { scripts: 'unlimited', images: 10,  voice: 10,  video: 1,  avatar: 0 },
   starter: { scripts: 'unlimited', images: 33,  voice: 33,  video: 5,  avatar: 0 },
-  creator: { scripts: 'unlimited', images: 116, voice: 116, video: 17, avatar: 8 },
+  creator: { scripts: 'unlimited', images: 116, voice: 116, video: 8,  avatar: 8 },
   studio:  { scripts: 'unlimited', images: 300, voice: 300, video: 45, avatar: 22 },
   pro:     { scripts: 'unlimited', images: 116, voice: 116, video: 17, avatar: 8 },
 };

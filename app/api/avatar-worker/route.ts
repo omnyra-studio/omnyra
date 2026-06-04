@@ -58,6 +58,7 @@ import {
   hedraRequestHash,
 } from "@/lib/avatar-pipeline";
 import { generateHedraAvatar } from "@/lib/providers/hedra";
+import { toSignedUrlForProvider } from "@/lib/avatar/asset-validator";
 import { planScenes, type SceneSpec, type CreatorContext } from "@/lib/avatar-scene-planner";
 import { loadCharacter, buildCharacterPromptSuffix, updateCharacterRefFrame } from "@/lib/character-registry";
 import { loadCreatorProfile } from "@/lib/creator-profile";
@@ -71,7 +72,7 @@ import {
 
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
-export const maxDuration = 800;
+export const maxDuration = 300;
 
 const DEFAULT_VOICE_ID = "EXAVITQu4vr4xnSDxMaL";
 
@@ -197,7 +198,11 @@ async function executeTtsStage(
 
   // ── Execution control: cap scene count based on system health ────────────
   const execPlan = await getExecutionPlan();
-  log(`[EXEC_CONTROL] mode=${execPlan.mode} maxScenes=${execPlan.maxScenes} reason=${execPlan.reason}`);
+  // Plan entitlement floor: studio targets 6 scenes (60s), others target 3 (30s).
+  // We take the max of the execution health cap and the plan minimum.
+  const planFloor = job.input.plan === "studio" ? 6 : 3;
+  const effectiveMaxScenes = Math.max(planFloor, execPlan.maxScenes);
+  log(`[EXEC_CONTROL] mode=${execPlan.mode} maxScenes=${execPlan.maxScenes} planFloor=${planFloor} effective=${effectiveMaxScenes} reason=${execPlan.reason}`);
 
   // ── Load creator + character memory (Director Core context) ───────────────
   const [creatorProfile, characterForCtx] = await Promise.all([
@@ -213,7 +218,7 @@ async function executeTtsStage(
   const directorT0 = Date.now();
   let scenes: SceneSpec[];
   try {
-    scenes = await planScenes(job.input.script, execPlan.maxScenes, directorCtx);
+    scenes = await planScenes(job.input.script, effectiveMaxScenes, directorCtx);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     log(`[DIRECTOR] ERROR: ${msg} — aborting`);
@@ -493,20 +498,73 @@ async function executeLipsyncStage(
   void setPipelineStatus(job.id, "generating_avatar");
   log(`[PROVIDER_SELECTION] provider=hedra stage=lipsync`);
   const hedraT0 = Date.now();
-  log(`[HEDRA_START] image=${job.input.image_url.substring(0, 60)} audio=${combinedAudioUrl.substring(0, 60)}`);
+
+  // Sign both URLs immediately before the Hedra call.
+  // job.input.image_url is a raw public or client-supplied URL — it MUST be
+  // converted to a fresh signed URL so Hedra can fetch it even if the bucket
+  // is not publicly accessible.  combinedAudioUrl comes from uploadArtifact
+  // which returns publicUrl; same treatment required.
+  let signedImageUrl: string;
+  let signedAudioUrl: string;
+  try {
+    [signedImageUrl, signedAudioUrl] = await Promise.all([
+      toSignedUrlForProvider(job.input.image_url),
+      toSignedUrlForProvider(combinedAudioUrl),
+    ]);
+  } catch (signErr) {
+    const msg = signErr instanceof Error ? signErr.message : String(signErr);
+    log(`[HEDRA_PRECHECK_FAILED] URL signing failed: ${msg}`);
+    await failLedgerEntry(job.id, "lipsync", workerId, msg);
+    const { shouldRetry } = await recordStageFailure(job.id, workerId, "lipsync", `HEDRA_PRECHECK_FAILED: ${msg}`, job.retry_count_per_stage ?? {});
+    if (shouldRetry) await retrigger(origin, job.id, log);
+    return;
+  }
+
+  log(`[HEDRA_START] image_len=${signedImageUrl.length} audio_len=${signedAudioUrl.length}`);
+
+  // ── Cost safety: resume existing generation if one was already submitted ──
+  // If a previous invocation submitted to Hedra but timed out during polling,
+  // the generation_id was persisted to stage_outputs. Reuse it — no re-submit.
+  const resumeGenerationId = (job.stage_outputs as Record<string, string> | undefined)
+    ?.hedra_generation_id ?? undefined;
+  if (resumeGenerationId) {
+    log(`[HEDRA_RESUME] found persisted generation_id=${resumeGenerationId} — skipping re-submit`);
+  }
 
   let finalVideoUrl: string;
   try {
-    const result = await generateHedraAvatar({
-      image_url: job.input.image_url,
-      audio_url: combinedAudioUrl,
-      resolution: "720p",
-    });
+    const result = await generateHedraAvatar(
+      {
+        image_url:            signedImageUrl,
+        audio_url:            signedAudioUrl,
+        resolution:           "720p",
+        _jobId:               job.id,
+        _resumeGenerationId:  resumeGenerationId,
+      },
+      // Persist the generation ID immediately after submit, before polling.
+      // Survives timeouts: next retry will find this ID and resume polling.
+      async (generationId: string) => {
+        await supabaseAdmin
+          .from("avatar_jobs")
+          .update({
+            stage_outputs: {
+              ...(job.stage_outputs ?? {}),
+              hedra_generation_id: generationId,
+            },
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", job.id);
+        log(`[HEDRA_GENERATION_ID_PERSISTED] ${generationId}`);
+      },
+    );
     finalVideoUrl = result.video_url;
-    log(`[HEDRA_DONE] elapsed=${Date.now() - hedraT0}ms request_id=${result.request_id} url=${finalVideoUrl.substring(0, 80)}`);
+    log(`[HEDRA_DONE] elapsed=${Date.now() - hedraT0}ms request_id=${result.request_id} video_url_len=${finalVideoUrl.length}`);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    log(`[HEDRA_FAILED] ${msg}`);
+    const e    = err instanceof Error ? err : new Error(String(err));
+    const node = e as NodeJS.ErrnoException & { cause?: { code?: string; message?: string } };
+    log(`[HEDRA_FAILED] ${e.message}`);
+    log(`[HEDRA_DEBUG] name=${e.name} code=${node.code ?? "none"} cause_code=${node.cause?.code ?? "none"} cause_msg=${node.cause?.message ?? "none"}`);
+    const msg = e.message;
     await failLedgerEntry(job.id, "lipsync", workerId, msg);
     const { shouldRetry } = await recordStageFailure(job.id, workerId, "lipsync", msg, job.retry_count_per_stage ?? {});
     if (shouldRetry) await retrigger(origin, job.id, log);
@@ -523,8 +581,9 @@ async function executeLipsyncStage(
     .update({
       stage_outputs: {
         ...(job.stage_outputs ?? {}),
-        hedra_output_url:  finalVideoUrl,
-        hedra_latency_ms:  String(hedraMs),
+        hedra_output_url:    finalVideoUrl,
+        hedra_latency_ms:    String(hedraMs),
+        // hedra_generation_id already written by onGenerationStarted callback
       },
       updated_at: new Date().toISOString(),
     })
@@ -539,8 +598,14 @@ async function executeLipsyncStage(
     await completeJobWithLease(job.id, workerId, finalVideoUrl, finalVideoUrl);
   } catch (commitErr) {
     const msg = commitErr instanceof Error ? commitErr.message : String(commitErr);
-    log(`COMMIT_ERROR: ${msg} — Hedra succeeded but job record update failed; manual recovery needed`);
-    // Re-throw so the after() caller surface sees the error in logs
+    log(`COMMIT_ERROR: ${msg} — Hedra succeeded but DB commit failed`);
+    // Trigger retry so the job isn't permanently stuck.
+    // The generation_id is persisted in stage_outputs — retry will resume polling
+    // and re-attempt the commit without re-calling Hedra.
+    const { shouldRetry } = await recordStageFailure(
+      job.id, workerId, "lipsync", `COMMIT_ERROR: ${msg}`, job.retry_count_per_stage ?? {},
+    ).catch(() => ({ shouldRetry: false }));
+    if (shouldRetry) await retrigger(origin, job.id, log);
     throw commitErr;
   }
 

@@ -54,6 +54,28 @@ interface ComposeBody {
 // ── Private helpers ───────────────────────────────────────────────────────────
 
 /**
+ * Asserts final video duration meets the 95% compliance threshold.
+ * Throws with DURATION_COMPLIANCE_FAILED if actual < 95% of requested.
+ * Skips silently if actualSec is 0 (probe unavailable).
+ */
+function assertDurationCompliance(
+  actualSec: number,
+  requestedSec: number,
+  phase: string,
+): void {
+  const minRequired = requestedSec * 0.95;
+  console.log(
+    `[DURATION_GATE] ${phase} actual=${actualSec.toFixed(2)}s requested=${requestedSec}s ` +
+    `min=${minRequired.toFixed(2)}s compliant=${actualSec >= minRequired}`,
+  );
+  if (actualSec > 0 && actualSec < minRequired) {
+    throw new Error(
+      `DURATION_COMPLIANCE_FAILED [${phase}]: actual=${actualSec.toFixed(2)}s < 95% of requested ${requestedSec}s (min=${minRequired.toFixed(2)}s)`,
+    );
+  }
+}
+
+/**
  * ffprobe with hard timeout.
  * Without a timeout, a corrupt or truncated MP4 can hang ffprobe indefinitely,
  * blocking the entire route until Vercel's maxDuration kills it.
@@ -337,11 +359,18 @@ export async function POST(request: Request) {
             const meta = await probeWithTimeout(probePath, "cinematic composer output", 15_000);
             if (meta) {
               const dur      = meta.format?.duration ?? "unknown";
+              const durSec   = typeof dur === "number" ? dur : parseFloat(String(dur)) || 0;
               const vStreams = (meta.streams ?? []).filter(s => s.codec_type === "video");
               const aStreams = (meta.streams ?? []).filter(s => s.codec_type === "audio");
               console.log(`[PHASE5] COMPOSER_DURATION=${dur}s expected=${clipUrls.length * clipDuration}s clips=${clipUrls.length}`);
               console.log(`[PHASE5] VIDEO_STREAMS=${vStreams.length} AUDIO_STREAMS=${aStreams.length} SIZE_BYTES=${composedBuffer.length}`);
               if (vStreams[0]) console.log(`[PHASE5] VIDEO_STREAM codec=${vStreams[0].codec_name} duration=${vStreams[0].duration}s`);
+              const minRequired = clipUrls.length * clipDuration * 0.95;
+              if (durSec > 0 && durSec < minRequired) {
+                console.warn(`[DURATION_GATE:railway] non-compliant actual=${durSec.toFixed(2)}s min=${minRequired.toFixed(2)}s — falling back to local FFmpeg for enforcement`);
+              } else if (durSec > 0) {
+                console.log(`[DURATION_GATE:railway] compliant actual=${durSec.toFixed(2)}s min=${minRequired.toFixed(2)}s`);
+              }
             }
           } finally {
             try { unlinkSync(probePath); } catch { /* temp cleanup */ }
@@ -380,6 +409,24 @@ export async function POST(request: Request) {
         writeFileSync(clipPaths[i], clipBuffers[i]);
       }
 
+      // ── Per-clip duration inventory (before concatenation) ────────────────────
+      const clipActualDurations: (number | null)[] = [];
+      for (let i = 0; i < clipBuffers.length; i++) {
+        const m = await probeWithTimeout(clipPaths[i], `input clip[${i + 1}]`, 10_000);
+        const raw = m?.format?.duration;
+        const sec = raw !== undefined ? (typeof raw === "number" ? raw : parseFloat(String(raw)) || null) : null;
+        clipActualDurations.push(sec);
+        console.log(`[DURATION_INVENTORY] clip[${i + 1}] actual=${sec !== null ? sec.toFixed(2) + "s" : "unknown"} bytes=${clipBuffers[i].length}`);
+      }
+      const sumInputSec = clipActualDurations.reduce((a, d) => a + (d ?? clipDuration), 0);
+      const requestedTotalSec = clipUrls.length * clipDuration;
+      console.info("[DURATION_PLAN]", {
+        REQUESTED_DURATION:    requestedTotalSec,
+        SUM_SCENE_DURATIONS:   parseFloat(sumInputSec.toFixed(2)),
+        clip_count:            clipUrls.length,
+        clip_duration_nominal: clipDuration,
+      });
+
       let finalVideoPath: string;
 
       if (clipBuffers.length === 1) {
@@ -407,8 +454,14 @@ export async function POST(request: Request) {
         finalVideoPath = stitchedPath;
       }
 
+      let ttsDurationSec = 0;
       if (voiceBuffer) {
         writeFileSync(audioPath, voiceBuffer);
+        const audioMeta = await probeWithTimeout(audioPath, "voiceover audio", 10_000);
+        const rawAudio = audioMeta?.format?.duration;
+        ttsDurationSec = rawAudio !== undefined ? (typeof rawAudio === "number" ? rawAudio : parseFloat(String(rawAudio)) || 0) : 0;
+        console.log(`[TTS_DURATION] ${ttsDurationSec.toFixed(2)}s bytes=${voiceBuffer.length}`);
+
         await new Promise<void>((resolve, reject) => {
           ffmpeg()
             .input(finalVideoPath)
@@ -428,13 +481,23 @@ export async function POST(request: Request) {
       }
 
       const meta = await probeWithTimeout(finalVideoPath, "cinematic local output", 15_000);
+      let finalDurationSec = 0;
       if (meta) {
         const dur      = meta.format?.duration ?? "unknown";
+        finalDurationSec = typeof dur === "number" ? dur : parseFloat(String(dur)) || 0;
         const vStreams = (meta.streams ?? []).filter(s => s.codec_type === "video");
         const aStreams = (meta.streams ?? []).filter(s => s.codec_type === "audio");
         console.log(`[PHASE5:local] STITCH_DURATION=${dur}s expected=${clipBuffers.length * clipDuration}s clips=${clipBuffers.length}`);
         console.log(`[PHASE5:local] VIDEO_STREAMS=${vStreams.length} AUDIO_STREAMS=${aStreams.length}`);
         if (vStreams[0]) console.log(`[PHASE5:local] VIDEO codec=${vStreams[0].codec_name} duration=${vStreams[0].duration}s`);
+        if (ttsDurationSec > 0) {
+          console.info("[DURATION_ALIGNMENT]", {
+            TTS_DURATION:         parseFloat(ttsDurationSec.toFixed(2)),
+            FINAL_VIDEO_DURATION: parseFloat(finalDurationSec.toFixed(2)),
+            delta_sec:            parseFloat((finalDurationSec - ttsDurationSec).toFixed(2)),
+          });
+        }
+        assertDurationCompliance(finalDurationSec, clipBuffers.length * clipDuration, "local_ffmpeg");
       }
 
       const finalBuffer = readFileSync(finalVideoPath);

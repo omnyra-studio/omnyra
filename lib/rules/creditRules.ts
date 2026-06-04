@@ -17,7 +17,7 @@ export const CREDIT_COSTS: Record<string, number> = {
   voice_clone:             15,  // one-time IVC clone creation via ElevenLabs
   // Video
   video_preview:           10,  // ~15s smart-motion
-  video_cinematic:         20,  // ~20-30s Kling standard
+  video_cinematic:         40,  // ~30s Kling standard
   video_avatar:            40,  // ~30s avatar
   video_full_sequence:     80,  // ~60s multi-clip sequence
 };

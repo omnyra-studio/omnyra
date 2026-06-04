@@ -71,11 +71,14 @@ export async function POST(req: Request) {
     return Response.json({ error: "FAL_API_KEY not configured" }, { status: 500 });
   }
 
+  const validPlan = (["starter", "creator", "studio"] as const).includes(plan as "starter" | "creator" | "studio")
+    ? (plan as "starter" | "creator" | "studio")
+    : "starter";
   const input = {
     script:       script.trim(),
     voice_id:     voice_id || null,
     image_url:    background_image,
-    plan:         (plan === "studio" ? "studio" : "starter") as "starter" | "studio",
+    plan:         validPlan,
     character_id: character_id || null,
   };
 

@@ -898,7 +898,7 @@ function CreatePageInner() {
           script,
           voice_id:         selectedVoiceId || userVoice?.voice_id || null,
           background_image: selectedImage,
-          plan:             userTier === 'studio' ? 'studio' : 'starter',
+          plan:             userTier,
           character_id:     selectedCharacterId || null,
         }),
       });
@@ -996,8 +996,8 @@ function CreatePageInner() {
 
         // Build per-clip prompts from [SCENE:] tags; fall back to hook if none.
         // Kling v1.6 standard produces exactly 10s clips (enum "5"|"10").
-        // Minimum 3 clips guarantees ≥30s cinematic output even for short voiceovers.
-        const TARGET_SCENE_SECONDS = 30;
+        // Studio gets 60s (6 clips); creator/starter get 30s (3 clips).
+        const TARGET_SCENE_SECONDS = userTier === 'studio' ? 60 : 30;
         const CLIP_SECONDS = 10; // matches Kling's actual output
         const effectiveDuration = Math.max(
           voiceDuration > 0 ? voiceDuration : TARGET_SCENE_SECONDS,
@@ -2057,8 +2057,8 @@ function CreatePageInner() {
                   >
                     <div style={{ fontSize: '1.5rem', marginBottom: 6 }}>🎬</div>
                     <div style={{ fontWeight: 700, marginBottom: 4 }}>Cinematic Scene</div>
-                    <div style={{ fontSize: '0.75rem', opacity: 0.6 }}>15s · Kling Pro</div>
-                    <div style={{ fontSize: '0.75rem', color: '#C9A84C', marginTop: 4 }}>20 credits</div>
+                    <div style={{ fontSize: '0.75rem', opacity: 0.6 }}>30s · Kling Pro</div>
+                    <div style={{ fontSize: '0.75rem', color: '#C9A84C', marginTop: 4 }}>40 credits</div>
                     {!['creator', 'studio'].includes(userTier) && (
                       <div style={{
                         position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)',

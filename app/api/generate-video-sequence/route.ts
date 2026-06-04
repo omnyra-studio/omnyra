@@ -5,6 +5,7 @@ export const maxDuration = 300;
 
 export async function POST(req: Request) {
   const { prompts, image_urls, clip_length, model } = await req.json();
+  const klingDuration: "5" | "10" = Number(clip_length) > 5 ? "10" : "5";
 
   const falKey = process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY;
   if (!falKey) {
@@ -43,7 +44,7 @@ export async function POST(req: Request) {
             input: {
               image_url,
               prompt: `${prompt}, cinematic motion, smooth movement`,
-              duration: "5",
+              duration: klingDuration,
               aspect_ratio: "9:16",
             },
           }

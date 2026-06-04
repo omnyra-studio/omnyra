@@ -22,7 +22,7 @@ export interface AvatarJobInput {
   script:        string;
   voice_id:      string | null;
   image_url:     string;
-  plan?:         "starter" | "studio";
+  plan?:         "starter" | "creator" | "studio";
   character_id?: string | null;
 }
 

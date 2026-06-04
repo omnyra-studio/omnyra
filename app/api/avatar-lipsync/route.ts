@@ -15,6 +15,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { generateHedraAvatar } from "@/lib/providers/hedra";
+import { validateAssetBundle } from "@/lib/avatar/asset-validator";
 import { classifyScene } from "@/lib/avatar/scene-classifier";
 import { routeModel, injectVisualLock } from "@/lib/avatar/model-router";
 import { scoreGenerationOutput } from "@/lib/avatar/quality-scorer";
@@ -75,7 +76,42 @@ export async function generateLipsyncWithFallback(
   }
 
   try {
-    const result = await generateHedraAvatar({ image_url: imageUrl, audio_url: audioUrl });
+    // ── Step 2: Asset validation + signed URL enforcement ────────────────────
+    // Supabase public storage URLs are inaccessible from Hedra's network.
+    // validateAssetBundle converts them to signed URLs before submission.
+    const bundle = await validateAssetBundle({ imageUrl, audioUrl });
+    if (!bundle.ok) {
+      const msg = `Asset validation failed: ${bundle.errors.join("; ")}`;
+      console.error("[avatar-lipsync] ASSET_VALIDATION_FAILED", { errors: bundle.errors });
+      return {
+        video_url:  null,
+        request_id: `validation-fail-${Date.now()}`,
+        status:     "failed" as const,
+        reason:     msg,
+        model_used: "none",
+        routing:    { model: routing.model, reason: routing.reason, kling_score: routing.kling_score, hedra_score: routing.hedra_score },
+      };
+    }
+
+    const resolvedImageUrl = bundle.resolved.imageUrl!;
+    const resolvedAudioUrl = bundle.resolved.audioUrl!;
+
+    // Hash comparison proves URL mutation (original → signed)
+    const { createHash } = await import("crypto");
+    const origImgHash = createHash("sha256").update(imageUrl).digest("hex").substring(0, 16);
+    const resImgHash  = createHash("sha256").update(resolvedImageUrl).digest("hex").substring(0, 16);
+    const origAudHash = createHash("sha256").update(audioUrl).digest("hex").substring(0, 16);
+    const resAudHash  = createHash("sha256").update(resolvedAudioUrl).digest("hex").substring(0, 16);
+    console.info("[avatar-lipsync] URL_RESOLUTION", {
+      image_url_changed:   origImgHash !== resImgHash,
+      audio_url_changed:   origAudHash !== resAudHash,
+      orig_image_hash:     origImgHash,
+      resolved_image_hash: resImgHash,
+      orig_audio_hash:     origAudHash,
+      resolved_audio_hash: resAudHash,
+    });
+
+    const result = await generateHedraAvatar({ image_url: resolvedImageUrl, audio_url: resolvedAudioUrl });
 
     // ── Step 3: Post-generation quality scoring ─────────────────────────────
     const quality = await scoreGenerationOutput(result.video_url);

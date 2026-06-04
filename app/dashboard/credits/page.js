@@ -58,7 +58,7 @@ const PLANS = [
       "Unlimited scripts & captions",
       "100 images / month",
       "40 voice clips / month",
-      "5 × Cinematic 15s videos / month (Kling Pro)",
+      "5 × Cinematic 30s videos / month (Kling Pro)",
       "2 avatar generations / month",
     ],
   },
@@ -111,7 +111,7 @@ const COSTS = [
   { action: "Voice 30s",                    credits: "3",    note: ""              },
   { action: "Voice 60s",                    credits: "6",    note: ""              },
   { action: "Quick Preview video (7s)",     credits: "10",   note: "All tiers"     },
-  { action: "Cinematic video (15s)",        credits: "20",   note: "Creator+"      },
+  { action: "Cinematic video (30s)",        credits: "40",   note: "Creator+"      },
   { action: "Full Sequence (60s)",          credits: "40",   note: "Studio only"   },
   { action: "Avatar video 30s",             credits: "40",   note: "Creator+"      },
   { action: "Avatar video 60s",             credits: "80",   note: "Studio only"   },
@@ -325,7 +325,7 @@ export default function CreditsPage() {
               {[
                 { tier: "Free",    video: "1× Preview",   length: "15s", clips: "1 total", watermark: true  },
                 { tier: "Starter", video: "1× Preview",   length: "30s", clips: "1/mo",   watermark: false },
-                { tier: "Creator", video: "5× Cinematic", length: "15s", clips: "5/mo",   watermark: false },
+                { tier: "Creator", video: "5× Cinematic", length: "30s", clips: "5/mo",   watermark: false },
                 { tier: "Studio",  video: "20× Sequence", length: "60s", clips: "20/mo",  watermark: false },
               ].map(t => (
                 <div key={t.tier} style={{

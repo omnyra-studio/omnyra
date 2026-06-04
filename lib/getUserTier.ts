@@ -55,13 +55,13 @@ export const TIER_VIDEO_LIMITS: Record<UserTier, TierVideoConfig> = {
   creator: {
     canGenerate: true,
     maxClips: 1,
-    clipLength: 15,
+    clipLength: 30,
     model: "cinematic",
     watermark: false,
     label: "Cinematic Scene",
-    description: "15s cinematic · 5/month",
-    video: "cinematic_15s_kling_pro",
-    video_seconds: 15,
+    description: "30s cinematic · 5/month",
+    video: "cinematic_30s_kling_pro",
+    video_seconds: 30,
   },
   studio: {
     canGenerate: true,

@@ -397,9 +397,12 @@ export async function POST(req: Request) {
         }
 
         const rawSeconds = Math.round(clipDuration ?? CLIP_SECONDS);
-        const duration   = rawSeconds <= 7 ? "5" : "10";
+        const duration   = rawSeconds <= 5 ? "5" : "10";
         const plannedTotalSec = prompts.length * Number(duration);
         console.info("[DURATION_PLAN]", {
+          REQUESTED_DURATION:      rawSeconds * prompts.length,
+          PLANNED_DURATION:        plannedTotalSec,
+          SUM_SCENE_DURATIONS:     plannedTotalSec,
           clip_duration_requested: rawSeconds,
           clip_duration_snapped:   Number(duration),
           scene_count:             prompts.length,
@@ -546,6 +549,36 @@ export async function POST(req: Request) {
             clipsAttempted:  prompts.length,
             successfulClips,
             failedClips,
+            extractedUrls,
+            clipReports,
+          });
+        }
+
+        // Partial clip loss — never silently return fewer clips (hidden duration loss)
+        if (clip_urls.length < prompts.length) {
+          const failedIndices = results
+            .map((r, i) => r.status === "rejected" ? i + 1 : null)
+            .filter((v): v is number => v !== null);
+          console.error("[PARTIAL_CLIP_LOSS]", {
+            EXPECTED_SCENES:   prompts.length,
+            SUCCESSFUL_SCENES: successfulClips,
+            FAILED_SCENES:     failedClips,
+            EXPECTED_DURATION: prompts.length * Number(duration),
+            ACTUAL_DURATION:   clip_urls.length * Number(duration),
+            DURATION_LOST_SEC: failedClips * Number(duration),
+            failedIndices,
+            clipReports,
+          });
+          throw new AllClipsFailedError({
+            SEQUENCE_ROUTE_VERSION: ROUTE_VERSION,
+            error:             `PARTIAL_CLIP_LOSS: ${failedClips}/${prompts.length} clips failed`,
+            clipsAttempted:    prompts.length,
+            successfulClips,
+            failedClips,
+            failedIndices,
+            expectedDuration:  prompts.length * Number(duration),
+            actualDuration:    clip_urls.length * Number(duration),
+            durationLostSec:   failedClips * Number(duration),
             extractedUrls,
             clipReports,
           });

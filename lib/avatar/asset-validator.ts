@@ -139,6 +139,50 @@ export async function validateAsset(
   return { ok: true, url: resolvedUrl, content_type: contentType, content_length: contentLength };
 }
 
+// ── Provider-safe URL signing (for external API calls) ───────────────────────
+// Signs Supabase storage URLs with a 3-hour TTL and verifies the result
+// responds 200 via HEAD before returning it. Non-Supabase URLs are returned
+// as-is after the HEAD check.  Throws on any failure so the caller can
+// classify it as HEDRA_PRECHECK_FAILED before making the provider call.
+
+export async function toSignedUrlForProvider(url: string, ttlSeconds = 10_800): Promise<string> {
+  if (!url?.startsWith("https://")) {
+    throw new Error(`HEDRA_URL_INVALID_PROTOCOL: expected https://, got ${url?.substring(0, 40)}`);
+  }
+  if (url.length < 30) {
+    throw new Error(`HEDRA_URL_SUSPICIOUSLY_SHORT: length=${url.length} url=${url}`);
+  }
+  // Detect known truncation patterns (URL cut off mid-path)
+  if (/\/object\/(p|pu|pub|publ|publi|public?)?$/.test(url) || url.endsWith("/object/")) {
+    throw new Error(`HEDRA_URL_TRUNCATED: url ends at "${url.slice(-30)}"`);
+  }
+
+  const signed = await toSignedUrl(url, ttlSeconds);
+
+  // HEAD check — fail loudly here so we never waste a Hedra API call on a dead URL
+  let headRes: Response;
+  try {
+    headRes = await fetch(signed, { method: "HEAD", signal: AbortSignal.timeout(15_000) });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`HEDRA_PRECHECK_FAILED: HEAD request threw for ${signed.substring(0, 100)}: ${msg}`);
+  }
+  if (!headRes.ok) {
+    throw new Error(
+      `HEDRA_PRECHECK_FAILED: HEAD returned HTTP ${headRes.status} for ${signed.substring(0, 100)}`,
+    );
+  }
+
+  console.info("[asset-validator] provider URL signed and verified", {
+    original_length: url.length,
+    signed_length:   signed.length,
+    ttl_seconds:     ttlSeconds,
+    head_status:     headRes.status,
+  });
+
+  return signed;
+}
+
 // ── Multi-asset validation (all must pass) ────────────────────────────────────
 
 export interface AssetBundle {

@@ -45,7 +45,7 @@ const PLANS = [
       "Unlimited scripts & captions",
       "100 images / month",
       "40 voice clips / month",
-      "5 videos / month",
+      "5 × 30s Cinematic videos / month",
       "2 avatar generations / month",
     ],
     unavailable: [],
