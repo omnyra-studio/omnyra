@@ -1,11 +1,12 @@
 "use client";
 
 /**
- * AssetUpload — drag-drop file uploader backed by a single `user-uploads` bucket.
+ * AssetUpload — drag-drop file uploader backed by the `renders` bucket.
  *
- * Paths (policy requires first segment = auth.uid()):
- *   variant="avatar"  → user-uploads/{userId}/avatar/reference.mp4
- *   variant="scene"   → user-uploads/{userId}/scene/{timestamp}_{filename}
+ * Paths:
+ *   variant="avatar"  → renders/{userId}/avatar/reference.mp4
+ *   variant="scene"   → renders/{userId}/scene/{timestamp}_{filename}
+ *   variant="face"    → renders/{userId}/avatar/face_{timestamp}_{filename}
  */
 
 import { useRef, useState, useCallback } from "react";
@@ -20,7 +21,7 @@ function getSupabase() {
 
 // ── Config per variant ────────────────────────────────────────────────────────
 
-const BUCKET = "user-uploads";
+const BUCKET = "renders";
 
 const VARIANT_CONFIG = {
   avatar: {
