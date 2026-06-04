@@ -34,16 +34,20 @@ export async function POST(req: NextRequest) {
     userId = body.userId ?? null;
   } catch { /* body is optional */ }
 
+  // Reset both the concurrent counter AND the video cooldown timestamp.
+  // The cooldown check fires BEFORE the concurrent check — if video_cooldown_until
+  // is still in the future, the request is blocked before the auto-heal can run.
   let query = supabaseAdmin
     .from("rate_limit_state")
-    .update({ concurrent_video_jobs: 0 })
-    .gt("concurrent_video_jobs", 0);
+    .update({ concurrent_video_jobs: 0, video_cooldown_until: null });
 
   if (userId) {
     query = (query as any).eq("user_id", userId);
+  } else {
+    query = (query as any).gte("concurrent_video_jobs", 0); // match all rows
   }
 
-  const { data, error, count } = await (query as any).select("user_id, concurrent_video_jobs");
+  const { data, error, count } = await (query as any).select("user_id, concurrent_video_jobs, video_cooldown_until");
 
   if (error) {
     console.error("[reset-video-slots] DB error:", error.message);
