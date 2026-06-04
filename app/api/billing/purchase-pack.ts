@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { createClient } from '@supabase/supabase-js';
+import { cleanEnv } from '@/lib/supabase/admin';
 
 const PACK_MAP: Record<string, { priceEnv: string; credits: number; name: string }> = {
   small:  { priceEnv: 'STRIPE_SMALL_PACK_PRICE_ID',  credits: 100, name: 'Small Pack'  },
@@ -10,8 +11,8 @@ const PACK_MAP: Record<string, { priceEnv: string; credits: number; name: string
 
 function getDb() {
   return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
+    cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL),
+    cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY)
   );
 }
 

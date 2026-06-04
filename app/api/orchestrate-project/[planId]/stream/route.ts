@@ -11,6 +11,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { createClient }       from "@supabase/supabase-js";
 import { cookies }            from "next/headers";
+import { cleanEnv }           from "@/lib/supabase/admin";
 import { fail } from "@/lib/api/response";
 import { sseEncode }          from "@/lib/orchestration/events";
 import type { OrchestrationEvent } from "@/lib/orchestration/events";
@@ -24,8 +25,8 @@ interface RouteContext { params: Promise<{ planId: string }> }
 export async function GET(request: Request, { params }: RouteContext) {
   const cookieStore = await cookies();
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL),
+    cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
     { cookies: { getAll: () => cookieStore.getAll(), setAll: () => {} } },
   );
 
@@ -50,8 +51,8 @@ export async function GET(request: Request, { params }: RouteContext) {
 
   // Admin client — bypasses RLS for Realtime subscriptions
   const admin = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL),
+    cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY),
   );
 
   const encoder = new TextEncoder();

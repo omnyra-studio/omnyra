@@ -25,6 +25,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import type { AppEvent } from "./types";
+import { cleanEnv } from "@/lib/supabase/admin";
 
 // ── Interface ──────────────────────────────────────────────────────────────────
 
@@ -44,8 +45,8 @@ export interface EventStore {
 export class SupabaseEventStore implements EventStore {
   private client() {
     return createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL),
+      cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY),
     );
   }
 

@@ -1,8 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-
-function cleanEnv(value?: string): string | undefined {
-  return value?.replace(/^﻿/, "").trim()
-}
+import { cleanEnv } from '@/lib/supabase/admin'
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)

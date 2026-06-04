@@ -24,11 +24,12 @@ import { createClient } from "@supabase/supabase-js";
 import type { RenderShardJob, WorkerResult } from "./types";
 import { getShardCache } from "@/lib/render/shard-cache";
 import { emitAndForget } from "@/lib/events/emitter";
+import { cleanEnv } from "@/lib/supabase/admin";
 
 function getServiceClient() {
   return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL),
+    cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY),
   );
 }
 

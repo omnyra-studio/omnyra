@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { CREDIT_COSTS } from './credits';
+import { cleanEnv } from '@/lib/supabase/admin';
 
 // Actions that never cost credits — the user's hook into Omnyra
 const FREE_ACTIONS = new Set([
@@ -10,8 +11,8 @@ const FREE_ACTIONS = new Set([
 
 function getDb(): SupabaseClient {
   return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
+    cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL),
+    cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY)
   );
 }
 

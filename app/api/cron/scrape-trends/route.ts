@@ -17,6 +17,7 @@
 
 import { ApifyClient } from 'apify-client';
 import { createClient } from '@supabase/supabase-js';
+import { cleanEnv } from '@/lib/supabase/admin';
 
 const NICHES = [
   'skincare',
@@ -47,8 +48,8 @@ interface TrendSignal {
 // Supabase admin client — no user session needed for cron writes
 function getDb() {
   return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL),
+    cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY),
   );
 }
 

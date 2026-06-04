@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { cleanEnv } from "@/lib/supabase/admin";
 
 // Columns required beyond base migration:
 // ALTER TABLE brand_profiles ADD COLUMN IF NOT EXISTS logo_url text;
@@ -26,8 +27,8 @@ export interface BrandProfile {
 
 function adminClient() {
   return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL),
+    cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY),
   );
 }
 

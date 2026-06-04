@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@supabase/supabase-js";
 import { createServerClient } from "@supabase/ssr";
+import { cleanEnv } from "@/lib/supabase/admin";
 import { cookies } from "next/headers";
 import { withTrace } from "@/lib/api/autopsy";
 import { getBrandProfile, getBrandSystemPrompt } from "@/lib/brand";
@@ -144,8 +145,8 @@ Return ONLY valid JSON. No markdown. No backticks. No explanation. Exactly this 
   if (process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
     try {
       const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL,
-        process.env.SUPABASE_SERVICE_ROLE_KEY,
+        cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL),
+        cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY),
       );
       const { data, error } = await supabase
         .from("briefs")

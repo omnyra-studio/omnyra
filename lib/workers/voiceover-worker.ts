@@ -6,6 +6,7 @@
 import { createClient } from "@supabase/supabase-js";
 import type { GenerateVoiceoverJob, WorkerResult } from "./types";
 import { emitAndForget } from "@/lib/events/emitter";
+import { cleanEnv } from "@/lib/supabase/admin";
 
 const DEFAULT_VOICE_ID     = "9BWtsMINqrJLrRacOk9x";  // ElevenLabs "Aria"
 const MP3_BYTES_PER_SECOND = 16_000;                   // 128kbps baseline
@@ -14,8 +15,8 @@ export async function processVoiceoverJob(job: GenerateVoiceoverJob): Promise<Wo
   const { planId, userId, voiceId: jobVoiceId } = job;
 
   const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL),
+    cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY),
   );
 
   // Idempotency — skip if already generated

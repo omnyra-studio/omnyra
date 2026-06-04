@@ -15,6 +15,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { createClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
+import { cleanEnv } from "@/lib/supabase/admin";
 import { NextResponse } from "next/server";
 import { logUsageEvent } from "@/lib/cache";
 import { CREDIT_COSTS } from "@/lib/rules/creditRules";
@@ -118,8 +119,8 @@ export async function POST(request: Request) {
   const voiceId = bodyVoiceId ?? (profile?.voice_id as string | null) ?? DEFAULT_VOICE_ID;
 
   const adminSupabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL),
+    cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY),
   );
 
   // ── Credit-protected generation ───────────────────────────────────────────────

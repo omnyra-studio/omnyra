@@ -20,9 +20,13 @@ if (typeof window !== "undefined") {
   );
 }
 
+export function cleanEnv(val: string | undefined): string {
+  return (val || "").replace(/[^\x20-\x7E]/g, "").trim();
+}
+
 export const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL),
+  cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY),
   {
     auth: {
       autoRefreshToken: false,

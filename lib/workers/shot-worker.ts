@@ -13,6 +13,7 @@
 
 import { createClient }     from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { cleanEnv } from "@/lib/supabase/admin";
 import { fal }               from "@fal-ai/client";
 import {
   executeShot,
@@ -32,8 +33,8 @@ export async function processShotJob(job: RenderShotJob): Promise<WorkerResult> 
   const { planId, shotDbId, shotId, userId } = job;
 
   const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL),
+    cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY),
   );
 
   // ── Load shot ─────────────────────────────────────────────────────────────────

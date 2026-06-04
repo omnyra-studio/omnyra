@@ -12,13 +12,14 @@
 
 import { createClient } from "@supabase/supabase-js";
 import type { ComposeVideoJob, WorkerResult } from "./types";
+import { cleanEnv } from "@/lib/supabase/admin";
 
 export async function processCompositionJob(job: ComposeVideoJob): Promise<WorkerResult> {
   const { planId, projectId, userId } = job;
 
   const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL),
+    cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY),
   );
 
   // Idempotency — skip if already completed
