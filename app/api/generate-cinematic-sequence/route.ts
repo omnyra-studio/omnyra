@@ -21,7 +21,7 @@ import { withCreditState, InsufficientCreditsError, CreditReservationError } fro
 export const maxDuration = 300;
 
 const CLIP_SECONDS = 10;
-const ROUTE_VERSION = "2026-06-04-v6-kling-all-plans";
+const ROUTE_VERSION = "2026-06-04-v7-kling-talking-head";
 
 const FLUX_MODEL = "fal-ai/flux/schnell";
 
@@ -289,7 +289,7 @@ function inferSceneType(prompt: string): string {
 const MOTION_VERB_RE = /\b(walk|run|mov|turn|sway|breath|gestur|spin|danc|flow|driv|fall|rise|lift|reach|step|leap|jump|throw|pour|apply|embrac|laugh|cry|react)\w*\b/i;
 
 const SCENE_BASE_SCORES: Record<string, number> = {
-  talking_head:    0.20,  // lipsync/face-only — Hedra route (not Kling); below 0.4 threshold
+  talking_head:    0.55,  // presenter with motion — Kling in cinematic pipeline (no Hedra fallback here)
   lifestyle_broll: 0.85,  // high kinetic — always Kling
   product_demo:    0.70,  // handling + close-up — Kling
   emotional:       0.80,  // impact moments — Kling
