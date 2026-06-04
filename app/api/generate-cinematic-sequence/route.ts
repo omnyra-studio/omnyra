@@ -64,13 +64,17 @@ async function uploadSmartMotionClip(
 // ── Image generation for smart_motion without a source image ─────────────────
 
 async function generateSceneImage(prompt: string): Promise<string> {
+  const safePrompt =
+    `${prompt}, cinematic product shot, 9:16 vertical frame, ` +
+    `professional brand photography, fully clothed subjects, brand-safe, SFW, no nudity`;
 
   const result = await (fal as any).subscribe(FLUX_MODEL, {
     input: {
-      prompt: `${prompt}, ultra realistic, cinematic, 9:16 portrait, professional photography`,
+      prompt: safePrompt,
       image_size: { width: 720, height: 1280 },
       num_inference_steps: 4,
       num_images: 1,
+      enable_safety_checker: true,
     },
     logs: false,
   });
