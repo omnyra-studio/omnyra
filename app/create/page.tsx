@@ -838,18 +838,20 @@ function CreatePageInner() {
         audio.src = blobUrl;
       });
       setVoiceDuration(dur);
-      // Upload to Supabase so the compose endpoint can download it server-side
+      // Upload to Supabase via server route (uses supabaseAdmin, bypasses RLS)
       let publicVoiceUrl: string | null = null;
-      if (userId) {
-        const sb = createClient();
-        const voicePath = `${userId}/voice/${Date.now()}.mp3`;
-        const { error: uploadErr } = await sb.storage
-          .from('user-uploads')
-          .upload(voicePath, blob, { contentType: 'audio/mpeg', upsert: true });
-        if (!uploadErr) {
-          const { data: { publicUrl } } = sb.storage.from('user-uploads').getPublicUrl(voicePath);
-          publicVoiceUrl = publicUrl;
+      try {
+        const form = new FormData();
+        form.append('file', blob, 'voice.mp3');
+        const upRes = await fetch('/api/upload/voice', { method: 'POST', body: form });
+        if (upRes.ok) {
+          const { url } = await upRes.json();
+          publicVoiceUrl = url ?? null;
+        } else {
+          console.warn('[voice] upload failed status=' + upRes.status);
         }
+      } catch (upErr) {
+        console.warn('[voice] upload error:', upErr);
       }
       // Fall back to blob URL for audio player if upload failed
       setVoiceAudioUrl(publicVoiceUrl ?? URL.createObjectURL(blob));
@@ -1205,15 +1207,17 @@ function CreatePageInner() {
             resolvedVoiceoverUrl = voiceAudioUrl;
           } else if (voiceAudioUrl?.startsWith('blob:')) {
             try {
-              const sb = createClient();
               const blob = await fetch(voiceAudioUrl).then(r => r.blob());
-              const voicePath = `${userId}/voice/${Date.now()}.mp3`;
-              const { error: reupErr } = await sb.storage.from('user-uploads').upload(voicePath, blob, { contentType: 'audio/mpeg', upsert: true });
-              if (!reupErr) {
-                const { data: { publicUrl } } = sb.storage.from('user-uploads').getPublicUrl(voicePath);
-                resolvedVoiceoverUrl = publicUrl;
-                setVoiceAudioUrl(publicUrl);
-                console.log('[cinematic] re-uploaded blob voiceover → public URL');
+              const form = new FormData();
+              form.append('file', blob, 'voice.mp3');
+              const reupRes = await fetch('/api/upload/voice', { method: 'POST', body: form });
+              if (reupRes.ok) {
+                const { url } = await reupRes.json();
+                if (url) {
+                  resolvedVoiceoverUrl = url;
+                  setVoiceAudioUrl(url);
+                  console.log('[cinematic] re-uploaded blob voiceover → signed URL');
+                }
               }
             } catch (reupErr) {
               console.warn('[cinematic] failed to re-upload blob voiceover — composing without audio:', reupErr);
