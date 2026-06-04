@@ -422,8 +422,8 @@ async function uploadHedraAsset(
 
 async function reHostImageToSupabase(imageUrl: string, jobId: string): Promise<string> {
   const supabase = createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL)!,
+    cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY)!,
   );
 
   const res = await fetch(imageUrl, { signal: AbortSignal.timeout(30_000) });
