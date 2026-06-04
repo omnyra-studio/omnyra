@@ -17,14 +17,15 @@ import { cookies } from "next/headers";
 import { after } from "next/server";
 import { createOrFindJob } from "@/lib/avatar-queue";
 import { assertNoLegacyLipsync, LegacyPipelineViolationError } from "@/lib/guards/legacy-pipeline-guard";
+import { cleanEnv } from "@/lib/supabase/admin";
 
 export const maxDuration = 30;
 
 export async function POST(req: Request) {
   const cookieStore = await cookies();
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL),
+    cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
     { cookies: { getAll: () => cookieStore.getAll(), setAll: () => {} } },
   );
   const { data: { user }, error: authErr } = await supabase.auth.getUser();

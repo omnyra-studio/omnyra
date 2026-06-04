@@ -15,15 +15,15 @@
 
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import { supabaseAdmin, cleanEnv } from "@/lib/supabase/admin";
 
 export const maxDuration = 10;
 
 export async function GET(req: Request) {
   const cookieStore = await cookies();
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL),
+    cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
     { cookies: { getAll: () => cookieStore.getAll(), setAll: () => {} } },
   );
   const { data: { user }, error: authErr } = await supabase.auth.getUser();
@@ -40,7 +40,7 @@ export async function GET(req: Request) {
   const { data, error } = await supabaseAdmin
     .from("avatar_jobs")
     .select(
-      "id, status, stage, pipeline_status, result_url, animated_video_url, error, retry_count, created_at, updated_at"
+      "id, status, stage, pipeline_status, result_url, animated_video_url, error, retry_count, stage_outputs, created_at, updated_at"
     )
     .eq("id", id)
     .eq("user_id", user.id)

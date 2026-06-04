@@ -6,8 +6,8 @@ export async function GET(req: Request) {
   const generation_id = searchParams.get('id')
   const job_id = searchParams.get('job_id')
 
-  if (!generation_id || !job_id) {
-    return Response.json({ error: 'Missing id or job_id' }, { status: 400 })
+  if (!generation_id) {
+    return Response.json({ error: 'Missing id param' }, { status: 400 })
   }
 
   const apiKey = cleanEnv(process.env.HEDRA_API_KEY)
@@ -27,9 +27,20 @@ export async function GET(req: Request) {
 
     if (generation.status !== 'complete' || !generation.url) {
       return Response.json({
-        error: 'Generation not complete',
-        status: generation.status
-      }, { status: 400 })
+        ready: false,
+        status: generation.status,
+        generation_id,
+      })
+    }
+
+    // Status-check only mode — no job_id provided
+    if (!job_id) {
+      return Response.json({
+        ready: true,
+        status: generation.status,
+        generation_id,
+        url: generation.url,
+      })
     }
 
     console.log('[RECOVER] Generation complete, downloading from S3...')

@@ -270,6 +270,7 @@ function CreatePageInner() {
   const [videoProgress, setVideoProgress] = useState(0);
   const [videoType, setVideoType] = useState<string | null>(null);
   const [pipelineStatus, setPipelineStatusDisplay] = useState<string | null>(null);
+  const [hedraResuming, setHedraResuming] = useState(false);
 
   // Inline voice picker
   const [voices, setVoices] = useState<VoiceOption[]>([]);
@@ -924,6 +925,7 @@ function CreatePageInner() {
       // Poll /api/job-status every 5 s — up to 150 polls (12.5 minutes)
       let pollCount = 0;
       const MAX_POLLS = 150;
+      let lastStageOutputs: Record<string, string> | null = null;
 
       pollRef.current = setInterval(async () => {
         try {
@@ -931,6 +933,12 @@ function CreatePageInner() {
           if (pollCount > MAX_POLLS) {
             clearInterval(pollRef.current!);
             pollRef.current = null;
+            const hedraGenId = lastStageOutputs?.hedra_generation_id;
+            if (hedraGenId) {
+              console.log('[generate-avatar] client timeout but Hedra gen exists — resuming', hedraGenId);
+              pollHedraCompletion(hedraGenId, jobId);
+              return;
+            }
             setError('Avatar generation timed out. Please try again.');
             setIsGeneratingVideo(false);
             return;
@@ -943,6 +951,7 @@ function CreatePageInner() {
           console.log(`[generate-avatar] poll ${pollCount} status=${status.status} stage=${status.stage} pipeline_status=${status.pipeline_status}`);
 
           if (status.pipeline_status) setPipelineStatusDisplay(status.pipeline_status);
+          if (status.stage_outputs) lastStageOutputs = status.stage_outputs as Record<string, string>;
 
           // Advance progress bar proportionally (20–95 % during processing)
           const progressEstimate = Math.min(20 + Math.round((pollCount / MAX_POLLS) * 75), 95);
@@ -959,6 +968,12 @@ function CreatePageInner() {
           } else if (status.status === 'failed') {
             clearInterval(pollRef.current!);
             pollRef.current = null;
+            const hedraGenId: string | undefined = (status.stage_outputs as Record<string, string> | null)?.hedra_generation_id;
+            if (hedraGenId) {
+              console.log('[generate-avatar] server timed out but Hedra gen exists — resuming client-side', hedraGenId);
+              pollHedraCompletion(hedraGenId, jobId);
+              return;
+            }
             const stageLabel = status.stage ? ` [stage: ${status.stage}]` : '';
             setError(`${status.error || 'Avatar generation failed'}${stageLabel}`);
             setPipelineStatusDisplay(null);
@@ -976,6 +991,77 @@ function CreatePageInner() {
       setError(msg);
       setIsGeneratingVideo(false);
     }
+  }
+
+  async function pollHedraCompletion(generationId: string, jobId: string) {
+    if (pollRef.current) clearInterval(pollRef.current);
+    setHedraResuming(true);
+    setIsGeneratingVideo(true);
+    setVideoProgress(50);
+    setPipelineStatusDisplay('generating_avatar');
+
+    let hedraPolls = 0;
+    const MAX_HEDRA_POLLS = 60; // 5 min at 5 s intervals
+
+    pollRef.current = setInterval(async () => {
+      try {
+        hedraPolls++;
+        if (hedraPolls > MAX_HEDRA_POLLS) {
+          clearInterval(pollRef.current!);
+          pollRef.current = null;
+          setError('Hedra generation timed out — please try again or contact support.');
+          setPipelineStatusDisplay(null);
+          setIsGeneratingVideo(false);
+          setHedraResuming(false);
+          return;
+        }
+
+        const resumeRes = await fetch(`/api/resume-hedra?id=${generationId}`);
+        if (!resumeRes.ok) return; // transient error — keep polling
+        const resume = await resumeRes.json();
+        console.log(`[hedra-resume] poll ${hedraPolls} status=${resume.generation?.status}`);
+
+        const genStatus: string = resume.generation?.status ?? '';
+
+        // Advance progress 50 → 88 % while waiting
+        setVideoProgress(Math.min(50 + Math.round((hedraPolls / MAX_HEDRA_POLLS) * 38), 88));
+
+        if (genStatus === 'complete') {
+          clearInterval(pollRef.current!);
+          pollRef.current = null;
+          setVideoProgress(90);
+          setPipelineStatusDisplay('stitching');
+
+          const recoverRes = await fetch(`/api/recover-hedra?id=${generationId}&job_id=${jobId}`);
+          const recovered = await recoverRes.json();
+
+          if (!recoverRes.ok || !recovered.video_url) {
+            setError(recovered.error || 'Failed to retrieve completed video');
+            setPipelineStatusDisplay(null);
+            setIsGeneratingVideo(false);
+            setHedraResuming(false);
+            return;
+          }
+
+          setVideoUrl(recovered.video_url);
+          setMergedVideoUrl(recovered.video_url);
+          setVideoProgress(100);
+          setPipelineStatusDisplay(null);
+          setIsGeneratingVideo(false);
+          setHedraResuming(false);
+
+        } else if (genStatus === 'error' || genStatus === 'failed') {
+          clearInterval(pollRef.current!);
+          pollRef.current = null;
+          setError('Hedra generation failed — please try again.');
+          setPipelineStatusDisplay(null);
+          setIsGeneratingVideo(false);
+          setHedraResuming(false);
+        }
+      } catch (pollErr) {
+        console.error('[hedra-resume] poll error:', pollErr);
+      }
+    }, 5000);
   }
 
   async function handleGenerateOutput(type: string) {
@@ -2224,7 +2310,9 @@ function CreatePageInner() {
                 {isGeneratingVideo && (
                   <div style={{ marginTop: 16 }}>
                     <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, marginBottom: 4 }}>
-                      🎬 Rendering video — this takes 3-6 minutes...
+                      {hedraResuming
+                        ? '⏳ Waiting for Hedra to finish — this can take 3–5 minutes...'
+                        : '🎬 Rendering video — this takes 3-6 minutes...'}
                     </p>
                     {pipelineStatus && (
                       <p style={{ color: '#C9A84C', fontSize: 12, marginBottom: 8, fontWeight: 500 }}>

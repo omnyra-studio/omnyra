@@ -25,12 +25,7 @@ export function cleanEnv(val: string | undefined): string {
 }
 
 export const supabaseAdmin = createClient(
-  cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL),
-  cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY),
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  },
+  cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL) || "https://placeholder.supabase.co",
+  cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY) || "placeholder-key",
+  { auth: { autoRefreshToken: false, persistSession: false } },
 );
