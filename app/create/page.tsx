@@ -2307,11 +2307,29 @@ function CreatePageInner() {
                   </div>
                 )}
 
-                {videoType && (
+                {videoType === 'avatar' && !avatarImageUrl && !selectedImage && !isGeneratingVideo && (
+                  <div style={{
+                    background: 'rgba(239,68,68,0.1)',
+                    border: '1px solid rgba(239,68,68,0.3)',
+                    borderRadius: 10,
+                    padding: '12px 16px',
+                    marginBottom: 8,
+                    color: '#fca5a5',
+                    fontSize: '0.9rem',
+                  }}>
+                    ⚠ Upload a face photo or select a scene image first — Hedra needs an image to animate
+                  </div>
+                )}
+
+                {videoType && (() => {
+                  const avatarMissingImage = videoType === 'avatar' && !avatarImageUrl && !selectedImage;
+                  const fastMissingImage   = videoType === 'fast'   && !selectedImage;
+                  const isBlocked = isGeneratingVideo || avatarMissingImage || fastMissingImage;
+                  return (
                   <button
                     onClick={() => handleGenerateOutput(videoType)}
-                    disabled={isGeneratingVideo || (videoType === 'fast' && !selectedImage)}
-                    className={(!isGeneratingVideo && !(videoType === 'fast' && !selectedImage)) ? 'gold-btn' : undefined}
+                    disabled={isBlocked}
+                    className={!isBlocked ? 'gold-btn' : undefined}
                     style={{
                       width: '100%',
                       padding: '13px 24px',
@@ -2320,9 +2338,9 @@ function CreatePageInner() {
                       fontFamily: 'inherit',
                       borderRadius: 9999,
                       border: 'none',
-                      cursor: (isGeneratingVideo || (videoType === 'fast' && !selectedImage)) ? 'not-allowed' : 'pointer',
-                      opacity: (videoType === 'fast' && !selectedImage) ? 0.5 : 1,
-                      ...((isGeneratingVideo || (videoType === 'fast' && !selectedImage)) && { background: 'rgba(255,255,255,0.06)', color: '#8A7D92' }),
+                      cursor: isBlocked ? 'not-allowed' : 'pointer',
+                      opacity: (avatarMissingImage || fastMissingImage) ? 0.5 : 1,
+                      ...(isBlocked && { background: 'rgba(255,255,255,0.06)', color: '#8A7D92' }),
                     }}
                   >
                     {isGeneratingVideo
@@ -2332,7 +2350,8 @@ function CreatePageInner() {
                       : videoType === 'sequence' ? 'Generate Full Sequence (4 clips) →'
                       : 'Generate Quick Preview →'}
                   </button>
-                )}
+                  );
+                })()}
 
                 {isGeneratingVideo && (
                   <div style={{ marginTop: 16 }}>
