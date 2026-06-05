@@ -1320,8 +1320,7 @@ function CreatePageInner() {
           };
           console.log('[VOICE_TRACE_FRONTEND]', {
             resolvedVoiceUrl,
-            resolvedVoiceoverUrl,
-            hasVoiceover: !!resolvedVoiceoverUrl,
+            hasVoiceover: !!resolvedVoiceUrl,
             payloadKeys: Object.keys(composePayload),
             voiceoverInPayload: 'voiceoverUrl' in composePayload && composePayload.voiceoverUrl !== undefined,
           });
@@ -1332,7 +1331,7 @@ function CreatePageInner() {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(composePayload),
           });
-          const voiceoverSent = !!resolvedVoiceoverUrl;
+          const voiceoverSent = !!resolvedVoiceUrl;
           if (composeRes.ok) {
             const composeData = await composeRes.json();
             console.log('[cinematic] compose-video result:', JSON.stringify(composeData).substring(0, 200));
