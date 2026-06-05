@@ -865,11 +865,12 @@ function CreatePageInner() {
 
   async function handleVersionVoice() {
     if (!briefResponse) return;
+    const voice_id = selectedVoiceId || userVoice?.voice_id;
+    if (!voice_id) return;
     setIsGeneratingVoice(true);
     setVoiceUrl(null);
     try {
       const script = briefResponse.versions[selectedVersion].script;
-      const voice_id = userVoice?.voice_id || 'EXAVITQu4vr4xnSDxMaL';
       const res = await fetch('/api/test-voice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -901,12 +902,14 @@ function CreatePageInner() {
 
     try {
       const script = briefResponse.versions[selectedVersion].script;
+      const avatarVoiceId = selectedVoiceId || userVoice?.voice_id || null;
+      console.log('[AVATAR_VOICE]', { selectedVoiceId, userVoiceId: userVoice?.voice_id, payload_voice_id: avatarVoiceId });
       const res = await fetch('/api/generate-avatar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           script,
-          voice_id:          selectedVoiceId || userVoice?.voice_id || null,
+          voice_id:          avatarVoiceId,
           background_image:  selectedImage || avatarImageUrl,
           avatar_image_url:  avatarImageUrl || undefined,
           plan:              userTier,

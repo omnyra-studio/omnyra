@@ -75,7 +75,6 @@ ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
 export const maxDuration = 300;
 
-const DEFAULT_VOICE_ID = "EXAVITQu4vr4xnSDxMaL";
 
 // ── Performance Engine: energy → ElevenLabs voice settings ────────────────────
 
@@ -181,7 +180,15 @@ async function executeTtsStage(
   origin: string,
   log: (msg: string) => void,
 ): Promise<void> {
-  const voiceId = job.input.voice_id || DEFAULT_VOICE_ID;
+  const voiceId = job.input.voice_id;
+  log(`[TTS_VOICE] voice_id=${voiceId ?? "null"} source=${voiceId === job.input.voice_id ? "job_input" : "fallback"}`);
+  if (!voiceId) {
+    const msg = "voice_id missing — user must select a voice before generating avatar";
+    log(`[TTS_VOICE] ERROR: ${msg}`);
+    await failLedgerEntry(job.id, "tts", workerId, msg);
+    await recordStageFailure(job.id, workerId, "tts", msg, job.retry_count_per_stage ?? {});
+    return;
+  }
   const dagNode = getDagNode("tts");
   const reqHash = ttsRequestHash(voiceId, job.input.script);
 
