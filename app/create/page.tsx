@@ -1221,7 +1221,7 @@ function CreatePageInner() {
           const splitRes = await fetch('/api/split-script', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ script: scriptText, hook: hookText, num_segments: clipCount, niche }),
+            body: JSON.stringify({ script: scriptText, hook: hookText, num_segments: clipCount, niche, goal }),
           });
           if (splitRes.ok) {
             const { segments } = await splitRes.json() as {
@@ -1229,7 +1229,7 @@ function CreatePageInner() {
             };
             if (Array.isArray(segments) && segments.length) {
               enhancedPrompts = segments.map(s => s.visual_prompt || hookText || scriptText.substring(0, 200));
-              sceneTypes      = segments.map(s => s.scene_type ?? null);
+              sceneTypes      = segments.map(s => (s as any).type ?? s.scene_type ?? null);
               console.log('[cinematic] split-script scene types:', sceneTypes);
             }
           }

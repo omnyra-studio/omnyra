@@ -105,7 +105,7 @@ export async function POST(req: Request) {
     return Response.json({ error: "ANTHROPIC_API_KEY missing" }, { status: 500 });
   }
 
-  const { script, hook, num_segments: rawSegments, niche } = await req.json();
+  const { script, hook, num_segments: rawSegments, niche, goal } = await req.json();
 
   if (!script || !rawSegments) {
     return Response.json({ error: "script and num_segments required" }, { status: 400 });
@@ -148,11 +148,21 @@ SCENE TYPE RULES — set "type" using best inference:
 
 If unsure: use "lifestyle_broll". NEVER output null, undefined, unknown, or empty string for type.
 
+LITERAL BRIEF RULE — CRITICAL:
+  - The visual_prompt MUST directly visualise what the script text describes
+  - If the script mentions a couple walking — show a couple walking
+  - If the script mentions dancing at sunset — show two people dancing at sunset
+  - If the script mentions a beach — the scene must be set on a beach
+  - If the script describes two people together — the scene MUST show two people
+  - DO NOT substitute generic "emotional" or atmospheric scenes — be LITERAL to the script
+  - The Goal/Brief provides the creative context — every scene must honour it
+
 VISUAL PROMPT RULES — every scene needs a candid photographic motion description:
   - 20–30 words
-  - Must include: human action + environmental motion + camera movement
+  - Must include: who (exactly as the script describes) + setting + camera movement
   - Bad: "A person stands at a desk."
   - Good: "A creator leans forward at a standing desk, gesturing confidently. Natural window light shifts. Camera slowly pushes in from medium to close."
+  - If the scene involves two people: say "two people" or "a couple" explicitly in the prompt
 
 IMAGE STYLE RULES — CRITICAL:
   - All images must look like real photographs taken by a human photographer
@@ -174,6 +184,7 @@ FAILURE CONDITION: If you cannot comply, output exactly: {"error":"invalid_input
 
   const userPrompt = `Split this script into exactly ${num_segments} scenes for AI video generation.
 
+Goal/Brief: ${goal ?? "(none)"}
 Script: ${script}
 Hook: ${hook ?? "(none)"}
 Niche: ${niche ?? "general"}

@@ -21,7 +21,7 @@ import { withCreditState, InsufficientCreditsError, CreditReservationError } fro
 export const maxDuration = 300;
 
 const CLIP_SECONDS = 10;
-const ROUTE_VERSION = "2026-06-05-v8-kling-all-guardrail-removed";
+const ROUTE_VERSION = "2026-06-05-v9-literal-brief-couple-detection";
 
 const FLUX_MODEL = "fal-ai/flux/schnell";
 
@@ -63,14 +63,25 @@ async function uploadSmartMotionClip(
 
 // ── Image generation for smart_motion without a source image ─────────────────
 
+const COUPLE_RE = /\b(couple|two people|both|together|partner|dancing with|walking with|holding hands|hand in hand|each other|lovers|them|they)\b/i;
+
 async function generateSceneImage(prompt: string): Promise<string> {
+  const isCouple = COUPLE_RE.test(prompt);
+
+  const couplePositive = isCouple
+    ? "two people together, both people clearly visible in frame, couple, "
+    : "";
+  const coupleNegative = isCouple
+    ? "solo, single person, alone, one person, "
+    : "";
+
   const safePrompt =
-    `${prompt}, 35mm candid photography, natural lighting, authentic unposed moment, ` +
+    `${couplePositive}${prompt}, 35mm candid photography, natural lighting, authentic unposed moment, ` +
     `real people, documentary style, shot on iPhone or DSLR, imperfect natural beauty, ` +
     `fully clothed subjects, brand-safe, SFW, no nudity`;
 
   const negativePrompt =
-    `AI render, CGI, hyperrealistic skin, studio lighting, perfect symmetry, ` +
+    `${coupleNegative}AI render, CGI, hyperrealistic skin, studio lighting, perfect symmetry, ` +
     `fitness model, airbrushed, chiseled, glowing skin, professional athlete, ` +
     `posed portrait, stock photo, fake smile, oversaturated`;
 
