@@ -148,11 +148,21 @@ SCENE TYPE RULES — set "type" using best inference:
 
 If unsure: use "lifestyle_broll". NEVER output null, undefined, unknown, or empty string for type.
 
-VISUAL PROMPT RULES — every scene needs a cinematic motion description:
+VISUAL PROMPT RULES — every scene needs a candid photographic motion description:
   - 20–30 words
   - Must include: human action + environmental motion + camera movement
   - Bad: "A person stands at a desk."
   - Good: "A creator leans forward at a standing desk, gesturing confidently. Natural window light shifts. Camera slowly pushes in from medium to close."
+
+IMAGE STYLE RULES — CRITICAL:
+  - All images must look like real photographs taken by a human photographer
+  - Style: candid photography, natural lighting, shot on iPhone or DSLR
+  - NO studio lighting, NO perfect symmetry, NO AI-rendered skin texture
+  - NO hyper-realistic portraits, NO fitness model aesthetics unless explicitly requested
+  - People must look like ordinary real humans — imperfect, natural, authentic
+  - Every visual_prompt MUST include: "candid photo, natural light" or "shot on iPhone" or "documentary style"
+  - NEVER describe a person as chiseled, athletic build, perfect, or glowing skin
+  - End every visual_prompt with: "35mm candid photography, natural light, authentic, unposed"
 
 HARD CONSTRAINTS:
   Output MUST be parseable by JSON.parse()

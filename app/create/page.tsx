@@ -1305,14 +1305,15 @@ function CreatePageInner() {
         }, null, 2));
         try {
           const actualClipDuration = seqData.clip_duration ?? CLIP_SECONDS;
-          // resolvedVoiceUrl is null → JSON.stringify drops voiceoverUrl key → server sees no voice
-          // Use empty-string guard: pass null explicitly so we can log it, but keep undefined for JSON
-          const resolvedVoiceoverUrl = resolvedVoiceUrl || undefined;
+
+          if (voiceId && !resolvedVoiceUrl) {
+            throw new Error("Voiceover upload failed — cannot compose video without audio. Please try again.");
+          }
 
           const composePayload = {
             clipUrls: seqData.clip_urls,
             clipDuration: actualClipDuration,
-            voiceoverUrl: resolvedVoiceoverUrl,
+            voiceoverUrl: resolvedVoiceUrl ?? undefined,
           };
           console.log('[VOICE_TRACE_FRONTEND]', {
             resolvedVoiceUrl,

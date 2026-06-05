@@ -21,7 +21,7 @@ import { withCreditState, InsufficientCreditsError, CreditReservationError } fro
 export const maxDuration = 300;
 
 const CLIP_SECONDS = 10;
-const ROUTE_VERSION = "2026-06-04-v7-kling-talking-head";
+const ROUTE_VERSION = "2026-06-05-v8-kling-all-guardrail-removed";
 
 const FLUX_MODEL = "fal-ai/flux/schnell";
 
@@ -65,12 +65,19 @@ async function uploadSmartMotionClip(
 
 async function generateSceneImage(prompt: string): Promise<string> {
   const safePrompt =
-    `${prompt}, cinematic product shot, 9:16 vertical frame, ` +
-    `professional brand photography, fully clothed subjects, brand-safe, SFW, no nudity`;
+    `${prompt}, 35mm candid photography, natural lighting, authentic unposed moment, ` +
+    `real people, documentary style, shot on iPhone or DSLR, imperfect natural beauty, ` +
+    `fully clothed subjects, brand-safe, SFW, no nudity`;
+
+  const negativePrompt =
+    `AI render, CGI, hyperrealistic skin, studio lighting, perfect symmetry, ` +
+    `fitness model, airbrushed, chiseled, glowing skin, professional athlete, ` +
+    `posed portrait, stock photo, fake smile, oversaturated`;
 
   const result = await (fal as any).subscribe(FLUX_MODEL, {
     input: {
       prompt: safePrompt,
+      negative_prompt: negativePrompt,
       image_size: { width: 720, height: 1280 },
       num_inference_steps: 4,
       num_images: 1,
@@ -415,13 +422,7 @@ export async function POST(req: Request) {
       run:    async () => {
         // ── Guardrail (throw on rejection → auto-rollback) ────────────────────
         {
-          const klingSceneCount = prompts.filter((p, i) => {
-            const type  = sceneTypes?.[i] ?? inferSceneType(p);
-            const score = computeMotionIntensity(p, type);
-            return score >= 0.4;
-          }).length;
-          const dominantTier: ModelTier = klingSceneCount > prompts.length / 2 ? "kling_standard" : "smart_motion";
-          const guardrail = applyGenerationGuardrail({ sceneCount: prompts.length, modelTier: dominantTier, validationPasses: 1 });
+          const guardrail = applyGenerationGuardrail({ sceneCount: prompts.length, modelTier: "kling_standard", validationPasses: 1 });
           if (!guardrail.approved) {
             throw new Error(guardrail.reason ?? "Generation blocked by guardrail");
           }
