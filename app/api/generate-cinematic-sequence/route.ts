@@ -21,7 +21,7 @@ import { withCreditState, InsufficientCreditsError, CreditReservationError } fro
 export const maxDuration = 300;
 
 const CLIP_SECONDS = 10;
-const ROUTE_VERSION = "2026-06-06-v10-sla360-sla-fallback-pad";
+const ROUTE_VERSION = "2026-06-06-v11-flux-couple-retry";
 
 const FLUX_MODEL = "fal-ai/flux/schnell";
 
@@ -65,41 +65,69 @@ async function uploadSmartMotionClip(
 
 const COUPLE_RE = /\b(couple|two people|both of them|together|partner|dancing with|walking with|holding hands|hand in hand|each other|lovers|husband|wife|boyfriend|girlfriend|fiancee?|spouse|relationship|romance|romantic)\b/i;
 
-async function generateSceneImage(prompt: string, isCouple: boolean): Promise<string> {
-  const couplePositive = isCouple
-    ? "two people together, both people clearly visible in frame, couple, "
-    : "";
-  const coupleNegative = isCouple
-    ? "solo, single person, alone, one person, "
-    : "";
+async function generateSceneImage(prompt: string, isCouple: boolean, sceneIndex?: number): Promise<string> {
+  const label = sceneIndex !== undefined ? `scene=${sceneIndex + 1}` : "scene=?";
 
-  const safePrompt =
-    `${couplePositive}${prompt}, 35mm candid photography, natural lighting, authentic unposed moment, ` +
-    `real people, documentary style, shot on iPhone or DSLR, imperfect natural beauty, ` +
-    `fully clothed subjects, brand-safe, SFW, no nudity`;
-
-  const negativePrompt =
-    `${coupleNegative}AI render, CGI, hyperrealistic skin, studio lighting, perfect symmetry, ` +
+  const baseNegative =
+    `AI render, CGI, hyperrealistic skin, studio lighting, perfect symmetry, ` +
     `fitness model, airbrushed, chiseled, glowing skin, professional athlete, ` +
     `posed portrait, stock photo, fake smile, oversaturated`;
 
-  const result = await (fal as any).subscribe(FLUX_MODEL, {
-    input: {
-      prompt: safePrompt,
-      negative_prompt: negativePrompt,
-      image_size: { width: 720, height: 1280 },
-      num_inference_steps: 4,
-      num_images: 1,
-      enable_safety_checker: true,
-    },
-    logs: false,
-  });
-  // fal.ai wraps output in result.data on some SDK versions
-  const url: string | undefined =
-    (result as any)?.images?.[0]?.url ??
-    (result as any)?.data?.images?.[0]?.url;
-  if (!url) throw new Error("FLUX: no image URL returned");
-  return url;
+  const coupleNegative = isCouple
+    ? `single person, solo, one person, alone, missing person, partial person, cropped person, ${baseNegative}`
+    : baseNegative;
+
+  const buildPrompt = (corePrompt: string, attempt: number): string => {
+    if (!isCouple) {
+      return `${corePrompt}, 35mm candid photography, natural lighting, authentic unposed moment, ` +
+        `real people, documentary style, shot on iPhone or DSLR, imperfect natural beauty, ` +
+        `fully clothed subjects, brand-safe, SFW, no nudity`;
+    }
+    // Attempt 1: strong couple prefix on the original prompt
+    if (attempt === 1) {
+      return `Two people together, both fully visible in frame, couple side by side, ` +
+        `${corePrompt}, two people in shot, ` +
+        `35mm candid photography, natural lighting, authentic unposed moment, ` +
+        `real people, documentary style, shot on iPhone or DSLR, imperfect natural beauty, ` +
+        `fully clothed subjects, brand-safe, SFW, no nudity`;
+    }
+    // Attempt 2: override with maximum-specificity couple prompt
+    return `A couple, two people standing together, both people fully visible from head to toe, ` +
+      `${corePrompt}, couple side by side both in frame, ` +
+      `35mm candid photography, natural lighting, authentic unposed moment, ` +
+      `real people, documentary style, shot on iPhone or DSLR, ` +
+      `fully clothed subjects, brand-safe, SFW, no nudity`;
+  };
+
+  const callFlux = async (attempt: number): Promise<string> => {
+    const safePrompt = buildPrompt(prompt, attempt);
+    console.log(`[FLUX_ATTEMPT] ${label} attempt=${attempt} isCouple=${isCouple} prompt="${safePrompt.substring(0, 120)}"`);
+    const result = await (fal as any).subscribe(FLUX_MODEL, {
+      input: {
+        prompt:                safePrompt,
+        negative_prompt:       coupleNegative,
+        image_size:            { width: 720, height: 1280 },
+        num_inference_steps:   4,
+        num_images:            1,
+        enable_safety_checker: true,
+      },
+      logs: false,
+    });
+    const url: string | undefined =
+      (result as any)?.images?.[0]?.url ??
+      (result as any)?.data?.images?.[0]?.url;
+    if (!url) throw new Error("FLUX: no image URL returned");
+    console.log(`[FLUX_DONE] ${label} attempt=${attempt} url=${url.substring(0, 60)}`);
+    return url;
+  };
+
+  try {
+    return await callFlux(1);
+  } catch (err) {
+    if (!isCouple) throw err;
+    console.warn(`[FLUX_RETRY] ${label} attempt=1 failed — retrying with explicit couple prompt: ${(err as Error).message}`);
+    return await callFlux(2);
+  }
 }
 
 // ── Clip generators ───────────────────────────────────────────────────────────
@@ -166,7 +194,7 @@ async function generateSmartMotionClipWithUpload(
     // Always generate a scene-specific image from the visual prompt.
     // The imageUrl from the client is a reference/brand image — reusing it for every
     // scene causes all clips to animate the same frame (identical output).
-    const sourceImageUrl = await generateSceneImage(prompt, isCouple);
+    const sourceImageUrl = await generateSceneImage(prompt, isCouple, index);
 
     sourceImages[index] = sourceImageUrl;
 
