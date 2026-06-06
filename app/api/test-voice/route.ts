@@ -1,10 +1,11 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 
-// Short voice preview — auth required, text capped at 200 chars, no credit deduction.
-// Used for voice selection UI only.
+// Voice generation — auth required, no credit deduction.
+// preview mode (default): text capped at 200 chars for voice selection UI.
+// full mode (full=true): no cap, stable settings, used by cinematic pipeline.
 
 export async function POST(req: Request) {
   const cookieStore = await cookies();
@@ -16,19 +17,23 @@ export async function POST(req: Request) {
   const { data: { user }, error: authErr } = await supabase.auth.getUser();
   if (authErr || !user) return Response.json({ error: "Unauthorized" }, { status: 401 });
 
-  let body: { text?: string; voice_id?: string };
+  let body: { text?: string; voice_id?: string; full?: boolean };
   try { body = await req.json(); }
   catch { return Response.json({ error: "Invalid JSON" }, { status: 400 }); }
 
-  const { text, voice_id } = body;
+  const { text, voice_id, full = false } = body;
   const apiKey = process.env.ELEVENLABS_API_KEY;
 
   if (!apiKey)    return Response.json({ error: "ElevenLabs not configured" }, { status: 503 });
   if (!voice_id)  return Response.json({ error: "voice_id required" }, { status: 400 });
   if (!text?.trim()) return Response.json({ error: "text required" }, { status: 400 });
 
-  // Hard cap — this is a free preview, not a full voiceover generation
-  const previewText = text.trim().substring(0, 200);
+  const ttsText = full ? text.trim() : text.trim().substring(0, 200);
+  const voiceSettings = full
+    ? { stability: 0.75, similarity_boost: 0.75, style: 0.0, use_speaker_boost: true }
+    : { stability: 0.35, similarity_boost: 0.75, style: 0.65, use_speaker_boost: true, speed: 1.08 };
+
+  console.log(`[test-voice] full=${full} chars=${ttsText.length} voice_id=${voice_id}`);
 
   try {
     const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice_id}`, {
@@ -39,9 +44,9 @@ export async function POST(req: Request) {
         Accept: "audio/mpeg",
       },
       body: JSON.stringify({
-        text: previewText,
+        text: ttsText,
         model_id: "eleven_turbo_v2",
-        voice_settings: { stability: 0.35, similarity_boost: 0.75, style: 0.65, use_speaker_boost: true, speed: 1.08 },
+        voice_settings: voiceSettings,
       }),
     });
 

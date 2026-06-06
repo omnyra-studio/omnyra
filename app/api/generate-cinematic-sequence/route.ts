@@ -21,7 +21,7 @@ import { withCreditState, InsufficientCreditsError, CreditReservationError } fro
 export const maxDuration = 300;
 
 const CLIP_SECONDS = 10;
-const ROUTE_VERSION = "2026-06-06-v11-flux-couple-retry";
+const ROUTE_VERSION = "2026-06-06-v12-pad-logging-voice-full";
 
 const FLUX_MODEL = "fal-ai/flux/schnell";
 
@@ -635,14 +635,16 @@ export async function POST(req: Request) {
 
         // ── Pass 3: pad remaining nulls with nearest successful clip ──────────
         let lastGoodUrl: string | null = null;
+        let lastGoodIdx = -1;
         for (let pi = 0; pi < extractedUrls.length; pi++) {
-          if (extractedUrls[pi]) { lastGoodUrl = extractedUrls[pi]; }
-          else if (lastGoodUrl)  { console.warn(`[PAD_CLIP] scene ${pi + 1} padded with last successful clip`); extractedUrls[pi] = lastGoodUrl; }
+          if (extractedUrls[pi]) { lastGoodUrl = extractedUrls[pi]; lastGoodIdx = pi; }
+          else if (lastGoodUrl)  { console.warn(`[PAD_CLIP] scene=${pi + 1} padded from scene=${lastGoodIdx + 1} url=${lastGoodUrl.substring(0, 60)}`); extractedUrls[pi] = lastGoodUrl; }
         }
-        const firstGoodUrl = extractedUrls.find(u => u !== null) ?? null;
+        const firstGoodIdx  = extractedUrls.findIndex(u => u !== null);
+        const firstGoodUrl  = firstGoodIdx >= 0 ? extractedUrls[firstGoodIdx] : null;
         if (firstGoodUrl) {
           for (let pi = 0; pi < extractedUrls.length; pi++) {
-            if (!extractedUrls[pi]) { console.warn(`[PAD_CLIP] scene ${pi + 1} padded (leading failure)`); extractedUrls[pi] = firstGoodUrl; }
+            if (!extractedUrls[pi]) { console.warn(`[PAD_CLIP] scene=${pi + 1} padded from scene=${firstGoodIdx + 1} (leading failure) url=${firstGoodUrl.substring(0, 60)}`); extractedUrls[pi] = firstGoodUrl; }
           }
         }
 

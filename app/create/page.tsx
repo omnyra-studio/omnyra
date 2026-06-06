@@ -254,6 +254,7 @@ function CreatePageInner() {
 
   // Script + director
   const [generatedScript,    setGeneratedScript]    = useState<string>("");
+  const generatedScriptRef = useRef<string>("");
   const [scriptId,           setScriptId]           = useState<string | null>(null);
   const [generatingShotPlan, setGeneratingShotPlan] = useState(false);
 
@@ -661,6 +662,7 @@ function CreatePageInner() {
     if (!v) return;
     setGeneratingScript(true);
     setGeneratedScript("");
+    generatedScriptRef.current = "";
     setScriptId(null);
     try {
       const res = await fetch("/api/generate-script", {
@@ -680,11 +682,15 @@ function CreatePageInner() {
       if (!res.ok || !res.body) throw new Error("Script generation failed");
       const reader  = res.body.getReader();
       const decoder = new TextDecoder();
+      let accumulated = "";
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        setGeneratedScript(prev => prev + decoder.decode(value, { stream: true }));
+        const chunk = decoder.decode(value, { stream: true });
+        accumulated += chunk;
+        setGeneratedScript(prev => prev + chunk);
       }
+      generatedScriptRef.current = accumulated;
       setTimeout(() => {
         document.getElementById("script-preview")?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 100);
@@ -1093,7 +1099,14 @@ function CreatePageInner() {
         const hookText = v.hook || '';
 
         // ── Step 1: Ensure expanded script ─────────────────────────────────
-        let scriptForCinematic = generatedScript;
+        // Read from ref — immune to React state resets during async flow
+        let scriptForCinematic = generatedScriptRef.current || generatedScript;
+        console.log('[VOICE_SCRIPT_SOURCE]', {
+          generatedScript: generatedScriptRef.current?.substring(0, 100) || generatedScript?.substring(0, 100),
+          vScript: v.script?.substring(0, 100),
+          wordCount: (generatedScriptRef.current || generatedScript)?.split(' ').length,
+          using: (generatedScriptRef.current || generatedScript) ? 'generatedScript' : 'FALLBACK',
+        });
         if (!scriptForCinematic) {
           console.log('[cinematic] no generatedScript — fetching from generate-script');
           setVideoProgress(8);
@@ -1117,6 +1130,7 @@ function CreatePageInner() {
                 text += decoder.decode(value, { stream: true });
                 setGeneratedScript(text);
               }
+              generatedScriptRef.current = text;
               scriptForCinematic = text;
             }
           } catch (sErr) {
@@ -1133,7 +1147,7 @@ function CreatePageInner() {
 
         const wordCount = scriptForCinematic.trim().split(/\s+/).length;
         const estimatedSec = (wordCount / 2.5).toFixed(1);
-        console.log('[SCRIPT_AUDIT]', { word_count: wordCount, estimated_sec: estimatedSec, source: generatedScript ? 'state_generatedScript' : 'fetched_inline' });
+        console.log('[SCRIPT_AUDIT]', { word_count: wordCount, estimated_sec: estimatedSec, source: (generatedScriptRef.current || generatedScript) ? 'generatedScript' : 'brief_fallback' });
 
         // ── Step 2: Generate voiceover BEFORE clips ─────────────────────────
         const voiceId = selectedVoiceId || userVoice?.voice_id;
@@ -1141,6 +1155,11 @@ function CreatePageInner() {
         let voiceDurLocal = voiceDuration;
 
         if (!resolvedVoiceUrl && voiceId) {
+          console.log('[VOICE_SCRIPT_FINAL]', {
+            text: scriptForCinematic,
+            wordCount: scriptForCinematic?.split(' ').length,
+            charCount: scriptForCinematic?.length,
+          });
           console.log('[cinematic] generating voiceover before clips — voice_id=' + voiceId);
           setVideoProgress(15);
           setIsGeneratingVoice(true);
@@ -1148,7 +1167,7 @@ function CreatePageInner() {
             const vRes = await fetch('/api/test-voice', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ text: scriptForCinematic, voice_id: voiceId }),
+              body: JSON.stringify({ text: scriptForCinematic, voice_id: voiceId, full: true }),
             });
             if (vRes.ok) {
               const blob = await vRes.blob();
@@ -1515,6 +1534,7 @@ function CreatePageInner() {
     setSelectedImage(null);
     setAvatarRefVideoUrl(null);
     setGeneratedScript("");
+    generatedScriptRef.current = "";
     setScriptId(null);
     setMergedVideoUrl(null);
     setContinuityScore(null);
@@ -2118,7 +2138,7 @@ function CreatePageInner() {
               {/* Re-generate after a script is shown */}
               {generatedScript && !generatingScript && (
                 <button
-                  onClick={() => { setGeneratedScript(""); setScriptId(null); }}
+                  onClick={() => { setGeneratedScript(""); generatedScriptRef.current = ""; setScriptId(null); }}
                   style={{
                     background: "none",
                     border: "none",
