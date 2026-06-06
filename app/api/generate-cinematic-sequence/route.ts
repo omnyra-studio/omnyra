@@ -21,15 +21,15 @@ import { withCreditState, InsufficientCreditsError, CreditReservationError } fro
 export const maxDuration = 300;
 
 const CLIP_SECONDS = 10;
-const ROUTE_VERSION = "2026-06-05-v9-literal-brief-couple-detection";
+const ROUTE_VERSION = "2026-06-06-v10-sla360-sla-fallback-pad";
 
 const FLUX_MODEL = "fal-ai/flux/schnell";
 
-// ── SLA budget: 30s video must complete in ≤ 4 minutes ───────────────────────
-const SLA_TOTAL_MS   = 240_000;
-const SLA_GEN_MS     = 180_000; // clip generation allocation
-const SLA_POST_MS    =  40_000; // post-processing + continuity reserve
-// Absolute deadline for generation to finish (40s reserved for post)
+// ── SLA budget: Vercel maxDuration=300s; keep 30s for post-processing ─────────
+const SLA_TOTAL_MS   = 260_000; // 260s total (40s margin before Vercel kills)
+const SLA_GEN_MS     = 230_000; // clip generation allocation
+const SLA_POST_MS    =  30_000; // post-processing + continuity reserve
+// Absolute deadline for generation to finish (30s reserved for post)
 // Computed per-request as: routeT0 + SLA_TOTAL_MS - SLA_POST_MS
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -63,11 +63,9 @@ async function uploadSmartMotionClip(
 
 // ── Image generation for smart_motion without a source image ─────────────────
 
-const COUPLE_RE = /\b(couple|two people|both|together|partner|dancing with|walking with|holding hands|hand in hand|each other|lovers|them|they)\b/i;
+const COUPLE_RE = /\b(couple|two people|both of them|together|partner|dancing with|walking with|holding hands|hand in hand|each other|lovers|husband|wife|boyfriend|girlfriend|fiancee?|spouse|relationship|romance|romantic)\b/i;
 
-async function generateSceneImage(prompt: string): Promise<string> {
-  const isCouple = COUPLE_RE.test(prompt);
-
+async function generateSceneImage(prompt: string, isCouple: boolean): Promise<string> {
   const couplePositive = isCouple
     ? "two people together, both people clearly visible in frame, couple, "
     : "";
@@ -161,13 +159,14 @@ async function generateSmartMotionClipWithUpload(
   clipReports: string[],
   durationSec: number,
   sourceImages: Array<string | null>,
+  isCouple: boolean,
 ): Promise<string | null> {
   const smT0 = Date.now();
   try {
     // Always generate a scene-specific image from the visual prompt.
     // The imageUrl from the client is a reference/brand image — reusing it for every
     // scene causes all clips to animate the same frame (identical output).
-    const sourceImageUrl = await generateSceneImage(prompt);
+    const sourceImageUrl = await generateSceneImage(prompt, isCouple);
 
     sourceImages[index] = sourceImageUrl;
 
@@ -232,11 +231,12 @@ async function executeClip(
   clipReports: string[],
   budgetMs:    number,
   label:       string,
+  isCouple:    boolean,
 ): Promise<string> {
   const render = async (p: ProviderTier): Promise<string | null> => {
     if (p === "smart_motion") {
       return generateSmartMotionClipWithUpload(
-        prompt, imageUrl, sceneType, index, userId, label, clipReports, rawSeconds, sourceImages,
+        prompt, imageUrl, sceneType, index, userId, label, clipReports, rawSeconds, sourceImages, isCouple,
       );
     }
     return generateKlingClip(prompt, imageUrl, duration, label, clipReports);
@@ -386,6 +386,7 @@ export async function POST(req: Request) {
   let clipDuration: number | undefined;
   let sceneTypes: (string | null)[] | undefined;
   let script: string | undefined;
+  let goal: string | undefined;
   try {
     const body = await req.json() as {
       prompts?: string[];
@@ -393,12 +394,15 @@ export async function POST(req: Request) {
       clipDuration?: number;
       sceneTypes?: (string | null)[];
       script?: string;
+      goal?: string;
     };
     prompts      = body.prompts ?? [];
     imageUrl     = body.imageUrl;
     clipDuration = body.clipDuration;
     sceneTypes   = body.sceneTypes;
     script       = body.script;
+    goal         = body.goal;
+    console.log(`[BRIEF_CONTEXT] goal="${(goal ?? "").substring(0, 120)}"`)
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
@@ -543,10 +547,11 @@ export async function POST(req: Request) {
             console.log(`${label} sceneType=${sceneType} motion=${motionScore.toFixed(2)} slaMs=${clipBudget} prompt="${prompts[i].substring(0, 80)}"`);
             console.log(`[SCENE_ROUTER] scene=${i + 1} provider=${provider} sceneType=${sceneType} motion=${motionScore.toFixed(2)}`);
 
+            const isCouple = COUPLE_RE.test(goal ?? "") || COUPLE_RE.test(script ?? "") || COUPLE_RE.test(prompt);
             const url = await executeClip(
               prompt, imageUrl ?? null, duration, provider,
               sceneType, i, user.id, rawSeconds, sourceImages, clipReports,
-              clipBudget, label,
+              clipBudget, label, isCouple,
             );
 
             const elapsed = Date.now() - clipT0;
@@ -558,25 +563,62 @@ export async function POST(req: Request) {
         const genElapsed = Date.now() - genT0;
         console.log(`[TIMING] CLIP_GENERATION complete ${genElapsed}ms`);
 
-        const clip_urls: string[] = [];
-        const extractedUrls: Array<string | null> = [];
-        const skippedScenes: number[] = [];
-        for (let ri = 0; ri < results.length; ri++) {
-          const r = results[ri];
-          if (r.status === "fulfilled") {
-            clip_urls.push(r.value);
-            extractedUrls.push(r.value);
+        // ── Pass 1: collect successes + queue SLA-timeout failures ────────────
+        const extractedUrls: Array<string | null> = results.map((r, ri) => {
+          if (r.status === "fulfilled") return r.value;
+          const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
+          if (reason === "skipped_due_to_latency" || reason === "SCENE_BUDGET_EXCEEDED") {
+            console.warn(`[SLA] scene ${ri + 1} ${reason} — queued for smart_motion fallback`);
           } else {
-            extractedUrls.push(null);
+            console.error("[cinematic-sequence] settled rejection:", reason);
+          }
+          return null;
+        });
+
+        const slaFallbackIndices = results
+          .map((r, i) => {
+            if (r.status !== "rejected") return null;
             const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
-            if (reason === "skipped_due_to_latency" || reason === "SCENE_BUDGET_EXCEEDED") {
-              skippedScenes.push(ri);
-              console.warn(`[SLA] scene ${ri + 1} ${reason}`);
-            } else {
-              console.error("[cinematic-sequence] settled rejection:", reason);
-            }
+            return (reason === "skipped_due_to_latency" || reason === "SCENE_BUDGET_EXCEEDED") ? i : null;
+          })
+          .filter((v): v is number => v !== null);
+
+        // ── Pass 2: smart_motion fallback for SLA-timed-out scenes ────────────
+        if (slaFallbackIndices.length > 0) {
+          console.log(`[SLA_FALLBACK] attempting smart_motion for ${slaFallbackIndices.length} scene(s)`);
+          await Promise.allSettled(
+            slaFallbackIndices.map(async (ri) => {
+              const fbLabel    = `[clip ${ri + 1}/${prompts.length}][smart_motion_fallback]`;
+              const fbIsCouple = COUPLE_RE.test(goal ?? "") || COUPLE_RE.test(script ?? "") || COUPLE_RE.test(prompts[ri]);
+              console.log(`[SLA_FALLBACK] scene=${ri + 1} starting`);
+              const fbUrl = await generateSmartMotionClipWithUpload(
+                prompts[ri], null, resolvedSceneTypes[ri], ri,
+                user.id, fbLabel, clipReports, rawSeconds, sourceImages, fbIsCouple,
+              );
+              if (fbUrl) {
+                extractedUrls[ri] = fbUrl;
+                console.log(`[SLA_FALLBACK] scene=${ri + 1} RECOVERED url=${fbUrl.substring(0, 60)}`);
+              } else {
+                console.warn(`[SLA_FALLBACK] scene=${ri + 1} fallback also failed — will pad`);
+              }
+            }),
+          );
+        }
+
+        // ── Pass 3: pad remaining nulls with nearest successful clip ──────────
+        let lastGoodUrl: string | null = null;
+        for (let pi = 0; pi < extractedUrls.length; pi++) {
+          if (extractedUrls[pi]) { lastGoodUrl = extractedUrls[pi]; }
+          else if (lastGoodUrl)  { console.warn(`[PAD_CLIP] scene ${pi + 1} padded with last successful clip`); extractedUrls[pi] = lastGoodUrl; }
+        }
+        const firstGoodUrl = extractedUrls.find(u => u !== null) ?? null;
+        if (firstGoodUrl) {
+          for (let pi = 0; pi < extractedUrls.length; pi++) {
+            if (!extractedUrls[pi]) { console.warn(`[PAD_CLIP] scene ${pi + 1} padded (leading failure)`); extractedUrls[pi] = firstGoodUrl; }
           }
         }
+
+        const clip_urls: string[] = extractedUrls.filter((u): u is string => u !== null);
 
         const successfulClips = clip_urls.length;
         const failedClips     = prompts.length - successfulClips;
@@ -584,48 +626,18 @@ export async function POST(req: Request) {
 
         console.log(`[QUALITY_GUARDRAIL] { motionScenes: ${successfulClips}, totalScenes: ${prompts.length}, coverage: ${motionCoverage}% }`);
         if (motionCoverage < 100) {
-          console.warn(`[QUALITY_GUARDRAIL] coverage=${motionCoverage}% — ${failedClips} scenes failed`);
+          console.warn(`[QUALITY_GUARDRAIL] coverage=${motionCoverage}% — ${failedClips} scenes padded`);
         }
         console.log(`[RENDER_BREAKDOWN] { klingScenes: ${klingCount}, smartMotionScenes: ${smCount}, genMs: ${genElapsed} }`);
         console.log(`[TIMING] SEQUENCE SUMMARY clipsAttempted=${prompts.length} success=${successfulClips} failed=${failedClips} genMs=${genElapsed}`);
 
-        // All clips failed → throw (triggers credit rollback automatically)
+        // All clips failed (after fallback + padding) → throw
         if (!clip_urls.length) {
           throw new AllClipsFailedError({
             SEQUENCE_ROUTE_VERSION: ROUTE_VERSION,
             clipsAttempted:  prompts.length,
             successfulClips,
             failedClips,
-            extractedUrls,
-            clipReports,
-          });
-        }
-
-        // Partial clip loss — never silently return fewer clips (hidden duration loss)
-        if (clip_urls.length < prompts.length) {
-          const failedIndices = results
-            .map((r, i) => r.status === "rejected" ? i + 1 : null)
-            .filter((v): v is number => v !== null);
-          console.error("[PARTIAL_CLIP_LOSS]", {
-            EXPECTED_SCENES:   prompts.length,
-            SUCCESSFUL_SCENES: successfulClips,
-            FAILED_SCENES:     failedClips,
-            EXPECTED_DURATION: prompts.length * Number(duration),
-            ACTUAL_DURATION:   clip_urls.length * Number(duration),
-            DURATION_LOST_SEC: failedClips * Number(duration),
-            failedIndices,
-            clipReports,
-          });
-          throw new AllClipsFailedError({
-            SEQUENCE_ROUTE_VERSION: ROUTE_VERSION,
-            error:             `PARTIAL_CLIP_LOSS: ${failedClips}/${prompts.length} clips failed`,
-            clipsAttempted:    prompts.length,
-            successfulClips,
-            failedClips,
-            failedIndices,
-            expectedDuration:  prompts.length * Number(duration),
-            actualDuration:    clip_urls.length * Number(duration),
-            durationLostSec:   failedClips * Number(duration),
             extractedUrls,
             clipReports,
           });

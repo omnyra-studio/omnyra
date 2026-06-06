@@ -1256,6 +1256,7 @@ function CreatePageInner() {
             clipDuration: CLIP_SECONDS,
             sceneTypes: sceneTypes.length ? sceneTypes : undefined,
             script:     scriptText || undefined,
+            goal:       goal || undefined,
           }),
         });
 
