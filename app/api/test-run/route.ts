@@ -5,8 +5,29 @@
 import { NextResponse }       from "next/server";
 import { supabaseAdmin }      from "@/lib/supabase/admin";
 import { runParallelEngine }  from "@/lib/orchestrator/parallel-engine";
+import { fal }               from "@fal-ai/client";
+import { KLING_T2V_PRO }     from "@/lib/video-models";
 
 export const maxDuration = 300;
+
+// GET /api/test-run — direct fal.ai probe (no engine, no DB)
+export async function GET(req: Request) {
+  const secret = req.headers.get("x-test-secret") ?? new URL(req.url).searchParams.get("secret");
+  if (!secret || secret !== process.env.CRON_SECRET) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  const FAL_CREDS = process.env.FAL_KEY ?? process.env.FAL_API_KEY;
+  if (FAL_CREDS) fal.config({ credentials: FAL_CREDS });
+  const t0 = Date.now();
+  try {
+    const result = await fal.subscribe(KLING_T2V_PRO, {
+      input: { prompt: "a red ball on a table", duration: "5", aspect_ratio: "9:16" },
+    });
+    return NextResponse.json({ ok: true, model: KLING_T2V_PRO, ms: Date.now() - t0, result });
+  } catch (err) {
+    return NextResponse.json({ ok: false, model: KLING_T2V_PRO, ms: Date.now() - t0, error: err instanceof Error ? err.message : String(err) });
+  }
+}
 
 export async function POST(req: Request) {
   const secret = req.headers.get("x-test-secret");
