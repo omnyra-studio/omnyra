@@ -277,6 +277,12 @@ function CreatePageInner() {
   const [voices, setVoices] = useState<VoiceOption[]>([]);
   const [selectedVoiceId, setSelectedVoiceId] = useState<string>('');
 
+  // Two-phase cinematic pipeline state
+  const [clipsReady, setClipsReady] = useState(false);
+  const [pendingClipUrls, setPendingClipUrls] = useState<string[]>([]);
+  const [pendingClipDuration, setPendingClipDuration] = useState(10);
+  const [pendingScriptForVoice, setPendingScriptForVoice] = useState('');
+
   // Character registry
   const [characters, setCharacters] = useState<Array<{ id: string; name: string; ref_frame_url: string | null }>>([]);
   const [selectedCharacterId, setSelectedCharacterId] = useState<string>('');
@@ -1085,6 +1091,77 @@ function CreatePageInner() {
     }, 5000);
   }
 
+  async function handleComposeWithVoice() {
+    if (!pendingClipUrls.length) return;
+    const voiceId = selectedVoiceId || userVoice?.voice_id;
+
+    setIsGeneratingVideo(true);
+    setVideoProgress(55);
+    try {
+      let resolvedVoiceUrl: string | null = null;
+
+      if (voiceId && pendingScriptForVoice) {
+        setIsGeneratingVoice(true);
+        try {
+          console.log('[COMPOSE_P2_TTS] voice_id=' + voiceId + ' chars=' + pendingScriptForVoice.length);
+          const ttsRes = await fetch('/api/test-voice', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text: pendingScriptForVoice, voice_id: voiceId, full: true }),
+          });
+          if (!ttsRes.ok) throw new Error('TTS failed: HTTP ' + ttsRes.status);
+          const ttsBlob = await ttsRes.blob();
+          console.log('[COMPOSE_P2_TTS]', ttsBlob.size, 'bytes');
+          const voiceForm = new FormData();
+          voiceForm.append('audio', ttsBlob, 'voice.mp3');
+          voiceForm.append('userId', userId ?? '');
+          const uploadRes = await fetch('/api/upload/voice', { method: 'POST', body: voiceForm });
+          const uploadJson = await uploadRes.json() as { url?: string; error?: string };
+          if (!uploadRes.ok || !uploadJson.url) throw new Error('Voice upload failed: ' + JSON.stringify(uploadJson));
+          resolvedVoiceUrl = uploadJson.url;
+          console.log('[COMPOSE_P2_VOICE_READY]', resolvedVoiceUrl);
+          setVoiceAudioUrl(resolvedVoiceUrl);
+        } finally {
+          setIsGeneratingVoice(false);
+        }
+      }
+
+      setVideoProgress(80);
+      const composePayload = {
+        clipUrls:     pendingClipUrls,
+        clipDuration: pendingClipDuration,
+        voiceoverUrl: resolvedVoiceUrl ?? undefined,
+      };
+      console.log('[COMPOSE_P2_COMPOSE]', JSON.stringify(composePayload).substring(0, 200));
+
+      const composeRes = await fetch('/api/compose-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(composePayload),
+      });
+
+      const voiceoverSent = !!resolvedVoiceUrl;
+      if (composeRes.ok) {
+        const composeData = await composeRes.json();
+        const finalUrl = composeData.video_url ?? pendingClipUrls[0];
+        setVideoUrl(finalUrl);
+        if (voiceoverSent && composeData.has_audio) setMergedVideoUrl(finalUrl);
+        setClipsReady(false);
+        setPendingClipUrls([]);
+        setVideoProgress(100);
+      } else {
+        let msg = `Video assembly failed (HTTP ${composeRes.status})`;
+        try { const e = await composeRes.json() as { error?: string }; if (e.error) msg = `Video assembly failed: ${e.error}`; } catch { /* noop */ }
+        throw new Error(msg);
+      }
+    } catch (err) {
+      console.error('[compose-with-voice] error:', err);
+      setError(err instanceof Error ? err.message : 'Composition failed');
+    } finally {
+      setIsGeneratingVideo(false);
+    }
+  }
+
   async function handleGenerateOutput(type: string) {
     if (!briefResponse) return;
     const v = briefResponse.versions[selectedVersion];
@@ -1151,77 +1228,14 @@ function CreatePageInner() {
         const estimatedSec = (wordCount / 2.5).toFixed(1);
         console.log('[SCRIPT_AUDIT]', { word_count: wordCount, estimated_sec: estimatedSec, source: (generatedScriptRef.current || generatedScript) ? 'generatedScript' : 'brief_fallback' });
 
-        // ── STEP 2: Voice — must complete before clips ─────────────────────────
-        const voiceId    = selectedVoiceId || userVoice?.voice_id;
+        // ── PHASE 1: Generate clips only — voice picker shown after ───────────
         const scriptText = scriptForCinematic;
         const TARGET_SCENE_SECONDS = userTier === 'studio' ? 60 : 30;
         const CLIP_SECONDS = 10;
+        const clipCount = Math.max(3, Math.ceil(TARGET_SCENE_SECONDS / CLIP_SECONDS));
 
         console.log('[CINEMATIC_STEP1_SCRIPT]', scriptText.length, 'chars', scriptText.substring(0, 80));
-
-        let resolvedVoiceUrl: string | null = (voiceAudioUrl && !voiceAudioUrl.startsWith('blob:')) ? voiceAudioUrl : null;
-        let voiceDurLocal = voiceDuration;
-
-        if (!resolvedVoiceUrl && voiceId) {
-          setVideoProgress(15);
-          setIsGeneratingVoice(true);
-          try {
-            console.log('[CINEMATIC_STEP2_TTS] starting voice_id=' + voiceId + ' chars=' + scriptText.length);
-            const ttsRes = await fetch('/api/test-voice', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ text: scriptText, voice_id: voiceId, full: true }),
-            });
-            if (!ttsRes.ok) throw new Error('TTS failed: HTTP ' + ttsRes.status);
-            const ttsBlob = await ttsRes.blob();
-            console.log('[CINEMATIC_STEP2_TTS]', ttsBlob.size, 'bytes');
-            voiceDurLocal = await new Promise<number>((resolve) => {
-              const audio = new Audio();
-              const blobUrl = URL.createObjectURL(ttsBlob);
-              audio.onloadedmetadata = () => { URL.revokeObjectURL(blobUrl); resolve(audio.duration); };
-              audio.onerror = () => { URL.revokeObjectURL(blobUrl); resolve(0); };
-              audio.src = blobUrl;
-            });
-            setVoiceDuration(voiceDurLocal);
-            const voiceForm = new FormData();
-            voiceForm.append('audio', ttsBlob, 'voice.mp3');
-            voiceForm.append('userId', userId ?? '');
-            const uploadRes = await fetch('/api/upload/voice', { method: 'POST', body: voiceForm });
-            const uploadJson = await uploadRes.json() as { url?: string; error?: string };
-            if (!uploadRes.ok || !uploadJson.url) throw new Error('Voice upload failed: ' + JSON.stringify(uploadJson));
-            resolvedVoiceUrl = uploadJson.url;
-            console.log('[CINEMATIC_STEP3_VOICE_READY]', resolvedVoiceUrl);
-            setVoiceAudioUrl(resolvedVoiceUrl);
-          } finally {
-            setIsGeneratingVoice(false);
-          }
-        } else if (voiceAudioUrl?.startsWith('blob:') && voiceId) {
-          setIsGeneratingVoice(true);
-          try {
-            const blob = await fetch(voiceAudioUrl).then(r => r.blob());
-            const voiceForm = new FormData();
-            voiceForm.append('audio', blob, 'voice.mp3');
-            voiceForm.append('userId', userId ?? '');
-            const uploadRes = await fetch('/api/upload/voice', { method: 'POST', body: voiceForm });
-            const uploadJson = await uploadRes.json() as { url?: string; error?: string };
-            if (!uploadRes.ok || !uploadJson.url) throw new Error('Voice re-upload failed: ' + JSON.stringify(uploadJson));
-            resolvedVoiceUrl = uploadJson.url;
-            console.log('[CINEMATIC_STEP3_VOICE_READY]', resolvedVoiceUrl);
-            setVoiceAudioUrl(resolvedVoiceUrl);
-          } finally {
-            setIsGeneratingVoice(false);
-          }
-        }
-
-        if (voiceId && !resolvedVoiceUrl) {
-          throw new Error('Voiceover generation failed — cannot compose without audio. Please try again.');
-        }
-
-        // ── STEP 3: Clips (voice confirmed ready) ─────────────────────────────
-        const clipCount = Math.max(3, Math.ceil(
-          Math.max(voiceDurLocal > 0 ? voiceDurLocal : TARGET_SCENE_SECONDS, TARGET_SCENE_SECONDS) / CLIP_SECONDS
-        ));
-        console.log('[CINEMATIC_STEP4_CLIPS] starting clipCount=' + clipCount + ' voiceReady=' + !!resolvedVoiceUrl + ' voiceDur=' + voiceDurLocal.toFixed(1) + 's');
+        console.log('[CINEMATIC_STEP1_CLIPS] starting clipCount=' + clipCount);
 
         type SeqData = {
           stitched_url?: string; stitch_source?: string; clip_urls?: string[];
@@ -1292,65 +1306,13 @@ function CreatePageInner() {
         if (!seqRes.ok) throw new Error(seqData?.error || rawText || `Cinematic generation failed (${seqRes.status})`);
         if (!seqData?.clip_urls?.length) throw new Error('No clip URLs returned from sequence generation');
 
-        const fallbackUrl = seqData.clip_urls[0] ?? seqData.stitched_url ?? '';
-        console.log('[CINEMATIC_STEP4_CLIPS_READY]', seqData.clip_urls.length, 'clips');
+        console.log('[CINEMATIC_STEP2_CLIPS_READY]', seqData.clip_urls.length, 'clips');
 
-        setVideoProgress(80);
-
-        // ── STEP 4: Compose — voice + clips both guaranteed present ────────────
-        console.log('[PHASE2] PRE_COMPOSE', JSON.stringify({
-          clipCount: seqData.clip_urls?.length,
-          clipDuration: CLIP_SECONDS,
-          seqClipDuration: seqData.clip_duration,
-          voiceDuration: voiceDurLocal,
-          hasVoiceAudioUrl: !!resolvedVoiceUrl,
-          voiceAudioUrlPrefix: resolvedVoiceUrl?.substring(0, 80),
-        }, null, 2));
-        try {
-          const actualClipDuration = seqData.clip_duration ?? CLIP_SECONDS;
-          const composePayload = {
-            clipUrls:     seqData.clip_urls,
-            clipDuration: actualClipDuration,
-            voiceoverUrl: resolvedVoiceUrl ?? undefined,
-          };
-          console.log('[VOICE_TRACE_FRONTEND]', {
-            resolvedVoiceUrl,
-            hasVoiceover: !!resolvedVoiceUrl,
-            voiceoverInPayload: !!composePayload.voiceoverUrl,
-          });
-          console.log('[VOICE_TRACE_PAYLOAD]', JSON.stringify(composePayload).substring(0, 300));
-
-          const composeRes = await fetch('/api/compose-video', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(composePayload),
-          });
-          const voiceoverSent = !!resolvedVoiceUrl;
-          if (composeRes.ok) {
-            const composeData = await composeRes.json();
-            console.log('[cinematic] compose-video result:', JSON.stringify(composeData).substring(0, 200));
-            const finalUrl = composeData.video_url ?? fallbackUrl;
-            setVideoUrl(finalUrl);
-            // If compose-video already merged audio, mark as merged so the useEffect
-            // does not re-trigger handleMergeVideoAudio on the already-composed video.
-            if (voiceoverSent && composeData.has_audio) {
-              setMergedVideoUrl(finalUrl);
-            }
-          } else {
-            // Surface compose-video failures — do NOT silently fall back to first clip only.
-            // Returning only clip_urls[0] would show 10s of motion then frozen frame with audio.
-            let composeErrMsg = `Video assembly failed (HTTP ${composeRes.status})`;
-            try {
-              const errJson = await composeRes.json() as { error?: string; phase?: string };
-              if (errJson.error) composeErrMsg = `Video assembly failed: ${errJson.error}`;
-            } catch { /* non-JSON error body */ }
-            console.error('[cinematic] compose-video failed:', composeRes.status, composeErrMsg);
-            throw new Error(composeErrMsg);
-          }
-        } catch (composeErr) {
-          console.error('[cinematic] compose-video threw:', composeErr);
-          throw composeErr;
-        }
+        // Clips ready — hand off to Phase 2 (voice picker → compose)
+        setPendingClipUrls(seqData.clip_urls);
+        setPendingClipDuration(seqData.clip_duration ?? CLIP_SECONDS);
+        setPendingScriptForVoice(scriptText);
+        setClipsReady(true);
         setVideoProgress(100);
       } catch (err) {
         console.error('Cinematic error:', err);
@@ -2422,7 +2384,45 @@ function CreatePageInner() {
                   </div>
                 )}
 
-                {videoType && (() => {
+                {/* ── Phase 2: clips ready — pick voice then compose ──────── */}
+                {clipsReady && videoType === 'cinematic' && !isGeneratingVideo && (
+                  <div style={{ background: 'rgba(45,10,62,0.9)', border: '1px solid rgba(201,168,76,0.5)', borderRadius: 16, padding: 20, marginBottom: 12 }}>
+                    <p style={{ color: '#4ECB8C', fontWeight: 700, margin: '0 0 4px', fontSize: 15 }}>
+                      ✓ {pendingClipUrls.length} clips ready
+                    </p>
+                    <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: 13, margin: '0 0 14px' }}>
+                      Pick a voice below then click Add Voiceover &amp; Finish — or skip voice to compose silently.
+                    </p>
+                    <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 12 }}>
+                      <select
+                        value={selectedVoiceId}
+                        onChange={e => setSelectedVoiceId(e.target.value)}
+                        style={{ flex: 1, background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 10, color: 'white', padding: '10px 14px', fontSize: '0.95rem', fontFamily: 'inherit', outline: 'none' }}
+                      >
+                        <option value="">No voice (silent video)</option>
+                        {voices.map(v => (
+                          <option key={v.voice_id} value={v.voice_id}>
+                            {v.name}{v.labels?.gender ? ` · ${v.labels.gender}` : ''}{v.labels?.accent ? ` · ${v.labels.accent}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        onClick={handlePreviewVoice}
+                        disabled={!selectedVoiceId}
+                        style={{ background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 10, color: 'white', padding: '10px 14px', cursor: selectedVoiceId ? 'pointer' : 'not-allowed', whiteSpace: 'nowrap', fontFamily: 'inherit', fontSize: '0.9rem' }}
+                      >▶ Preview</button>
+                    </div>
+                    <button
+                      onClick={handleComposeWithVoice}
+                      className="gold-btn"
+                      style={{ width: '100%', padding: '13px 24px', fontSize: 15, fontWeight: 700, fontFamily: 'inherit', borderRadius: 9999, border: 'none', cursor: 'pointer' }}
+                    >
+                      {selectedVoiceId ? '🎙️ Add Voiceover & Finish →' : '🎬 Compose Silent Video →'}
+                    </button>
+                  </div>
+                )}
+
+                {videoType && !clipsReady && (() => {
                   const avatarMissingImage = videoType === 'avatar' && !avatarImageUrl && !selectedImage;
                   const fastMissingImage   = videoType === 'fast'   && !selectedImage;
                   const isBlocked = isGeneratingVideo || avatarMissingImage || fastMissingImage;
@@ -2447,7 +2447,7 @@ function CreatePageInner() {
                     {isGeneratingVideo
                       ? '🎬 Rendering video...'
                       : videoType === 'avatar' ? 'Generate Avatar Video →'
-                      : videoType === 'cinematic' ? 'Generate Cinematic Scene →'
+                      : videoType === 'cinematic' ? 'Generate Cinematic Clips →'
                       : videoType === 'sequence' ? 'Generate Full Sequence (4 clips) →'
                       : 'Generate Quick Preview →'}
                   </button>
