@@ -338,8 +338,9 @@ export async function runParallelEngine(
   });
 
   const avatarShots     = shotRows.filter((_, i) => routes[i].provider === "hedra");
-  const klingShots      = shotRows.filter((_, i) => routes[i].provider === "kling" && !isMultiCharacterScene(_.visual_prompt));
-  const multiCharShots  = shotRows.filter((_, i) => routes[i].provider === "kling" && !!(char2Memory) && isMultiCharacterScene(_.visual_prompt));
+  // multi-char only when we actually have two characters; otherwise treat as regular kling
+  const multiCharShots  = shotRows.filter((_, i) => routes[i].provider === "kling" && !!char2Memory && isMultiCharacterScene(_.visual_prompt));
+  const klingShots      = shotRows.filter((_, i) => routes[i].provider === "kling" && !multiCharShots.includes(_));
 
   console.info("[parallel-engine] routed", {
     planId,
