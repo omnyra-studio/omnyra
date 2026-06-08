@@ -102,14 +102,12 @@ function hedraConfig(speedMode: string): { intervalMs: number; maxPolls: number 
   return                                  { intervalMs: 5_000, maxPolls: 72 };  // 360s
 }
 
-// Max words of narration to send to ElevenLabs per Hedra shot.
-// Hedra generation time scales ~linearly with audio length.
-// 25 words ≈ 10s audio ≈ 60-90s Hedra; 60 words ≈ 24s audio ≈ 5-10 minutes.
+// Max words of narration per Hedra shot — keep in sync with processAvatarShot inline caps.
 function hedraMaxWords(speedMode: string): number {
-  if (speedMode === 'ultra-draft') return 20;  // ≈8s
-  if (speedMode === 'draft')       return 25;  // ≈10s
-  if (speedMode === 'balanced')    return 40;  // ≈15s
-  return Infinity;
+  if (speedMode === 'ultra-draft') return 18;  // ≈7s
+  if (speedMode === 'draft')       return 22;  // ≈8-9s
+  if (speedMode === 'balanced')    return 35;  // ≈13s
+  return 50;
 }
 
 async function pollHedra(generationId: string, shotId: string, speedMode: string = 'balanced'): Promise<string> {
@@ -150,18 +148,24 @@ async function processAvatarShot(
 ): Promise<ClipResult> {
   const startMs = Date.now();
 
-  // Step 1: ElevenLabs TTS — truncate narration to limit Hedra generation time.
-  // Hedra scales with audio length: 25 words ≈ 10s audio ≈ 90s gen; 60 words ≈ 5+ minutes.
-  const rawNarration  = (shot.narration_text ?? "").trim() || shot.audio_intent.trim();
+  // Step 1: ElevenLabs TTS — HARD-CAP narration length before calling TTS.
+  // Hedra generation time is proportional to audio length.
+  // 22 words ≈ 8-9s audio ≈ 60-90s Hedra; 80+ words = 15+ minutes.
+  const rawNarration = (shot.narration_text ?? "").trim() || shot.audio_intent.trim();
   if (!rawNarration) throw new Error(`Avatar shot ${shot.id}: no narration text`);
 
-  const maxWords      = hedraMaxWords(speedMode);
-  const words         = rawNarration.split(/\s+/);
-  const narrationText = words.length > maxWords
-    ? words.slice(0, maxWords).join(" ").replace(/[,;]$/, "") + "."
-    : rawNarration;
+  const maxWords   = speedMode === 'ultra-draft' ? 18 : speedMode === 'draft' ? 22 : 35;
+  const allWords   = rawNarration.split(/\s+/).filter(Boolean);
+  const wordCount  = allWords.length;
+  let narrationText: string;
 
-  console.info(`[HEDRA] start shot=${shot.id} words=${words.length}→${narrationText.split(/\s+/).length} speedMode=${speedMode}`);
+  if (wordCount > maxWords) {
+    narrationText = allWords.slice(0, maxWords).join(" ").replace(/[,;.!?]+$/, "") + ".";
+    console.info(`[HEDRA_TRUNCATE] shot=${shot.id} words ${wordCount}→${maxWords} speedMode=${speedMode} original="${rawNarration.substring(0, 60)}..."`);
+  } else {
+    narrationText = rawNarration;
+    console.info(`[HEDRA] shot=${shot.id} words=${wordCount} no-truncate speedMode=${speedMode}`);
+  }
 
   const { audio_url } = await generateSceneAudio(
     { text: narrationText, voiceId: voiceId ?? undefined },
