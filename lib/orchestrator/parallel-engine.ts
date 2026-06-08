@@ -289,7 +289,7 @@ export async function runParallelEngine(
   // ultra-draft forces draftMode + hard-caps at 2 clips
   const speedMode  = input.speedMode ?? (input.draftMode ? 'draft' : 'balanced');
   const draftMode  = input.draftMode ?? (speedMode === 'ultra-draft' || speedMode === 'draft');
-  const maxClips   = speedMode === 'ultra-draft' ? Math.min(input.maxClips ?? 2, 2) : (input.maxClips ?? 3);
+  const maxClips   = (speedMode === 'ultra-draft' || speedMode === 'draft') ? Math.min(input.maxClips ?? 2, 2) : (input.maxClips ?? 3);
 
   // Resolve primary + secondary character IDs
   const characterIds = input.characterIds?.length
@@ -461,7 +461,9 @@ export async function runParallelEngine(
 
   // 7. Optional stitch into a single video
   let assembledUrl: string | undefined;
-  if (!skipStitch && allClips.length > 0 && (targetDurationSecs ?? 0) > 0) {
+  const willStitch = !skipStitch && allClips.length > 0 && (targetDurationSecs ?? 0) > 0;
+  console.info("[STITCH_GATE]", { willStitch, skipStitch, clipCount: allClips.length, targetDurationSecs, hasVoiceover: !!voiceoverResult });
+  if (willStitch) {
     try {
       const stitch = await stitchClips(allClips, {
         targetSecs:        targetDurationSecs,

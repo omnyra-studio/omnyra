@@ -78,7 +78,9 @@ export async function stitchClips(
   if (!clips.length) throw new Error("[clip-stitcher] no clips to stitch");
   const stitchT0 = Date.now();
   const speedMode = options.speedMode ?? 'balanced';
-  console.info(`[STITCH] start clips=${clips.length} voice=${!!options.voiceoverUrl} speed=${speedMode} ultraDraft=${speedMode === 'ultra-draft'}`);
+  console.info(`[STITCH] ===== START ===== clips=${clips.length} voice=${!!options.voiceoverUrl} speed=${speedMode} planId=${options.planId}`);
+  console.info("[STITCH] clip urls", clips.map(c => ({ n: c.shotNumber, secs: c.duration_seconds, url: c.video_url.slice(0, 60) })));
+  console.info("[STITCH] ffmpeg path", FFMPEG_PATH ?? "NOT FOUND — will fail");
 
   ensureWorkDir();
 
