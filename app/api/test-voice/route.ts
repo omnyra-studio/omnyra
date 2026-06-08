@@ -28,12 +28,12 @@ export async function POST(req: Request) {
   if (!voice_id)  return Response.json({ error: "voice_id required" }, { status: 400 });
   if (!text?.trim()) return Response.json({ error: "text required" }, { status: 400 });
 
-  const ttsText = full ? text.trim() : text.trim().substring(0, 200);
+  const ttsText = text.trim();
   const voiceSettings = full
     ? { stability: 0.75, similarity_boost: 0.85, style: 0.0, use_speaker_boost: true }
     : { stability: 0.35, similarity_boost: 0.75, style: 0.65, use_speaker_boost: true, speed: 1.08 };
 
-  console.log(`[TEST_VOICE_MODE] full=${full} textLength=${text.length} truncated=${!full && text.length > 200}`);
+  console.log(`[TEST_VOICE_MODE] full=${full} textLength=${text.length} ttsLength=${ttsText.length}`);
 
   try {
     const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice_id}`, {
