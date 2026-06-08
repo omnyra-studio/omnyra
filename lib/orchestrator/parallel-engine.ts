@@ -53,13 +53,16 @@ export interface ClipResult {
 }
 
 export interface ParallelEngineResult {
-  planId:        string;
-  clips:         ClipResult[];   // ordered by shot_number
-  totalMs:       number;
-  hedraCount:    number;
-  klingCount:    number;
-  failedShots:   string[];
-  assembledUrl?: string;         // final stitched video URL (if targetDurationSecs set)
+  planId:             string;
+  clips:              ClipResult[];   // ordered by shot_number
+  totalMs:            number;
+  hedraCount:         number;
+  klingCount:         number;
+  failedShots:        string[];
+  assembledUrl?:      string;         // set only when internal stitch ran
+  voiceoverUrl?:      string;         // raw ElevenLabs audio — always returned for Railway
+  voiceDurationSecs?: number;         // voiceover length in seconds
+  targetDurationSecs: number;         // what was requested (echoed back for Railway)
 }
 
 // ── Shot row shape ────────────────────────────────────────────────────────────
@@ -488,13 +491,27 @@ export async function runParallelEngine(
     }
   }
 
+  const railwayPayload = {
+    planId,
+    clipCount:          allClips.length,
+    voiceoverUrl:       voiceoverResult?.audioUrl ?? null,
+    voiceDurationSecs:  voiceoverResult?.duration ?? null,
+    targetDurationSecs,
+    assembledUrl:       assembledUrl ?? null,
+    clipUrls:           allClips.map(c => ({ n: c.shotNumber, url: c.video_url, secs: c.duration_seconds, provider: c.provider })),
+  };
+  console.info("[RAILWAY_PAYLOAD]", JSON.stringify(railwayPayload));
+
   return {
     planId,
-    clips:       allClips,
+    clips:              allClips,
     totalMs,
-    hedraCount:  allClips.filter(c => c.provider === "hedra").length,
-    klingCount:  allClips.filter(c => c.provider === "kling").length,
+    hedraCount:         allClips.filter(c => c.provider === "hedra").length,
+    klingCount:         allClips.filter(c => c.provider === "kling").length,
     failedShots,
     assembledUrl,
+    voiceoverUrl:       voiceoverResult?.audioUrl,
+    voiceDurationSecs:  voiceoverResult?.duration,
+    targetDurationSecs,
   };
 }

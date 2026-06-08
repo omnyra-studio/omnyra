@@ -15,20 +15,21 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json() as {
-    planId:     string;
-    userId:     string;
-    characterIds?: string[];
-    voiceId?:   string;
-    fullScript?: string;
-    speedMode?:  string;
-    maxClips?:   number;
-    skipStitch?: boolean;
+    planId:              string;
+    userId:              string;
+    characterIds?:       string[];
+    voiceId?:            string;
+    fullScript?:         string;
+    speedMode?:          string;
+    maxClips?:           number;
+    skipStitch?:         boolean;
+    targetDurationSecs?: number;
   };
 
-  const { planId, userId, characterIds, voiceId, fullScript, speedMode = "draft", maxClips = 2, skipStitch = false } = body;
+  const { planId, userId, characterIds, voiceId, fullScript, speedMode = "draft", maxClips = 2, skipStitch = false, targetDurationSecs = 30 } = body;
   if (!planId || !userId) return NextResponse.json({ error: "planId + userId required" }, { status: 400 });
 
-  console.info("[test-run] starting engine", { planId, userId, speedMode, maxClips });
+  console.info("[test-run] starting engine", { planId, userId, speedMode, maxClips, skipStitch, targetDurationSecs });
 
   try {
     const result = await runParallelEngine({
@@ -37,23 +38,26 @@ export async function POST(req: Request) {
       characterIds,
       voiceId,
       fullScript,
-      speedMode:          speedMode as 'ultra-draft' | 'draft' | 'balanced' | 'quality',
+      speedMode:         speedMode as 'ultra-draft' | 'draft' | 'balanced' | 'quality',
       maxClips,
-      targetDurationSecs: 20,
-      draftMode:          true,
+      targetDurationSecs,
+      draftMode:         true,
       skipStitch,
     });
 
     return NextResponse.json({
-      ok:          true,
-      planId:      result.planId,
-      clips:       result.clips.length,
-      hedra:       result.hedraCount,
-      kling:       result.klingCount,
-      failed:      result.failedShots,
-      totalMs:     result.totalMs,
-      assembledUrl: result.assembledUrl ?? null,
-      clipUrls:    result.clips.map(c => ({ n: c.shotNumber, url: c.video_url, ms: c.generation_ms, provider: c.provider })),
+      ok:                true,
+      planId:            result.planId,
+      clips:             result.clips.length,
+      hedra:             result.hedraCount,
+      kling:             result.klingCount,
+      failed:            result.failedShots,
+      totalMs:           result.totalMs,
+      assembledUrl:      result.assembledUrl ?? null,
+      voiceoverUrl:      result.voiceoverUrl ?? null,
+      voiceDurationSecs: result.voiceDurationSecs ?? null,
+      targetDurationSecs: result.targetDurationSecs,
+      clipUrls:          result.clips.map(c => ({ n: c.shotNumber, url: c.video_url, ms: c.generation_ms, provider: c.provider, secs: c.duration_seconds })),
     });
   } catch (err) {
     console.error("[test-run] engine error:", err);
