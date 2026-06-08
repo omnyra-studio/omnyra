@@ -33,7 +33,7 @@ export interface ParallelEngineInput {
   characterId?:       string;    // primary character (backward compat)
   characterIds?:      string[];  // [char1Id, char2Id] — use for multi-character scenes
   draftMode?:         boolean;
-  speedMode?:         'draft' | 'balanced' | 'quality';
+  speedMode?:         'ultra-draft' | 'draft' | 'balanced' | 'quality';
   aspectRatio?:       string;
   targetDurationSecs?: number;   // stitch target — default 30s
   skipStitch?:        boolean;   // skip assembly (caller handles stitching)
@@ -180,7 +180,9 @@ async function processKlingShot(
   charSuffix:    string,
   brandSuffix:   string,
   correlationId: string,
+  speedMode:     string = 'balanced',
 ): Promise<ClipResult> {
+  const shotT0 = Date.now();
   const result = await generateKlingClip({
     shotId:                shot.id,
     shotNumber:            shot.shot_number,
@@ -190,7 +192,9 @@ async function processKlingShot(
     aspectRatio:           "9:16",
     characterPromptSuffix: charSuffix || undefined,
     brandSuffix:           brandSuffix || undefined,
+    speedMode,
   });
+  console.info(`[CLIP_TIMING] kling shot=${shot.id} num=${shot.shot_number} ms=${Date.now() - shotT0} model=${result.model_used}`);
 
   emitRaw("KLING_CLIP_READY", correlationId, { shotId: shot.id, shotNumber: shot.shot_number, video_url: result.video_url, generation_ms: result.generation_ms });
 
@@ -241,12 +245,15 @@ export async function runParallelEngine(
   input: ParallelEngineInput,
 ): Promise<ParallelEngineResult> {
   const {
-    planId, userId, draftMode = false,
+    planId, userId,
     targetDurationSecs, skipStitch = false,
     fullScript, voiceId,
-    maxClips = 3,
-    speedMode = draftMode ? 'draft' : 'balanced',
   } = input;
+
+  // ultra-draft forces draftMode + hard-caps at 2 clips
+  const speedMode  = input.speedMode ?? (input.draftMode ? 'draft' : 'balanced');
+  const draftMode  = input.draftMode ?? (speedMode === 'ultra-draft' || speedMode === 'draft');
+  const maxClips   = speedMode === 'ultra-draft' ? Math.min(input.maxClips ?? 2, 2) : (input.maxClips ?? 3);
 
   // Resolve primary + secondary character IDs
   const characterIds = input.characterIds?.length
@@ -336,7 +343,7 @@ export async function runParallelEngine(
 
   const klingPromises = klingShots.map(shot => {
     const route = routes[shotRows.indexOf(shot)];
-    return processKlingShot(shot, route, charSuffix, brandSuffix, planId)
+    return processKlingShot(shot, route, charSuffix, brandSuffix, planId, speedMode)
       .catch(err => { console.error(`[parallel-engine] kling shot=${shot.id}:`, err); failedShots.push(shot.id); return null; });
   });
 

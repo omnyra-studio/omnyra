@@ -36,7 +36,7 @@ export interface StitchOptions {
   userId:             string;
   planId:             string;
   voiceoverUrl?:      string;   // full-video voiceover to mix in
-  speedMode?:         'draft' | 'balanced' | 'quality';
+  speedMode?:         'ultra-draft' | 'draft' | 'balanced' | 'quality';
 }
 
 export interface StitchResult {
@@ -54,7 +54,7 @@ export async function stitchClips(
   if (!clips.length) throw new Error("[clip-stitcher] no clips to stitch");
   const stitchT0 = Date.now();
   const speedMode = options.speedMode ?? 'balanced';
-  console.info(`[STITCH] start clips=${clips.length} voice=${!!options.voiceoverUrl} speed=${speedMode}`);
+  console.info(`[STITCH] start clips=${clips.length} voice=${!!options.voiceoverUrl} speed=${speedMode} ultraDraft=${speedMode === 'ultra-draft'}`);
 
   ensureWorkDir();
 
@@ -149,10 +149,11 @@ async function runConcat(
   outputPath:    string,
   voiceoverPath: string | null,
   targetSecs:    number,
-  speedMode:     'draft' | 'balanced' | 'quality' = 'balanced',
+  speedMode:     'ultra-draft' | 'draft' | 'balanced' | 'quality' = 'balanced',
 ): Promise<void> {
-  const preset = speedMode === 'draft' ? 'ultrafast' : speedMode === 'balanced' ? 'veryfast' : 'fast';
-  const crf    = speedMode === 'draft' ? '30'        : speedMode === 'balanced' ? '26'        : '23';
+  const isUltraDraft = speedMode === 'ultra-draft';
+  const preset = (speedMode === 'ultra-draft' || speedMode === 'draft') ? 'ultrafast' : speedMode === 'balanced' ? 'veryfast' : 'fast';
+  const crf    = speedMode === 'ultra-draft' ? '32' : speedMode === 'draft' ? '30' : speedMode === 'balanced' ? '26' : '23';
 
   const silentPath = outputPath.replace(".mp4", "-silent.mp4");
   const listPath   = outputPath.replace(".mp4", "-list.txt");
@@ -207,18 +208,17 @@ async function runConcat(
   });
 
   const p2T0 = Date.now();
+  // ultra-draft: copy video stream (no re-encode), only encode the new audio track
+  const p2VideoCodec = isUltraDraft ? ["-c:v copy"] : ["-c:v libx264", `-preset ${preset}`, `-crf ${crf}`, "-pix_fmt yuv420p"];
   await new Promise<void>((resolve, reject) => {
     ffmpeg()
       .input(silentPath)
       .input(voiceoverPath)
       .outputOptions([
-        "-c:v libx264",
+        ...p2VideoCodec,
         "-c:a aac",
         "-map 0:v:0",
         "-map 1:a:0",
-        `-preset ${preset}`,
-        `-crf ${crf}`,
-        "-pix_fmt yuv420p",
         "-b:a 192k",
         "-shortest",
         `-t ${targetSecs + 5}`,
@@ -229,7 +229,7 @@ async function runConcat(
         console.error("[STITCH] pass2 error:", err.message, (stderr as string | undefined)?.slice(-800));
         reject(err);
       })
-      .on("end", () => { console.info(`[STITCH] pass2 done ms=${Date.now() - p2T0}`); resolve(); })
+      .on("end", () => { console.info(`[STITCH] pass2 done ms=${Date.now() - p2T0} ultra=${isUltraDraft}`); resolve(); })
       .run();
   });
 

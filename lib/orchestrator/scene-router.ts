@@ -107,5 +107,6 @@ export function routeShot(shot: RoutableSot, opts: RouteOptions): ShotRoute {
 
 function _pickKlingModel(shot: RoutableSot, draftMode: boolean): string {
   if (shot.fal_model) return shot.fal_model;
+  // draft → v1.6 standard (faster queue); balanced+ → v2.1 pro
   return draftMode ? KLING_T2V_MODEL : KLING_T2V_PRO;
 }

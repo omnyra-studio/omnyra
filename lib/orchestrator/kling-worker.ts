@@ -18,6 +18,7 @@ export interface KlingWorkerInput {
   characterPromptSuffix?: string;  // appended from character_registry
   brandSuffix?:  string;           // appended from brand memory
   imageUrl?:     string;           // reference image → auto-switches to i2v model
+  speedMode?:    string;           // 'ultra-draft' | 'draft' | 'balanced' | 'quality'
 }
 
 export interface KlingWorkerResult {
@@ -35,13 +36,28 @@ function clampDuration(secs: number | undefined): "5" | "10" {
   return "10";
 }
 
+// Timeout wrapper — prevent Kling from blocking the pipeline indefinitely
+function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
+  return Promise.race([
+    p,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`[kling-worker] timeout after ${ms}ms — ${label}`)), ms)
+    ),
+  ]);
+}
+
 export async function generateKlingClip(input: KlingWorkerInput): Promise<KlingWorkerResult> {
-  const startMs   = Date.now();
-  const isI2V     = !!input.imageUrl;
-  // i2v: use KLING_I2V_PRO unless shot overrides; t2v: use KLING_T2V_PRO
-  const modelId   = input.modelId ?? (isI2V ? KLING_I2V_PRO : KLING_T2V_PRO);
-  const duration  = clampDuration(input.durationSecs);
+  const startMs  = Date.now();
+  const isI2V    = !!input.imageUrl;
+  const isDraft  = input.speedMode === 'ultra-draft' || input.speedMode === 'draft';
+
+  // draft/ultra-draft: use v1.6 standard (faster queue); balanced+: v2.1 pro
+  const modelId   = input.modelId ?? (isDraft ? KLING_T2V_MODEL : isI2V ? KLING_I2V_PRO : KLING_T2V_PRO);
+  // ultra-draft always forces 5s clips; draft honours shot duration
+  const duration  = input.speedMode === 'ultra-draft' ? "5" : clampDuration(input.durationSecs);
   const aspectRatio = (input.aspectRatio ?? "9:16") as "9:16" | "16:9" | "1:1";
+  // timeout: 90s draft, 180s balanced
+  const timeoutMs = isDraft ? 90_000 : 180_000;
 
   // Build enriched prompt from all memory sources
   const parts: string[] = [input.visualPrompt];
@@ -57,6 +73,8 @@ export async function generateKlingClip(input: KlingWorkerInput): Promise<KlingW
     model:      modelId,
     mode:       isI2V ? "i2v" : "t2v",
     duration,
+    speedMode:  input.speedMode ?? 'balanced',
+    timeoutMs,
     prompt_preview: prompt.slice(0, 80),
   });
 
@@ -70,7 +88,11 @@ export async function generateKlingClip(input: KlingWorkerInput): Promise<KlingW
     };
     if (isI2V) falInput.image_url = input.imageUrl;
 
-    result = await fal.subscribe(modelId, { input: falInput });
+    result = await withTimeout(
+      fal.subscribe(modelId, { input: falInput }),
+      timeoutMs,
+      `shot=${input.shotId}`,
+    );
   } catch (err) {
     throw new Error(
       `[kling-worker] fal.ai error shot=${input.shotId}: ${err instanceof Error ? err.message : String(err)}`,
@@ -83,7 +105,7 @@ export async function generateKlingClip(input: KlingWorkerInput): Promise<KlingW
   }
 
   const generation_ms = Date.now() - startMs;
-  console.info("[kling-worker] completed shot", { shot_id: input.shotId, generation_ms });
+  console.info(`[KLING_TIMING] shot=${input.shotId} model=${modelId} duration=${duration}s ms=${generation_ms}`);
 
   return {
     shotId:           input.shotId,

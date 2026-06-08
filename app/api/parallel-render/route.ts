@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     characterId?:        string;
     characterIds?:       string[];
     draftMode?:          boolean;
-    speedMode?:          'draft' | 'balanced' | 'quality';
+    speedMode?:          'ultra-draft' | 'draft' | 'balanced' | 'quality';
     targetDurationSecs?: number;
     skipStitch?:         boolean;
     fullScript?:         string;
