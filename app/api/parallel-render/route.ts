@@ -62,7 +62,7 @@ export async function POST(request: Request) {
     targetDurationSecs = 30,
     skipStitch = false,
     fullScript,
-    voiceId,
+    voiceId = "EXAVITQu4vr4xnSDxMaO",  // Bella — hard default if caller omits voiceId
     maxClips = 3,
   } = body;
 

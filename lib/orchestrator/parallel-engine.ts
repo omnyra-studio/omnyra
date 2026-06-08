@@ -385,7 +385,9 @@ export async function runParallelEngine(
 
   const avatarPromises = avatarShots.map(shot => {
     if (!charImageUrl) { failedShots.push(shot.id); return Promise.resolve(null); }
-    return processAvatarShot(shot, charImageUrl, avatarVoiceId, planId, speedMode)
+    const resolvedVoiceId = avatarVoiceId || voiceId || "EXAVITQu4vr4xnSDxMaO";
+    console.info(`[TTS_VOICE] shot=${shot.id} voice=${resolvedVoiceId} source=${avatarVoiceId ? "charMemory" : voiceId ? "input" : "default"}`);
+    return processAvatarShot(shot, charImageUrl, resolvedVoiceId, planId, speedMode)
       .catch(async (err: Error) => {
         console.warn(`[parallel-engine] hedra shot=${shot.id} failed (${err.message}) — falling back to Kling`);
         const route = routes[shotRows.indexOf(shot)];
