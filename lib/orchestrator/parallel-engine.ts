@@ -70,7 +70,6 @@ interface ShotRow {
   render_assignment: string;
   visual_prompt:     string;
   audio_intent:      string;
-  narration_text:    string | null;
   duration_seconds:  number;
   fal_model:         string | null;
   content_type:      string | null;
@@ -151,7 +150,7 @@ async function processAvatarShot(
   // Step 1: ElevenLabs TTS — HARD-CAP narration length before calling TTS.
   // Hedra generation time is proportional to audio length.
   // 22 words ≈ 8-9s audio ≈ 60-90s Hedra; 80+ words = 15+ minutes.
-  const rawNarration = (shot.narration_text ?? "").trim() || shot.audio_intent.trim();
+  const rawNarration = shot.audio_intent.trim();
   if (!rawNarration) throw new Error(`Avatar shot ${shot.id}: no narration text`);
 
   const maxWords   = speedMode === 'ultra-draft' ? 18 : speedMode === 'draft' ? 22 : 35;
@@ -305,7 +304,7 @@ export async function runParallelEngine(
   // 1. Load shots
   const { data: shots, error: shotsErr } = await supabaseAdmin
     .from("shots")
-    .select("id, shot_number, render_assignment, visual_prompt, audio_intent, narration_text, duration_seconds, fal_model, content_type")
+    .select("id, shot_number, render_assignment, visual_prompt, audio_intent, duration_seconds, fal_model, content_type")
     .eq("shot_plan_id", planId)
     .order("shot_number", { ascending: true });
 
