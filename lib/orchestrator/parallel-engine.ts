@@ -95,8 +95,8 @@ function emitRaw(
 // timeouts surface faster and the Kling fallback kicks in sooner.
 
 function hedraConfig(speedMode: string): { intervalMs: number; maxPolls: number } {
-  if (speedMode === 'ultra-draft') return { intervalMs: 3_000, maxPolls: 30 };  // 90s
-  if (speedMode === 'draft')       return { intervalMs: 3_000, maxPolls: 40 };  // 120s
+  if (speedMode === 'ultra-draft') return { intervalMs: 3_000, maxPolls: 40 };  // 120s
+  if (speedMode === 'draft')       return { intervalMs: 3_000, maxPolls: 50 };  // 150s
   if (speedMode === 'balanced')    return { intervalMs: 4_000, maxPolls: 60 };  // 240s
   return                                  { intervalMs: 5_000, maxPolls: 72 };  // 360s
 }
