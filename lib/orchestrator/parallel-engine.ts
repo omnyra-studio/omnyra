@@ -92,19 +92,38 @@ function emitRaw(
 }
 
 // ── Hedra polling ─────────────────────────────────────────────────────────────
+// Poll interval + budget scale with speedMode — draft uses tighter loops so
+// timeouts surface faster and the Kling fallback kicks in sooner.
 
-const HEDRA_POLL_INTERVAL_MS = 5_000;
-const HEDRA_MAX_POLLS        = 72;   // 72 × 5s = 360s budget
+function hedraConfig(speedMode: string): { intervalMs: number; maxPolls: number } {
+  if (speedMode === 'ultra-draft') return { intervalMs: 3_000, maxPolls: 30 };  // 90s
+  if (speedMode === 'draft')       return { intervalMs: 3_000, maxPolls: 40 };  // 120s
+  if (speedMode === 'balanced')    return { intervalMs: 4_000, maxPolls: 60 };  // 240s
+  return                                  { intervalMs: 5_000, maxPolls: 72 };  // 360s
+}
 
-async function pollHedra(generationId: string, shotId: string): Promise<string> {
-  for (let i = 0; i < HEDRA_MAX_POLLS; i++) {
-    await new Promise(r => setTimeout(r, HEDRA_POLL_INTERVAL_MS));
+// Max words of narration to send to ElevenLabs per Hedra shot.
+// Hedra generation time scales ~linearly with audio length.
+// 25 words ≈ 10s audio ≈ 60-90s Hedra; 60 words ≈ 24s audio ≈ 5-10 minutes.
+function hedraMaxWords(speedMode: string): number {
+  if (speedMode === 'ultra-draft') return 20;  // ≈8s
+  if (speedMode === 'draft')       return 25;  // ≈10s
+  if (speedMode === 'balanced')    return 40;  // ≈15s
+  return Infinity;
+}
 
-    // checkHedraGenerationStatus returns { status, videoUrl, errorMessage }
+async function pollHedra(generationId: string, shotId: string, speedMode: string = 'balanced'): Promise<string> {
+  const { intervalMs, maxPolls } = hedraConfig(speedMode);
+  const pollT0 = Date.now();
+
+  for (let i = 0; i < maxPolls; i++) {
+    await new Promise(r => setTimeout(r, intervalMs));
+
     const result = await checkHedraGenerationStatus(generationId);
 
     if (result.status === "complete") {
       if (!result.videoUrl) throw new Error(`Hedra shot=${shotId}: complete but no videoUrl`);
+      console.info(`[HEDRA_TIMING] shot=${shotId} polls=${i + 1} ms=${Date.now() - pollT0}`);
       return result.videoUrl;
     }
 
@@ -112,10 +131,12 @@ async function pollHedra(generationId: string, shotId: string): Promise<string> 
       throw new Error(`Hedra shot=${shotId}: error after ${i + 1} polls — ${result.errorMessage ?? "unknown"}`);
     }
 
-    console.debug(`[parallel-engine] hedra poll ${i + 1}/${HEDRA_MAX_POLLS} shot=${shotId} status=${result.status}`);
+    if (i > 0 && i % 5 === 0) {
+      console.info(`[HEDRA_POLL] shot=${shotId} poll=${i + 1}/${maxPolls} elapsed=${Math.round((Date.now() - pollT0) / 1000)}s`);
+    }
   }
 
-  throw new Error(`Hedra shot=${shotId}: timed out after ${HEDRA_MAX_POLLS} polls`);
+  throw new Error(`Hedra shot=${shotId}: timed out after ${maxPolls} polls (${Math.round(maxPolls * intervalMs / 1000)}s)`);
 }
 
 // ── Avatar lane ───────────────────────────────────────────────────────────────
@@ -125,12 +146,22 @@ async function processAvatarShot(
   characterImageUrl: string,
   voiceId:           string | null,
   correlationId:     string,
+  speedMode:         string = 'balanced',
 ): Promise<ClipResult> {
   const startMs = Date.now();
 
-  // Step 1: ElevenLabs TTS for this shot
-  const narrationText = (shot.narration_text ?? "").trim() || shot.audio_intent.trim();
-  if (!narrationText) throw new Error(`Avatar shot ${shot.id}: no narration text`);
+  // Step 1: ElevenLabs TTS — truncate narration to limit Hedra generation time.
+  // Hedra scales with audio length: 25 words ≈ 10s audio ≈ 90s gen; 60 words ≈ 5+ minutes.
+  const rawNarration  = (shot.narration_text ?? "").trim() || shot.audio_intent.trim();
+  if (!rawNarration) throw new Error(`Avatar shot ${shot.id}: no narration text`);
+
+  const maxWords      = hedraMaxWords(speedMode);
+  const words         = rawNarration.split(/\s+/);
+  const narrationText = words.length > maxWords
+    ? words.slice(0, maxWords).join(" ").replace(/[,;]$/, "") + "."
+    : rawNarration;
+
+  console.info(`[HEDRA] start shot=${shot.id} words=${words.length}→${narrationText.split(/\s+/).length} speedMode=${speedMode}`);
 
   const { audio_url } = await generateSceneAudio(
     { text: narrationText, voiceId: voiceId ?? undefined },
@@ -140,7 +171,7 @@ async function processAvatarShot(
 
   emitRaw("ELEVENLABS_SHOT_DONE", correlationId, { shotId: shot.id, shotNumber: shot.shot_number });
 
-  // Step 2: Submit to Hedra — submitHedraJob returns the generationId string directly
+  // Step 2: Submit to Hedra
   const hedraInput: HedraInput = {
     image_url:  characterImageUrl,
     audio_url,
@@ -155,11 +186,12 @@ async function processAvatarShot(
     },
   );
 
-  // Step 3: Poll until complete
-  const video_url     = await pollHedra(generationId, shot.id);
+  // Step 3: Poll until complete (speed-aware timeout)
+  const video_url     = await pollHedra(generationId, shot.id, speedMode);
   const generation_ms = Date.now() - startMs;
 
   emitRaw("HEDRA_CLIP_READY", correlationId, { shotId: shot.id, shotNumber: shot.shot_number, video_url, generation_ms });
+  console.info(`[HEDRA_TIMING] shot=${shot.id} total_ms=${generation_ms}`);
 
   return {
     shotId:           shot.id,
@@ -349,8 +381,18 @@ export async function runParallelEngine(
 
   const avatarPromises = avatarShots.map(shot => {
     if (!charImageUrl) { failedShots.push(shot.id); return Promise.resolve(null); }
-    return processAvatarShot(shot, charImageUrl, avatarVoiceId, planId)
-      .catch(err => { console.error(`[parallel-engine] hedra shot=${shot.id}:`, err); failedShots.push(shot.id); return null; });
+    return processAvatarShot(shot, charImageUrl, avatarVoiceId, planId, speedMode)
+      .catch(async (err: Error) => {
+        console.warn(`[parallel-engine] hedra shot=${shot.id} failed (${err.message}) — falling back to Kling`);
+        const route = routes[shotRows.indexOf(shot)];
+        const fallbackRoute: ShotRoute = { ...route, provider: "kling", klingModelId: KLING_T2V_MODEL, reason: "hedra-timeout-fallback" };
+        return processKlingShot(shot, fallbackRoute, charSuffix, brandSuffix, planId, speedMode)
+          .catch(klingErr => {
+            console.error(`[parallel-engine] kling fallback also failed shot=${shot.id}:`, klingErr);
+            failedShots.push(shot.id);
+            return null;
+          });
+      });
   });
 
   const multiCharPromises = multiCharShots.map(shot => {
