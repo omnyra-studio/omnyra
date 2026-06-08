@@ -2442,8 +2442,30 @@ function CreatePageInner() {
                 {videoType && !clipsReady && (() => {
                   const avatarMissingImage = videoType === 'avatar' && !avatarImageUrl && !selectedImage;
                   const fastMissingImage   = videoType === 'fast'   && !selectedImage;
-                  const isBlocked = isGeneratingVideo || avatarMissingImage || fastMissingImage;
+                  const avatarMissingVoice = videoType === 'avatar' && !selectedVoiceId;
+                  const isBlocked = isGeneratingVideo || avatarMissingImage || fastMissingImage || avatarMissingVoice;
                   return (
+                  <>
+                    {/* Inline voice selector for avatar mode — must be picked before generating */}
+                    {videoType === 'avatar' && (
+                      <div style={{ marginBottom: 14, padding: '14px 16px', background: 'rgba(201,168,76,0.08)', border: `1px solid ${selectedVoiceId ? 'rgba(201,168,76,0.4)' : 'rgba(255,80,80,0.5)'}`, borderRadius: 12 }}>
+                        <p style={{ color: '#C9A84C', fontWeight: 700, margin: '0 0 8px', fontSize: 13 }}>
+                          🎙️ SELECT VOICE {!selectedVoiceId && <span style={{ color: '#FF6B6B', fontWeight: 400 }}>— required</span>}
+                        </p>
+                        <select
+                          value={selectedVoiceId}
+                          onChange={e => { console.log('[VOICE_SELECTED]', e.target.value); setSelectedVoiceId(e.target.value); }}
+                          style={{ width: '100%', background: 'rgba(0,0,0,0.4)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 10, color: selectedVoiceId ? 'white' : '#aaa', padding: '10px 14px', fontSize: '0.95rem', fontFamily: 'inherit', outline: 'none' }}
+                        >
+                          <option value="">Select a voice...</option>
+                          {voices.map(v => (
+                            <option key={v.voice_id} value={v.voice_id}>
+                              {v.name}{v.labels?.gender ? ` · ${v.labels.gender}` : ''}{v.labels?.accent ? ` · ${v.labels.accent}` : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                   <button
                     onClick={() => handleGenerateOutput(videoType)}
                     disabled={isBlocked}
@@ -2457,7 +2479,7 @@ function CreatePageInner() {
                       borderRadius: 9999,
                       border: 'none',
                       cursor: isBlocked ? 'not-allowed' : 'pointer',
-                      opacity: (avatarMissingImage || fastMissingImage) ? 0.5 : 1,
+                      opacity: (avatarMissingImage || fastMissingImage || avatarMissingVoice) ? 0.5 : 1,
                       ...(isBlocked && { background: 'rgba(255,255,255,0.06)', color: '#8A7D92' }),
                     }}
                   >
@@ -2468,6 +2490,7 @@ function CreatePageInner() {
                       : videoType === 'sequence' ? 'Generate Full Sequence (4 clips) →'
                       : 'Generate Quick Preview →'}
                   </button>
+                  </>
                   );
                 })()}
 
