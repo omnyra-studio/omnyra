@@ -56,8 +56,8 @@ export async function generateKlingClip(input: KlingWorkerInput): Promise<KlingW
   const isI2V    = !!input.imageUrl;
   const isDraft  = input.speedMode === 'ultra-draft' || input.speedMode === 'draft';
 
-  // draft/ultra-draft: use v1.6 standard (faster queue); balanced+: v2.1 pro
-  const modelId   = input.modelId ?? (isDraft ? KLING_T2V_MODEL : isI2V ? KLING_I2V_PRO : KLING_T2V_PRO);
+  // always use v2.1 pro — v1.6 standard queue is consistently slower
+  const modelId   = input.modelId ?? (isI2V ? KLING_I2V_PRO : KLING_T2V_PRO);
   // ultra-draft always forces 5s clips; draft honours shot duration
   const duration  = input.speedMode === 'ultra-draft' ? "5" : clampDuration(input.durationSecs);
   const aspectRatio = (input.aspectRatio ?? "9:16") as "9:16" | "16:9" | "1:1";

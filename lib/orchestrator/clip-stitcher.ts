@@ -13,10 +13,34 @@ import path            from "node:path";
 import https           from "node:https";
 import http            from "node:http";
 import os              from "node:os";
+import { execSync }    from "node:child_process";
 import { randomUUID }  from "node:crypto";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
-if (ffmpegStatic) ffmpeg.setFfmpegPath(ffmpegStatic);
+// Vercel's bundle is read-only — copy ffmpeg binary to /tmp so it's executable.
+function resolveFfmpegPath(): string | null {
+  if (!ffmpegStatic) return null;
+  if (process.platform === "linux") {
+    const tmp = "/tmp/ffmpeg_omnyra";
+    try {
+      if (!fs.existsSync(tmp)) {
+        fs.copyFileSync(ffmpegStatic, tmp);
+        execSync(`chmod 755 ${tmp}`);
+      }
+      return tmp;
+    } catch {
+      return ffmpegStatic;
+    }
+  }
+  return ffmpegStatic;
+}
+const FFMPEG_PATH = resolveFfmpegPath();
+if (FFMPEG_PATH) {
+  ffmpeg.setFfmpegPath(FFMPEG_PATH);
+  console.info("[clip-stitcher] ffmpeg path:", FFMPEG_PATH);
+} else {
+  console.warn("[clip-stitcher] WARNING: ffmpeg-static not found — stitch will fail");
+}
 
 const WORK_DIR = path.join(os.tmpdir(), "omnyra_parallel_stitch");
 const W = 1080;
