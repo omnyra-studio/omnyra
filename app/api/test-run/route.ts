@@ -16,7 +16,7 @@ export async function GET(req: Request) {
   if (!secret || secret !== process.env.CRON_SECRET) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  const FAL_CREDS = process.env.FAL_KEY ?? process.env.FAL_API_KEY;
+  const FAL_CREDS = process.env.FAL_KEY ?? process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY;
   if (FAL_CREDS) fal.config({ credentials: FAL_CREDS });
   const t0 = Date.now();
   try {

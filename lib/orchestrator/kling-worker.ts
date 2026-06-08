@@ -8,10 +8,10 @@ import { fal }                    from "@fal-ai/client";
 import { KLING_T2V_PRO, KLING_T2V_MODEL, KLING_I2V_PRO, extractVideoUrl } from "@/lib/video-models";
 import { VISUAL_LOCK_CONSTRAINTS } from "@/lib/avatar/model-router";
 
-// fal SDK reads FAL_KEY; project env uses FAL_API_KEY — configure once at module load
-const FAL_CREDS = process.env.FAL_KEY ?? process.env.FAL_API_KEY;
+// fal SDK reads FAL_KEY; project env may use FAL_API_KEY or FALAI_API_KEY — configure once at module load
+const FAL_CREDS = process.env.FAL_KEY ?? process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY;
 if (FAL_CREDS) fal.config({ credentials: FAL_CREDS });
-else console.warn("[kling-worker] WARNING: FAL_KEY / FAL_API_KEY not set — all Kling calls will fail");
+else console.warn("[kling-worker] WARNING: FAL_KEY / FAL_API_KEY / FALAI_API_KEY not set — all Kling calls will fail");
 
 export interface KlingWorkerInput {
   shotId:        string;
