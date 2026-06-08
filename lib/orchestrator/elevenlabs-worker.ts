@@ -14,7 +14,7 @@ const DEFAULT_VOICE_ID      = "9BWtsMINqrJLrRacOk9x"; // ElevenLabs "Aria" (per-
 const DEFAULT_VO_VOICE_ID   = "EXAVITQu4vr4xnSDxMaO"; // "Bella" — richer voiceover tone
 const MP3_BYTES_PER_SECOND  = 16_000;                  // 128kbps baseline
 const EL_MODEL              = "eleven_multilingual_v2";
-const EL_TURBO_V2_5         = "eleven_turbo_v2_5";    // fastest + good quality for voiceover
+const EL_FLASH_V2_5         = "eleven_flash_v2_5";    // fastest ElevenLabs model — 32ms latency
 
 export interface SceneTTSInput {
   text:       string;   // narration_text || audio_intent
@@ -193,7 +193,7 @@ async function callElevenLabs(
     },
     body: JSON.stringify({
       text,
-      model_id: EL_TURBO_V2_5,
+      model_id: EL_FLASH_V2_5,
       voice_settings: { stability: 0.8, similarity_boost: 0.85, speed: 1.0 },
     }),
   });
@@ -322,6 +322,8 @@ export async function generateVoiceover(
   const cleanScript = input.script?.trim().replace(/\s+/g, " ") ?? "";
   const wordCount   = cleanScript.split(/\s+/).length;
 
+  const voiceT0 = Date.now();
+  console.info(`[VOICE] start model=${EL_FLASH_V2_5} words=${wordCount} chunks=${Math.ceil(wordCount / CHUNK_SIZE)}`);
   console.info(`[VOICEOVER START] Full script received: ${wordCount} words`);
   console.info(`[VOICEOVER INPUT] First 150 chars: ${cleanScript.substring(0, 150)}...`);
 
@@ -368,6 +370,7 @@ export async function generateVoiceover(
     realDuration = stitchResult.durationSecs;
   }
 
+  console.info(`[VOICE] done totalMs=${Date.now() - voiceT0} duration=${realDuration.toFixed(2)}s target=${input.targetDurationSecs}s`);
   console.info(`[VOICEOVER SUCCESS] Final audio duration: ${realDuration.toFixed(2)}s (target was ${input.targetDurationSecs}s)`);
 
   return { audioUrl, duration: realDuration, scriptUsed: cleanScript };

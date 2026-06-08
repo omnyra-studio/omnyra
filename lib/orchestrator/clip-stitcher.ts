@@ -36,6 +36,7 @@ export interface StitchOptions {
   userId:             string;
   planId:             string;
   voiceoverUrl?:      string;   // full-video voiceover to mix in
+  speedMode?:         'draft' | 'balanced' | 'quality';
 }
 
 export interface StitchResult {
@@ -51,7 +52,9 @@ export async function stitchClips(
   options: StitchOptions,
 ): Promise<StitchResult> {
   if (!clips.length) throw new Error("[clip-stitcher] no clips to stitch");
-  console.info(`[STITCHER] Starting with ${clips.length} clips + voice=${!!options.voiceoverUrl}`);
+  const stitchT0 = Date.now();
+  const speedMode = options.speedMode ?? 'balanced';
+  console.info(`[STITCH] start clips=${clips.length} voice=${!!options.voiceoverUrl} speed=${speedMode}`);
 
   ensureWorkDir();
 
@@ -86,7 +89,7 @@ export async function stitchClips(
 
   const outputPath = path.join(WORK_DIR, `stitch_${randomUUID()}.mp4`);
 
-  await runConcat(localPaths, outputPath, resolvedVoiceoverPath ?? null, coverTarget);
+  await runConcat(localPaths, outputPath, resolvedVoiceoverPath ?? null, coverTarget, speedMode);
 
   // Upload to Supabase storage
   const storagePath = `renders/${options.userId}/parallel/${options.planId}-${Date.now()}.mp4`;
@@ -109,13 +112,15 @@ export async function stitchClips(
   // Use voice duration as the authoritative output length.
   const outputDuration = options.voiceDurationSecs ?? Math.min(accumulated, targetSecs);
 
-  console.info("[clip-stitcher] complete", {
-    plan_id:          options.planId,
-    clips:            selected.length,
-    video_secs:       accumulated,
-    voice_secs:       options.voiceDurationSecs ?? "none",
-    output_secs:      outputDuration,
-    url:              publicData.publicUrl.slice(0, 80),
+  console.info("[STITCH] complete", {
+    plan_id:     options.planId,
+    clips:       selected.length,
+    video_secs:  accumulated,
+    voice_secs:  options.voiceDurationSecs ?? "none",
+    output_secs: outputDuration,
+    totalMs:     Date.now() - stitchT0,
+    speed:       speedMode,
+    url:         publicData.publicUrl.slice(0, 80),
   });
 
   return {
@@ -140,15 +145,19 @@ function probeDuration(filePath: string): Promise<number> {
 }
 
 async function runConcat(
-  localPaths:       string[],
-  outputPath:       string,
-  voiceoverPath:    string | null,
-  targetSecs:       number,
+  localPaths:    string[],
+  outputPath:    string,
+  voiceoverPath: string | null,
+  targetSecs:    number,
+  speedMode:     'draft' | 'balanced' | 'quality' = 'balanced',
 ): Promise<void> {
+  const preset = speedMode === 'draft' ? 'ultrafast' : speedMode === 'balanced' ? 'veryfast' : 'fast';
+  const crf    = speedMode === 'draft' ? '30'        : speedMode === 'balanced' ? '26'        : '23';
+
   const silentPath = outputPath.replace(".mp4", "-silent.mp4");
   const listPath   = outputPath.replace(".mp4", "-list.txt");
 
-  // Pass 1: write concat list, stitch clips with filter_complex (scale+pad)
+  const p1T0 = Date.now();
   fs.writeFileSync(listPath, localPaths.map(p => `file '${p}'`).join("\n"));
 
   await new Promise<void>((resolve, reject) => {
@@ -170,13 +179,13 @@ async function runConcat(
 
     cmd
       .complexFilter(filterParts.join("; "))
-      .outputOptions(["-map [vout]", "-an", "-c:v libx264", "-preset fast", "-crf 23", "-pix_fmt yuv420p"])
+      .outputOptions(["-map [vout]", "-an", "-c:v libx264", `-preset ${preset}`, `-crf ${crf}`, "-pix_fmt yuv420p"])
       .output(silentPath)
       .on("error", (err, _s, stderr) => {
-        console.error("[clip-stitcher] pass1 error:", err.message, (stderr as string | undefined)?.slice(-800));
+        console.error("[STITCH] pass1 error:", err.message, (stderr as string | undefined)?.slice(-800));
         reject(err);
       })
-      .on("end", () => resolve())
+      .on("end", () => { console.info(`[STITCH] pass1 done ms=${Date.now() - p1T0} preset=${preset} crf=${crf}`); resolve(); })
       .run();
   });
 
@@ -187,19 +196,17 @@ async function runConcat(
     return;
   }
 
-  // Probe durations so we can log the mismatch
   const [vidDur, audDur] = await Promise.all([
     probeDuration(silentPath),
     probeDuration(voiceoverPath),
   ]);
-  console.info("[STITCHER] pass2 probe", {
+  console.info("[STITCH] pass2 probe", {
     video_secs: vidDur.toFixed(2),
     audio_secs: audDur.toFixed(2),
     cap_secs:   targetSecs + 5,
   });
 
-  // Pass 2: mix — voice drives duration via -shortest; +5s buffer so video never
-  // runs out before audio finishes
+  const p2T0 = Date.now();
   await new Promise<void>((resolve, reject) => {
     ffmpeg()
       .input(silentPath)
@@ -209,20 +216,20 @@ async function runConcat(
         "-c:a aac",
         "-map 0:v:0",
         "-map 1:a:0",
-        "-preset fast",
-        "-crf 23",
+        `-preset ${preset}`,
+        `-crf ${crf}`,
         "-pix_fmt yuv420p",
         "-b:a 192k",
-        "-shortest",               // stop when voice ends (not when video ends)
-        `-t ${targetSecs + 5}`,    // absolute safety cap
+        "-shortest",
+        `-t ${targetSecs + 5}`,
         "-movflags +faststart",
       ])
       .output(outputPath)
       .on("error", (err, _s, stderr) => {
-        console.error("[clip-stitcher] pass2 error:", err.message, (stderr as string | undefined)?.slice(-800));
+        console.error("[STITCH] pass2 error:", err.message, (stderr as string | undefined)?.slice(-800));
         reject(err);
       })
-      .on("end", () => resolve())
+      .on("end", () => { console.info(`[STITCH] pass2 done ms=${Date.now() - p2T0}`); resolve(); })
       .run();
   });
 

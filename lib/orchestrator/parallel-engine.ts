@@ -33,12 +33,13 @@ export interface ParallelEngineInput {
   characterId?:       string;    // primary character (backward compat)
   characterIds?:      string[];  // [char1Id, char2Id] — use for multi-character scenes
   draftMode?:         boolean;
+  speedMode?:         'draft' | 'balanced' | 'quality';
   aspectRatio?:       string;
   targetDurationSecs?: number;   // stitch target — default 30s
   skipStitch?:        boolean;   // skip assembly (caller handles stitching)
   fullScript?:        string;    // full video script for voiceover generation (fires at T=0)
   voiceId?:           string;    // ElevenLabs voice override for voiceover
-  maxClips?:          number;    // cap number of shots (default 6 for 30s target)
+  maxClips?:          number;    // cap number of shots (default 3 for 30s target)
 }
 
 export interface ClipResult {
@@ -243,7 +244,8 @@ export async function runParallelEngine(
     planId, userId, draftMode = false,
     targetDurationSecs, skipStitch = false,
     fullScript, voiceId,
-    maxClips = 6,
+    maxClips = 3,
+    speedMode = draftMode ? 'draft' : 'balanced',
   } = input;
 
   // Resolve primary + secondary character IDs
@@ -254,7 +256,8 @@ export async function runParallelEngine(
   const secondaryCharId = characterIds[1] ?? null;
 
   const t0 = Date.now();
-  emitRaw("PARALLEL_ENGINE_STARTED", planId, { planId, userId });
+  console.info(`[SPEED] engine start planId=${planId} maxClips=${maxClips} speedMode=${speedMode} draftMode=${draftMode}`);
+  emitRaw("PARALLEL_ENGINE_STARTED", planId, { planId, userId, speedMode, maxClips });
 
   // 1. Load shots
   const { data: shots, error: shotsErr } = await supabaseAdmin
@@ -398,7 +401,7 @@ export async function runParallelEngine(
     failedShots,
     voiceoverUrl: voiceoverResult?.audioUrl ?? null,
   });
-  console.info("[parallel-engine] complete", { planId, clips: allClips.length, failed: failedShots.length, totalMs, hasVoiceover: !!voiceoverResult });
+  console.info(`[SPEED] engine done planId=${planId} clips=${allClips.length} failed=${failedShots.length} totalMs=${totalMs} speedMode=${speedMode} hasVoiceover=${!!voiceoverResult}`);
 
   // 7. Optional stitch into a single video
   let assembledUrl: string | undefined;
@@ -410,6 +413,7 @@ export async function runParallelEngine(
         userId,
         planId,
         voiceoverUrl:      voiceoverResult?.audioUrl,
+        speedMode,
       });
       assembledUrl = stitch.output_url;
       const finalDuration = voiceoverResult?.duration ?? stitch.duration_seconds;
