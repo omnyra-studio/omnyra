@@ -4,6 +4,7 @@
 export const KLING_I2V_MODEL   = "fal-ai/kling-video/v1.6/standard/image-to-video";
 export const KLING_T2V_MODEL   = "fal-ai/kling-video/v1.6/standard/text-to-video";
 export const KLING_I2V_PRO     = "fal-ai/kling-video/v2.1/pro/image-to-video";  // used by avatar animate stage
+export const KLING_T2V_PRO     = "fal-ai/kling-video/v2.1/pro/text-to-video";   // v2.1 text-to-video for parallel engine
 export const RUNWAY_MODEL      = "fal-ai/runway-gen4/turbo";
 
 // Models that have been removed from fal.ai and must never be used.
@@ -18,7 +19,7 @@ const DEPRECATED_MODELS = [
 ];
 
 // Startup validation — called once at module load.
-const ACTIVE_MODELS = [KLING_I2V_MODEL, KLING_T2V_MODEL, KLING_I2V_PRO, RUNWAY_MODEL];
+const ACTIVE_MODELS = [KLING_I2V_MODEL, KLING_T2V_MODEL, KLING_I2V_PRO, KLING_T2V_PRO, RUNWAY_MODEL];
 
 for (const m of ACTIVE_MODELS) {
   if (DEPRECATED_MODELS.includes(m)) {
