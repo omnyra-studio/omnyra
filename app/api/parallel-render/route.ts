@@ -79,10 +79,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing required field: planId" }, { status: 400 });
   }
 
-  // Verify plan belongs to this user
+  // Verify plan belongs to this user via projects (scripts has no user_id column)
   const { data: plan } = await supabase
     .from("shot_plans")
-    .select("id, scripts!inner(user_id)")
+    .select("id, projects!inner(user_id)")
     .eq("id", planId)
     .maybeSingle();
 
