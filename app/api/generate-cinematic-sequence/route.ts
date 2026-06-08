@@ -727,6 +727,7 @@ export async function POST(req: Request) {
           : postMs > (SLA_POST_MS * 0.85)                         ? "post_processing"
           : "nominal";
 
+        const skippedScenes = slaFallbackIndices;
         const slaCompliant = skippedScenes.length === 0 && totalMs <= SLA_TOTAL_MS;
 
         console.log(`[TIMING] SEQUENCE TOTAL ${totalMs}ms clips=${clip_urls.length} kling=${klingCount} smart_motion=${smCount} sla=${slaCompliant ? "OK" : "BREACH"} bottleneck=${bottleneckStage}`);

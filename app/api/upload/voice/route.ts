@@ -12,6 +12,8 @@ export const maxDuration = 30;
 // Uses the renders bucket (confirmed public, service-role accessible) rather
 // than user-uploads to avoid RLS/bucket-permission edge cases on a fresh bucket.
 export async function POST(req: NextRequest) {
+  console.log("[UPLOAD_VOICE] received request");
+
   // Auth check
   const cookieStore = await cookies();
   const supabase = createServerClient(
@@ -21,47 +23,50 @@ export async function POST(req: NextRequest) {
   );
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) {
-    console.error("[upload/voice] Unauthorized — no user session");
+    console.error("[UPLOAD_VOICE] Unauthorized — no user session");
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
+  console.log("[UPLOAD_VOICE] auth ok user=" + user.id);
 
   let file: File | null = null;
   try {
     const form = await req.formData();
-    file = form.get("file") as File | null;
+    file = (form.get("audio") ?? form.get("file")) as File | null;
   } catch (formErr) {
-    console.error("[upload/voice] formData parse error:", formErr);
+    console.error("[UPLOAD_VOICE] formData parse error:", formErr);
     return Response.json({ error: "Invalid form data" }, { status: 400 });
   }
   if (!file) return Response.json({ error: "No file provided" }, { status: 400 });
 
   const buffer = Buffer.from(await file.arrayBuffer());
+  console.log("[UPLOAD_VOICE] formData parsed, size=", buffer.length);
   if (!buffer.length) {
-    console.error("[upload/voice] received 0-byte file");
+    console.error("[UPLOAD_VOICE] received 0-byte file");
     return Response.json({ error: "Empty audio file" }, { status: 400 });
   }
 
   // Store under renders/${userId}/voice/ — same bucket compose-video already uses
   const voicePath = `renders/${user.id}/voice/${Date.now()}.mp3`;
+  console.log("[UPLOAD_VOICE] uploading to renders bucket path=", voicePath);
 
-  console.log(`[upload/voice] uploading ${buffer.length}bytes → ${voicePath}`);
-
-  const { error: uploadErr } = await supabaseAdmin.storage
+  const uploadResult = await supabaseAdmin.storage
     .from("renders")
     .upload(voicePath, buffer, { contentType: "audio/mpeg", upsert: true });
 
-  if (uploadErr) {
-    console.error("[upload/voice] storage upload error:", uploadErr.message);
-    return Response.json({ error: uploadErr.message }, { status: 500 });
+  console.log("[UPLOAD_VOICE] upload result=", JSON.stringify({ error: uploadResult.error?.message ?? null, path: uploadResult.data?.path ?? null }));
+
+  if (uploadResult.error) {
+    console.error("[UPLOAD_VOICE] storage upload error:", uploadResult.error.message);
+    return Response.json({ error: uploadResult.error.message }, { status: 500 });
   }
 
   const { data: { publicUrl } } = supabaseAdmin.storage.from("renders").getPublicUrl(voicePath);
+  console.log("[UPLOAD_VOICE] returning url=", publicUrl?.substring(0, 100) ?? "EMPTY");
 
   if (!publicUrl) {
-    console.error("[upload/voice] getPublicUrl returned empty string");
+    console.error("[UPLOAD_VOICE] getPublicUrl returned empty string");
     return Response.json({ error: "Failed to get public URL" }, { status: 500 });
   }
 
-  console.log(`[upload/voice] done user=${user.id} url=${publicUrl.substring(0, 80)}`);
   return Response.json({ url: publicUrl });
 }
