@@ -61,8 +61,8 @@ export async function generateKlingClip(input: KlingWorkerInput): Promise<KlingW
   // ultra-draft always forces 5s clips; draft honours shot duration
   const duration  = input.speedMode === 'ultra-draft' ? "5" : clampDuration(input.durationSecs);
   const aspectRatio = (input.aspectRatio ?? "9:16") as "9:16" | "16:9" | "1:1";
-  // timeout: 150s draft (Kling v1.6 needs 120-150s), 240s balanced
-  const timeoutMs = isDraft ? 150_000 : 240_000;
+  // timeout: 250s (Kling v1.6 queue can be slow), 280s balanced — within Vercel 300s limit
+  const timeoutMs = isDraft ? 250_000 : 280_000;
 
   // Build enriched prompt from all memory sources
   const parts: string[] = [input.visualPrompt];
