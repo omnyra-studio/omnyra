@@ -23,7 +23,7 @@ import { isMultiCharacterScene, generateMultiCharacterClip } from "./multi-chara
 import { stitchClips }                  from "./clip-stitcher";
 import { loadCharacterMemory, buildKlingCharacterSuffix } from "@/lib/memory/character-memory";
 import { loadBrandMemory }              from "@/lib/memory/brand-memory";
-import { KLING_T2V_MODEL, KLING_T2V_PRO } from "@/lib/video-models";
+import { KLING_T2V_PRO } from "@/lib/video-models";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -147,16 +147,18 @@ async function processAvatarShot(
   voiceId:           string | null,
   correlationId:     string,
   speedMode:         string = 'balanced',
+  maxDurationSecs?:  number,
 ): Promise<ClipResult> {
   const startMs = Date.now();
 
   // Step 1: ElevenLabs TTS — HARD-CAP narration length before calling TTS.
   // Hedra generation time is proportional to audio length.
-  // 22 words ≈ 8-9s audio ≈ 60-90s Hedra; 80+ words = 15+ minutes.
+  // Prefer router-supplied maxDurationSecs → derive word cap (≈2.5 words/sec).
   const rawNarration = shot.audio_intent.trim();
   if (!rawNarration) throw new Error(`Avatar shot ${shot.id}: no narration text`);
 
-  const maxWords   = speedMode === 'ultra-draft' ? 18 : speedMode === 'draft' ? 22 : 35;
+  const wordsFromDuration = maxDurationSecs ? Math.floor(maxDurationSecs * 2.5) : null;
+  const maxWords   = wordsFromDuration ?? (speedMode === 'ultra-draft' ? 18 : speedMode === 'draft' ? 22 : 35);
   const allWords   = rawNarration.split(/\s+/).filter(Boolean);
   const wordCount  = allWords.length;
   let narrationText: string;
@@ -337,6 +339,7 @@ export async function runParallelEngine(
     return routeShot(s, {
       characterHasImage: !!charImageUrl,
       draftMode,
+      speedMode,
       isMultiCharacter: multiChar,
     });
   });
@@ -391,11 +394,11 @@ export async function runParallelEngine(
     if (!charImageUrl) { failedShots.push(shot.id); return Promise.resolve(null); }
     const resolvedVoiceId = avatarVoiceId || voiceId || "EXAVITQu4vr4xnSDxMaO";
     console.info(`[TTS_VOICE] shot=${shot.id} voice=${resolvedVoiceId} source=${avatarVoiceId ? "charMemory" : voiceId ? "input" : "default"}`);
-    return processAvatarShot(shot, charImageUrl, resolvedVoiceId, planId, speedMode)
+    const avatarRoute = routes[shotRows.indexOf(shot)];
+    return processAvatarShot(shot, charImageUrl, resolvedVoiceId, planId, speedMode, avatarRoute.maxDurationSecs)
       .catch(async (err: Error) => {
         console.warn(`[parallel-engine] hedra shot=${shot.id} failed (${err.message}) — falling back to Kling`);
-        const route = routes[shotRows.indexOf(shot)];
-        const fallbackRoute: ShotRoute = { ...route, provider: "kling", klingModelId: KLING_T2V_MODEL, reason: "hedra-timeout-fallback" };
+        const fallbackRoute: ShotRoute = { ...avatarRoute, provider: "kling", klingModelId: KLING_T2V_PRO, reason: "hedra-timeout-fallback" };
         return processKlingShot(shot, fallbackRoute, charSuffix, brandSuffix, planId, speedMode)
           .catch(klingErr => {
             console.error(`[parallel-engine] kling fallback also failed shot=${shot.id}:`, klingErr);
@@ -445,7 +448,7 @@ export async function runParallelEngine(
   ].sort((a, b) => a.shotNumber - b.shotNumber);
 
   // 6. Persist (non-blocking)
-  const klingModel = draftMode ? KLING_T2V_MODEL : KLING_T2V_PRO;
+  const klingModel = KLING_T2V_PRO;
   void Promise.all(allClips.map(clip =>
     Promise.all([
       persistClipResult(clip),

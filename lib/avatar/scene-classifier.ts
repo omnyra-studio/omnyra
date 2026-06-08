@@ -20,6 +20,7 @@ const TALKING_HEAD_SIGNALS = [
   "talking", "speaking", "interview", "portrait", "face", "lip sync",
   "lipsync", "voiceover", "narration", "presenter", "host", "anchor",
   "monologue", "direct address", "static background", "headshot",
+  "says", "looking at camera", "direct to camera", "addresses camera",
 ];
 
 const CINEMATIC_SIGNALS = [
