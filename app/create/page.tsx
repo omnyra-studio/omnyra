@@ -281,7 +281,7 @@ function CreatePageInner() {
   const [clipsReady, setClipsReady] = useState(false);
   const [pendingClipUrls, setPendingClipUrls] = useState<string[]>([]);
   const [pendingClipDuration, setPendingClipDuration] = useState(10);
-  const [pendingScriptForVoice, setPendingScriptForVoice] = useState('');
+  const [pendingScript, setPendingScript] = useState('');
 
   // Character registry
   const [characters, setCharacters] = useState<Array<{ id: string; name: string; ref_frame_url: string | null }>>([]);
@@ -1092,73 +1092,83 @@ function CreatePageInner() {
   }
 
   async function handleComposeWithVoice() {
-    if (!pendingClipUrls.length) return;
     const voiceId = selectedVoiceId || userVoice?.voice_id;
+    if (!voiceId) { setError('Please select a voice'); return; }
+    if (!pendingClipUrls.length) return;
+
+    // Try every script source in priority order, pick first with >30 words
+    const scriptSources = [
+      generatedScriptRef.current,
+      generatedScript,
+      pendingScript,
+      briefResponse?.versions[selectedVersion]?.script,
+    ].filter((s): s is string => !!s?.trim());
+
+    console.log('[PHASE2_SCRIPTS]', scriptSources.map((s, i) => ({ i, words: s.split(' ').length, preview: s.substring(0, 50) })));
+
+    const scriptToSpeak = scriptSources.find(s => s.split(' ').length > 30) ?? scriptSources[0];
+
+    if (!scriptToSpeak) {
+      setError('No script found — please generate a script first');
+      return;
+    }
+
+    console.log('[PHASE2_SCRIPT_CHOSEN]', scriptToSpeak.split(' ').length, 'words');
 
     setIsGeneratingVideo(true);
     setVideoProgress(55);
+    setIsGeneratingVoice(true);
     try {
-      let resolvedVoiceUrl: string | null = null;
+      // TTS — full script, no truncation
+      const ttsRes = await fetch('/api/test-voice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: scriptToSpeak, voice_id: voiceId, full: true }),
+      });
+      if (!ttsRes.ok) throw new Error('TTS failed: ' + ttsRes.status);
+      const ttsBlob = await ttsRes.blob();
+      console.log('[PHASE2_TTS_BLOB]', ttsBlob.size, 'bytes — expected >100000 for 30s audio');
+      setIsGeneratingVoice(false);
 
-      if (voiceId && pendingScriptForVoice) {
-        setIsGeneratingVoice(true);
-        try {
-          console.log('[COMPOSE_P2_TTS] voice_id=' + voiceId + ' chars=' + pendingScriptForVoice.length);
-          const ttsRes = await fetch('/api/test-voice', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: pendingScriptForVoice, voice_id: voiceId, full: true }),
-          });
-          if (!ttsRes.ok) throw new Error('TTS failed: HTTP ' + ttsRes.status);
-          const ttsBlob = await ttsRes.blob();
-          console.log('[COMPOSE_P2_TTS]', ttsBlob.size, 'bytes');
-          const voiceForm = new FormData();
-          voiceForm.append('audio', ttsBlob, 'voice.mp3');
-          voiceForm.append('userId', userId ?? '');
-          const uploadRes = await fetch('/api/upload/voice', { method: 'POST', body: voiceForm });
-          const uploadJson = await uploadRes.json() as { url?: string; error?: string };
-          if (!uploadRes.ok || !uploadJson.url) throw new Error('Voice upload failed: ' + JSON.stringify(uploadJson));
-          resolvedVoiceUrl = uploadJson.url;
-          console.log('[COMPOSE_P2_VOICE_READY]', resolvedVoiceUrl);
-          setVoiceAudioUrl(resolvedVoiceUrl);
-        } finally {
-          setIsGeneratingVoice(false);
-        }
-      }
+      // Upload
+      const voiceForm = new FormData();
+      voiceForm.append('audio', ttsBlob, 'voice.mp3');
+      voiceForm.append('userId', userId ?? '');
+      const uploadRes = await fetch('/api/upload/voice', { method: 'POST', body: voiceForm });
+      const uploadJson = await uploadRes.json() as { url?: string; error?: string };
+      console.log('[PHASE2_VOICE_URL]', uploadJson.url);
+      if (!uploadJson.url) throw new Error('Voice upload failed: ' + JSON.stringify(uploadJson));
+      setVoiceAudioUrl(uploadJson.url);
 
       setVideoProgress(80);
-      const composePayload = {
-        clipUrls:     pendingClipUrls,
-        clipDuration: pendingClipDuration,
-        voiceoverUrl: resolvedVoiceUrl ?? undefined,
-      };
-      console.log('[COMPOSE_P2_COMPOSE]', JSON.stringify(composePayload).substring(0, 200));
 
+      // Compose
       const composeRes = await fetch('/api/compose-video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(composePayload),
+        body: JSON.stringify({
+          clipUrls:     pendingClipUrls,
+          clipDuration: pendingClipDuration,
+          voiceoverUrl: uploadJson.url,
+          mode:         'cinematic',
+        }),
       });
+      const composeData = await composeRes.json() as { video_url?: string; has_audio?: boolean; error?: string };
+      console.log('[PHASE2_COMPOSE_DONE]', composeData);
+      if (!composeRes.ok) throw new Error(composeData.error ?? `Compose failed (${composeRes.status})`);
 
-      const voiceoverSent = !!resolvedVoiceUrl;
-      if (composeRes.ok) {
-        const composeData = await composeRes.json();
-        const finalUrl = composeData.video_url ?? pendingClipUrls[0];
-        setVideoUrl(finalUrl);
-        if (voiceoverSent && composeData.has_audio) setMergedVideoUrl(finalUrl);
-        setClipsReady(false);
-        setPendingClipUrls([]);
-        setVideoProgress(100);
-      } else {
-        let msg = `Video assembly failed (HTTP ${composeRes.status})`;
-        try { const e = await composeRes.json() as { error?: string }; if (e.error) msg = `Video assembly failed: ${e.error}`; } catch { /* noop */ }
-        throw new Error(msg);
-      }
+      const finalUrl = composeData.video_url ?? pendingClipUrls[0];
+      setVideoUrl(finalUrl);
+      if (composeData.has_audio) setMergedVideoUrl(finalUrl);
+      setClipsReady(false);
+      setPendingClipUrls([]);
+      setVideoProgress(100);
     } catch (err) {
       console.error('[compose-with-voice] error:', err);
       setError(err instanceof Error ? err.message : 'Composition failed');
     } finally {
       setIsGeneratingVideo(false);
+      setIsGeneratingVoice(false);
     }
   }
 
@@ -1311,7 +1321,7 @@ function CreatePageInner() {
         // Clips ready — hand off to Phase 2 (voice picker → compose)
         setPendingClipUrls(seqData.clip_urls);
         setPendingClipDuration(seqData.clip_duration ?? CLIP_SECONDS);
-        setPendingScriptForVoice(scriptText);
+        setPendingScript(generatedScriptRef.current || scriptText || v.script || '');
         setClipsReady(true);
         setVideoProgress(100);
       } catch (err) {
