@@ -30,10 +30,10 @@ export async function POST(req: Request) {
 
   const ttsText = full ? text.trim() : text.trim().substring(0, 200);
   const voiceSettings = full
-    ? { stability: 0.75, similarity_boost: 0.75, style: 0.0, use_speaker_boost: true }
+    ? { stability: 0.75, similarity_boost: 0.85, style: 0.0, use_speaker_boost: true }
     : { stability: 0.35, similarity_boost: 0.75, style: 0.65, use_speaker_boost: true, speed: 1.08 };
 
-  console.log(`[test-voice] full=${full} chars=${ttsText.length} voice_id=${voice_id}`);
+  console.log(`[TEST_VOICE_MODE] full=${full} textLength=${text.length} truncated=${!full && text.length > 200}`);
 
   try {
     const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice_id}`, {
@@ -45,7 +45,7 @@ export async function POST(req: Request) {
       },
       body: JSON.stringify({
         text: ttsText,
-        model_id: "eleven_turbo_v2",
+        model_id: "eleven_turbo_v2_5",
         voice_settings: voiceSettings,
       }),
     });
