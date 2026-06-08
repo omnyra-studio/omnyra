@@ -14,8 +14,8 @@ import type { CharacterMemory } from "@/lib/memory/character-memory";
 
 // ── Detection ─────────────────────────────────────────────────────────────────
 
-const COUPLE_RE = /\b(couple|two people|both of them|together|partner|dancing with|walking with|holding hands|hand in hand|each other|lovers|husband|wife|boyfriend|girlfriend|fiancee?|spouse|relationship|romance|romantic)\b/i;
-const DUAL_KEYWORDS = /\b(her|his\s+arm|dance|kissing|embrace|hug|they\s+walk|they\s+stand|beside\s+her|next\s+to\s+her)\b/i;
+const COUPLE_RE = /\b(couple|two people|both of them|together|partner|dancing with|walking with|holding hands|hand in hand|each other|lovers|husband|wife|boyfriend|girlfriend|fiancee?|spouse|relationship|romance|romantic|he and she|man and woman|dance with her|took her hand|they swayed|beside each other|next to each other)\b/i;
+const DUAL_KEYWORDS = /\b(her hand|his arm|dance|kissing|embrace|hug|they\s+walk|they\s+stand|beside\s+her|next\s+to\s+her|swayed together|walked together)\b/i;
 
 export function isMultiCharacterScene(visualPrompt: string): boolean {
   return COUPLE_RE.test(visualPrompt) || DUAL_KEYWORDS.test(visualPrompt);
@@ -48,6 +48,12 @@ export interface MultiCharacterResult {
 // Injects both character descriptions into a visual prompt so every generation
 // tool (Kling t2v, Kling i2v, Flux) anchors on both people explicitly.
 
+// Anatomy/quality negative — appended to every multi-character Kling/Flux call
+export const MULTI_CHAR_NEGATIVE =
+  "extra limbs, missing limbs, fused bodies, merged figures, wrong gender, extra person, three people, " +
+  "deformed hands, bad anatomy, blurry, low quality, solo person, only one person, single figure, " +
+  "cropped person, cut off character, missing face, faceless";
+
 export function buildCoupleScenePrompt(
   sceneDescription: string,
   char1:            CharacterMemory,
@@ -56,7 +62,14 @@ export function buildCoupleScenePrompt(
   const char1Desc = [char1.core_prompt, char1.visual_signature].filter(Boolean).join(", ");
   const char2Desc = [char2.core_prompt, char2.visual_signature].filter(Boolean).join(", ");
 
-  return `Generate a romantic couple scene with BOTH characters clearly visible: ${sceneDescription}. Man: ${char1Desc}. Woman: ${char2Desc}. Action: ${sceneDescription}. Rules: BOTH people must be in frame and interacting, show their faces and bodies clearly, romantic dancing or holding hands or embracing. Negative: solo man, only one person, missing woman, single figure.`;
+  return (
+    `TWO distinct people, clearly separate individuals, both fully visible in frame. ` +
+    `Person 1: ${char1Desc}, standing next to Person 2: ${char2Desc}. ` +
+    `Scene: ${sceneDescription}. ` +
+    `Show BOTH faces clearly, side-by-side, no merging, distinct individuals, full bodies visible. ` +
+    `Cinematic golden hour lighting, highly detailed faces and hands, anatomically correct, perfect proportions. ` +
+    `${char1.ref_frame_url ? "Exact match to reference image." : ""}`
+  ).trim();
 }
 
 // ── Composite image via Flux ──────────────────────────────────────────────────
@@ -66,24 +79,29 @@ async function generateCompositeImage(
   char2:        CharacterMemory,
   sceneContext: string,
 ): Promise<string> {
+  const char1Desc = [char1.core_prompt, char1.visual_signature].filter(Boolean).join(", ");
+  const char2Desc = [char2.core_prompt, char2.visual_signature].filter(Boolean).join(", ");
+
   const compositePrompt = [
-    `Two people together in one cinematic scene: ${sceneContext}.`,
-    `Person 1: ${char1.core_prompt}${char1.visual_signature ? ", " + char1.visual_signature : ""}.`,
-    `Person 2: ${char2.core_prompt}${char2.visual_signature ? ", " + char2.visual_signature : ""}.`,
-    "Both clearly visible in frame, side by side, photorealistic, cinematic lighting, high quality, 9:16 aspect ratio.",
+    `Two distinct people standing side by side in one cinematic frame: ${sceneContext}.`,
+    `Person 1 (left): ${char1Desc}.`,
+    `Person 2 (right): ${char2Desc}.`,
+    "Both faces fully visible, no merging, clear separation between bodies, photorealistic, cinematic golden hour lighting, 9:16 vertical aspect ratio, high detail.",
   ].join(" ");
 
-  const result = await fal.subscribe("fal-ai/flux/schnell", {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const result = await (fal.subscribe as any)("fal-ai/flux/schnell", {
     input: {
-      prompt:               compositePrompt,
-      num_images:           1,
-      image_size:           "portrait_4_3",
-      num_inference_steps:  4,
+      prompt:              compositePrompt,
+      num_images:          1,
+      image_size:          "portrait_4_3",
+      num_inference_steps: 8,
     },
   }) as { images?: Array<{ url: string }> };
 
   const url = result?.images?.[0]?.url;
   if (!url) throw new Error("[multi-character] Flux composite image failed — no URL returned");
+  console.info("[multi-character] composite image generated", { url: url.slice(0, 60) });
   return url;
 }
 
@@ -107,11 +125,10 @@ export async function generateMultiCharacterClip(
   const baseCouplePrompt = buildCoupleScenePrompt(input.visualPrompt, input.char1, input.char2);
   const prompt = input.brandSuffix ? `${baseCouplePrompt}, ${input.brandSuffix}` : baseCouplePrompt;
 
-  // Strong negative prompt — prevent Kling from dropping one character
   const negParts = [
     input.char1.neg_prompt,
     input.char2.neg_prompt,
-    "solo person, only man, only woman, missing person, single figure, one person only, cropped person, cut off character",
+    MULTI_CHAR_NEGATIVE,
   ].filter(Boolean);
   const negative_prompt = negParts.join(", ");
 
