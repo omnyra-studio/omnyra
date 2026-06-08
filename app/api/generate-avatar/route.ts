@@ -85,7 +85,7 @@ export async function POST(req: Request) {
     : "starter";
   const input = {
     script:            script.trim(),
-    voice_id:          voice_id || null,
+    voice_id:          voice_id || "EXAVITQu4vr4xnSDxMaO",
     image_url:         resolvedImage,
     avatar_image_url:  avatar_image_url?.startsWith("https://") ? avatar_image_url : undefined,
     plan:              validPlan,

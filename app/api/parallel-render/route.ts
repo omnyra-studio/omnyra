@@ -62,9 +62,12 @@ export async function POST(request: Request) {
     targetDurationSecs = 30,
     skipStitch = false,
     fullScript,
-    voiceId = "EXAVITQu4vr4xnSDxMaO",  // Bella — hard default if caller omits voiceId
+    voiceId,  // resolved below — null from body must not bypass the default
     maxClips = 3,
   } = body;
+
+  // Null from body bypasses destructuring defaults — resolve here
+  const safeVoiceId = voiceId ?? "EXAVITQu4vr4xnSDxMaO";
 
   // Propagation check — log exactly what arrived so truncation is traceable
   console.info("[parallel-render] received", {
@@ -122,7 +125,7 @@ export async function POST(request: Request) {
     targetDurationSecs,
     skipStitch,
     fullScript:          fullScript  ?? undefined,
-    voiceId:             voiceId     ?? undefined,
+    voiceId:             safeVoiceId,
     maxClips,
   }).catch(err => {
     console.error("[parallel-render] engine error:", err);

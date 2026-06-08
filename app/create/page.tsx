@@ -916,8 +916,15 @@ function CreatePageInner() {
 
     try {
       const script = briefResponse.versions[selectedVersion].script;
-      const avatarVoiceId = selectedVoiceId || userVoice?.voice_id || null;
-      console.log('[AVATAR_VOICE]', { selectedVoiceId, userVoiceId: userVoice?.voice_id, payload_voice_id: avatarVoiceId });
+      const avatarVoiceId = selectedVoiceId || userVoice?.voice_id || "EXAVITQu4vr4xnSDxMaO";
+      console.log('[AVATAR_SUBMIT]', { selectedVoiceId, userVoiceId: userVoice?.voice_id, payloadVoiceId: avatarVoiceId });
+
+      if (!selectedVoiceId && !userVoice?.voice_id) {
+        setError('Please select a voice before generating your avatar video.');
+        setIsGeneratingVideo(false);
+        return;
+      }
+
       const res = await fetch('/api/generate-avatar', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

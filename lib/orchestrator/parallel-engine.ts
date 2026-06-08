@@ -288,8 +288,9 @@ export async function runParallelEngine(
     planId, userId,
     targetDurationSecs = 30,
     skipStitch = false,
-    fullScript, voiceId,
+    fullScript,
   } = input;
+  const voiceId = input.voiceId ?? "EXAVITQu4vr4xnSDxMaO";
 
   // ultra-draft forces draftMode + hard-caps at 2 clips
   const speedMode  = input.speedMode ?? (input.draftMode ? 'draft' : 'balanced');
@@ -392,8 +393,9 @@ export async function runParallelEngine(
 
   const avatarPromises = avatarShots.map(shot => {
     if (!charImageUrl) { failedShots.push(shot.id); return Promise.resolve(null); }
-    const resolvedVoiceId = avatarVoiceId || voiceId || "EXAVITQu4vr4xnSDxMaO";
-    console.info(`[TTS_VOICE] shot=${shot.id} voice=${resolvedVoiceId} source=${avatarVoiceId ? "charMemory" : voiceId ? "input" : "default"}`);
+    const resolvedVoiceId = (avatarVoiceId || voiceId || "EXAVITQu4vr4xnSDxMaO") as string;
+    const voiceSource = avatarVoiceId ? "charMemory" : input.voiceId ? "input" : "default_bella";
+    console.info(`[VOICE_ID_FINAL] voice=${resolvedVoiceId} source=${voiceSource} shot=${shot.id}`);
     const avatarRoute = routes[shotRows.indexOf(shot)];
     return processAvatarShot(shot, charImageUrl, resolvedVoiceId, planId, speedMode, avatarRoute.maxDurationSecs)
       .catch(async (err: Error) => {

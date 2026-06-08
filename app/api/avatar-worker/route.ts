@@ -180,15 +180,10 @@ async function executeTtsStage(
   origin: string,
   log: (msg: string) => void,
 ): Promise<void> {
-  const voiceId = job.input.voice_id;
-  log(`[TTS_VOICE] voice_id=${voiceId ?? "null"} source=${voiceId === job.input.voice_id ? "job_input" : "fallback"}`);
-  if (!voiceId) {
-    const msg = "voice_id missing — user must select a voice before generating avatar";
-    log(`[TTS_VOICE] ERROR: ${msg}`);
-    await failLedgerEntry(job.id, "tts", workerId, msg);
-    await recordStageFailure(job.id, workerId, "tts", msg, job.retry_count_per_stage ?? {});
-    return;
-  }
+  const BELLA = "EXAVITQu4vr4xnSDxMaO";
+  const voiceId = job.input.voice_id ?? BELLA;
+  const voiceSource = job.input.voice_id ? "job_input" : "default_bella";
+  log(`[VOICE_ID_FINAL] voice_id=${voiceId} source=${voiceSource} job=${job.id}`);
   const dagNode = getDagNode("tts");
   const reqHash = ttsRequestHash(voiceId, job.input.script);
 
