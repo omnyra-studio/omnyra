@@ -281,7 +281,8 @@ export async function runParallelEngine(
 ): Promise<ParallelEngineResult> {
   const {
     planId, userId,
-    targetDurationSecs, skipStitch = false,
+    targetDurationSecs = 30,
+    skipStitch = false,
     fullScript, voiceId,
   } = input;
 
@@ -460,7 +461,6 @@ export async function runParallelEngine(
 
   // 7. Optional stitch into a single video
   let assembledUrl: string | undefined;
-  console.info("[parallel-engine] stitch-gate", { skipStitch, clips: allClips.length, targetDurationSecs, willStitch: !skipStitch && allClips.length > 0 && (targetDurationSecs ?? 0) > 0 });
   if (!skipStitch && allClips.length > 0 && (targetDurationSecs ?? 0) > 0) {
     try {
       const stitch = await stitchClips(allClips, {
