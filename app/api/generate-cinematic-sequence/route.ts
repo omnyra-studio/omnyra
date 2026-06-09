@@ -138,20 +138,20 @@ async function generateKlingClip(
   duration: "5" | "10",
   label: string,
   clipReports: string[],
+  negativePrompt?: string,
 ): Promise<string | null> {
   const hasImage = typeof imageUrl === "string" && imageUrl.startsWith("https://");
 
   if (hasImage) {
-    const i2vInput = { prompt, image_url: imageUrl, duration, aspect_ratio: "9:16", generate_audio: false };
+    const i2vInput: Record<string, unknown> = { prompt, image_url: imageUrl, duration, aspect_ratio: "9:16", generate_audio: false };
+    if (negativePrompt) i2vInput.negative_prompt = negativePrompt;
     try {
-       
       const result = await (fal as any).subscribe(KLING_I2V_MODEL, { input: i2vInput, logs: false, pollInterval: 4000 });
       const url = extractVideoUrl(result);
       if (!url) throw new Error("no video URL from i2v");
       clipReports.push(`${label} | ${KLING_I2V_MODEL} | OK | ${url.substring(0, 80)}`);
       return url;
     } catch (err) {
-       
       const e = err as any;
       clipReports.push(`${label} | ${KLING_I2V_MODEL} | FAIL | ${e?.message ?? String(err)}`);
       console.warn(`${label} i2v FAILED — falling back to t2v`);
@@ -159,16 +159,15 @@ async function generateKlingClip(
   }
 
   // text-to-video fallback
-  const t2vInput = { prompt, duration, aspect_ratio: "9:16", generate_audio: false };
+  const t2vInput: Record<string, unknown> = { prompt, duration, aspect_ratio: "9:16", generate_audio: false };
+  if (negativePrompt) t2vInput.negative_prompt = negativePrompt;
   try {
-     
     const result = await (fal as any).subscribe(KLING_T2V_MODEL, { input: t2vInput, logs: false, pollInterval: 4000 });
     const url = extractVideoUrl(result);
     if (!url) throw new Error("no video URL from t2v");
     clipReports.push(`${label} | ${KLING_T2V_MODEL} | OK | ${url.substring(0, 80)}`);
     return url;
   } catch (err) {
-     
     const e = err as any;
     const detail = `${e?.message ?? String(err)}`;
     clipReports.push(`${label} | ${KLING_T2V_MODEL} | FAIL | ${detail}`);
@@ -247,19 +246,20 @@ function downgradeProvider(p: ProviderTier): ProviderTier {
 }
 
 async function executeClip(
-  prompt:      string,
-  imageUrl:    string | null,
-  duration:    "5" | "10",
-  provider:    ProviderTier,
-  sceneType:   string,
-  index:       number,
-  userId:      string,
-  rawSeconds:  number,
-  sourceImages: Array<string | null>,
-  clipReports: string[],
-  budgetMs:    number,
-  label:       string,
-  isCouple:    boolean,
+  prompt:         string,
+  imageUrl:       string | null,
+  duration:       "5" | "10",
+  provider:       ProviderTier,
+  sceneType:      string,
+  index:          number,
+  userId:         string,
+  rawSeconds:     number,
+  sourceImages:   Array<string | null>,
+  clipReports:    string[],
+  budgetMs:       number,
+  label:          string,
+  isCouple:       boolean,
+  negativePrompt?: string,
 ): Promise<string> {
   const render = async (p: ProviderTier): Promise<string | null> => {
     if (p === "smart_motion") {
@@ -267,7 +267,7 @@ async function executeClip(
         prompt, imageUrl, sceneType, index, userId, label, clipReports, rawSeconds, sourceImages, isCouple,
       );
     }
-    return generateKlingClip(prompt, imageUrl, duration, label, clipReports);
+    return generateKlingClip(prompt, imageUrl, duration, label, clipReports, negativePrompt);
   };
 
   const fallback    = downgradeProvider(provider);
@@ -562,24 +562,63 @@ export async function POST(req: Request) {
           console.warn("[CONTINUITY] bible extraction failed (non-fatal):", err instanceof Error ? err.message : err);
         }
 
-        // Inject cinematic lighting cues for emotional/outdoor scenes
-        const _combinedCtx = `${goal ?? ""} ${script ?? ""}`.toLowerCase();
-        const _isEmotional = /\b(beach|sunset|golden|tear|sad|cry|emotion|danc|shore|ocean|wave|romantic|intimate|dusk|twilight)\b/.test(_combinedCtx);
-        if (_isEmotional) {
-          enforcedPrompts = enforcedPrompts.map((p, i) => {
-            const pLow   = p.toLowerCase();
-            const isBeach = /\b(beach|shore|ocean|sand|wave|water|sea)\b/.test(pLow);
-            const isSad   = /\b(sad|cry|tear|lonely|ache|pain|grief)\b/.test(pLow);
-            const isDance = /\b(danc|sway|spin|twirl|embrac|hold|pull)\b/.test(pLow);
-            const lighting = isBeach
-              ? "golden hour lighting, warm backlighting, soft rim light on hair and shoulders, wet sand reflections, atmospheric ocean haze, warm sky gradient, cinematic anamorphic lens"
-              : "soft cinematic lighting, warm key light, gentle fill light, emotional mood lighting, shallow depth of field";
-            const mood = isSad ? "emotional vulnerability, quiet melancholy" : isDance ? "tender intimate moment, gentle joy through tears" : "authentic emotional moment";
-            console.log(`[CINEMATIC_LIGHTING] scene=${i + 1} beach=${isBeach} sad=${isSad} dance=${isDance}`);
-            return `${p}, ${lighting}, ${mood}`;
-          });
-          console.log(`[CINEMATIC_LIGHTING] enhanced ${enforcedPrompts.length} scene(s)`);
-        }
+        // Cinematic lighting + emotional arc injection
+        const _combinedCtx  = `${goal ?? ""} ${script ?? ""}`.toLowerCase();
+        const _isEmotional  = /\b(beach|sunset|golden|tear|sad|cry|emotion|danc|shore|ocean|wave|romantic|intimate|dusk|twilight)\b/.test(_combinedCtx);
+        const _isCoupleCtx  = COUPLE_RE.test(goal ?? "") || COUPLE_RE.test(script ?? "");
+        const _total        = enforcedPrompts.length;
+
+        // Always add front-facing camera rule + match exact emotional tone from script
+        enforcedPrompts = enforcedPrompts.map((p, i) => {
+          const pLow    = p.toLowerCase();
+          const isBeach = /\b(beach|shore|ocean|sand|wave|water|sea)\b/.test(pLow);
+          const isSad   = /\b(sad|cry|tear|lonely|ache|pain|grief)\b/.test(pLow);
+          const isDance = /\b(danc|sway|spin|twirl|embrac|hold|pull)\b/.test(pLow);
+
+          // Camera direction: front-facing unless scene explicitly requests a rear shot
+          const cameraRule = "subjects facing camera, front-facing, faces clearly visible";
+          const facingNote = _isCoupleCtx ? ", man facing toward woman, correct orientation, proper eye line, both faces visible" : `, ${cameraRule}`;
+
+          if (!_isEmotional) {
+            console.log(`[PROMPT_ARC] scene=${i + 1} no emotional arc detected — camera rule only`);
+            return `${p}${facingNote}`;
+          }
+
+          // Lighting
+          const lighting = isBeach
+            ? "golden hour lighting, warm backlighting, soft rim light on hair and shoulders, wet sand reflections, atmospheric ocean haze, warm sky gradient, cinematic anamorphic lens"
+            : "soft cinematic lighting, warm key light, gentle fill light, emotional mood lighting, shallow depth of field";
+
+          // Position-based emotional arc: 0=sad/opening, 0.5=transition/noticing, 1=comfort/resolution
+          const pos = _total > 1 ? i / (_total - 1) : 0;
+          let arcBeat: string;
+          if (pos <= 0.33) {
+            arcBeat = isSad
+              ? "woman walking alone, visible tear on cheek, head slightly down, quiet sadness and vulnerability, no smiling yet"
+              : "opening emotional beat, quiet introspective moment, subdued expression, no smiling yet";
+          } else if (pos <= 0.66) {
+            arcBeat = "man gently approaching from the side, turning to face her, opening arms, beginning to pull her close, transition moment";
+          } else {
+            arcBeat = isDance
+              ? "tender slow dance in shallow water, woman softening, gentle smile through remaining tears, intimate comfort and connection"
+              : "resolution moment, woman leaning into him, soft smile through tears, warmth and relief replacing sadness";
+          }
+
+          console.log(`[PROMPT_ARC] scene=${i + 1}/${_total} pos=${pos.toFixed(2)} beach=${isBeach} arc="${arcBeat.substring(0, 60)}"`);
+          return `${p}, ${lighting}, ${arcBeat}${facingNote}`;
+        });
+        console.log(`[PROMPT_ARC] enhanced ${_total} scene(s) emotional=${_isEmotional} couple=${_isCoupleCtx}`);
+
+        // Per-scene negative prompts — suppress wrong tone in early scenes
+        const _negBase     = "stock photo pose, studio lighting, CGI, airbrushed, oversaturated, man facing backward, subject facing away from camera, back to camera";
+        const _negEmotional = _isEmotional
+          ? "premature smiling, overly joyful expression too early, laughing out loud, wrong orientation, generic romance without sadness"
+          : "";
+        const sceneNegativePrompts: string[] = enforcedPrompts.map((_, i) => {
+          const pos     = _total > 1 ? i / (_total - 1) : 0;
+          const sadGuard = (_isEmotional && pos <= 0.33) ? "smiling, happy expression, teeth showing, joyful face, laughing" : "";
+          return [_negBase, _negEmotional, sadGuard].filter(Boolean).join(", ");
+        });
 
         const sourceImages: Array<string | null> = new Array(prompts.length).fill(null);
         const clipReports: string[] = [];
@@ -605,7 +644,7 @@ export async function POST(req: Request) {
             const url = await executeClip(
               prompt, imageUrl ?? null, duration, provider,
               sceneType, i, user.id, rawSeconds, sourceImages, clipReports,
-              clipBudget, label, isCouple,
+              clipBudget, label, isCouple, sceneNegativePrompts[i],
             );
 
             const elapsed = Date.now() - clipT0;
