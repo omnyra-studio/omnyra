@@ -1247,12 +1247,16 @@ function CreatePageInner() {
 
         // ── PHASE 1: Generate clips only — voice picker shown after ───────────
         const scriptText = scriptForCinematic;
-        const TARGET_SCENE_SECONDS = userTier === 'studio' ? 60 : 30;
         const CLIP_SECONDS = 10;
-        const clipCount = Math.max(3, Math.ceil(TARGET_SCENE_SECONDS / CLIP_SECONDS));
+        // Derive clip count from estimated voice duration so clips fill the audio.
+        // Voice hasn't been generated yet, so estimate from word count (2.3 words/sec).
+        const _scriptWords       = scriptText.trim().split(/\s+/).filter(Boolean).length;
+        const estimatedVoiceSec  = Math.ceil(_scriptWords / 2.3);
+        const maxClipsForTier    = userTier === 'studio' ? 12 : 6;
+        const clipCount          = Math.max(3, Math.min(maxClipsForTier, Math.ceil(estimatedVoiceSec / CLIP_SECONDS)));
 
+        console.log('[CLIP_COUNT]', { wordCount: _scriptWords, estimatedVoiceSec, clipCount, tier: userTier });
         console.log('[CINEMATIC_STEP1_SCRIPT]', scriptText.length, 'chars', scriptText.substring(0, 80));
-        console.log('[CINEMATIC_STEP1_CLIPS] starting clipCount=' + clipCount);
 
         type SeqData = {
           stitched_url?: string; stitch_source?: string; clip_urls?: string[];

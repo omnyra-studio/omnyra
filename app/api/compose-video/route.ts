@@ -472,13 +472,17 @@ export async function POST(request: Request) {
           ffmpeg()
             .input(finalVideoPath)
             .input(audioPath)
-            .outputOptions(["-c:v", "copy", "-c:a", "aac", "-map", "0:v:0", "-map", "1:a:0"])
+            // -shortest: stop at the shorter of video/audio so audio never outlasts motion.
+            // Clip count fix (word-count based) ensures video ~= voice in normal cases.
+            .outputOptions(["-c:v", "copy", "-c:a", "aac", "-map", "0:v:0", "-map", "1:a:0", "-shortest"])
             .output(outputPath)
             .on("stderr", (line: string) => console.log("[PHASE4:local:merge:stderr]", line))
             .on("end", () => resolve())
             .on("error", (err: Error) => reject(new Error(`FFmpeg audio merge failed: ${err.message}`)))
             .run();
         });
+
+        console.info(`[DURATION_FINAL] voice=${ttsDurationSec.toFixed(1)}s video=${sumInputSec.toFixed(1)}s output=${Math.min(ttsDurationSec, sumInputSec).toFixed(1)}s clips=${clipUrls.length}`);
 
         if (!existsSync(outputPath)) {
           throw new Error("FFmpeg audio merge completed but produced no output file");

@@ -439,6 +439,13 @@ export async function POST(req: Request) {
     return Response.json({ error: "prompts required" }, { status: 400 });
   }
 
+  // Inject creative brief into scene 1 — first scene MUST literally depict the brief
+  if (goal?.trim() && prompts.length > 0) {
+    const goalText = goal.trim().slice(0, 200);
+    prompts[0] = `${goalText}, ${prompts[0]}`;
+    console.log(`[BRIEF_INJECT] scene=1 prompt="${prompts[0].substring(0, 120)}"`);
+  }
+
   // ── Abuse protection (video-specific: cooldown + concurrent job limit) ────
   const videoAbuse = await checkAbuse({
     userId: user.id,
@@ -553,6 +560,25 @@ export async function POST(req: Request) {
           }
         } catch (err) {
           console.warn("[CONTINUITY] bible extraction failed (non-fatal):", err instanceof Error ? err.message : err);
+        }
+
+        // Inject cinematic lighting cues for emotional/outdoor scenes
+        const _combinedCtx = `${goal ?? ""} ${script ?? ""}`.toLowerCase();
+        const _isEmotional = /\b(beach|sunset|golden|tear|sad|cry|emotion|danc|shore|ocean|wave|romantic|intimate|dusk|twilight)\b/.test(_combinedCtx);
+        if (_isEmotional) {
+          enforcedPrompts = enforcedPrompts.map((p, i) => {
+            const pLow   = p.toLowerCase();
+            const isBeach = /\b(beach|shore|ocean|sand|wave|water|sea)\b/.test(pLow);
+            const isSad   = /\b(sad|cry|tear|lonely|ache|pain|grief)\b/.test(pLow);
+            const isDance = /\b(danc|sway|spin|twirl|embrac|hold|pull)\b/.test(pLow);
+            const lighting = isBeach
+              ? "golden hour lighting, warm backlighting, soft rim light on hair and shoulders, wet sand reflections, atmospheric ocean haze, warm sky gradient, cinematic anamorphic lens"
+              : "soft cinematic lighting, warm key light, gentle fill light, emotional mood lighting, shallow depth of field";
+            const mood = isSad ? "emotional vulnerability, quiet melancholy" : isDance ? "tender intimate moment, gentle joy through tears" : "authentic emotional moment";
+            console.log(`[CINEMATIC_LIGHTING] scene=${i + 1} beach=${isBeach} sad=${isSad} dance=${isDance}`);
+            return `${p}, ${lighting}, ${mood}`;
+          });
+          console.log(`[CINEMATIC_LIGHTING] enhanced ${enforcedPrompts.length} scene(s)`);
         }
 
         const sourceImages: Array<string | null> = new Array(prompts.length).fill(null);
