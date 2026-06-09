@@ -233,6 +233,7 @@ async function processKlingShot(
     characterPromptSuffix: charSuffix || undefined,
     brandSuffix:           brandSuffix || undefined,
     speedMode,
+    motionStrength:        route.motionStrength,
   });
   console.info(`[CLIP_TIMING] kling shot=${shot.id} num=${shot.shot_number} ms=${Date.now() - shotT0} model=${result.model_used}`);
 

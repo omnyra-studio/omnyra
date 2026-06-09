@@ -24,6 +24,7 @@ export interface KlingWorkerInput {
   brandSuffix?:  string;           // appended from brand memory
   imageUrl?:     string;           // reference image → auto-switches to i2v model
   speedMode?:    string;           // 'ultra-draft' | 'draft' | 'balanced' | 'quality'
+  motionStrength?: number;         // 0-1; maps to cfg_scale (inverse)
 }
 
 export interface KlingWorkerResult {
@@ -64,14 +65,26 @@ export async function generateKlingClip(input: KlingWorkerInput): Promise<KlingW
   // timeout: 250s (Kling v1.6 queue can be slow), 280s balanced — within Vercel 300s limit
   const timeoutMs = isDraft ? 250_000 : 280_000;
 
+  // ── Motion tuning ─────────────────────────────────────────────────────────────
+  // motionStrength (0-1) maps inversely to cfg_scale: high strength = lower cfg_scale = more motion
+  const ms       = input.motionStrength ?? 0.65;
+  const cfgScale = parseFloat((1.0 - ms).toFixed(2));  // 0.45→0.55, 0.55→0.45, 0.65→0.35, 0.75→0.25
+
+  const motionModifier   = ms >= 0.70 ? "dynamic fluid motion, high energy movement" : ms <= 0.52 ? "slow motion, gentle movement" : "";
+  const extraNegative    = ms >= 0.70 ? "" : "shaky, jittery, unstable";
+
+  console.info(`[MOTION_TUNE] shot=${input.shotId} motionStrength=${ms} cfg_scale=${cfgScale} modifier="${motionModifier}"`);
+
   // Build enriched prompt from all memory sources
   const parts: string[] = [input.visualPrompt];
+  if (motionModifier)              parts.push(motionModifier);
   if (input.characterPromptSuffix) parts.push(input.characterPromptSuffix);
   if (input.brandSuffix)           parts.push(input.brandSuffix);
   parts.push(VISUAL_LOCK_CONSTRAINTS.positive);
 
   const prompt          = parts.filter(Boolean).join(", ");
-  const negative_prompt = VISUAL_LOCK_CONSTRAINTS.negative;
+  const negParts        = [VISUAL_LOCK_CONSTRAINTS.negative, extraNegative].filter(Boolean);
+  const negative_prompt = negParts.join(", ");
 
   console.info("[kling-worker] submitting shot", {
     shot_id:    input.shotId,
@@ -79,6 +92,7 @@ export async function generateKlingClip(input: KlingWorkerInput): Promise<KlingW
     mode:       isI2V ? "i2v" : "t2v",
     duration,
     speedMode:  input.speedMode ?? 'balanced',
+    cfg_scale:  cfgScale,
     timeoutMs,
     prompt_preview: prompt.slice(0, 80),
   });
@@ -90,6 +104,7 @@ export async function generateKlingClip(input: KlingWorkerInput): Promise<KlingW
       negative_prompt,
       duration,
       aspect_ratio: aspectRatio,
+      cfg_scale:    cfgScale,
     };
     if (isI2V) falInput.image_url = input.imageUrl;
 

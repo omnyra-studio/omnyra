@@ -19,6 +19,7 @@ export interface ShotRoute {
   provider:         Provider;
   klingModelId?:    string;   // fal.ai model slug when provider=kling
   maxDurationSecs?: number;   // Hedra cap — keeps avatar shots short for speed
+  motionStrength?:  number;   // 0-1 for Kling cfg_scale mapping
   reason:           string;
 }
 
@@ -46,17 +47,21 @@ export function routeShot(shot: RoutableSot, opts: RouteOptions): ShotRoute {
 
   // ── 0. Multi-character — Hedra is single-character only ──────────────────────
   const multiChar = opts.isMultiCharacter ?? isMultiCharacterScene(shot.visual_prompt);
+  const combinedText = `${shot.visual_prompt} ${shot.audio_intent ?? ""}`.toLowerCase();
+
   if (multiChar) {
-    const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "kling", klingModelId: KLING_T2V_PRO, reason: "multi-character → kling" };
-    console.info(`[ROUTER] → KLING ${label} reason=${r.reason}`);
+    const motionStrength = getMotionStrength(speedMode, combinedText);
+    const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "kling", klingModelId: KLING_T2V_PRO, motionStrength, reason: "multi-character → kling" };
+    console.info(`[ROUTER] → KLING ${label} reason=${r.reason} motion=${motionStrength}`);
     return r;
   }
 
   // ── 1. Explicit render_assignment from the shot-plan director ─────────────────
   if (shot.render_assignment === "avatar") {
     if (!characterHasImage) {
-      const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "kling", klingModelId: KLING_T2V_PRO, reason: "render_assignment=avatar but no character image → kling fallback" };
-      console.info(`[ROUTER] → KLING ${label} reason=${r.reason}`);
+      const motionStrength = getMotionStrength(speedMode, combinedText);
+      const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "kling", klingModelId: KLING_T2V_PRO, motionStrength, reason: "render_assignment=avatar but no character image → kling fallback" };
+      console.info(`[ROUTER] → KLING ${label} reason=${r.reason} motion=${motionStrength}`);
       return r;
     }
     const maxDurationSecs = _hedraMaxSecs(speedMode);
@@ -66,14 +71,14 @@ export function routeShot(shot: RoutableSot, opts: RouteOptions): ShotRoute {
   }
 
   if (shot.render_assignment === "fal") {
-    const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "kling", klingModelId: KLING_T2V_PRO, reason: "render_assignment=fal" };
-    console.info(`[ROUTER] → KLING ${label} reason=${r.reason}`);
+    const motionStrength = getMotionStrength(speedMode, combinedText);
+    const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "kling", klingModelId: KLING_T2V_PRO, motionStrength, reason: "render_assignment=fal" };
+    console.info(`[ROUTER] → KLING ${label} reason=${r.reason} motion=${motionStrength}`);
     return r;
   }
 
   // ── 2. Talking-scene fast-path — check before full classifier ────────────────
   // audio_intent is often the clearest signal ("He says...", "looks at camera").
-  const combinedText = `${shot.visual_prompt} ${shot.audio_intent ?? ""}`.toLowerCase();
   const isTalkingScene = /\b(speaking|talking|says|narration|looking at camera|direct to camera|addresses camera|lip.?sync|voiceover|presenter|host|direct address)\b/.test(combinedText);
 
   if (isTalkingScene && characterHasImage && speedMode !== 'ultra-draft') {
@@ -94,8 +99,9 @@ export function routeShot(shot: RoutableSot, opts: RouteOptions): ShotRoute {
     return r;
   }
 
-  const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "kling", klingModelId: shot.fal_model ?? KLING_T2V_PRO, reason: `classifier: ${routing.reason}` };
-  console.info(`[ROUTER] → KLING ${label} model=${r.klingModelId?.split("/").pop()} reason=${r.reason}`);
+  const motionStrength = getMotionStrength(speedMode, combinedText);
+  const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "kling", klingModelId: shot.fal_model ?? KLING_T2V_PRO, motionStrength, reason: `classifier: ${routing.reason}` };
+  console.info(`[ROUTER] → KLING ${label} model=${r.klingModelId?.split("/").pop()} reason=${r.reason} motion=${motionStrength}`);
   return r;
 }
 
@@ -104,4 +110,19 @@ function _hedraMaxSecs(speedMode: string): number {
   if (speedMode === 'draft')    return 10;
   if (speedMode === 'balanced') return 15;
   return 12;  // quality default
+}
+
+// Motion strength for Kling — higher = more dynamic motion
+// Maps to cfg_scale (inverse): high strength → lower cfg_scale for more motion
+function getMotionStrength(speedMode: string, combinedText: string): number {
+  // Speed-mode floors
+  if (speedMode === 'ultra-draft') return 0.45;
+  if (speedMode === 'draft')       return 0.55;
+
+  // Scene-type overrides
+  const t = combinedText.toLowerCase();
+  if (/\b(danc|jump|run|sprint|cheer|fight|action|energy|dynamic|explod|spin|flip|parkour)\b/.test(t)) return 0.75;
+  if (/\b(gentle|calm|slow|emotional|tender|intimate|peaceful|serene|soft)\b/.test(t))               return 0.50;
+
+  return 0.65;  // balanced default
 }
