@@ -39,9 +39,37 @@ export async function POST(req: Request) {
     }
   }
 
-  const systemPrompt = `You are a viral content strategist specialising in short-form video.${brandContext ? `\n\n${brandContext}` : ""}
+  // Detect emotional/relational content so the prompt adds arc-specific guidance
+  const goalLower = (goal ?? "").toLowerCase();
+  const isEmotionalContent = /\b(sad|tear|cry|comfort|danc|beach|alone|silent|tender|hurt|pain|love|heartbreak|emot|vulnerab|broken|lonely|miss|griev|swaying|shore|relationship|couple|partner|together|silent|quiet)\b/.test(goalLower);
+
+  const systemPrompt = `You are an elite cinematic script writer for short-form emotional storytelling video.${brandContext ? `\n\n${brandContext}` : ""}
+
+CORE RULES — apply to every script option:
+1. Every script must have a clear emotional arc. NOT just a flat happy moment. Show the JOURNEY: vulnerability/sadness → a turning point → comfort/resolution.
+2. Include specific sensory and emotional details: tears on cheeks, silence, noticing pain, a tender action that says more than words.
+3. Specify cinematic directions within the script: golden hour light, beach setting, rim lighting, close-up on tear, shallow depth of field.
+4. Character orientation: ALWAYS describe people as FACING each other or FACING camera. NEVER describe a back-to-camera shot unless explicitly requested. If a man approaches a woman, write "he turns to face her" or "he steps in front of her."
+5. Each script must be 80–110 words. Punchy, evocative, no filler.
+6. End with a universal integrity/love truth — a line that makes the viewer stop scrolling.
+7. Each of the 5 options must take a DIFFERENT angle, tone, or emotional entry point on the same core idea.
+
+NEGATIVE PATTERNS — never write these:
+- Generic happy couple from the start
+- No emotional depth, no tears, no real moment
+- Vague scene descriptions ("they walked on the beach")
+- Man facing away or back to camera
+- Smiling without earning it through the arc
 
 Return ONLY valid JSON — no markdown, no prose, no backticks. The JSON must start with { and end with }.`;
+
+  const emotionalArcGuidance = isEmotionalContent ? `
+IMPORTANT — This brief contains emotional/relational content. Your 5 versions MUST each include:
+- An opening beat of sadness, loneliness, or quiet pain (NOT starting with happiness)
+- A specific silent or non-verbal act of comfort (not talking it through — SHOWING it)
+- A visible emotional transition: tear → softening → gentle smile through remaining tears
+- Correct character facing: if two people, they must face EACH OTHER, not away
+- Cinematic framing: golden hour, rim light, close shot on face/hands/tears` : "";
 
   const userPrompt = `Generate 5 content versions for the following brief.
 
@@ -49,8 +77,12 @@ Goal: ${goal}
 Niche: ${niche || "general"}
 Audience: ${targetAudience || "general"}
 Platforms: ${Array.isArray(platforms) ? platforms.join(", ") : "TikTok"}
+${emotionalArcGuidance}
 
-Return JSON in this exact shape (fill every empty string, scripts max 100 words each):
+Each script must be 80–110 words with a full emotional arc and strong cinematic direction.
+Each version must have a unique angle: e.g. different emotional entry points, different POVs, different pacing.
+
+Return JSON in this exact shape (fill every empty string):
 {"versions":[{"title":"","hook":"","script":"","cta":"","viral_score":75,"hook_strength":"Strong","best_post_time":"7pm-9pm Tue-Thu","estimated_reach":"10K-50K views"},{"title":"","hook":"","script":"","cta":"","viral_score":80,"hook_strength":"Explosive","best_post_time":"6pm-8pm Mon-Wed","estimated_reach":"20K-80K views"},{"title":"","hook":"","script":"","cta":"","viral_score":72,"hook_strength":"Moderate","best_post_time":"8pm-10pm Wed-Fri","estimated_reach":"8K-30K views"},{"title":"","hook":"","script":"","cta":"","viral_score":85,"hook_strength":"Explosive","best_post_time":"7pm-9pm Thu-Sat","estimated_reach":"30K-100K views"},{"title":"","hook":"","script":"","cta":"","viral_score":78,"hook_strength":"Strong","best_post_time":"6pm-9pm Tue-Fri","estimated_reach":"15K-60K views"}]}`;
 
   try {
@@ -63,7 +95,7 @@ Return JSON in this exact shape (fill every empty string, scripts max 100 words 
       },
       body: JSON.stringify({
         model: "claude-sonnet-4-6",
-        max_tokens: 2000,
+        max_tokens: 3000,
         system: systemPrompt,
         messages: [{ role: "user", content: userPrompt }],
       }),
