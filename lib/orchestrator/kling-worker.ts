@@ -25,6 +25,7 @@ export interface KlingWorkerInput {
   imageUrl?:     string;           // reference image → auto-switches to i2v model
   speedMode?:    string;           // 'ultra-draft' | 'draft' | 'balanced' | 'quality'
   motionStrength?: number;         // 0-1; maps to cfg_scale (inverse)
+  isStylized?:   boolean;          // cartoon/furry/creature — affects neg prompts
 }
 
 export interface KlingWorkerResult {
@@ -66,25 +67,47 @@ export async function generateKlingClip(input: KlingWorkerInput): Promise<KlingW
   const timeoutMs = isDraft ? 250_000 : 280_000;
 
   // ── Motion tuning ─────────────────────────────────────────────────────────────
-  // motionStrength (0-1) maps inversely to cfg_scale: high strength = lower cfg_scale = more motion
-  const ms       = input.motionStrength ?? 0.65;
-  const cfgScale = parseFloat((1.0 - ms).toFixed(2));  // 0.45→0.55, 0.55→0.45, 0.65→0.35, 0.75→0.25
+  // motionStrength (0-1) maps inversely to cfg_scale: higher strength = lower cfg_scale = more motion.
+  // Stylized characters (cartoon/furry/creature) use a clamped range to avoid artifact spiral
+  // when the model has to maintain complex textures (feathers, fur, stitching) while animating.
+  const ms = input.motionStrength ?? (input.isStylized ? 0.55 : 0.62);
 
-  const motionModifier   = ms >= 0.70 ? "dynamic fluid motion, high energy movement" : ms <= 0.52 ? "slow motion, gentle movement" : "";
-  const extraNegative    = ms >= 0.70 ? "" : "shaky, jittery, unstable";
+  // Stylized: clamp 0.40-0.65 — below 0.40 model generates static; above 0.65 artifacts spiral
+  // Realistic: clamp 0.35-0.75 — full dynamic range is safe for human anatomy
+  const clampedMs  = input.isStylized
+    ? Math.max(0.40, Math.min(0.65, ms))
+    : Math.max(0.35, Math.min(0.75, ms));
+  const cfgScale   = parseFloat((1.0 - clampedMs).toFixed(2));
 
-  console.info(`[MOTION_TUNE] shot=${input.shotId} motionStrength=${ms} cfg_scale=${cfgScale} modifier="${motionModifier}"`);
+  // Motion modifier words injected into positive prompt
+  let motionModifier = "";
+  if (input.isStylized) {
+    if (clampedMs >= 0.58)      motionModifier = "smooth rhythmic motion, character moving naturally, fluid animation";
+    else if (clampedMs <= 0.48) motionModifier = "gentle subtle motion, slight movement";
+    else                        motionModifier = "steady motion, consistent movement";
+  } else {
+    if (clampedMs >= 0.68)      motionModifier = "dynamic fluid motion, high energy movement, cinematic action";
+    else if (clampedMs <= 0.52) motionModifier = "slow gentle movement, subtle motion";
+  }
 
-  // Build enriched prompt from all memory sources
+  // Negative prompts — base + stylized-specific character corruption guards
+  const negBase      = VISUAL_LOCK_CONSTRAINTS.negative;
+  const negStylized  = input.isStylized
+    ? "melting fur, melting feathers, fused limbs, wrong proportions, extra heads, three legs, deformed beak, corrupted plumage, anatomy mutation, uncanny valley, realistic skin on cartoon character"
+    : "";
+  const negMotion    = clampedMs < 0.52 ? "shaky, jittery, unstable camera" : "";
+  const negative_prompt = [negBase, negStylized, negMotion].filter(Boolean).join(", ");
+
+  console.info(`[MOTION_TUNE] shot=${input.shotId} motionStrength=${ms} clamped=${clampedMs} cfg_scale=${cfgScale} stylized=${input.isStylized ?? false} modifier="${motionModifier}"`);
+
+  // Build enriched positive prompt
   const parts: string[] = [input.visualPrompt];
   if (motionModifier)              parts.push(motionModifier);
   if (input.characterPromptSuffix) parts.push(input.characterPromptSuffix);
   if (input.brandSuffix)           parts.push(input.brandSuffix);
   parts.push(VISUAL_LOCK_CONSTRAINTS.positive);
 
-  const prompt          = parts.filter(Boolean).join(", ");
-  const negParts        = [VISUAL_LOCK_CONSTRAINTS.negative, extraNegative].filter(Boolean);
-  const negative_prompt = negParts.join(", ");
+  const prompt = parts.filter(Boolean).join(", ");
 
   console.info("[kling-worker] submitting shot", {
     shot_id:    input.shotId,

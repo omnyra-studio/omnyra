@@ -20,6 +20,8 @@ export interface ShotRoute {
   klingModelId?:    string;   // fal.ai model slug when provider=kling
   maxDurationSecs?: number;   // Hedra cap — keeps avatar shots short for speed
   motionStrength?:  number;   // 0-1 for Kling cfg_scale mapping
+  preferI2V?:       boolean;  // use image-to-video when char ref exists
+  isStylized?:      boolean;  // stylized/cartoon character — affects neg prompts
   reason:           string;
 }
 
@@ -48,19 +50,21 @@ export function routeShot(shot: RoutableSot, opts: RouteOptions): ShotRoute {
   // ── 0. Multi-character — Hedra is single-character only ──────────────────────
   const multiChar = opts.isMultiCharacter ?? isMultiCharacterScene(shot.visual_prompt);
   const combinedText = `${shot.visual_prompt} ${shot.audio_intent ?? ""}`.toLowerCase();
+  const stylized     = isStylizedCharacter(combinedText);
 
   if (multiChar) {
-    const motionStrength = getMotionStrength(speedMode, combinedText);
-    const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "kling", klingModelId: KLING_T2V_PRO, motionStrength, reason: "multi-character → kling" };
-    console.info(`[ROUTER] → KLING ${label} reason=${r.reason} motion=${motionStrength}`);
+    const motionStrength = getMotionStrength(speedMode, combinedText, stylized);
+    // Multi-character: t2v only (single ref image can't represent both chars)
+    const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "kling", klingModelId: KLING_T2V_PRO, motionStrength, isStylized: stylized, reason: "multi-character → kling" };
+    console.info(`[ROUTER] → KLING ${label} reason=${r.reason} motion=${motionStrength} stylized=${stylized}`);
     return r;
   }
 
   // ── 1. Explicit render_assignment from the shot-plan director ─────────────────
   if (shot.render_assignment === "avatar") {
     if (!characterHasImage) {
-      const motionStrength = getMotionStrength(speedMode, combinedText);
-      const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "kling", klingModelId: KLING_T2V_PRO, motionStrength, reason: "render_assignment=avatar but no character image → kling fallback" };
+      const motionStrength = getMotionStrength(speedMode, combinedText, stylized);
+      const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "kling", klingModelId: KLING_T2V_PRO, motionStrength, isStylized: stylized, reason: "render_assignment=avatar but no character image → kling fallback" };
       console.info(`[ROUTER] → KLING ${label} reason=${r.reason} motion=${motionStrength}`);
       return r;
     }
@@ -71,14 +75,15 @@ export function routeShot(shot: RoutableSot, opts: RouteOptions): ShotRoute {
   }
 
   if (shot.render_assignment === "fal") {
-    const motionStrength = getMotionStrength(speedMode, combinedText);
-    const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "kling", klingModelId: KLING_T2V_PRO, motionStrength, reason: "render_assignment=fal" };
-    console.info(`[ROUTER] → KLING ${label} reason=${r.reason} motion=${motionStrength}`);
+    const motionStrength = getMotionStrength(speedMode, combinedText, stylized);
+    // Prefer i2v for stylized characters when a reference image exists — better consistency
+    const preferI2V = stylized && characterHasImage && speedMode !== 'ultra-draft';
+    const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "kling", klingModelId: KLING_T2V_PRO, motionStrength, preferI2V, isStylized: stylized, reason: "render_assignment=fal" };
+    console.info(`[ROUTER] → KLING ${label} reason=${r.reason} motion=${motionStrength} i2v=${preferI2V} stylized=${stylized}`);
     return r;
   }
 
   // ── 2. Talking-scene fast-path — check before full classifier ────────────────
-  // audio_intent is often the clearest signal ("He says...", "looks at camera").
   const isTalkingScene = /\b(speaking|talking|says|narration|looking at camera|direct to camera|addresses camera|lip.?sync|voiceover|presenter|host|direct address)\b/.test(combinedText);
 
   if (isTalkingScene && characterHasImage && speedMode !== 'ultra-draft') {
@@ -99,9 +104,10 @@ export function routeShot(shot: RoutableSot, opts: RouteOptions): ShotRoute {
     return r;
   }
 
-  const motionStrength = getMotionStrength(speedMode, combinedText);
-  const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "kling", klingModelId: shot.fal_model ?? KLING_T2V_PRO, motionStrength, reason: `classifier: ${routing.reason}` };
-  console.info(`[ROUTER] → KLING ${label} model=${r.klingModelId?.split("/").pop()} reason=${r.reason} motion=${motionStrength}`);
+  const motionStrength = getMotionStrength(speedMode, combinedText, stylized);
+  const preferI2V      = stylized && characterHasImage && speedMode !== 'ultra-draft';
+  const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "kling", klingModelId: shot.fal_model ?? KLING_T2V_PRO, motionStrength, preferI2V, isStylized: stylized, reason: `classifier: ${routing.reason}` };
+  console.info(`[ROUTER] → KLING ${label} model=${r.klingModelId?.split("/").pop()} reason=${r.reason} motion=${motionStrength} i2v=${preferI2V} stylized=${stylized}`);
   return r;
 }
 
@@ -113,17 +119,33 @@ function _hedraMaxSecs(speedMode: string): number {
   return 12;  // quality
 }
 
-// Motion strength for Kling — higher = more dynamic motion
-// Maps to cfg_scale (inverse): high strength → lower cfg_scale for more motion
-function getMotionStrength(speedMode: string, combinedText: string): number {
-  // Speed-mode floors
+// Detects stylized / non-human characters that need softer motion tuning.
+// High motion strength + complex fur/feathers = model artifact spiral.
+function isStylizedCharacter(t: string): boolean {
+  return /\b(big bird|snuffleupagus|snuffy|muppet|puppet|sesame|cartoon|anime|pokemon|furry|creature|monster|dragon|fairy|elf|gnome|troll|goblin|unicorn|dinosaur|robot|alien|plush|stuffed animal|mascot)\b/.test(t);
+}
+
+// Motion strength for Kling — higher = more dynamic motion.
+// Maps inversely to cfg_scale: strength 0.75 → cfg_scale 0.25 (free motion).
+// Stylized characters use moderate strength to avoid artifact spiral.
+function getMotionStrength(speedMode: string, combinedText: string, stylized = false): number {
   if (speedMode === 'ultra-draft') return 0.45;
-  if (speedMode === 'draft')       return 0.55;
+  if (speedMode === 'draft')       return stylized ? 0.50 : 0.55;
 
-  // Scene-type overrides
   const t = combinedText.toLowerCase();
-  if (/\b(danc|jump|run|sprint|cheer|fight|action|energy|dynamic|explod|spin|flip|parkour)\b/.test(t)) return 0.75;
-  if (/\b(gentle|calm|slow|emotional|tender|intimate|peaceful|serene|soft)\b/.test(t))               return 0.50;
+  const isDance   = /\b(danc|sway|shuffle|twirl|spin|jump|leap|bounce)\b/.test(t);
+  const isAction  = /\b(run|sprint|cheer|fight|explod|flip|parkour|chase|battle)\b/.test(t);
+  const isCalm    = /\b(gentle|calm|slow|emotional|tender|intimate|peaceful|serene|soft|still|standing|sitting)\b/.test(t);
 
-  return 0.65;  // balanced default
+  if (stylized) {
+    // Complex fur/feathers: moderate motion avoids artifact spiral while still animating
+    if (isDance || isAction) return 0.60;
+    if (isCalm)              return 0.48;
+    return 0.55;
+  }
+
+  // Realistic / human characters
+  if (isAction || isDance) return 0.72;
+  if (isCalm)              return 0.50;
+  return 0.62;
 }

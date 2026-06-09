@@ -221,8 +221,13 @@ async function processKlingShot(
   brandSuffix:   string,
   correlationId: string,
   speedMode:     string = 'balanced',
+  charImageUrl?: string | null,
 ): Promise<ClipResult> {
-  const shotT0 = Date.now();
+  const shotT0   = Date.now();
+  // Use character image as i2v reference when router flagged preferI2V
+  const refImage = (route.preferI2V && charImageUrl) ? charImageUrl : undefined;
+  if (refImage) console.info(`[KLING_I2V] shot=${shot.id} using char ref image for i2v mode`);
+
   const result = await generateKlingClip({
     shotId:                shot.id,
     shotNumber:            shot.shot_number,
@@ -234,6 +239,8 @@ async function processKlingShot(
     brandSuffix:           brandSuffix || undefined,
     speedMode,
     motionStrength:        route.motionStrength,
+    imageUrl:              refImage,
+    isStylized:            route.isStylized,
   });
   console.info(`[CLIP_TIMING] kling shot=${shot.id} num=${shot.shot_number} ms=${Date.now() - shotT0} model=${result.model_used}`);
 
@@ -388,7 +395,7 @@ export async function runParallelEngine(
 
   const klingPromises = klingShots.map(shot => {
     const route = routes[shotRows.indexOf(shot)];
-    return processKlingShot(shot, route, charSuffix, brandSuffix, planId, speedMode)
+    return processKlingShot(shot, route, charSuffix, brandSuffix, planId, speedMode, charImageUrl)
       .catch(err => { console.error(`[parallel-engine] kling shot=${shot.id}:`, err); failedShots.push(shot.id); return null; });
   });
 
@@ -402,7 +409,7 @@ export async function runParallelEngine(
       .catch(async (err: Error) => {
         console.warn(`[HEDRA_FALLBACK] shot=${shot.id} hedra_error="${err.message.slice(0, 80)}" → kling`);
         const fallbackRoute: ShotRoute = { ...avatarRoute, provider: "kling", klingModelId: KLING_T2V_PRO, motionStrength: 0.55, reason: "hedra-fallback" };
-        return processKlingShot(shot, fallbackRoute, charSuffix, brandSuffix, planId, speedMode)
+        return processKlingShot(shot, fallbackRoute, charSuffix, brandSuffix, planId, speedMode, charImageUrl)
           .catch(klingErr => {
             console.error(`[HEDRA_FALLBACK] kling also failed shot=${shot.id}:`, klingErr);
             failedShots.push(shot.id);
