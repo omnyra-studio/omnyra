@@ -2563,8 +2563,15 @@ function CreatePageInner() {
               </div>
             )}
 
-            {/* ── VOICE section — last generation option ──────────────────── */}
-            {selectedHookIndex === 0 && (
+            {/* ── VOICE section — standalone voiceover generator ─────────────
+                 Hidden for avatar (has its own inline voice picker above the
+                 generate button). Hidden for cinematic until clips are ready
+                 (Phase 2 handles voice+compose; showing it early causes users
+                 to generate a short voiceover before clips exist). */}
+            {selectedHookIndex === 0
+              && videoType !== 'avatar'
+              && (videoType !== 'cinematic' || clipsReady || !!videoUrl)
+              && (
               <div style={{
                 background: 'rgba(45,10,62,0.8)',
                 border: '1px solid rgba(201,168,76,0.3)',
