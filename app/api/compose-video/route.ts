@@ -468,13 +468,29 @@ export async function POST(request: Request) {
         ttsDurationSec = rawAudio !== undefined ? (typeof rawAudio === "number" ? rawAudio : parseFloat(String(rawAudio)) || 0) : 0;
         console.log(`[TTS_DURATION] ${ttsDurationSec.toFixed(2)}s bytes=${voiceBuffer.length}`);
 
+        // If video is shorter than audio, loop the video stream to cover the full voice duration.
+        // This prevents black screen / frozen last frame when voice outlasts clips.
+        const videoShorter = ttsDurationSec > 0 && sumInputSec < ttsDurationSec;
+        const mergeCmd = ffmpeg();
+        if (videoShorter) {
+          mergeCmd.inputOptions(["-stream_loop", "-1"]).input(finalVideoPath);
+          console.log(`[DURATION_LOOP] video=${sumInputSec.toFixed(1)}s < voice=${ttsDurationSec.toFixed(1)}s — looping video stream`);
+        } else {
+          mergeCmd.input(finalVideoPath);
+        }
+        const outputSec = ttsDurationSec > 0 ? ttsDurationSec : sumInputSec;
+
         await new Promise<void>((resolve, reject) => {
-          ffmpeg()
-            .input(finalVideoPath)
+          mergeCmd
             .input(audioPath)
-            // -shortest: stop at the shorter of video/audio so audio never outlasts motion.
-            // Clip count fix (word-count based) ensures video ~= voice in normal cases.
-            .outputOptions(["-c:v", "copy", "-c:a", "aac", "-map", "0:v:0", "-map", "1:a:0", "-shortest"])
+            .outputOptions([
+              "-c:v", "copy",
+              "-c:a", "aac",
+              "-map", "0:v:0",
+              "-map", "1:a:0",
+              "-t", outputSec.toFixed(3),
+              "-movflags", "+faststart",
+            ])
             .output(outputPath)
             .on("stderr", (line: string) => console.log("[PHASE4:local:merge:stderr]", line))
             .on("end", () => resolve())
@@ -482,7 +498,7 @@ export async function POST(request: Request) {
             .run();
         });
 
-        console.info(`[DURATION_FINAL] voice=${ttsDurationSec.toFixed(1)}s video=${sumInputSec.toFixed(1)}s output=${Math.min(ttsDurationSec, sumInputSec).toFixed(1)}s clips=${clipUrls.length}`);
+        console.info(`[DURATION_FINAL] voice=${ttsDurationSec.toFixed(1)}s video=${sumInputSec.toFixed(1)}s output=${outputSec.toFixed(1)}s looped=${videoShorter} clips=${clipUrls.length}`);
 
         if (!existsSync(outputPath)) {
           throw new Error("FFmpeg audio merge completed but produced no output file");

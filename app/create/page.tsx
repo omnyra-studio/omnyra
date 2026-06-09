@@ -1241,21 +1241,28 @@ function CreatePageInner() {
           }
         }
 
-        const wordCount = scriptForCinematic.trim().split(/\s+/).length;
-        const estimatedSec = (wordCount / 2.5).toFixed(1);
-        console.log('[SCRIPT_AUDIT]', { word_count: wordCount, estimated_sec: estimatedSec, source: (generatedScriptRef.current || generatedScript) ? 'generatedScript' : 'brief_fallback' });
+        const _auditWordCount = scriptForCinematic.trim().split(/\s+/).length;
+        const estimatedSec = (_auditWordCount / 2.5).toFixed(1);
+        console.log('[SCRIPT_AUDIT]', { word_count: _auditWordCount, estimated_sec: estimatedSec, source: (generatedScriptRef.current || generatedScript) ? 'generatedScript' : 'brief_fallback' });
 
         // ── PHASE 1: Generate clips only — voice picker shown after ───────────
         const scriptText = scriptForCinematic;
         const CLIP_SECONDS = 10;
-        // Derive clip count from estimated voice duration so clips fill the audio.
-        // Voice hasn't been generated yet, so estimate from word count (2.3 words/sec).
-        const _scriptWords       = scriptText.trim().split(/\s+/).filter(Boolean).length;
-        const estimatedVoiceSec  = Math.ceil(_scriptWords / 2.3);
-        const maxClipsForTier    = userTier === 'studio' ? 12 : 6;
-        const clipCount          = Math.max(3, Math.min(maxClipsForTier, Math.ceil(estimatedVoiceSec / CLIP_SECONDS)));
 
-        console.log('[CLIP_COUNT]', { wordCount: _scriptWords, estimatedVoiceSec, clipCount, tier: userTier });
+        // Snapshot script at click time — generatedScriptRef may be stale after async awaits above
+        const scriptSnapshot = generatedScriptRef.current?.trim() || generatedScript?.trim() || scriptText?.trim() || '';
+        console.log('[SCRIPT_SNAPSHOT]', {
+          length: scriptSnapshot.length,
+          words:  scriptSnapshot.split(/\s+/).filter(Boolean).length,
+          source: generatedScriptRef.current ? 'ref' : generatedScript ? 'state' : 'fallback',
+        });
+
+        // Derive clip count from word-count estimate. Falls back to 75 words if script empty.
+        const wordCount         = scriptSnapshot.split(/\s+/).filter(Boolean).length || 75;
+        const estimatedVoiceSec = Math.ceil(wordCount / 2.3);
+        const clipCount         = Math.max(3, Math.min(8, Math.ceil(estimatedVoiceSec / CLIP_SECONDS)));
+
+        console.log('[CLIP_COUNT]', { wordCount, estimatedVoiceSec, clipCount });
         console.log('[CINEMATIC_STEP1_SCRIPT]', scriptText.length, 'chars', scriptText.substring(0, 80));
 
         type SeqData = {
