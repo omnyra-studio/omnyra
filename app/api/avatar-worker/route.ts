@@ -201,11 +201,28 @@ async function executeTtsStage(
 
   // ── Execution control: cap scene count based on system health ────────────
   const execPlan = await getExecutionPlan();
-  // Plan entitlement floor: studio targets 6 scenes (60s), others target 3 (30s).
-  // We take the max of the execution health cap and the plan minimum.
   const planFloor = job.input.plan === "studio" ? 10 : job.input.plan === "creator" ? 5 : 3;
   const effectiveMaxScenes = Math.max(planFloor, execPlan.maxScenes);
   log(`[EXEC_CONTROL] mode=${execPlan.mode} maxScenes=${execPlan.maxScenes} planFloor=${planFloor} effective=${effectiveMaxScenes} reason=${execPlan.reason}`);
+
+  // ── Hedra speed cap — hard-limit total audio before Director Core planning ──
+  // Hedra generation time scales with audio length. Cap total words so the
+  // combined audio stays under target seconds, regardless of input script length.
+  // starter: 22 words ≈ 8-9s, creator: 35 words ≈ 14s, studio: 50 words ≈ 20s
+  const HEDRA_WORD_BUDGET: Record<string, number> = { starter: 22, creator: 35, studio: 50 };
+  const HEDRA_SCENE_CAP:   Record<string, number> = { starter: 1,  creator: 2,  studio: 3  };
+  const hedraWordBudget = HEDRA_WORD_BUDGET[job.input.plan ?? "starter"] ?? 22;
+  const hedraSceneCap   = HEDRA_SCENE_CAP[job.input.plan ?? "starter"]   ?? 1;
+  const hedraMaxScenes  = Math.min(effectiveMaxScenes, hedraSceneCap);
+
+  const rawScriptWords = job.input.script.trim().split(/\s+/).filter(Boolean);
+  let cappedScript     = job.input.script.trim();
+  if (rawScriptWords.length > hedraWordBudget) {
+    cappedScript = rawScriptWords.slice(0, hedraWordBudget).join(" ").replace(/[,;.!?]+$/, "") + ".";
+    log(`[HEDRA_TRUNCATE] script words ${rawScriptWords.length}→${hedraWordBudget} plan=${job.input.plan ?? "starter"} est_sec=~${Math.round(hedraWordBudget / 2.5)}s scenes_cap=${hedraMaxScenes}`);
+  } else {
+    log(`[HEDRA_TRUNCATE] no_cap words=${rawScriptWords.length} budget=${hedraWordBudget} est_sec=~${Math.round(rawScriptWords.length / 2.5)}s`);
+  }
 
   // ── Load creator + character memory (Director Core context) ───────────────
   const [creatorProfile, characterForCtx] = await Promise.all([
@@ -215,13 +232,13 @@ async function executeTtsStage(
   const directorCtx: CreatorContext = { profile: creatorProfile, character: characterForCtx };
   log(`[DIRECTOR_CTX] profile=${!!creatorProfile} character=${!!characterForCtx} quality=${creatorProfile?.quality_score ?? "n/a"}`);
 
-  // ── Director Core: plan N scenes from script ──────────────────────────────
+  // ── Director Core: plan N scenes from capped script ──────────────────────
   void setPipelineStatus(job.id, "planning_scenes");
-  log(`[DIRECTOR] planning scenes script_chars=${job.input.script.length}`);
+  log(`[DIRECTOR] planning scenes script_chars=${cappedScript.length} max_scenes=${hedraMaxScenes}`);
   const directorT0 = Date.now();
   let scenes: SceneSpec[];
   try {
-    scenes = await planScenes(job.input.script, effectiveMaxScenes, directorCtx);
+    scenes = await planScenes(cappedScript, hedraMaxScenes, directorCtx);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     log(`[DIRECTOR] ERROR: ${msg} — aborting`);
@@ -294,7 +311,17 @@ async function executeTtsStage(
           return null;
         }
 
-        log(`[TTS_SEGMENT_START] seg=${scene.index} chars=${spokenText.length}`);
+        // Per-scene word cap — defense-in-depth: distributes the remaining budget
+        // evenly across scenes so no single segment can blow the Hedra time target.
+        const perSceneWordCap = Math.floor(hedraWordBudget / (scenes.length || 1));
+        const spokenWords     = spokenText.split(/\s+/).filter(Boolean);
+        let finalText         = spokenText;
+        if (spokenWords.length > perSceneWordCap) {
+          finalText = spokenWords.slice(0, perSceneWordCap).join(" ").replace(/[,;.!?]+$/, "") + ".";
+          log(`[HEDRA_TRUNCATE] seg=${scene.index} words ${spokenWords.length}→${perSceneWordCap} (budget=${hedraWordBudget} / scenes=${scenes.length})`);
+        }
+
+        log(`[TTS_SEGMENT_START] seg=${scene.index} chars=${finalText.length} words=${Math.min(spokenWords.length, perSceneWordCap)}`);
         const t1  = Date.now();
         const res = await fetch(
           `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
@@ -302,7 +329,7 @@ async function executeTtsStage(
             method:  "POST",
             headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY!, "Content-Type": "application/json" },
             body:    JSON.stringify({
-              text:           spokenText,
+              text:           finalText,
               model_id:       "eleven_turbo_v2",
               voice_settings: voiceSettingsForScene(scene.energy ?? 3, scene.pacing ?? "measured"),
             }),
@@ -314,7 +341,7 @@ async function executeTtsStage(
         }
         const buffer = await res.arrayBuffer();
         log(`[TTS_SEGMENT_DONE] seg=${scene.index} bytes=${buffer.byteLength} elapsed=${Date.now() - t1}ms`);
-        return { index: scene.index, text: spokenText, buffer, char_count: spokenText.length };
+        return { index: scene.index, text: finalText, buffer, char_count: finalText.length };
       }),
     );
 
@@ -496,7 +523,9 @@ async function executeLipsyncStage(
     const stitchedBuffer = readFileSync(outPath);
     if (stitchedBuffer.byteLength === 0) throw new Error("ffmpeg audio concat produced 0-byte output");
 
-    log(`[HEDRA_AUDIO_DURATION] duration_sec=${audioDurationSec ?? "unknown"} source=ffmpeg_concat bytes=${stitchedBuffer.byteLength}`);
+    const hedraAudioCapSec = job.input.plan === "studio" ? 22 : job.input.plan === "creator" ? 16 : 10;
+    const overCap = audioDurationSec !== null && audioDurationSec > hedraAudioCapSec;
+    log(`[HEDRA_AUDIO_DURATION] duration_sec=${audioDurationSec ?? "unknown"} cap_sec=${hedraAudioCapSec} over_cap=${overCap} source=ffmpeg_concat bytes=${stitchedBuffer.byteLength}${overCap ? " ⚠️ AUDIO_EXCEEDS_CAP — check truncation" : ""}`);
 
     combinedAudioUrl = await uploadArtifact({
       jobId:        job.id,

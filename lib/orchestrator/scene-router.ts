@@ -105,11 +105,12 @@ export function routeShot(shot: RoutableSot, opts: RouteOptions): ShotRoute {
   return r;
 }
 
-// Hedra duration cap by speed mode — keeps avatar shots fast
+// Hedra duration cap by speed mode — controls audio length and generation time.
+// Hedra generation scales with audio: 8s audio ≈ 30-60s generation.
 function _hedraMaxSecs(speedMode: string): number {
-  if (speedMode === 'draft')    return 10;
-  if (speedMode === 'balanced') return 15;
-  return 12;  // quality default
+  if (speedMode === 'draft')    return 8;   // ≈20 words, ~8s audio
+  if (speedMode === 'balanced') return 12;  // ≈30 words, ~12s audio
+  return 12;  // quality
 }
 
 // Motion strength for Kling — higher = more dynamic motion

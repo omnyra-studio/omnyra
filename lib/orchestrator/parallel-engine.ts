@@ -400,11 +400,11 @@ export async function runParallelEngine(
     const avatarRoute = routes[shotRows.indexOf(shot)];
     return processAvatarShot(shot, charImageUrl, resolvedVoiceId, planId, speedMode, avatarRoute.maxDurationSecs)
       .catch(async (err: Error) => {
-        console.warn(`[parallel-engine] hedra shot=${shot.id} failed (${err.message}) — falling back to Kling`);
-        const fallbackRoute: ShotRoute = { ...avatarRoute, provider: "kling", klingModelId: KLING_T2V_PRO, reason: "hedra-timeout-fallback" };
+        console.warn(`[HEDRA_FALLBACK] shot=${shot.id} hedra_error="${err.message.slice(0, 80)}" → kling`);
+        const fallbackRoute: ShotRoute = { ...avatarRoute, provider: "kling", klingModelId: KLING_T2V_PRO, motionStrength: 0.55, reason: "hedra-fallback" };
         return processKlingShot(shot, fallbackRoute, charSuffix, brandSuffix, planId, speedMode)
           .catch(klingErr => {
-            console.error(`[parallel-engine] kling fallback also failed shot=${shot.id}:`, klingErr);
+            console.error(`[HEDRA_FALLBACK] kling also failed shot=${shot.id}:`, klingErr);
             failedShots.push(shot.id);
             return null;
           });
