@@ -1661,6 +1661,23 @@ function CreatePageInner() {
     }
   }
 
+  async function handleDownload(url: string, filename: string) {
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const blobUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = blobUrl;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 10_000);
+    } catch {
+      window.open(url, '_blank');
+    }
+  }
+
   function handleReset() {
     try { sessionStorage.removeItem('omnyra_create_state'); } catch { /* ok */ }
     setBriefResponse(null);
@@ -2945,9 +2962,9 @@ function CreatePageInner() {
                     <p style={{ color: '#4ECB8C', marginBottom: 8, fontWeight: 600 }}>✓ Video ready</p>
                     <video controls src={videoUrl} style={{ maxWidth: 360, borderRadius: 12, border: '2px solid #C9A84C', width: '100%' }} />
                     <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 12, flexWrap: 'wrap' }}>
-                      <a href={videoUrl} download className="gold-btn" style={{ padding: '9px 20px', borderRadius: 9999, border: 'none', textDecoration: 'none', fontWeight: 700, fontSize: 13 }}>
+                      <button onClick={() => handleDownload(videoUrl!, `omnyra-video-${Date.now()}.mp4`)} className="gold-btn" style={{ padding: '9px 20px', borderRadius: 9999, border: 'none', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
                         Download Video
-                      </a>
+                      </button>
                       <button
                         onClick={() => router.push('/videos')}
                         style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 10, color: 'white', padding: '9px 20px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}
@@ -3166,9 +3183,9 @@ function CreatePageInner() {
                     <>
                       <p style={{ color: '#4ade80', fontWeight: 700, margin: 0 }}>✓ Final video with voiceover ready!</p>
                       <video controls src={mergedVideoUrl} style={{ width: '100%', maxWidth: '360px', borderRadius: '12px', border: '2px solid #C9A84C' }} />
-                      <a href={mergedVideoUrl} download="omnyra-final.mp4" className="gold-btn" style={{ padding: '14px', fontSize: '1rem', textDecoration: 'none', display: 'block', textAlign: 'center' }}>
+                      <button onClick={() => handleDownload(mergedVideoUrl!, `omnyra-final-${Date.now()}.mp4`)} className="gold-btn" style={{ padding: '14px', fontSize: '1rem', display: 'block', width: '100%', border: 'none', borderRadius: 9999, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, textAlign: 'center' }}>
                         ⬇ Download Final Video (with voiceover)
-                      </a>
+                      </button>
                     </>
                   )}
 
@@ -3183,14 +3200,14 @@ function CreatePageInner() {
                   {!mergedVideoUrl && !isMerging && (
                     <>
                       {videoUrl && (
-                        <a href={videoUrl} download="omnyra-video.mp4" className="gold-btn" style={{ padding: '14px', fontSize: '1rem', textDecoration: 'none', display: 'block', textAlign: 'center' }}>
+                        <button onClick={() => handleDownload(videoUrl!, `omnyra-video-${Date.now()}.mp4`)} className="gold-btn" style={{ padding: '14px', fontSize: '1rem', display: 'block', width: '100%', border: 'none', borderRadius: 9999, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700, textAlign: 'center' }}>
                           ⬇ Download Video {voiceAudioUrl ? '(silent)' : ''}
-                        </a>
+                        </button>
                       )}
                       {voiceAudioUrl && (
-                        <a href={voiceAudioUrl} download="omnyra-voice.mp3" style={{ padding: '14px', fontSize: '1rem', textDecoration: 'none', display: 'block', textAlign: 'center', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 9999, color: 'white', fontWeight: 700 }}>
+                        <button onClick={() => handleDownload(voiceAudioUrl!, `omnyra-voice-${Date.now()}.mp3`)} style={{ padding: '14px', fontSize: '1rem', display: 'block', width: '100%', textAlign: 'center', background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 9999, color: 'white', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>
                           ⬇ Download Voiceover MP3
-                        </a>
+                        </button>
                       )}
                       {videoUrl && voiceAudioUrl && (
                         <button

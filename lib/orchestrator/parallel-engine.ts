@@ -113,15 +113,17 @@ interface HedraConfig {
 function getHedraConfig(speedMode: string = 'draft'): HedraConfig {
   switch (speedMode) {
     case 'ultra-draft':
-      // Lightning Mode: 22-word hard cap (floor(9 × 2.5)=22). Hedra bail at 50s → Kling fallback.
-      return { intervalMs: 1_500, maxPolls: 34, maxAudioSecs: 9,   fallbackAfterMs:  50_000 };
+      // Lightning: 22 words (floor(9×2.5)=22, ~9s audio). Bail at 45s → Kling.
+      return { intervalMs: 2_000, maxPolls: 23, maxAudioSecs: 9,   fallbackAfterMs:  45_000 };
     case 'draft':
-      // Draft: 22-word hard cap (floor(9 × 2.5)=22). Bail at 50s → Kling fallback.
-      return { intervalMs: 1_500, maxPolls: 34, maxAudioSecs: 9,   fallbackAfterMs:  50_000 };
+      // Draft: 30 words (floor(12×2.5)=30, ~12s audio). Bail at 60s → Kling.
+      return { intervalMs: 2_000, maxPolls: 30, maxAudioSecs: 12,  fallbackAfterMs:  60_000 };
     case 'balanced':
-      return { intervalMs: 2_000, maxPolls: 60, maxAudioSecs: 12,  fallbackAfterMs: 100_000 };
+      // Normal: 70 words (floor(28×2.5)=70, ~28s audio). Bail at 80s → Kling.
+      return { intervalMs: 2_000, maxPolls: 40, maxAudioSecs: 28,  fallbackAfterMs:  80_000 };
     default:  // quality
-      return { intervalMs: 2_500, maxPolls: 50, maxAudioSecs: 15,  fallbackAfterMs:  90_000 };
+      // Quality: 75 words (floor(30×2.5)=75, ~30s audio). Full 100s budget.
+      return { intervalMs: 2_000, maxPolls: 50, maxAudioSecs: 30,  fallbackAfterMs: 100_000 };
   }
 }
 
@@ -662,6 +664,11 @@ export async function runParallelEngine(
   });
   const clipBreakdown = allClips.map(c => `${c.provider}[${c.shotNumber}]=${c.generation_ms}ms`).join(", ");
   console.info(`[SPEED_BREAKDOWN] planId=${planId} Total=${totalMs}ms | Clips=(${clipBreakdown}) | Voiceover=${voiceoverResult ? "yes" : "no"} | speedMode=${speedMode} | clips=${allClips.length}/${shotRows.length}`);
+  const hedraClips = allClips.filter(c => c.provider === "hedra");
+  if (hedraClips.length > 0) {
+    const maxHedraMs = Math.max(...hedraClips.map(c => c.generation_ms));
+    console.info(`[AVATAR_TOTAL_TIME] planId=${planId} mode=${speedMode} hedra_clips=${hedraClips.length} slowest_hedra_ms=${maxHedraMs} pipeline_ms=${totalMs}`);
+  }
 
   // 7. Optional stitch into a single video
   let assembledUrl: string | undefined;
