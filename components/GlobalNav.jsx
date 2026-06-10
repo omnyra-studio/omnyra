@@ -224,6 +224,7 @@ export default function GlobalNav() {
                     { label: "✦ Dashboard", href: "/dashboard" },
                     { label: "🎙️ Voice Studio", href: "/voice-studio" },
                     { label: "📹 My Creations", href: "/videos" },
+                    { label: "📊 My Usage", href: "/usage" },
                     { label: "👤 Profile", href: "/profile" },
                     { label: "🏷️ Brand Memory", href: "/dashboard/brand" },
                     { label: "🧠 Intelligence", href: "/dashboard/intelligence" },

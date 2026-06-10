@@ -98,26 +98,35 @@ export async function stitchClips(
     if (accumulated >= coverTarget) break;
   }
 
-  // Download video clips in parallel, then voiceover if present
-  const localPaths = await Promise.all(
-    selected.map(async (clip, i) => {
-      const dest = path.join(WORK_DIR, `clip_${i}_${randomUUID()}.mp4`);
-      await downloadFile(clip.video_url, dest);
-      return dest;
-    }),
-  );
-
-  let resolvedVoiceoverPath: string | null = null;
-  if (options.voiceoverUrl) {
-    resolvedVoiceoverPath = path.join(WORK_DIR, `vo_${randomUUID()}.mp3`);
-    await downloadFile(options.voiceoverUrl, resolvedVoiceoverPath);
-  }
+  // Download video clips + voiceover in parallel
+  const dlT0 = Date.now();
+  const [localPaths, resolvedVoiceoverPath] = await Promise.all([
+    Promise.all(
+      selected.map(async (clip, i) => {
+        const dest = path.join(WORK_DIR, `clip_${i}_${randomUUID()}.mp4`);
+        await downloadFile(clip.video_url, dest);
+        return dest;
+      }),
+    ),
+    options.voiceoverUrl
+      ? (async () => {
+          const p = path.join(WORK_DIR, `vo_${randomUUID()}.mp3`);
+          await downloadFile(options.voiceoverUrl!, p);
+          return p;
+        })()
+      : Promise.resolve(null),
+  ]);
+  const dlMs = Date.now() - dlT0;
+  console.info(`[STITCH] download done clips=${selected.length} hasVoice=${!!resolvedVoiceoverPath} ms=${dlMs}`);
 
   const outputPath = path.join(WORK_DIR, `stitch_${randomUUID()}.mp4`);
+  const concatT0 = Date.now();
 
   await runConcat(localPaths, outputPath, resolvedVoiceoverPath ?? null, coverTarget, speedMode);
+  const concatMs = Date.now() - concatT0;
 
   // Upload to Supabase storage
+  const uploadT0 = Date.now();
   const storagePath = `renders/${options.userId}/parallel/${options.planId}-${Date.now()}.mp4`;
   const fileBuffer  = fs.readFileSync(outputPath);
 
@@ -133,21 +142,16 @@ export async function stitchClips(
   if (uploadErr) throw new Error(`[clip-stitcher] upload failed: ${uploadErr.message}`);
 
   const { data: publicData } = supabaseAdmin.storage.from("videos").getPublicUrl(storagePath);
+  const uploadMs = Date.now() - uploadT0;
 
   // If voiceover is present, it drives duration via -shortest.
-  // Use voice duration as the authoritative output length.
   const outputDuration = options.voiceDurationSecs ?? Math.min(accumulated, targetSecs);
+  const totalMs = Date.now() - stitchT0;
 
-  console.info("[STITCH] complete", {
-    plan_id:     options.planId,
-    clips:       selected.length,
-    video_secs:  accumulated,
-    voice_secs:  options.voiceDurationSecs ?? "none",
-    output_secs: outputDuration,
-    totalMs:     Date.now() - stitchT0,
-    speed:       speedMode,
-    url:         publicData.publicUrl.slice(0, 80),
-  });
+  console.info(
+    `[SPEED_BREAKDOWN:stitch] mode=${speedMode} | download=${dlMs}ms | ffmpeg=${concatMs}ms | upload=${uploadMs}ms | total=${totalMs}ms` +
+    ` | clips=${selected.length} preset=${speedMode === 'ultra-draft' ? 'veryfast/crf22' : speedMode === 'draft' ? 'fast/crf20' : speedMode === 'balanced' ? 'medium/crf18' : 'slow/crf16'}`,
+  );
 
   return {
     output_url:       publicData.publicUrl,
@@ -178,8 +182,10 @@ async function runConcat(
   speedMode:     'ultra-draft' | 'draft' | 'balanced' | 'quality' = 'balanced',
 ): Promise<void> {
   const isUltraDraft = speedMode === 'ultra-draft';
-  const preset = (speedMode === 'ultra-draft' || speedMode === 'draft') ? 'ultrafast' : speedMode === 'balanced' ? 'veryfast' : 'fast';
-  const crf    = speedMode === 'ultra-draft' ? '32' : speedMode === 'draft' ? '30' : speedMode === 'balanced' ? '26' : '23';
+  // veryfast+22 → great quality with big speed gain; slow+16 → max quality
+  const preset      = speedMode === 'ultra-draft' ? 'veryfast' : speedMode === 'draft' ? 'fast' : speedMode === 'balanced' ? 'medium' : 'slow';
+  const crf         = speedMode === 'ultra-draft' ? '22'       : speedMode === 'draft' ? '20'  : speedMode === 'balanced' ? '18'     : '16';
+  const audioBitrate = speedMode === 'ultra-draft' ? '128k'    : speedMode === 'draft' ? '160k': '192k';
 
   const silentPath = outputPath.replace(".mp4", "-silent.mp4");
   const listPath   = outputPath.replace(".mp4", "-list.txt");
@@ -206,7 +212,7 @@ async function runConcat(
 
     cmd
       .complexFilter(filterParts.join("; "))
-      .outputOptions(["-map [vout]", "-an", "-c:v libx264", `-preset ${preset}`, `-crf ${crf}`, "-pix_fmt yuv420p"])
+      .outputOptions(["-map [vout]", "-an", "-c:v libx264", `-preset ${preset}`, `-crf ${crf}`, "-tune film", "-pix_fmt yuv420p"])
       .output(silentPath)
       .on("error", (err, _s, stderr) => {
         console.error("[STITCH] pass1 error:", err.message, (stderr as string | undefined)?.slice(-800));
@@ -245,7 +251,7 @@ async function runConcat(
         "-c:a aac",
         "-map 0:v:0",
         "-map 1:a:0",
-        "-b:a 192k",
+        `-b:a ${audioBitrate}`,
         "-shortest",
         `-t ${targetSecs + 5}`,
         "-movflags +faststart",

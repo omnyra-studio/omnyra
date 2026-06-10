@@ -52,7 +52,7 @@ export async function generateSceneAudio(
       },
       body: JSON.stringify({
         text,
-        model_id: EL_MODEL,
+        model_id: EL_FLASH_V2_5,
         voice_settings: {
           stability:       input.stability       ?? 0.35,
           similarity_boost: input.similarityBoost ?? 0.75,
@@ -194,7 +194,7 @@ async function callElevenLabs(
     body: JSON.stringify({
       text,
       model_id: EL_FLASH_V2_5,
-      voice_settings: { stability: 0.8, similarity_boost: 0.85, speed: 1.0 },
+      voice_settings: { stability: 0.8, similarity_boost: 0.85, speed: 1.08 },
     }),
   });
 
@@ -314,6 +314,39 @@ async function stitchAudioChunks(
   return { url: finalUrl, durationSecs };
 }
 
+// Scripts at or below this threshold are sent as a single unbroken TTS call.
+// Chunking + FFmpeg stitch introduces micro-gaps and is wasteful for short scripts.
+const SHORT_SCRIPT_WORDS = 120;
+
+async function singleCallVoiceover(
+  cleanScript: string,
+  voiceId:     string,
+  apiKey:      string,
+  userId:      string,
+  planId:      string,
+  voiceT0:     number,
+  targetSecs:  number,
+): Promise<VoiceoverResult> {
+  const buf = await callElevenLabs(cleanScript, voiceId, apiKey);
+
+  const storagePath = `voiceovers/${userId}/plans/${planId}-full-${Date.now()}.mp3`;
+  const audioUrl    = await uploadChunk(buf, storagePath);
+
+  const fsM         = await import("node:fs");
+  const pathM       = await import("node:path");
+  const osM         = await import("node:os");
+  const { randomUUID } = await import("node:crypto");
+  const workDir     = pathM.join(osM.tmpdir(), "omnyra_vo_stitch");
+  if (!fsM.existsSync(workDir)) fsM.mkdirSync(workDir, { recursive: true });
+  const tempPath    = pathM.join(workDir, `short_${randomUUID()}.mp3`);
+  fsM.writeFileSync(tempPath, Buffer.from(buf));
+  const realDuration = await probeLocalDuration(tempPath);
+  try { fsM.unlinkSync(tempPath); } catch { /* noop */ }
+
+  console.info(`[VOICE] done totalMs=${Date.now() - voiceT0} duration=${realDuration.toFixed(2)}s target=${targetSecs}s (single-call path)`);
+  return { audioUrl, duration: realDuration, scriptUsed: cleanScript };
+}
+
 export async function generateVoiceover(
   input:  VoiceoverInput,
   userId: string,
@@ -323,8 +356,7 @@ export async function generateVoiceover(
   const wordCount   = cleanScript.split(/\s+/).length;
 
   const voiceT0 = Date.now();
-  console.info(`[VOICE] start model=${EL_FLASH_V2_5} words=${wordCount} chunks=${Math.ceil(wordCount / CHUNK_SIZE)}`);
-  console.info(`[VOICEOVER START] Full script received: ${wordCount} words`);
+  console.info(`[VOICE] start model=${EL_FLASH_V2_5} words=${wordCount} target=${input.targetDurationSecs}s`);
   console.info(`[VOICEOVER INPUT] First 150 chars: ${cleanScript.substring(0, 150)}...`);
 
   if (!cleanScript || wordCount < 10) throw new Error("[voiceover] script is required (min 10 words)");
@@ -334,8 +366,15 @@ export async function generateVoiceover(
 
   const voiceId = input.voiceId ?? DEFAULT_VO_VOICE_ID;
 
+  // Short scripts: single API call — no chunking, no FFmpeg stitch, no gap artifacts
+  if (wordCount <= SHORT_SCRIPT_WORDS) {
+    console.info(`[VOICEOVER] ${wordCount} words ≤ ${SHORT_SCRIPT_WORDS} — sending FULL script as single call, no chunking`);
+    return singleCallVoiceover(cleanScript, voiceId, apiKey, userId, planId, voiceT0, input.targetDurationSecs);
+  }
+
+  // Long scripts: chunk + stitch to avoid ElevenLabs silent truncation
   const chunks = splitScriptIntoChunks(cleanScript, CHUNK_SIZE);
-  console.info(`[ELEVENLABS] Split into ${chunks.length} chunk(s) of ≤${CHUNK_SIZE} words`);
+  console.info(`[ELEVENLABS] ${wordCount} words > ${SHORT_SCRIPT_WORDS} — chunking into ${chunks.length} × ≤${CHUNK_SIZE} words`);
 
   // Generate chunks sequentially — ElevenLabs rate limits parallel requests
   const chunkData: Array<{ url: string; buf: ArrayBuffer }> = [];
@@ -347,31 +386,9 @@ export async function generateVoiceover(
     chunkData.push({ url, buf });
   }
 
-  let audioUrl: string;
-  let realDuration: number;
+  // Stitch — multiple chunks always need FFmpeg concat
+  const stitchResult = await stitchAudioChunks(chunkData.map(c => c.url), userId, planId);
 
-  if (chunkData.length === 1) {
-    // Single chunk — write to temp, probe real duration, cleanup
-    const fsM        = await import("node:fs");
-    const pathM      = await import("node:path");
-    const osM        = await import("node:os");
-    const { randomUUID } = await import("node:crypto");
-    const workDir    = pathM.join(osM.tmpdir(), "omnyra_vo_stitch");
-    if (!fsM.existsSync(workDir)) fsM.mkdirSync(workDir, { recursive: true });
-    const tempPath   = pathM.join(workDir, `single_${randomUUID()}.mp3`);
-    fsM.writeFileSync(tempPath, Buffer.from(chunkData[0].buf));
-    realDuration = await probeLocalDuration(tempPath);
-    try { fsM.unlinkSync(tempPath); } catch { /* noop */ }
-    audioUrl = chunkData[0].url;
-  } else {
-    // Multiple chunks — stitch returns probed duration
-    const stitchResult = await stitchAudioChunks(chunkData.map(c => c.url), userId, planId);
-    audioUrl     = stitchResult.url;
-    realDuration = stitchResult.durationSecs;
-  }
-
-  console.info(`[VOICE] done totalMs=${Date.now() - voiceT0} duration=${realDuration.toFixed(2)}s target=${input.targetDurationSecs}s`);
-  console.info(`[VOICEOVER SUCCESS] Final audio duration: ${realDuration.toFixed(2)}s (target was ${input.targetDurationSecs}s)`);
-
-  return { audioUrl, duration: realDuration, scriptUsed: cleanScript };
+  console.info(`[VOICE] done totalMs=${Date.now() - voiceT0} duration=${stitchResult.durationSecs.toFixed(2)}s target=${input.targetDurationSecs}s`);
+  return { audioUrl: stitchResult.url, duration: stitchResult.durationSecs, scriptUsed: cleanScript };
 }

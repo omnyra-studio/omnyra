@@ -146,23 +146,48 @@ export async function POST(req: Request) {
     const charSuffix  = charMemory ? buildKlingCharacterSuffix(charMemory) : "";
 
     // ── 3. Generate ONE reference image for character consistency ─────────────
+    // This single Flux Dev frame anchors the character/environment across all clips.
+    // All Kling calls use this as the I2V source — motion-only prompts drive the action.
     await setJobStatus(jobId, "generating_clips", 15);
 
+    const fluxT0 = Date.now();
     let referenceImageUrl: string | undefined;
-    const refPrompt = `${goal || trimmedScript.slice(0, 120)}, establishing shot, full body visible, facing camera, candid photography, natural light, 9:16 portrait`;
+    const subjectHint = charSuffix ? charSuffix.split(",")[0].trim() : "";
+    const refPrompt = [
+      subjectHint || "lifestyle creator, mid-shot",
+      goal || trimmedScript.slice(0, 100),
+      "establishing shot, full body visible, facing camera directly",
+      "candid photography, sharp focus, natural light, real person",
+      brandSuffix || "minimal clean background",
+      "9:16 portrait, ultra-realistic, high detail",
+    ].filter(Boolean).join(", ");
+
+    const refNegative = [
+      "nudity, nude, nsfw, sexual, explicit, bare skin, underwear",
+      "extra limbs, deformed hands, bad anatomy, mutation, disfigured",
+      "text, watermark, logo, signature, frame, border",
+      "cartoon, anime, illustration, painting, cgi, render",
+      "blurry, out of focus, low quality, pixelated, noise",
+      "looking away, back turned, side profile",
+    ].join(", ");
+
     try {
       const refFrame = await generateGetImgFrame({
-        prompt: refPrompt,
-        negativePrompt: "nudity, nude, nsfw, sexual, explicit, extra limbs, deformed, text, watermark",
+        prompt:          refPrompt,
+        negativePrompt:  refNegative,
+        width:           768,
+        height:          1344,
         useQualityModel: true,
       });
       referenceImageUrl = refFrame.imageUrl;
-      console.log(`[run-cinematic] [CHARACTER_LOCK] referenceImage=${referenceImageUrl.substring(0, 80)}`);
+      console.log(`[run-cinematic] [CHARACTER_LOCK] flux_ms=${Date.now()-fluxT0} url=${referenceImageUrl.substring(0, 80)}`);
     } catch (refErr) {
-      console.warn("[run-cinematic] reference image generation failed, using T2V:", (refErr as Error).message);
+      console.warn("[run-cinematic] reference image failed — falling back to T2V:", (refErr as Error).message);
     }
+    const fluxMs = Date.now() - fluxT0;
 
     // ── 4. Generate Kling clips in parallel (I2V if reference available) ──────
+    const klingT0 = Date.now();
     console.log(`[run-cinematic] generating ${SCENE_COUNT} clips in parallel mode=${referenceImageUrl ? "i2v" : "t2v"}`);
     await setJobStatus(jobId, "generating_clips", 20);
 
@@ -185,6 +210,7 @@ export async function POST(req: Request) {
     );
 
     const clipResults = await Promise.all(clipPromises);
+    const klingMs = Date.now() - klingT0;
     const validClips  = clipResults.filter((c): c is NonNullable<typeof c> => c !== null);
 
     if (!validClips.length) {
@@ -194,7 +220,8 @@ export async function POST(req: Request) {
     console.log(`[run-cinematic] [VIDEO_DURATION] sec=${validClips.length * CLIP_DURATION} clips=${validClips.length}`);
     await setJobStatus(jobId, "generating_audio", 60);
 
-    // ── 4. Generate voiceover (parallel with clip gen is ideal; this is sequential for simplicity) ─
+    // ── 5. Generate voiceover ─────────────────────────────────────────────────
+    const voiceT0 = Date.now();
     let voiceoverUrl: string | undefined;
     let voiceDuration = TARGET_SECS;
     if (trimmedScript.length > 10) {
@@ -211,16 +238,19 @@ export async function POST(req: Request) {
         console.warn("[run-cinematic] voiceover failed (continuing without audio):", (voErr as Error).message);
       }
     }
+    const voiceMs = Date.now() - voiceT0;
 
     await setJobStatus(jobId, "composing", 75);
 
-    // ── 5. Stitch clips → final video ─────────────────────────────────────────
+    // ── 6. Stitch clips → final video ─────────────────────────────────────────
+    const stitchT0 = Date.now();
     const stitchInput = validClips.map((c, i) => ({
       shotNumber:       i + 1,
       video_url:        c.video_url,
       duration_seconds: CLIP_DURATION,
     }));
     let finalVideoUrl: string;
+    let stitchMs = 0;
     try {
       const stitchResult = await stitchClips(stitchInput, {
         voiceoverUrl,
@@ -231,9 +261,11 @@ export async function POST(req: Request) {
         speedMode:         speedMode as "draft" | "balanced" | "quality" | "ultra-draft",
       });
       finalVideoUrl = stitchResult.output_url;
+      stitchMs = Date.now() - stitchT0;
     } catch (stitchErr) {
       console.warn("[run-cinematic] stitch failed, using first clip:", (stitchErr as Error).message);
       finalVideoUrl = validClips[0].video_url;
+      stitchMs = Date.now() - stitchT0;
     }
 
     // ── 6. Save to renders table ──────────────────────────────────────────────
@@ -258,9 +290,14 @@ export async function POST(req: Request) {
     }
 
     // ── 7. Commit credits + mark job complete ────────────────────────────────
+    const totalMs = Date.now() - t0;
+    console.log(
+      `[SPEED_BREAKDOWN] mode=${speedMode} | Flux=${fluxMs}ms | Kling=${klingMs}ms | Voice=${voiceMs}ms | Stitch=${stitchMs}ms | Total=${totalMs}ms` +
+      ` | clips=${validClips.length} i2v=${!!referenceImageUrl}`,
+    );
+
     await commitCredits(creditCost);
 
-    const totalMs = Date.now() - t0;
     await setJobStatus(jobId, "complete", 100, {
       video_url:    finalVideoUrl,
       completed_at: new Date().toISOString(),

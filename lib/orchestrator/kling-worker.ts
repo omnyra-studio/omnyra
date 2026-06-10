@@ -1,12 +1,13 @@
 // Kling generation worker for the parallel orchestration engine.
 //
-// Uses fal.ai client (already integrated) with Kling v2.1 pro by default.
+// Uses fal.ai client (already integrated) with Kling v3 pro by default.
 // Applies visual lock constraints from lib/avatar/model-router.ts.
 // Does NOT change lib/providers/hedra.ts — Hedra path is untouched.
 
 import { fal }                    from "@fal-ai/client";
-import { KLING_T2V_PRO, KLING_T2V_MODEL, KLING_I2V_PRO, extractVideoUrl } from "@/lib/video-models";
+import { KLING_T2V_PRO, KLING_T2V_MODEL, KLING_I2V_PRO, KLING_I2V_MODEL, extractVideoUrl } from "@/lib/video-models";
 import { VISUAL_LOCK_CONSTRAINTS } from "@/lib/avatar/model-router";
+import type { CharacterReference } from "@/lib/memory/types";
 
 // fal SDK reads FAL_KEY; project env may use FAL_API_KEY or FALAI_API_KEY — configure once at module load
 const FAL_CREDS = process.env.FAL_KEY ?? process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY;
@@ -22,7 +23,8 @@ export interface KlingWorkerInput {
   aspectRatio?:  string;           // default "9:16"
   characterPromptSuffix?: string;  // appended from character_registry
   brandSuffix?:  string;           // appended from brand memory
-  imageUrl?:     string;           // reference image → auto-switches to i2v model
+  imageUrl?:     string;           // primary reference image → auto-switches to i2v model
+  characterReferences?: CharacterReference[]; // ranked refs: worker picks highest quality_score
   speedMode?:    string;           // 'ultra-draft' | 'draft' | 'balanced' | 'quality'
   motionStrength?: number;         // 0-1; maps to cfg_scale (inverse)
   isStylized?:   boolean;          // cartoon/furry/creature — affects neg prompts
@@ -54,17 +56,36 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 }
 
 export async function generateKlingClip(input: KlingWorkerInput): Promise<KlingWorkerResult> {
-  const startMs  = Date.now();
-  const isI2V    = !!input.imageUrl;
-  const isDraft  = input.speedMode === 'ultra-draft' || input.speedMode === 'draft';
+  const startMs = Date.now();
 
-  // always use v2.1 pro — v1.6 standard queue is consistently slower
-  const modelId   = input.modelId ?? (isI2V ? KLING_I2V_PRO : KLING_T2V_PRO);
-  // ultra-draft always forces 5s clips; draft honours shot duration
-  const duration  = input.speedMode === 'ultra-draft' ? "5" : clampDuration(input.durationSecs);
+  // Pick best reference: characterReferences ranked by quality_score wins over bare imageUrl
+  const resolvedImageUrl: string | undefined =
+    input.characterReferences?.length
+      ? (input.characterReferences
+          .filter(r => r.is_approved && r.image_url.startsWith("https://"))
+          .sort((a, b) => b.quality_score - a.quality_score)[0]?.image_url
+         ?? input.imageUrl)
+      : input.imageUrl;
+
+  if (resolvedImageUrl && resolvedImageUrl !== input.imageUrl) {
+    console.info(`[KLING_REF_SELECT] shot=${input.shotId} using best approved reference quality_score=${
+      input.characterReferences!.find(r => r.image_url === resolvedImageUrl)?.quality_score?.toFixed(2) ?? "?"
+    }`);
+  }
+
+  const isI2V       = !!resolvedImageUrl;
+  const isUltraDraft = input.speedMode === 'ultra-draft';
+  const isDraft      = isUltraDraft || input.speedMode === 'draft';
+
+  // ultra-draft → v3 standard (faster queue); draft/balanced/quality → v3 pro
+  const defaultT2V = isUltraDraft ? KLING_T2V_MODEL : KLING_T2V_PRO;
+  const defaultI2V = isUltraDraft ? KLING_I2V_MODEL : KLING_I2V_PRO;
+  const modelId    = input.modelId ?? (isI2V ? defaultI2V : defaultT2V);
+  // ultra-draft forces 5s clips; draft/balanced honour shot duration
+  const duration   = isUltraDraft ? "5" : clampDuration(input.durationSecs);
   const aspectRatio = (input.aspectRatio ?? "9:16") as "9:16" | "16:9" | "1:1";
-  // timeout: 250s (Kling v1.6 queue can be slow), 280s balanced — within Vercel 300s limit
-  const timeoutMs = isDraft ? 250_000 : 280_000;
+  // ultra-draft 180s (standard queue is faster), draft 220s, balanced 260s — within Vercel 300s
+  const timeoutMs  = isUltraDraft ? 180_000 : isDraft ? 220_000 : 260_000;
 
   // ── Motion tuning ─────────────────────────────────────────────────────────────
   // motionStrength (0-1) maps inversely to cfg_scale: higher strength = lower cfg_scale = more motion.
@@ -90,13 +111,18 @@ export async function generateKlingClip(input: KlingWorkerInput): Promise<KlingW
     else if (clampedMs <= 0.52) motionModifier = "slow gentle movement, subtle motion";
   }
 
-  // Negative prompts — base + stylized-specific character corruption guards
+  // Negative prompts — base + anatomy guards + stylized-specific character corruption guards
   const negBase      = VISUAL_LOCK_CONSTRAINTS.negative;
+  const negAnatomy   =
+    "extra limbs, extra fingers, extra arms, extra hands, mutated hands, deformed hands, " +
+    "fused fingers, too many fingers, missing fingers, ugly hands, distorted limbs, " +
+    "bad anatomy, extra legs, malformed limbs, three hands, two left hands, " +
+    "overlapping limbs, fused bodies, merged torsos, anatomical errors";
   const negStylized  = input.isStylized
     ? "melting fur, melting feathers, fused limbs, wrong proportions, extra heads, three legs, deformed beak, corrupted plumage, anatomy mutation, uncanny valley, realistic skin on cartoon character"
     : "";
   const negMotion    = clampedMs < 0.52 ? "shaky, jittery, unstable camera" : "";
-  const negative_prompt = [negBase, negStylized, negMotion].filter(Boolean).join(", ");
+  const negative_prompt = [negBase, negAnatomy, negStylized, negMotion].filter(Boolean).join(", ");
 
   console.info(`[MOTION_TUNE] shot=${input.shotId} motionStrength=${ms} clamped=${clampedMs} cfg_scale=${cfgScale} stylized=${input.isStylized ?? false} modifier="${motionModifier}"`);
 
@@ -129,7 +155,7 @@ export async function generateKlingClip(input: KlingWorkerInput): Promise<KlingW
       aspect_ratio: aspectRatio,
       cfg_scale:    cfgScale,
     };
-    if (isI2V) falInput.image_url = input.imageUrl;
+    if (isI2V) falInput.image_url = resolvedImageUrl;
 
     result = await withTimeout(
       fal.subscribe(modelId, { input: falInput }),

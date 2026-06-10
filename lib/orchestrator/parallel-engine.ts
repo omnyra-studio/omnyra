@@ -16,6 +16,8 @@ import { supabaseAdmin }                from "@/lib/supabase/admin";
 import { submitHedraJob, checkHedraGenerationStatus } from "@/lib/providers/hedra";
 import type { HedraInput }              from "@/lib/providers/hedra";
 import { generateKlingClip }            from "./kling-worker";
+import { generateRunwayClip }           from "./runway-worker";
+import { generateGetImgFrame }          from "./getimg-worker";
 import { generateSceneAudio, generateVoiceover } from "./elevenlabs-worker";
 import { routeShot }                    from "./scene-router";
 import type { ShotRoute }               from "./scene-router";
@@ -23,6 +25,8 @@ import { isMultiCharacterScene, generateMultiCharacterClip } from "./multi-chara
 import { stitchClips }                  from "./clip-stitcher";
 import { loadCharacterMemory, buildKlingCharacterSuffix } from "@/lib/memory/character-memory";
 import { loadBrandMemory }              from "@/lib/memory/brand-memory";
+import { saveRenderToLibrary }          from "@/lib/renders/save-render";
+import { generateRecommendations }      from "@/lib/intelligence/recommendation-engine";
 import { KLING_T2V_PRO } from "@/lib/video-models";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -40,12 +44,13 @@ export interface ParallelEngineInput {
   fullScript?:        string;    // full video script for voiceover generation (fires at T=0)
   voiceId?:           string;    // ElevenLabs voice override for voiceover
   maxClips?:          number;    // cap number of shots (default 3 for 30s target)
+  enableRunway?:      boolean;   // opt-in: route quality i2v shots to Runway Gen-4
 }
 
 export interface ClipResult {
   shotId:           string;
   shotNumber:       number;
-  provider:         "hedra" | "kling";
+  provider:         "hedra" | "kling" | "runway";
   video_url:        string;
   duration_seconds: number;
   generation_ms:    number;
@@ -58,6 +63,7 @@ export interface ParallelEngineResult {
   totalMs:            number;
   hedraCount:         number;
   klingCount:         number;
+  runwayCount:        number;
   failedShots:        string[];
   assembledUrl?:      string;         // set only when internal stitch ran
   voiceoverUrl?:      string;         // raw ElevenLabs audio — always returned for Railway
@@ -94,49 +100,97 @@ function emitRaw(
 }
 
 // ── Hedra polling ─────────────────────────────────────────────────────────────
-// Poll interval + budget scale with speedMode — draft uses tighter loops so
-// timeouts surface faster and the Kling fallback kicks in sooner.
+// Time-based hard cap (fallbackAfterMs) triggers Kling fallback before Vercel
+// 300s function limit. Aggressive polling intervals surface completions fast.
 
-function hedraConfig(speedMode: string): { intervalMs: number; maxPolls: number } {
-  if (speedMode === 'ultra-draft') return { intervalMs: 3_000, maxPolls: 40 };  // 120s
-  if (speedMode === 'draft')       return { intervalMs: 3_000, maxPolls: 50 };  // 150s
-  if (speedMode === 'balanced')    return { intervalMs: 4_000, maxPolls: 60 };  // 240s
-  return                                  { intervalMs: 5_000, maxPolls: 72 };  // 360s
+interface HedraConfig {
+  intervalMs:     number;
+  maxPolls:       number;
+  maxAudioSecs:   number;  // hard cap on TTS audio length fed to Hedra
+  fallbackAfterMs: number; // wall-clock limit — throw to trigger Kling fallback
 }
 
-// Max words of narration per Hedra shot — keep in sync with processAvatarShot inline caps.
-function hedraMaxWords(speedMode: string): number {
-  if (speedMode === 'ultra-draft') return 18;  // ≈7s
-  if (speedMode === 'draft')       return 22;  // ≈8-9s
-  if (speedMode === 'balanced')    return 35;  // ≈13s
-  return 50;
+function getHedraConfig(speedMode: string = 'draft'): HedraConfig {
+  switch (speedMode) {
+    case 'ultra-draft':
+      // Lightning Mode: 20-word hard cap → ~8s audio. floor(8 × 2.5) = 20 words.
+      return { intervalMs: 1_500, maxPolls: 50, maxAudioSecs: 8,   fallbackAfterMs:  75_000 };
+    case 'draft':
+      // Draft: 20-word hard cap → ~8s audio. floor(8 × 2.5) = 20 words.
+      return { intervalMs: 1_500, maxPolls: 50, maxAudioSecs: 8,   fallbackAfterMs:  75_000 };
+    case 'balanced':
+      return { intervalMs: 2_000, maxPolls: 60, maxAudioSecs: 12,  fallbackAfterMs: 100_000 };
+    default:  // quality
+      return { intervalMs: 2_500, maxPolls: 50, maxAudioSecs: 15,  fallbackAfterMs:  90_000 };
+  }
 }
 
-async function pollHedra(generationId: string, shotId: string, speedMode: string = 'balanced'): Promise<string> {
-  const { intervalMs, maxPolls } = hedraConfig(speedMode);
-  const pollT0 = Date.now();
+async function pollHedra(
+  generationId:   string,
+  shotId:         string,
+  speedMode:      string = 'draft',
+  correlationId?: string,
+): Promise<string> {
+  const config  = getHedraConfig(speedMode);
+  const startMs = Date.now();
+  let attempt   = 0;
 
-  for (let i = 0; i < maxPolls; i++) {
-    await new Promise(r => setTimeout(r, intervalMs));
+  console.info(`[HEDRA_POLL_START] shot=${shotId} id=${generationId} mode=${speedMode} interval=${config.intervalMs}ms maxWait=${config.fallbackAfterMs / 1000}s`);
+
+  while (true) {
+    attempt++;
+    const elapsed = Date.now() - startMs;
+
+    if (elapsed > config.fallbackAfterMs) {
+      console.warn(`[HEDRA_TIMEOUT_FALLBACK] shot=${shotId} elapsed=${Math.round(elapsed / 1000)}s attempts=${attempt} → Kling fallback`);
+      if (correlationId) {
+        emitRaw("PROGRESS_UPDATE", correlationId, {
+          stage: "generating_avatar", progress: 85,
+          message: `Hedra timed out after ${Math.round(elapsed / 1000)}s — switching to Kling...`,
+          provider: "hedra", shotId,
+        });
+      }
+      throw new Error(`Hedra timeout after ${Math.round(elapsed / 1000)}s — falling back to Kling`);
+    }
 
     const result = await checkHedraGenerationStatus(generationId);
 
     if (result.status === "complete") {
       if (!result.videoUrl) throw new Error(`Hedra shot=${shotId}: complete but no videoUrl`);
-      console.info(`[HEDRA_TIMING] shot=${shotId} polls=${i + 1} ms=${Date.now() - pollT0}`);
+      console.info(`[HEDRA_SUCCESS] shot=${shotId} elapsed=${Math.round(elapsed / 1000)}s attempts=${attempt}`);
+      if (correlationId) {
+        emitRaw("PROGRESS_UPDATE", correlationId, {
+          stage: "generating_avatar", progress: 90,
+          message: `Hedra lip-sync complete in ${Math.round(elapsed / 1000)}s`,
+          provider: "hedra", shotId,
+        });
+      }
       return result.videoUrl;
     }
 
     if (result.status === "error") {
-      throw new Error(`Hedra shot=${shotId}: error after ${i + 1} polls — ${result.errorMessage ?? "unknown"}`);
+      throw new Error(`Hedra shot=${shotId}: failed after ${attempt} polls — ${result.errorMessage ?? "unknown"}`);
     }
 
-    if (i > 0 && i % 5 === 0) {
-      console.info(`[HEDRA_POLL] shot=${shotId} poll=${i + 1}/${maxPolls} elapsed=${Math.round((Date.now() - pollT0) / 1000)}s`);
+    if (attempt % 5 === 0) {
+      const elapsedSec = Math.round(elapsed / 1000);
+      console.info(`[HEDRA_POLL] shot=${shotId} attempt=${attempt} elapsed=${elapsedSec}s status=${result.status ?? "pending"}`);
+      if (correlationId) {
+        emitRaw("PROGRESS_UPDATE", correlationId, {
+          stage: "generating_avatar",
+          message: `Hedra lip-sync · poll ${attempt} · ${elapsedSec}s elapsed`,
+          provider: "hedra", shotId,
+        });
+      }
+    }
+
+    await new Promise(r => setTimeout(r, config.intervalMs));
+
+    // Progressive micro-backoff after 30s — reduces API pressure during slow jobs
+    if (elapsed > 30_000 && attempt % 3 === 0) {
+      await new Promise(r => setTimeout(r, 500));
     }
   }
-
-  throw new Error(`Hedra shot=${shotId}: timed out after ${maxPolls} polls (${Math.round(maxPolls * intervalMs / 1000)}s)`);
 }
 
 // ── Avatar lane ───────────────────────────────────────────────────────────────
@@ -151,25 +205,35 @@ async function processAvatarShot(
 ): Promise<ClipResult> {
   const startMs = Date.now();
 
-  // Step 1: ElevenLabs TTS — HARD-CAP narration length before calling TTS.
-  // Hedra generation time is proportional to audio length.
-  // Prefer router-supplied maxDurationSecs → derive word cap (≈2.5 words/sec).
+  // Step 1: ElevenLabs TTS — HARD-CAP narration to maxAudioSecs from HedraConfig.
+  // Hedra generation time scales directly with audio length.
+  // ultra-draft=18 words (7.5s), draft=22 words (9s), balanced=30 words (12s).
+  // Take the tighter of router-supplied maxDurationSecs and config audio cap.
   const rawNarration = shot.audio_intent.trim();
   if (!rawNarration) throw new Error(`Avatar shot ${shot.id}: no narration text`);
 
-  const wordsFromDuration = maxDurationSecs ? Math.floor(maxDurationSecs * 2.5) : null;
-  const maxWords   = wordsFromDuration ?? (speedMode === 'ultra-draft' ? 18 : speedMode === 'draft' ? 22 : 35);
+  const hedraConf  = getHedraConfig(speedMode);
+  const audioCap   = maxDurationSecs ? Math.min(maxDurationSecs, hedraConf.maxAudioSecs) : hedraConf.maxAudioSecs;
+  const maxWords   = Math.floor(audioCap * 2.5);
   const allWords   = rawNarration.split(/\s+/).filter(Boolean);
   const wordCount  = allWords.length;
   let narrationText: string;
 
   if (wordCount > maxWords) {
     narrationText = allWords.slice(0, maxWords).join(" ").replace(/[,;.!?]+$/, "") + ".";
-    console.info(`[HEDRA_TRUNCATE] shot=${shot.id} words ${wordCount}→${maxWords} speedMode=${speedMode} original="${rawNarration.substring(0, 60)}..."`);
+    const estSec  = Math.round((maxWords / 2.5) * 10) / 10;
+    console.info(`[AVATAR_CAP] shot=${shot.id} words ${wordCount}→${maxWords} est_audio_sec=${estSec}s audioCap=${audioCap}s speedMode=${speedMode}`);
   } else {
+    const estSec  = Math.round((wordCount / 2.5) * 10) / 10;
     narrationText = rawNarration;
-    console.info(`[HEDRA] shot=${shot.id} words=${wordCount} no-truncate speedMode=${speedMode}`);
+    console.info(`[AVATAR_CAP] shot=${shot.id} words=${wordCount} est_audio_sec=${estSec}s no-truncate speedMode=${speedMode}`);
   }
+
+  emitRaw("PROGRESS_UPDATE", correlationId, {
+    stage: "generating_audio", progress: 22,
+    message: `ElevenLabs Flash: synthesizing voiceover for shot ${shot.shot_number}...`,
+    provider: "elevenlabs", shotId: shot.id,
+  });
 
   const { audio_url } = await generateSceneAudio(
     { text: narrationText, voiceId: voiceId ?? undefined },
@@ -178,6 +242,11 @@ async function processAvatarShot(
   );
 
   emitRaw("ELEVENLABS_SHOT_DONE", correlationId, { shotId: shot.id, shotNumber: shot.shot_number });
+  emitRaw("PROGRESS_UPDATE", correlationId, {
+    stage: "generating_audio", progress: 30,
+    message: `Voiceover ready (${narrationText.split(/\s+/).length} words) — submitting to Hedra...`,
+    provider: "elevenlabs", shotId: shot.id,
+  });
 
   // Step 2: Submit to Hedra
   const hedraInput: HedraInput = {
@@ -191,11 +260,16 @@ async function processAvatarShot(
     hedraInput,
     async (genId: string) => {
       emitRaw("HEDRA_SHOT_SUBMITTED", correlationId, { shotId: shot.id, shotNumber: shot.shot_number, generationId: genId });
+      emitRaw("PROGRESS_UPDATE", correlationId, {
+        stage: "generating_avatar", progress: 35,
+        message: `Hedra job queued for shot ${shot.shot_number} — polling every ${getHedraConfig(speedMode).intervalMs / 1000}s...`,
+        provider: "hedra", shotId: shot.id,
+      });
     },
   );
 
   // Step 3: Poll until complete (speed-aware timeout)
-  const video_url     = await pollHedra(generationId, shot.id, speedMode);
+  const video_url     = await pollHedra(generationId, shot.id, speedMode, correlationId);
   const generation_ms = Date.now() - startMs;
 
   emitRaw("HEDRA_CLIP_READY", correlationId, { shotId: shot.id, shotNumber: shot.shot_number, video_url, generation_ms });
@@ -250,6 +324,68 @@ async function processKlingShot(
     shotId:           shot.id,
     shotNumber:       shot.shot_number,
     provider:         "kling",
+    video_url:        result.video_url,
+    duration_seconds: result.duration_seconds,
+    generation_ms:    result.generation_ms,
+    fromCache:        false,
+  };
+}
+
+// ── Runway lane ──────────────────────────────────────────────────────────────
+
+async function processRunwayShot(
+  shot:          ShotRow,
+  route:         ShotRoute,
+  charSuffix:    string,
+  brandSuffix:   string,
+  correlationId: string,
+  charImageUrl:  string,           // required — Runway is always i2v
+): Promise<ClipResult> {
+  const shotT0 = Date.now();
+
+  // If route asks for a GetImg-generated source frame, generate one first.
+  // Otherwise use the character reference image directly.
+  let sourceImageUrl = charImageUrl;
+  if (route.sourceImageProvider === "getimg") {
+    try {
+      const frame = await generateGetImgFrame({
+        prompt:          `${shot.visual_prompt}${charSuffix ? ", " + charSuffix : ""}${brandSuffix ? ", " + brandSuffix : ""}`,
+        negativePrompt:  "extra limbs, bad anatomy, deformed, ugly, watermark",
+        width:           768,
+        height:          1344,
+        useQualityModel: false,
+      });
+      sourceImageUrl = frame.imageUrl;
+      console.info(`[RUNWAY_GETIMG] shot=${shot.id} getimg frame in ${frame.generationMs}ms`);
+    } catch (err) {
+      console.warn(`[RUNWAY_GETIMG] shot=${shot.id} getimg failed, falling back to char ref:`, err);
+    }
+  }
+
+  const prompt = [shot.visual_prompt, charSuffix, brandSuffix].filter(Boolean).join(", ");
+
+  const result = await generateRunwayClip({
+    shotId:       shot.id,
+    shotNumber:   shot.shot_number,
+    prompt,
+    imageUrl:     sourceImageUrl,
+    durationSecs: shot.duration_seconds,
+    aspectRatio:  "9:16",
+  });
+
+  console.info(`[CLIP_TIMING] runway shot=${shot.id} num=${shot.shot_number} ms=${Date.now() - shotT0}`);
+
+  emitRaw("RUNWAY_CLIP_READY", correlationId, {
+    shotId:        shot.id,
+    shotNumber:    shot.shot_number,
+    video_url:     result.video_url,
+    generation_ms: result.generation_ms,
+  });
+
+  return {
+    shotId:           shot.id,
+    shotNumber:       shot.shot_number,
+    provider:         "runway",
     video_url:        result.video_url,
     duration_seconds: result.duration_seconds,
     generation_ms:    result.generation_ms,
@@ -350,25 +486,33 @@ export async function runParallelEngine(
       draftMode,
       speedMode,
       isMultiCharacter: multiChar,
+      enableRunway:     input.enableRunway ?? false,
     });
   });
 
   const avatarShots     = shotRows.filter((_, i) => routes[i].provider === "hedra");
+  const runwayShots     = shotRows.filter((_, i) => routes[i].provider === "runway");
   // multi-char only when we actually have two characters; otherwise treat as regular kling
   const multiCharShots  = shotRows.filter((_, i) => routes[i].provider === "kling" && !!char2Memory && isMultiCharacterScene(_.visual_prompt));
   const klingShots      = shotRows.filter((_, i) => routes[i].provider === "kling" && !multiCharShots.includes(_));
 
   console.info("[parallel-engine] routed", {
     planId,
-    total:       shotRows.length,
-    hedra:       avatarShots.length,
-    kling:       klingShots.length,
-    multiChar:   multiCharShots.length,
+    total:     shotRows.length,
+    hedra:     avatarShots.length,
+    kling:     klingShots.length,
+    runway:    runwayShots.length,
+    multiChar: multiCharShots.length,
   });
   emitRaw("PARALLEL_ENGINE_ROUTED", planId, {
     hedra:     avatarShots.length,
     kling:     klingShots.length,
+    runway:    runwayShots.length,
     multiChar: multiCharShots.length,
+  });
+  emitRaw("PROGRESS_UPDATE", planId, {
+    stage: "planning", progress: 12,
+    message: `${shotRows.length} scenes planned — ${klingShots.length + runwayShots.length} Kling/Runway + ${avatarShots.length} Hedra starting in parallel...`,
   });
 
   // 4. Fire all lanes in parallel — voiceover at T=0 alongside clips
@@ -386,11 +530,25 @@ export async function runParallelEngine(
   });
 
   const voiceoverPromise = voiceScript.length > 0
-    ? generateVoiceover(
-        { script: voiceScript, voiceId, targetDurationSecs: targetDurationSecs ?? 30 },
-        userId,
-        planId,
-      ).catch(err => { console.warn("[parallel-engine] voiceover failed (non-fatal):", err); return null; })
+    ? (
+        emitRaw("PROGRESS_UPDATE", planId, {
+          stage: "generating_audio", progress: 15,
+          message: "ElevenLabs Flash: generating full voiceover...",
+          provider: "elevenlabs",
+        }),
+        generateVoiceover(
+          { script: voiceScript, voiceId, targetDurationSecs: targetDurationSecs ?? 30 },
+          userId,
+          planId,
+        ).then(result => {
+          emitRaw("PROGRESS_UPDATE", planId, {
+            stage: "generating_audio", progress: 28,
+            message: `Voiceover ready — ${result.duration.toFixed(1)}s audio`,
+            provider: "elevenlabs",
+          });
+          return result;
+        }).catch(err => { console.warn("[parallel-engine] voiceover failed (non-fatal):", err); return null; })
+      )
     : Promise.resolve(null);
 
   const klingPromises = klingShots.map(shot => {
@@ -412,6 +570,27 @@ export async function runParallelEngine(
         return processKlingShot(shot, fallbackRoute, charSuffix, brandSuffix, planId, speedMode, charImageUrl)
           .catch(klingErr => {
             console.error(`[HEDRA_FALLBACK] kling also failed shot=${shot.id}:`, klingErr);
+            failedShots.push(shot.id);
+            return null;
+          });
+      });
+  });
+
+  const runwayPromises = runwayShots.map(shot => {
+    if (!charImageUrl) {
+      console.warn(`[parallel-engine] runway shot=${shot.id} skipped — no char image, falling back to kling`);
+      const fallbackRoute: ShotRoute = { ...routes[shotRows.indexOf(shot)], provider: "kling", klingModelId: KLING_T2V_PRO, motionStrength: 0.62, reason: "runway-no-image-fallback" };
+      return processKlingShot(shot, fallbackRoute, charSuffix, brandSuffix, planId, speedMode, null)
+        .catch(err => { console.error(`[parallel-engine] runway-kling-fallback shot=${shot.id}:`, err); failedShots.push(shot.id); return null; });
+    }
+    const route = routes[shotRows.indexOf(shot)];
+    return processRunwayShot(shot, route, charSuffix, brandSuffix, planId, charImageUrl)
+      .catch(async (err: Error) => {
+        console.warn(`[RUNWAY_FALLBACK] shot=${shot.id} runway_error="${err.message.slice(0, 80)}" → kling`);
+        const fallbackRoute: ShotRoute = { ...route, provider: "kling", klingModelId: KLING_T2V_PRO, motionStrength: 0.62, reason: "runway-fallback" };
+        return processKlingShot(shot, fallbackRoute, charSuffix, brandSuffix, planId, speedMode, charImageUrl)
+          .catch(klingErr => {
+            console.error(`[RUNWAY_FALLBACK] kling also failed shot=${shot.id}:`, klingErr);
             failedShots.push(shot.id);
             return null;
           });
@@ -443,9 +622,10 @@ export async function runParallelEngine(
     });
   });
 
-  const [klingResults, avatarResults, multiCharResults, voiceoverResult] = await Promise.all([
+  const [klingResults, avatarResults, runwayResults, multiCharResults, voiceoverResult] = await Promise.all([
     Promise.all(klingPromises),
     Promise.all(avatarPromises),
+    Promise.all(runwayPromises),
     Promise.all(multiCharPromises),
     voiceoverPromise,
   ]);
@@ -454,8 +634,14 @@ export async function runParallelEngine(
   const allClips: ClipResult[] = [
     ...klingResults.filter((r): r is ClipResult => r !== null),
     ...avatarResults.filter((r): r is ClipResult => r !== null),
+    ...runwayResults.filter((r): r is ClipResult => r !== null),
     ...multiCharResults.filter((r): r is ClipResult => r !== null),
   ].sort((a, b) => a.shotNumber - b.shotNumber);
+
+  emitRaw("PROGRESS_UPDATE", planId, {
+    stage: "stitching", progress: 88,
+    message: `${allClips.length} clip${allClips.length === 1 ? "" : "s"} ready — stitching final video...`,
+  });
 
   // 6. Persist (non-blocking)
   const klingModel = KLING_T2V_PRO;
@@ -473,7 +659,8 @@ export async function runParallelEngine(
     failedShots,
     voiceoverUrl: voiceoverResult?.audioUrl ?? null,
   });
-  console.info(`[SPEED] engine done planId=${planId} clips=${allClips.length} failed=${failedShots.length} totalMs=${totalMs} speedMode=${speedMode} hasVoiceover=${!!voiceoverResult}`);
+  const clipBreakdown = allClips.map(c => `${c.provider}[${c.shotNumber}]=${c.generation_ms}ms`).join(", ");
+  console.info(`[SPEED_BREAKDOWN] planId=${planId} Total=${totalMs}ms | Clips=(${clipBreakdown}) | Voiceover=${voiceoverResult ? "yes" : "no"} | speedMode=${speedMode} | clips=${allClips.length}/${shotRows.length}`);
 
   // 7. Optional stitch into a single video
   let assembledUrl: string | undefined;
@@ -498,11 +685,25 @@ export async function runParallelEngine(
         voice_driven:     !!voiceoverResult,
       });
       console.info("[parallel-engine] assembled", { planId, url: assembledUrl?.slice(0, 80) });
+
+      // Auto-save to library + fire post-gen thank-you email (non-blocking)
+      void saveRenderToLibrary({
+        userId,
+        videoUrl:  assembledUrl,
+        audioUrl:  voiceoverResult?.audioUrl ?? null,
+        template:  "parallel",
+        sendEmail: true,
+      }).catch(err => console.warn("[parallel-engine] auto-save failed:", err));
     } catch (err) {
       console.error("[parallel-engine] stitch failed (non-fatal):", err);
       emitRaw("PARALLEL_ENGINE_STITCH_FAILED", planId, { error: err instanceof Error ? err.message : String(err) });
     }
   }
+
+  // Fire post-generation intelligence recommendations (non-blocking)
+  void generateRecommendations(userId)
+    .then(recs => console.info(`[parallel-engine] recommendations=${recs.length} userId=${userId}`))
+    .catch(err => console.warn("[parallel-engine] recommendations failed (non-fatal):", err));
 
   const railwayPayload = {
     planId,
@@ -521,6 +722,7 @@ export async function runParallelEngine(
     totalMs,
     hedraCount:         allClips.filter(c => c.provider === "hedra").length,
     klingCount:         allClips.filter(c => c.provider === "kling").length,
+    runwayCount:        allClips.filter(c => c.provider === "runway").length,
     failedShots,
     assembledUrl,
     voiceoverUrl:       voiceoverResult?.audioUrl,

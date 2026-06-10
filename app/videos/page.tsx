@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import AnimatedBackground from "@/components/AnimatedBackground";
 
@@ -101,6 +102,32 @@ function VideoModal({ url, onClose }: { url: string; onClose: () => void }) {
             display: "flex", alignItems: "center", justifyContent: "center",
           }}
         >×</button>
+
+        {/* Action bar below video */}
+        <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+          <a
+            href={url}
+            download
+            style={{
+              flex: 1, background: "rgba(201,168,76,0.15)",
+              border: "1px solid rgba(201,168,76,0.4)",
+              borderRadius: 10, padding: "10px 0",
+              color: "#C9A84C", fontWeight: 700, fontSize: 14,
+              textDecoration: "none", textAlign: "center",
+            }}
+          >⬇ Download</a>
+          <Link
+            href="/create"
+            style={{
+              flex: 1, background: "rgba(192,132,252,0.12)",
+              border: "1px solid rgba(192,132,252,0.35)",
+              borderRadius: 10, padding: "10px 0",
+              color: "#C084FC", fontWeight: 700, fontSize: 14,
+              textDecoration: "none", textAlign: "center",
+              display: "block",
+            }}
+          >✦ New Video</Link>
+        </div>
       </div>
     </div>
   );
