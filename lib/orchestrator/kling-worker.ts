@@ -84,8 +84,8 @@ export async function generateKlingClip(input: KlingWorkerInput): Promise<KlingW
   // ultra-draft forces 5s clips; draft/balanced honour shot duration
   const duration   = isUltraDraft ? "5" : clampDuration(input.durationSecs);
   const aspectRatio = (input.aspectRatio ?? "9:16") as "9:16" | "16:9" | "1:1";
-  // ultra-draft 180s (standard queue is faster), draft 220s, balanced 260s — within Vercel 300s
-  const timeoutMs  = isUltraDraft ? 180_000 : isDraft ? 220_000 : 260_000;
+  // ultra-draft 120s (standard queue + 5s clips), draft 200s, balanced 260s — within Vercel 300s
+  const timeoutMs  = isUltraDraft ? 120_000 : isDraft ? 200_000 : 260_000;
 
   // ── Motion tuning ─────────────────────────────────────────────────────────────
   // motionStrength (0-1) maps inversely to cfg_scale: higher strength = lower cfg_scale = more motion.

@@ -14,7 +14,9 @@ import { Resend } from "resend";
 
 export const maxDuration = 20;
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+function getResend() {
+  return new Resend(process.env.RESEND_API_KEY ?? "not_configured");
+}
 const CRON_SECRET = process.env.CRON_SECRET ?? "";
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "https://omnyra.studio";
 
@@ -220,7 +222,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const result = await resend.emails.send({
+    const result = await getResend().emails.send({
       from:    "Gem <gem@omnyra.studio>",
       to:      user.email,
       subject: content.subject,

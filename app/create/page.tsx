@@ -1410,8 +1410,6 @@ function CreatePageInner() {
 
         // ── PHASE 1: Generate clips only — voice picker shown after ───────────
         const scriptText = scriptForCinematic;
-        const CLIP_SECONDS = lightningMode ? 5 : 10;
-
         // Snapshot script at click time — generatedScriptRef may be stale after async awaits above
         const scriptSnapshot = generatedScriptRef.current?.trim() || generatedScript?.trim() || scriptText?.trim() || '';
         console.log('[SCRIPT_SNAPSHOT]', {
@@ -1421,12 +1419,12 @@ function CreatePageInner() {
           lightningMode,
         });
 
-        // Derive clip count from word-count estimate. Falls back to 75 words if script empty.
-        // Lightning mode: hard-cap at 2 clips for maximum speed.
+        // Lightning: 2 clips (14s video, under 90s total). Normal: 3 clips (30s video).
+        // run-cinematic already caps at 3 — matching here prevents split-script over-generation.
         const wordCount         = scriptSnapshot.split(/\s+/).filter(Boolean).length || 75;
         const estimatedVoiceSec = Math.ceil(wordCount / 2.3);
-        const clipCount         = lightningMode ? 2 : Math.max(3, Math.min(8, Math.ceil(estimatedVoiceSec / CLIP_SECONDS)));
-        console.log('[LIGHTNING]', { lightningMode, clipCount, CLIP_SECONDS, wordCount, estimatedVoiceSec });
+        const clipCount         = lightningMode ? 2 : 3;
+        console.log('[LIGHTNING]', { lightningMode, clipCount, wordCount, estimatedVoiceSec });
 
         console.log('[CLIP_COUNT]', { wordCount, estimatedVoiceSec, clipCount });
         console.log('[CINEMATIC_STEP1_SCRIPT]', scriptText.length, 'chars', scriptText.substring(0, 80));

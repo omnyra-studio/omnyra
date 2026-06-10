@@ -8,8 +8,14 @@
 
 import { routeModel }    from "@/lib/avatar/model-router";
 import { classifyScene } from "@/lib/avatar/scene-classifier";
-import { KLING_T2V_PRO } from "@/lib/video-models";
+import { KLING_T2V_PRO, KLING_T2V_MODEL } from "@/lib/video-models";
 import { isMultiCharacterScene } from "./multi-character-handler";
+
+// ultra-draft uses v3 standard (shorter queue, 5s clips are fast);
+// all other modes use v3 pro for best motion quality.
+function pickKlingT2V(speedMode: string): string {
+  return speedMode === 'ultra-draft' ? KLING_T2V_MODEL : KLING_T2V_PRO;
+}
 
 export type Provider = "hedra" | "kling" | "runway";
 
@@ -57,7 +63,7 @@ export function routeShot(shot: RoutableSot, opts: RouteOptions): ShotRoute {
   if (multiChar) {
     const motionStrength = getMotionStrength(speedMode, combinedText, stylized);
     // Multi-character: t2v only (single ref image can't represent both chars)
-    const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "kling", klingModelId: KLING_T2V_PRO, motionStrength, isStylized: stylized, reason: "multi-character → kling" };
+    const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "kling", klingModelId: pickKlingT2V(speedMode), motionStrength, isStylized: stylized, reason: "multi-character → kling" };
     console.info(`[ROUTER] → KLING ${label} reason=${r.reason} motion=${motionStrength} stylized=${stylized}`);
     return r;
   }
@@ -66,7 +72,7 @@ export function routeShot(shot: RoutableSot, opts: RouteOptions): ShotRoute {
   if (shot.render_assignment === "avatar") {
     if (!characterHasImage) {
       const motionStrength = getMotionStrength(speedMode, combinedText, stylized);
-      const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "kling", klingModelId: KLING_T2V_PRO, motionStrength, isStylized: stylized, reason: "render_assignment=avatar but no character image → kling fallback" };
+      const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "kling", klingModelId: pickKlingT2V(speedMode), motionStrength, isStylized: stylized, reason: "render_assignment=avatar but no character image → kling fallback" };
       console.info(`[ROUTER] → KLING ${label} reason=${r.reason} motion=${motionStrength}`);
       return r;
     }
@@ -80,7 +86,7 @@ export function routeShot(shot: RoutableSot, opts: RouteOptions): ShotRoute {
     const motionStrength = getMotionStrength(speedMode, combinedText, stylized);
     // Prefer i2v for stylized characters when a reference image exists — better consistency
     const preferI2V = stylized && characterHasImage && speedMode !== 'ultra-draft';
-    const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "kling", klingModelId: KLING_T2V_PRO, motionStrength, preferI2V, isStylized: stylized, reason: "render_assignment=fal" };
+    const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "kling", klingModelId: pickKlingT2V(speedMode), motionStrength, preferI2V, isStylized: stylized, reason: "render_assignment=fal" };
     console.info(`[ROUTER] → KLING ${label} reason=${r.reason} motion=${motionStrength} i2v=${preferI2V} stylized=${stylized}`);
     return r;
   }
@@ -117,7 +123,7 @@ export function routeShot(shot: RoutableSot, opts: RouteOptions): ShotRoute {
 
   const motionStrength = getMotionStrength(speedMode, combinedText, stylized);
   const preferI2V      = stylized && characterHasImage && speedMode !== 'ultra-draft';
-  const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "kling", klingModelId: shot.fal_model ?? KLING_T2V_PRO, motionStrength, preferI2V, isStylized: stylized, reason: `classifier: ${routing.reason}` };
+  const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "kling", klingModelId: shot.fal_model ?? pickKlingT2V(speedMode), motionStrength, preferI2V, isStylized: stylized, reason: `classifier: ${routing.reason}` };
   console.info(`[ROUTER] → KLING ${label} model=${r.klingModelId?.split("/").pop()} reason=${r.reason} motion=${motionStrength} i2v=${preferI2V} stylized=${stylized}`);
   return r;
 }
