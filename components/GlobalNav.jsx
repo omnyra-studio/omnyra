@@ -113,6 +113,7 @@ export default function GlobalNav() {
               { href: "/dashboard", label: "Create" },
               { href: "/voice-studio", label: "Voice" },
               { href: "/videos", label: "My Videos" },
+              { href: "/usage", label: "Usage" },
               { href: "/analytics", label: "Analytics" },
               { href: "/profile", label: "Profile" },
               { href: "/dashboard/brand", label: "Brand" },

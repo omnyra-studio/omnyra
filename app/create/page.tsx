@@ -282,6 +282,8 @@ function CreatePageInner() {
   const [pendingClipUrls, setPendingClipUrls] = useState<string[]>([]);
   const [pendingClipDuration, setPendingClipDuration] = useState(10);
   const [pendingScript, setPendingScript] = useState('');
+  const [pendingSourceImages, setPendingSourceImages] = useState<string[]>([]);
+  const [savedReferenceId, setSavedReferenceId] = useState<string | null>(null);
 
   // Character registry
   const [characters, setCharacters] = useState<Array<{ id: string; name: string; ref_frame_url: string | null }>>([]);
@@ -310,10 +312,34 @@ function CreatePageInner() {
   // Explicit face photo for Hedra avatar (takes priority over selectedImage)
   const [avatarImageUrl, setAvatarImageUrl] = useState<string | null>(null);
 
+  // Lightning Mode — 2 clips, 5s each, ultra-draft quality, ~60s total
+  const [lightningMode, setLightningMode] = useState(false);
+
+  // Async job IDs — set when generation fires in background
+  const [cinematicJobId, setCinematicJobId] = useState<string | null>(null);
+  const [avatarJobId,    setAvatarJobId]    = useState<string | null>(null);
+
+  // Rich generation progress
+  const [genStage,   setGenStage]   = useState('');
+  const [genMessage, setGenMessage] = useState('');
+  const [genEta,     setGenEta]     = useState<number | null>(null);
+  const genStartRef = useRef<number | null>(null);
+
   // Poll cleanup ref
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Restore form state from sessionStorage (set before navigating to voice studio)
+  // Series / continuation tracking
+  const [continuationMode, setContinuationMode] = useState<{
+    seriesId:       string;
+    episodeNumber:  number;
+    characterId:    string | null;
+    characterName:  string | null;
+    parentRenderId: string;
+    parentSummary:  string;
+  } | null>(null);
+  const [isLoadingContinuation, setIsLoadingContinuation] = useState(false);
+
+  // Restore form state from sessionStorage (persisted on every change below)
   useEffect(() => {
     const saved = sessionStorage.getItem('omnyra_create_state');
     if (!saved) return;
@@ -328,6 +354,19 @@ function CreatePageInner() {
         if (state.competitors) setCompetitors(state.competitors);
         if (state.uniqueAngle) setUniqueAngle(state.uniqueAngle);
         if (state.selectedPlatforms?.length) setSelectedPlatforms(state.selectedPlatforms);
+        if (state.selectedImage) setSelectedImage(state.selectedImage);
+        if (state.selectedVoiceId) setSelectedVoiceId(state.selectedVoiceId);
+        if (state.videoType) setVideoType(state.videoType);
+        if (state.generatedScript) {
+          setGeneratedScript(state.generatedScript);
+          generatedScriptRef.current = state.generatedScript;
+        }
+        if (state.pendingClipUrls?.length) {
+          setPendingClipUrls(state.pendingClipUrls);
+          setPendingClipDuration(state.pendingClipDuration ?? 10);
+          setPendingScript(state.pendingScript ?? '');
+          setClipsReady(state.clipsReady ?? false);
+        }
         if (state.briefResponse) {
           setBriefResponse(state.briefResponse);
           setShowInput(false);
@@ -335,8 +374,24 @@ function CreatePageInner() {
         }
       }, 0);
     } catch {}
-    sessionStorage.removeItem('omnyra_create_state');
   }, []);
+
+  // Persist key state to sessionStorage on every change so navigation doesn't lose work
+  useEffect(() => {
+    if (!goal && !briefResponse && !generatedScript && !pendingClipUrls.length) return;
+    try {
+      sessionStorage.setItem('omnyra_create_state', JSON.stringify({
+        goal, niche, targetAudience, pastWins, competitors, uniqueAngle,
+        selectedPlatforms, briefResponse, selectedVersion,
+        generatedScript: generatedScriptRef.current,
+        selectedImage, selectedVoiceId, videoType,
+        pendingClipUrls, pendingClipDuration, pendingScript, clipsReady,
+      }));
+    } catch { /* storage quota exceeded — ignore */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [goal, niche, targetAudience, pastWins, competitors, uniqueAngle,
+      selectedPlatforms, briefResponse, selectedVersion, generatedScript,
+      selectedImage, selectedVoiceId, videoType, pendingClipUrls, clipsReady]);
 
   // Auth check + brand profile pre-fill
   useEffect(() => {
@@ -417,9 +472,72 @@ function CreatePageInner() {
     return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
 
-  // Load characters once when avatar mode is first selected
+  // Track generation start time
   useEffect(() => {
-    if (videoType !== 'avatar' || characters.length > 0) return;
+    if (isGeneratingVideo) {
+      if (!genStartRef.current) genStartRef.current = Date.now();
+    } else {
+      genStartRef.current = null;
+      setGenStage('');
+      setGenMessage('');
+      setGenEta(null);
+    }
+  }, [isGeneratingVideo]);
+
+  // Drive stage label / message / ETA from progress + videoType + pipelineStatus
+  useEffect(() => {
+    if (!isGeneratingVideo) return;
+    const p = videoProgress;
+
+    let stage = '';
+    let msg   = '';
+    let totalSecs = 90;
+
+    if (videoType === 'cinematic') {
+      totalSecs = lightningMode ? 65 : 120;
+      if      (p < 8)   { stage = 'Analyzing script';    msg = 'Breaking your script into visual scenes...'; }
+      else if (p < 15)  { stage = 'Scene planning';      msg = 'Mapping scene types and camera movements...'; }
+      else if (p < 42)  { stage = 'Generating images';   msg = 'Flux AI: Creating reference frames for each scene...'; }
+      else if (p < 87)  { stage = 'Generating clips';    msg = lightningMode ? 'Kling: Fast-rendering 2 clips in parallel...' : 'Kling Pro: Animating scenes in parallel...'; }
+      else if (p < 96)  { stage = 'Adding voiceover';    msg = 'ElevenLabs: Synthesizing narration...'; }
+      else if (p < 100) { stage = 'Stitching video';     msg = 'Assembling final video from all clips...'; }
+      else              { stage = 'Complete';             msg = 'Your video is ready!'; }
+    } else if (videoType === 'avatar') {
+      totalSecs = 140;
+      const ps = pipelineStatus;
+      if      (p < 20 || !ps)                { stage = 'Preparing avatar';    msg = 'Loading character profile and script...'; }
+      else if (ps === 'generating_audio')     { stage = 'Synthesizing voice';  msg = 'ElevenLabs Flash: Generating narration at 32ms...'; }
+      else if (p < 35)                        { stage = 'Submitting to Hedra'; msg = 'Queuing your avatar lip-sync job...'; }
+      else if (ps === 'generating_avatar')    { stage = 'Hedra lip-sync';      msg = hedraResuming ? 'Resuming Hedra generation...' : 'Hedra: Animating avatar with lip sync...'; }
+      else if (ps === 'stitching')            { stage = 'Stitching video';     msg = 'Assembling final video...'; }
+      else                                    { stage = 'Processing';          msg = 'Working on your avatar video...'; }
+    } else {
+      totalSecs = 45;
+      stage = 'Generating';
+      msg   = 'Creating your video clip...';
+    }
+
+    setGenStage(stage);
+    setGenMessage(msg);
+
+    // ETA: ratio-based estimate capped at 2× total
+    if (genStartRef.current && p > 5 && p < 99) {
+      const elapsedSecs = (Date.now() - genStartRef.current) / 1000;
+      const rate        = p / elapsedSecs; // % per second
+      if (rate > 0) {
+        const byRate      = (100 - p) / rate;
+        const byTotal     = Math.max(0, totalSecs - elapsedSecs);
+        const eta         = byRate < totalSecs * 2 ? byRate : byTotal;
+        setGenEta(Math.max(0, eta));
+      }
+    } else if (p >= 99) {
+      setGenEta(null);
+    }
+  }, [isGeneratingVideo, videoProgress, videoType, pipelineStatus, hedraResuming]);
+
+  // Load characters when avatar or cinematic mode is selected
+  useEffect(() => {
+    if ((videoType !== 'avatar' && videoType !== 'cinematic') || characters.length > 0) return;
     fetch('/api/characters')
       .then(r => r.ok ? r.json() : null)
       .then(data => {
@@ -954,11 +1072,14 @@ function CreatePageInner() {
       const jobId: string = data.jobId;
       if (!jobId) throw new Error('No jobId returned from avatar queue');
 
-      setVideoProgress(20);
+      // Unlock UI immediately — user can navigate away; banner will track progress
+      setAvatarJobId(jobId);
+      setIsGeneratingVideo(false);
+      setVideoProgress(0);
 
-      // Poll /api/job-status every 5 s — up to 150 polls (12.5 minutes)
+      // Poll every 15s in background — up to 60 polls (15 min)
       let pollCount = 0;
-      const MAX_POLLS = 150;
+      const MAX_POLLS = 60;
       let lastStageOutputs: Record<string, string> | null = null;
 
       pollRef.current = setInterval(async () => {
@@ -970,11 +1091,12 @@ function CreatePageInner() {
             const hedraGenId = lastStageOutputs?.hedra_generation_id;
             if (hedraGenId) {
               console.log('[generate-avatar] client timeout but Hedra gen exists — resuming', hedraGenId);
+              setAvatarJobId(null);
               pollHedraCompletion(hedraGenId, jobId);
               return;
             }
-            setError('Avatar generation timed out. Please try again.');
-            setIsGeneratingVideo(false);
+            setAvatarJobId(null);
+            setError('Avatar generation timed out. Please check My Videos or try again.');
             return;
           }
 
@@ -982,42 +1104,52 @@ function CreatePageInner() {
           if (!statusRes.ok) return; // transient error — keep polling
 
           const status = await statusRes.json();
-          console.log(`[generate-avatar] poll ${pollCount} status=${status.status} stage=${status.stage} pipeline_status=${status.pipeline_status}`);
+          console.log(`[generate-avatar] poll ${pollCount} status=${status.status} stage=${status.stage}`);
 
-          if (status.pipeline_status) setPipelineStatusDisplay(status.pipeline_status);
           if (status.stage_outputs) lastStageOutputs = status.stage_outputs as Record<string, string>;
-
-          // Advance progress bar proportionally (20–95 % during processing)
-          const progressEstimate = Math.min(20 + Math.round((pollCount / MAX_POLLS) * 75), 95);
-          setVideoProgress(progressEstimate);
 
           if (status.status === 'completed') {
             clearInterval(pollRef.current!);
             pollRef.current = null;
+            setAvatarJobId(null);
             setVideoUrl(status.result_url);
             setMergedVideoUrl(status.result_url);
             setVideoProgress(100);
             setPipelineStatusDisplay(null);
-            setIsGeneratingVideo(false);
+            void fetch('/api/save-render', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                video_url:        status.result_url,
+                script:           generatedScriptRef.current || generatedScript || briefResponse?.versions[selectedVersion]?.script || null,
+                template:         'avatar',
+                series_id:        continuationMode?.seriesId        ?? null,
+                episode_number:   continuationMode?.episodeNumber   ?? null,
+                parent_render_id: continuationMode?.parentRenderId  ?? null,
+              }),
+            }).then(r => r.json())
+              .then(d => console.log('[SAVE_RENDER:avatar]', d))
+              .catch(e => console.warn('[SAVE_RENDER_ERR:avatar]', e));
           } else if (status.status === 'failed') {
             clearInterval(pollRef.current!);
             pollRef.current = null;
             const hedraGenId: string | undefined = (status.stage_outputs as Record<string, string> | null)?.hedra_generation_id;
             if (hedraGenId) {
               console.log('[generate-avatar] server timed out but Hedra gen exists — resuming client-side', hedraGenId);
+              setAvatarJobId(null);
               pollHedraCompletion(hedraGenId, jobId);
               return;
             }
+            setAvatarJobId(null);
             const stageLabel = status.stage ? ` [stage: ${status.stage}]` : '';
             setError(`${status.error || 'Avatar generation failed'}${stageLabel}`);
             setPipelineStatusDisplay(null);
-            setIsGeneratingVideo(false);
           }
         } catch (pollErr) {
           console.error('[generate-avatar] poll error:', pollErr);
           // keep polling on network errors
         }
-      }, 5000);
+      }, 15_000);
 
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Avatar generation failed';
@@ -1083,6 +1215,20 @@ function CreatePageInner() {
           setPipelineStatusDisplay(null);
           setIsGeneratingVideo(false);
           setHedraResuming(false);
+          void fetch('/api/save-render', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              video_url:        recovered.video_url,
+              script:           generatedScriptRef.current || generatedScript || briefResponse?.versions[selectedVersion]?.script || null,
+              template:         'avatar',
+              series_id:        continuationMode?.seriesId        ?? null,
+              episode_number:   continuationMode?.episodeNumber   ?? null,
+              parent_render_id: continuationMode?.parentRenderId  ?? null,
+            }),
+          }).then(r => r.json())
+            .then(d => console.log('[SAVE_RENDER:hedra]', d))
+            .catch(e => console.warn('[SAVE_RENDER_ERR:hedra]', e));
 
         } else if (genStatus === 'error' || genStatus === 'failed') {
           clearInterval(pollRef.current!);
@@ -1170,6 +1316,23 @@ function CreatePageInner() {
       setClipsReady(false);
       setPendingClipUrls([]);
       setVideoProgress(100);
+
+      // Save to My Videos library (fire-and-forget, server-side insert via supabaseAdmin)
+      void fetch('/api/save-render', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          video_url:        finalUrl,
+          audio_url:        uploadJson.url ?? null,
+          script:           generatedScriptRef.current || generatedScript || pendingScript || null,
+          template,
+          series_id:        continuationMode?.seriesId        ?? null,
+          episode_number:   continuationMode?.episodeNumber   ?? null,
+          parent_render_id: continuationMode?.parentRenderId  ?? null,
+        }),
+      }).then(r => r.json())
+        .then(d => console.log('[SAVE_RENDER:cinematic]', d))
+        .catch(e => console.warn('[SAVE_RENDER_ERR:cinematic]', e));
     } catch (err) {
       console.error('[compose-with-voice] error:', err);
       setError(err instanceof Error ? err.message : 'Composition failed');
@@ -1247,7 +1410,7 @@ function CreatePageInner() {
 
         // ── PHASE 1: Generate clips only — voice picker shown after ───────────
         const scriptText = scriptForCinematic;
-        const CLIP_SECONDS = 10;
+        const CLIP_SECONDS = lightningMode ? 5 : 10;
 
         // Snapshot script at click time — generatedScriptRef may be stale after async awaits above
         const scriptSnapshot = generatedScriptRef.current?.trim() || generatedScript?.trim() || scriptText?.trim() || '';
@@ -1255,20 +1418,24 @@ function CreatePageInner() {
           length: scriptSnapshot.length,
           words:  scriptSnapshot.split(/\s+/).filter(Boolean).length,
           source: generatedScriptRef.current ? 'ref' : generatedScript ? 'state' : 'fallback',
+          lightningMode,
         });
 
         // Derive clip count from word-count estimate. Falls back to 75 words if script empty.
+        // Lightning mode: hard-cap at 2 clips for maximum speed.
         const wordCount         = scriptSnapshot.split(/\s+/).filter(Boolean).length || 75;
         const estimatedVoiceSec = Math.ceil(wordCount / 2.3);
-        const clipCount         = Math.max(3, Math.min(8, Math.ceil(estimatedVoiceSec / CLIP_SECONDS)));
+        const clipCount         = lightningMode ? 2 : Math.max(3, Math.min(8, Math.ceil(estimatedVoiceSec / CLIP_SECONDS)));
+        console.log('[LIGHTNING]', { lightningMode, clipCount, CLIP_SECONDS, wordCount, estimatedVoiceSec });
 
         console.log('[CLIP_COUNT]', { wordCount, estimatedVoiceSec, clipCount });
         console.log('[CINEMATIC_STEP1_SCRIPT]', scriptText.length, 'chars', scriptText.substring(0, 80));
 
         type SeqData = {
           stitched_url?: string; stitch_source?: string; clip_urls?: string[];
+          source_images?: string[];
           clips_generated?: number; clip_duration?: number; total_duration?: number;
-          error?: string; SEQUENCE_ROUTE_VERSION?: string; clipsAttempted?: number;
+          error?: string; required?: number; SEQUENCE_ROUTE_VERSION?: string; clipsAttempted?: number;
           successfulClips?: number; failedClips?: number; extractedUrls?: Array<string | null>;
           clipReports?: string[];
           continuity_score?: { character: number; environment: number; object: number; overall: number } | null;
@@ -1301,51 +1468,58 @@ function CreatePageInner() {
           );
         }
 
-        setVideoProgress(40);
-        console.log('[cinematic] prompts:', enhancedPrompts.map(p => p.substring(0, 60)));
-        console.log('[PROVIDER_USAGE] scene_types:', sceneTypes);
-
-        const seqRes = await fetch('/api/generate-cinematic-sequence', {
-          method: 'POST',
+        // ── Fire-and-forget: submit job → return immediately ─────────────────
+        setVideoProgress(50);
+        const jobRes = await fetch('/api/cinematic-jobs', {
+          method:  'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompts:      enhancedPrompts,
-            imageUrl:     selectedImage || null,
-            clipDuration: CLIP_SECONDS,
-            sceneTypes:   sceneTypes.length ? sceneTypes : undefined,
-            script:       scriptText || undefined,
-            goal:         goal || undefined,
+          body:    JSON.stringify({
+            prompts:     enhancedPrompts,
+            script:      scriptText || undefined,
+            goal:        goal || undefined,
+            niche:       niche || undefined,
+            voiceId:     selectedVoiceId || undefined,
+            characterId: selectedCharacterId || undefined,
+            lightningMode,
           }),
         });
 
-        const rawText = await seqRes.text();
-        let seqData: SeqData | null = null;
-        try { seqData = JSON.parse(rawText); } catch { seqData = null; }
-
-        if (seqData?.continuity_score) {
-          setContinuityScore(seqData.continuity_score);
-          console.log('[CONTINUITY]', seqData.continuity_score);
+        if (jobRes.status === 402) throw new Error('Not enough credits for this video. Upgrade your plan to continue.');
+        if (!jobRes.ok) {
+          const errData = await jobRes.json().catch(() => ({})) as { error?: string };
+          throw new Error(errData.error || `Failed to queue cinematic job (${jobRes.status})`);
         }
-        console.log('FULL SEQUENCE RESPONSE', JSON.stringify(seqData, null, 2));
-        console.log('[cinematic] stitch_source:', seqData?.stitch_source);
-        console.log('[cinematic] clips_generated:', seqData?.clips_generated, 'total_duration:', seqData?.total_duration);
-        console.log('[cinematic] clip_urls:', seqData?.clip_urls?.map(u => u.substring(0, 60)));
 
-        if (!seqRes.ok) throw new Error(seqData?.error || rawText || `Cinematic generation failed (${seqRes.status})`);
-        if (!seqData?.clip_urls?.length) throw new Error('No clip URLs returned from sequence generation');
-
-        console.log('[CINEMATIC_STEP2_CLIPS_READY]', seqData.clip_urls.length, 'clips');
-
-        // Clips ready — hand off to Phase 2 (voice picker → compose)
-        setPendingClipUrls(seqData.clip_urls);
-        setPendingClipDuration(seqData.clip_duration ?? CLIP_SECONDS);
-        setPendingScript(generatedScriptRef.current || scriptText || v.script || '');
-        setClipsReady(true);
+        const { jobId } = await jobRes.json() as { jobId: string };
+        setCinematicJobId(jobId);
         setVideoProgress(100);
+        setIsGeneratingVideo(false);
+
+        // Poll every 10s in background — update UI when done
+        if (pollRef.current) clearInterval(pollRef.current);
+        pollRef.current = setInterval(async () => {
+          try {
+            const st = await fetch(`/api/cinematic-status?jobId=${jobId}`).then(r => r.json()) as {
+              status: string; video_url?: string; error?: string;
+            };
+            if (st.status === 'complete' && st.video_url) {
+              clearInterval(pollRef.current!);
+              pollRef.current = null;
+              setCinematicJobId(null);
+              setVideoUrl(st.video_url);
+              setMergedVideoUrl(st.video_url);
+            } else if (st.status === 'failed') {
+              clearInterval(pollRef.current!);
+              pollRef.current = null;
+              setCinematicJobId(null);
+              setError(st.error || 'Cinematic generation failed — try again');
+            }
+          } catch { /* keep polling on network error */ }
+        }, 10_000);
+
       } catch (err) {
         console.error('Cinematic error:', err);
         setError(err instanceof Error ? err.message : 'Cinematic generation failed');
-      } finally {
         setIsGeneratingVideo(false);
       }
       return;
@@ -1462,18 +1636,23 @@ function CreatePageInner() {
       const merged = URL.createObjectURL(blob);
       setMergedVideoUrl(merged);
 
-      // Save to library after successful merge
-      const sb = createClient();
-      const { data: { user } } = await sb.auth.getUser();
-      if (user && briefResponse) {
-        const v = briefResponse.versions[selectedVersion];
-        await sb.from('renders').insert({
-          user_id: user.id,
-          status: 'complete',
-          template,
-          video_url: merged,
-          script: generatedScript || v?.script || null,
-        }).then(({ error }) => { if (error) console.error('[save render]', error.message); });
+      // Save to library after successful merge — use videoUrl (persistent) not merged (blob)
+      if (videoUrl) {
+        void fetch('/api/save-render', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            video_url:        videoUrl,
+            audio_url:        voiceAudioUrl?.startsWith('blob:') ? null : voiceAudioUrl,
+            script:           generatedScript || briefResponse?.versions[selectedVersion]?.script || null,
+            template,
+            series_id:        continuationMode?.seriesId        ?? null,
+            episode_number:   continuationMode?.episodeNumber   ?? null,
+            parent_render_id: continuationMode?.parentRenderId  ?? null,
+          }),
+        }).then(r => r.json())
+          .then(d => console.log('[SAVE_RENDER:merge]', d))
+          .catch(e => console.warn('[SAVE_RENDER_ERR:merge]', e));
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Combine failed');
@@ -1483,6 +1662,7 @@ function CreatePageInner() {
   }
 
   function handleReset() {
+    try { sessionStorage.removeItem('omnyra_create_state'); } catch { /* ok */ }
     setBriefResponse(null);
     setProjectId(null);
     setSelectedVersion(0);
@@ -1508,7 +1688,51 @@ function CreatePageInner() {
   function resetAll() {
     handleReset();
     setGoal('');
+    setContinuationMode(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  async function handleContinueStory() {
+    setIsLoadingContinuation(true);
+    try {
+      const res = await fetch('/api/continue-story', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ characterId: selectedCharacterId || undefined }),
+      });
+      const data = await res.json() as {
+        hookOptions:    string[];
+        script:         string;
+        seriesId:       string;
+        episodeNumber:  number;
+        parentRenderId: string;
+        characterId:    string | null;
+        characterName:  string | null;
+        parentSummary:  string;
+        error?:         string;
+      };
+      if (!res.ok) {
+        setError(data.error ?? 'Failed to load continuation');
+        return;
+      }
+      handleReset();
+      setContinuationMode({
+        seriesId:       data.seriesId,
+        episodeNumber:  data.episodeNumber,
+        characterId:    data.characterId,
+        characterName:  data.characterName,
+        parentRenderId: data.parentRenderId,
+        parentSummary:  data.parentSummary,
+      });
+      if (data.characterId) setSelectedCharacterId(data.characterId);
+      const hook = data.hookOptions?.[0] ?? '';
+      setGoal(hook || `Continue the story — Episode ${data.episodeNumber}`);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch {
+      setError('Failed to load story continuation');
+    } finally {
+      setIsLoadingContinuation(false);
+    }
   }
 
   // ─── Auth loading ────────────────────────────────────────────────────────
@@ -1534,6 +1758,26 @@ function CreatePageInner() {
           <div className="page-title" style={{ fontSize: "1.5rem", fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", background: "linear-gradient(105deg,#CFA42F,#F7D96B)", WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text", marginBottom: "8px" }}>
             {TEMPLATE_TITLES[template] ?? "Create Content"}
           </div>
+          {continuationMode && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 6 }}>
+              <span style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "4px 12px", borderRadius: 9999,
+                background: "rgba(201,168,76,0.12)", border: "1px solid rgba(201,168,76,0.35)",
+                fontSize: 11, fontWeight: 700, color: "#C9A84C", letterSpacing: "0.12em", textTransform: "uppercase",
+              }}>
+                Episode {continuationMode.episodeNumber}
+              </span>
+              <span style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "4px 12px", borderRadius: 9999,
+                background: "rgba(232,121,249,0.08)", border: "1px solid rgba(232,121,249,0.2)",
+                fontSize: 11, fontWeight: 600, color: "#BBA8C8",
+              }}>
+                ✦ Memory Powered Continuation
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Memory badge */}
@@ -2339,8 +2583,8 @@ function CreatePageInner() {
                   </div>
                 )}
 
-                {/* Character preset picker — shown when avatar type is selected */}
-                {videoType === 'avatar' && (
+                {/* Character preset picker — shown for avatar and cinematic modes */}
+                {(videoType === 'avatar' || videoType === 'cinematic') && (
                   <div style={{ marginBottom: 16 }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                       <p style={{ color: 'rgba(255,255,255,0.55)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0 }}>
@@ -2447,6 +2691,43 @@ function CreatePageInner() {
                     >
                       {selectedVoiceId ? '🎙️ Add Voiceover & Finish →' : '🎬 Compose Silent Video →'}
                     </button>
+
+                    {selectedCharacterId && pendingSourceImages.length > 0 && !savedReferenceId && (
+                      <button
+                        onClick={async () => {
+                          try {
+                            const res = await fetch(`/api/characters/${selectedCharacterId}/add-reference`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                image_url:    pendingSourceImages[0],
+                                source:       'kling_frame',
+                                pose_label:   'generated',
+                                is_primary:   false,
+                                quality_score: 0.8,
+                              }),
+                            });
+                            const d = await res.json();
+                            if (d.reference?.id) {
+                              setSavedReferenceId(d.reference.id);
+                            }
+                          } catch { /* non-fatal */ }
+                        }}
+                        style={{
+                          width: '100%', marginTop: 8, padding: '10px 24px',
+                          background: 'rgba(255,255,255,0.07)', border: '1px solid rgba(255,255,255,0.18)',
+                          borderRadius: 9999, color: 'rgba(255,255,255,0.75)', fontSize: 13,
+                          fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer',
+                        }}
+                      >
+                        + Save frame as character reference
+                      </button>
+                    )}
+                    {savedReferenceId && (
+                      <p style={{ textAlign: 'center', color: '#4ECB8C', fontSize: 13, margin: '8px 0 0', fontWeight: 600 }}>
+                        ✓ Frame saved as character reference
+                      </p>
+                    )}
                   </div>
                 )}
 
@@ -2477,6 +2758,53 @@ function CreatePageInner() {
                         </select>
                       </div>
                     )}
+                  {/* Lightning Mode toggle — cinematic and avatar only */}
+                  {(videoType === 'cinematic' || videoType === 'avatar') && (
+                    <button
+                      type="button"
+                      onClick={() => setLightningMode(prev => !prev)}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 10,
+                        width: '100%',
+                        padding: '10px 14px',
+                        marginBottom: 10,
+                        background: lightningMode ? 'rgba(201,168,76,0.12)' : 'rgba(255,255,255,0.03)',
+                        border: `1px solid ${lightningMode ? 'rgba(201,168,76,0.45)' : 'rgba(255,255,255,0.1)'}`,
+                        borderRadius: 10,
+                        cursor: 'pointer',
+                        fontFamily: 'inherit',
+                        textAlign: 'left',
+                        transition: 'border-color 0.2s, background 0.2s',
+                      }}
+                    >
+                      <span style={{ fontSize: 20, lineHeight: 1 }}>⚡</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ color: lightningMode ? '#C9A84C' : '#8A7D92', fontWeight: 700, fontSize: 13 }}>
+                          Lightning Mode {lightningMode ? 'ON' : 'OFF'}
+                        </div>
+                        <div style={{ color: '#5A5060', fontSize: 11, marginTop: 2 }}>
+                          {lightningMode
+                            ? '2 clips · 5s each · ~60s total'
+                            : videoType === 'avatar' ? 'Normal: full avatar lip-sync' : 'Normal: 3-8 clips · 10s each · 90-180s'}
+                        </div>
+                      </div>
+                      <div style={{
+                        flexShrink: 0,
+                        width: 36, height: 20, borderRadius: 10,
+                        background: lightningMode ? '#C9A84C' : 'rgba(255,255,255,0.1)',
+                        position: 'relative', transition: 'background 0.2s',
+                      }}>
+                        <div style={{
+                          position: 'absolute', top: 2,
+                          left: lightningMode ? 18 : 2,
+                          width: 16, height: 16, borderRadius: '50%',
+                          background: 'white', transition: 'left 0.15s',
+                        }} />
+                      </div>
+                    </button>
+                  )}
                   <button
                     onClick={() => handleGenerateOutput(videoType)}
                     disabled={isBlocked}
@@ -2496,8 +2824,8 @@ function CreatePageInner() {
                   >
                     {isGeneratingVideo
                       ? '🎬 Rendering video...'
-                      : videoType === 'avatar' ? 'Generate Avatar Video →'
-                      : videoType === 'cinematic' ? 'Generate Cinematic Clips →'
+                      : videoType === 'avatar' ? (lightningMode ? '⚡ Generate Avatar — Lightning →' : 'Generate Avatar Video →')
+                      : videoType === 'cinematic' ? (lightningMode ? '⚡ Generate Clips — Lightning →' : 'Generate Cinematic Clips →')
                       : videoType === 'sequence' ? 'Generate Full Sequence (4 clips) →'
                       : 'Generate Quick Preview →'}
                   </button>
@@ -2505,23 +2833,112 @@ function CreatePageInner() {
                   );
                 })()}
 
-                {isGeneratingVideo && (
-                  <div style={{ marginTop: 16 }}>
-                    <p style={{ color: 'rgba(255,255,255,0.6)', fontSize: 13, marginBottom: 4 }}>
-                      {hedraResuming
-                        ? '⏳ Waiting for Hedra to finish — this can take 3–5 minutes...'
-                        : '🎬 Rendering video — this takes 3-6 minutes...'}
-                    </p>
-                    {pipelineStatus && (
-                      <p style={{ color: '#C9A84C', fontSize: 12, marginBottom: 8, fontWeight: 500 }}>
-                        {PIPELINE_STATUS_LABELS[pipelineStatus] ?? pipelineStatus}
-                      </p>
-                    )}
-                    <div style={{ width: '100%', height: 4, background: 'rgba(255,255,255,0.08)', borderRadius: 2 }}>
-                      <div style={{ width: videoProgress + '%', height: '100%', background: 'linear-gradient(90deg, #C9A84C, #FFD700)', borderRadius: 2, transition: 'width 0.5s ease' }} />
+                {isGeneratingVideo && (() => {
+                  // Stage-step definitions per mode
+                  const cinematicSteps = [
+                    { label: 'Script',  done: videoProgress > 8  },
+                    { label: 'Images',  done: videoProgress > 40 },
+                    { label: 'Clips',   done: videoProgress > 87 },
+                    { label: 'Voice',   done: videoProgress > 95 },
+                    { label: 'Stitch',  done: videoProgress >= 100 },
+                  ];
+                  const avatarSteps = [
+                    { label: 'Prepare', done: videoProgress > 20 },
+                    { label: 'Voice',   done: videoProgress > 35 },
+                    { label: 'Hedra',   done: videoProgress > 90 },
+                    { label: 'Finish',  done: videoProgress >= 100 },
+                  ];
+                  const steps = videoType === 'cinematic' ? cinematicSteps : videoType === 'avatar' ? avatarSteps : [];
+                  // Current active step index
+                  const activeIdx = steps.length > 0 ? (steps.findIndex(s => !s.done)) : -1;
+
+                  const etaLabel = genEta && genEta > 0 && videoProgress < 99
+                    ? genEta >= 60
+                      ? `~${Math.floor(genEta / 60)}m ${Math.round(genEta % 60)}s remaining`
+                      : `~${Math.round(genEta)}s remaining`
+                    : null;
+
+                  return (
+                    <div style={{
+                      marginTop: 16,
+                      background: 'rgba(10,2,18,0.95)',
+                      border: '1px solid rgba(192,132,252,0.2)',
+                      borderRadius: 16,
+                      padding: '20px 22px',
+                    }}>
+                      {/* Header */}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: 'white', letterSpacing: '0.01em' }}>
+                          {genStage || (hedraResuming ? 'Resuming Hedra...' : 'Rendering...')}
+                        </div>
+                        <div style={{ fontSize: 14, fontWeight: 800, color: videoProgress >= 100 ? '#4ECB8C' : '#C084FC' }}>
+                          {videoProgress}%
+                        </div>
+                      </div>
+
+                      {/* Progress bar */}
+                      <div style={{ height: 6, background: 'rgba(255,255,255,0.08)', borderRadius: 3, overflow: 'hidden', marginBottom: 12 }}>
+                        <div style={{
+                          height: '100%',
+                          width: `${videoProgress}%`,
+                          background: videoProgress >= 100
+                            ? 'linear-gradient(90deg,#4ECB8C,#00C896)'
+                            : 'linear-gradient(90deg,#7C3AED,#C084FC,#E879F9)',
+                          borderRadius: 3,
+                          transition: 'width 0.6s cubic-bezier(0.4,0,0.2,1)',
+                        }} />
+                      </div>
+
+                      {/* Status message */}
+                      <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.52)', lineHeight: 1.55, minHeight: 18 }}>
+                        {genMessage || (pipelineStatus ? (PIPELINE_STATUS_LABELS[pipelineStatus] ?? pipelineStatus) : '🎬 Rendering video...')}
+                      </div>
+
+                      {/* ETA */}
+                      {etaLabel && (
+                        <div style={{ fontSize: 11, color: '#4ECB8C', fontWeight: 600, marginTop: 4 }}>
+                          {etaLabel}
+                        </div>
+                      )}
+
+                      {/* Step indicators */}
+                      {steps.length > 0 && (
+                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 0, marginTop: 16 }}>
+                          {steps.map((s, i) => {
+                            const isActive = i === activeIdx;
+                            const isDone   = s.done;
+                            return (
+                              <div key={s.label} style={{ display: 'flex', flex: 1, alignItems: 'center' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 'none', width: 40 }}>
+                                  <div style={{
+                                    width: 9, height: 9, borderRadius: '50%', flexShrink: 0,
+                                    background: isDone ? '#4ECB8C' : isActive ? '#E879F9' : 'rgba(255,255,255,0.14)',
+                                    boxShadow: isActive ? '0 0 10px #E879F9' : 'none',
+                                    transition: 'all 0.35s ease',
+                                  }} />
+                                  <span style={{
+                                    fontSize: 9, marginTop: 5, fontWeight: isDone || isActive ? 700 : 400,
+                                    color: isDone ? '#4ECB8C' : isActive ? '#E879F9' : 'rgba(255,255,255,0.28)',
+                                    letterSpacing: '0.03em', textTransform: 'uppercase',
+                                  }}>
+                                    {s.label}
+                                  </span>
+                                </div>
+                                {i < steps.length - 1 && (
+                                  <div style={{
+                                    flex: 1, height: 1, marginBottom: 16,
+                                    background: isDone ? 'rgba(78,203,140,0.45)' : 'rgba(255,255,255,0.09)',
+                                    transition: 'background 0.35s ease',
+                                  }} />
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                )}
+                  );
+                })()}
 
                 {videoUrl && (
                   <div style={{ marginTop: 20 }}>
@@ -2569,6 +2986,54 @@ function CreatePageInner() {
                         )}
                       </div>
                     )}
+
+                    {/* ── Creator Intelligence Card ─────────────────────── */}
+                    {(() => {
+                      const cv = briefResponse?.versions[selectedVersion];
+                      if (!cv) return null;
+                      const score = cv.viral_score ?? 0;
+                      const scoreColor = score >= 80 ? '#4ECB8C' : score >= 60 ? '#F0C040' : '#FF6B6B';
+                      const tips = [
+                        score >= 75
+                          ? 'High-performing hook detected — post within 30 min of peak traffic for best reach.'
+                          : 'Boost performance: start with a bold question or unexpected statement in the first 2s.',
+                        videoType === 'avatar'
+                          ? 'Avatar video tip: keep clips under 60s and add captions for silent viewers (+40% retention).'
+                          : 'Cinematic tip: the first scene sets the mood — ensure your opening shot is your strongest visual.',
+                        cv.best_post_time
+                          ? `Optimal posting window: ${cv.best_post_time} — schedule now to hit peak audience.`
+                          : 'Schedule consistently: posting 3–5×/week in the same time window builds algorithm momentum.',
+                      ];
+                      return (
+                        <div style={{ marginTop: 14, background: 'rgba(14,4,26,0.97)', border: '1px solid rgba(192,132,252,0.22)', borderRadius: 14, padding: '16px 18px' }}>
+                          <p style={{ fontSize: 11, color: '#C084FC', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.15em', margin: '0 0 12px' }}>
+                            Creator Intelligence
+                          </p>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', marginBottom: 14 }}>
+                            {[
+                              ['Viral Score', `${score}/100`, scoreColor],
+                              ['Hook Strength', cv.hook_strength ?? '—', score >= 80 ? '#4ECB8C' : '#C084FC'],
+                              ['Est. Reach', cv.estimated_reach ?? '—', '#E879F9'],
+                              ['Best Post Time', cv.best_post_time ?? '—', '#C084FC'],
+                            ].map(([label, val, color]) => (
+                              <div key={label as string}>
+                                <p style={{ fontSize: 10, color: '#6B5B7B', margin: '0 0 2px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{label}</p>
+                                <p style={{ fontSize: 13, fontWeight: 700, color: color as string, margin: 0 }}>{val}</p>
+                              </div>
+                            ))}
+                          </div>
+                          <div style={{ borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: 12 }}>
+                            <p style={{ fontSize: 10, color: '#6B5B7B', margin: '0 0 8px', textTransform: 'uppercase', letterSpacing: '0.1em' }}>Next moves</p>
+                            {tips.map((tip, i) => (
+                              <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 6, alignItems: 'flex-start' }}>
+                                <span style={{ color: '#C084FC', fontSize: 12, marginTop: 1, flexShrink: 0 }}>›</span>
+                                <p style={{ fontSize: 12, color: '#BBA8C8', margin: 0, lineHeight: 1.5 }}>{tip}</p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
@@ -2775,6 +3240,38 @@ function CreatePageInner() {
                     </ol>
                   </div>
 
+                  {/* Continue This Story */}
+                  <button
+                    onClick={handleContinueStory}
+                    disabled={isLoadingContinuation}
+                    style={{
+                      background: isLoadingContinuation
+                        ? 'rgba(201,168,76,0.08)'
+                        : 'linear-gradient(135deg, rgba(201,168,76,0.18) 0%, rgba(201,168,76,0.08) 100%)',
+                      border: '1.5px solid rgba(201,168,76,0.55)',
+                      borderRadius: '12px',
+                      color: isLoadingContinuation ? 'rgba(201,168,76,0.5)' : '#C9A84C',
+                      padding: '14px',
+                      cursor: isLoadingContinuation ? 'not-allowed' : 'pointer',
+                      fontSize: '1rem',
+                      fontWeight: 700,
+                      fontFamily: 'inherit',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                    }}
+                  >
+                    {isLoadingContinuation ? (
+                      <>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#C9A84C', display: 'inline-block', animation: 'pulseSoft 1.2s ease-in-out infinite' }} />
+                        Loading memory...
+                      </>
+                    ) : (
+                      <>✦ Continue This Story</>
+                    )}
+                  </button>
+
                   <button onClick={() => router.push('/videos')} style={{
                     background: 'none',
                     border: '1px solid rgba(255,255,255,0.2)',
@@ -2890,6 +3387,40 @@ function CreatePageInner() {
           </div>
         )}
       </div>
+
+      {/* ── Async job banner ──────────────────────────────────────────────── */}
+      {(cinematicJobId || avatarJobId) && (
+        <div style={{
+          position: 'fixed', bottom: 24, right: 24, zIndex: 99999,
+          background: 'linear-gradient(135deg, rgba(61,7,52,0.97), rgba(30,10,50,0.97))',
+          border: '1px solid rgba(201,168,76,0.5)',
+          borderRadius: 14, padding: '14px 20px',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+          display: 'flex', alignItems: 'center', gap: 14,
+          maxWidth: 340,
+        }}>
+          <div style={{
+            width: 28, height: 28, borderRadius: '50%',
+            border: '2.5px solid rgba(201,168,76,0.3)',
+            borderTop: '2.5px solid #C9A84C',
+            animation: 'spin 1s linear infinite',
+            flexShrink: 0,
+          }} />
+          <div style={{ flex: 1 }}>
+            <div style={{ color: 'white', fontWeight: 700, fontSize: 13 }}>
+              {cinematicJobId ? 'Cinematic video generating…' : 'Avatar video generating…'}
+            </div>
+            <div style={{ color: 'rgba(255,255,255,0.55)', fontSize: 12, marginTop: 2 }}>
+              We&apos;ll show it here when ready
+            </div>
+          </div>
+          <a href="/videos" style={{
+            color: '#C9A84C', fontWeight: 700, fontSize: 13,
+            textDecoration: 'none', whiteSpace: 'nowrap',
+          }}>My Videos →</a>
+        </div>
+      )}
+
     </div>
   );
 }
