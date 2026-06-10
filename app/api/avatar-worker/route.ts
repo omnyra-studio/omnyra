@@ -209,7 +209,7 @@ async function executeTtsStage(
   // Hedra generation time scales with audio length. Cap total words so the
   // combined audio stays under target seconds, regardless of input script length.
   // starter: 20 words ≈ 8s, creator: 28 words ≈ 11s, studio: 40 words ≈ 16s
-  const HEDRA_WORD_BUDGET: Record<string, number> = { starter: 20, creator: 28, studio: 40 };
+  const HEDRA_WORD_BUDGET: Record<string, number> = { starter: 22, creator: 28, studio: 40 };
   const HEDRA_SCENE_CAP:   Record<string, number> = { starter: 1,  creator: 2,  studio: 3  };
   const hedraWordBudget = HEDRA_WORD_BUDGET[job.input.plan ?? "starter"] ?? 20;
   const hedraSceneCap   = HEDRA_SCENE_CAP[job.input.plan ?? "starter"]   ?? 1;
@@ -335,7 +335,7 @@ async function executeTtsStage(
             body:    JSON.stringify({
               text:           finalText,
               model_id:       "eleven_flash_v2_5",
-              voice_settings: { ...baseVS, speed: 1.05 },
+              voice_settings: { ...baseVS, speed: 1.10 },
             }),
           },
         );

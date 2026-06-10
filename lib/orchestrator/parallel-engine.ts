@@ -113,11 +113,11 @@ interface HedraConfig {
 function getHedraConfig(speedMode: string = 'draft'): HedraConfig {
   switch (speedMode) {
     case 'ultra-draft':
-      // Lightning Mode: 20-word hard cap → ~8s audio. floor(8 × 2.5) = 20 words.
-      return { intervalMs: 1_500, maxPolls: 50, maxAudioSecs: 8,   fallbackAfterMs:  75_000 };
+      // Lightning Mode: 22-word hard cap (floor(9 × 2.5)=22). Hedra bail at 50s → Kling fallback.
+      return { intervalMs: 1_500, maxPolls: 34, maxAudioSecs: 9,   fallbackAfterMs:  50_000 };
     case 'draft':
-      // Draft: 20-word hard cap → ~8s audio. floor(8 × 2.5) = 20 words.
-      return { intervalMs: 1_500, maxPolls: 50, maxAudioSecs: 8,   fallbackAfterMs:  75_000 };
+      // Draft: 22-word hard cap (floor(9 × 2.5)=22). Bail at 50s → Kling fallback.
+      return { intervalMs: 1_500, maxPolls: 34, maxAudioSecs: 9,   fallbackAfterMs:  50_000 };
     case 'balanced':
       return { intervalMs: 2_000, maxPolls: 60, maxAudioSecs: 12,  fallbackAfterMs: 100_000 };
     default:  // quality
@@ -274,6 +274,7 @@ async function processAvatarShot(
 
   emitRaw("HEDRA_CLIP_READY", correlationId, { shotId: shot.id, shotNumber: shot.shot_number, video_url, generation_ms });
   console.info(`[HEDRA_TIMING] shot=${shot.id} total_ms=${generation_ms}`);
+  console.info(`[AVATAR_SPEED] shot=${shot.id} mode=${speedMode} tts_words=${narrationText.split(/\s+/).length} total_ms=${generation_ms} url=${video_url.substring(0, 60)}`);
 
   return {
     shotId:           shot.id,

@@ -139,6 +139,9 @@ export async function GET(req: NextRequest) {
         // predicate; whichever tick updates the row first gets completed=true; others false.
         const { completed: jobCompleted } = await completeJobFromCron(job.id, permanentUrl, permanentUrl);
         log(`[CRON_COMPLETE] job_id=${job.id} won_race=${jobCompleted}`);
+        const submittedAt = outputs.hedra_submitted_at ? new Date(outputs.hedra_submitted_at).getTime() : 0;
+        const totalAvatarMs = submittedAt ? Date.now() - submittedAt : 0;
+        log(`[AVATAR_SPEED] job=${job.id} hedra_ms=${totalAvatarMs} url=${permanentUrl.substring(0, 60)}`);
 
         if (!jobCompleted) {
           log(`[RACE_LOST] another cron tick already completed this job — skipping renders insert`);

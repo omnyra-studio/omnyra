@@ -58,7 +58,7 @@ export async function generateSceneAudio(
           similarity_boost: input.similarityBoost ?? 0.75,
           style:           input.style           ?? 0.65,
           use_speaker_boost: true,
-          speed:           input.speed           ?? 1.08,
+          speed:           input.speed           ?? 1.10,
         },
       }),
     },
@@ -194,7 +194,7 @@ async function callElevenLabs(
     body: JSON.stringify({
       text,
       model_id: EL_FLASH_V2_5,
-      voice_settings: { stability: 0.8, similarity_boost: 0.85, speed: 1.08 },
+      voice_settings: { stability: 0.8, similarity_boost: 0.85, speed: 1.10 },
     }),
   });
 
