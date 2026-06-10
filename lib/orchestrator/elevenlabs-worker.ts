@@ -107,6 +107,7 @@ export interface VoiceoverInput {
   script:             string;
   voiceId?:           string;
   targetDurationSecs: number;
+  speedMode?:         string;  // controls word cap: ultra-draft=22w, draft=35w, balanced=75w, quality=85w
 }
 
 export interface VoiceoverResult {
@@ -347,19 +348,36 @@ async function singleCallVoiceover(
   return { audioUrl, duration: realDuration, scriptUsed: cleanScript };
 }
 
+// Word cap by speed mode — keeps voiceover duration predictable and prevents
+// ultra-draft from generating long audio that doesn't fit the short clip window.
+const VOICEOVER_WORD_CAP: Record<string, number> = {
+  'ultra-draft': 22,  // ~9s — matches Lightning clip duration
+  'draft':       35,  // ~14s
+  'balanced':    75,  // ~30s — full avatar narration
+  'quality':     85,  // ~34s
+};
+
 export async function generateVoiceover(
   input:  VoiceoverInput,
   userId: string,
   planId: string,
 ): Promise<VoiceoverResult> {
-  const cleanScript = input.script?.trim().replace(/\s+/g, " ") ?? "";
-  const wordCount   = cleanScript.split(/\s+/).length;
+  const rawScript   = input.script?.trim().replace(/\s+/g, " ") ?? "";
+
+  // Apply per-mode word cap before TTS — prevents Lightning from generating
+  // a 30s voiceover when the video is only 10-14s.
+  const maxWords    = VOICEOVER_WORD_CAP[input.speedMode ?? 'balanced'] ?? 75;
+  const rawWords    = rawScript.split(/\s+/).filter(Boolean);
+  const cleanScript = rawWords.length > maxWords
+    ? rawWords.slice(0, maxWords).join(" ").replace(/[,;.!?]+$/, "") + "."
+    : rawScript;
+  const wordCount   = cleanScript.split(/\s+/).filter(Boolean).length;
 
   const voiceT0 = Date.now();
-  console.info(`[VOICE] start model=${EL_FLASH_V2_5} words=${wordCount} target=${input.targetDurationSecs}s`);
+  console.info(`[VOICE] start model=${EL_FLASH_V2_5} words=${wordCount}/${rawWords.length} mode=${input.speedMode ?? 'balanced'} maxWords=${maxWords} target=${input.targetDurationSecs}s`);
   console.info(`[VOICEOVER INPUT] First 150 chars: ${cleanScript.substring(0, 150)}...`);
 
-  if (!cleanScript || wordCount < 10) throw new Error("[voiceover] script is required (min 10 words)");
+  if (!cleanScript || wordCount < 3) throw new Error("[voiceover] script is required (min 3 words)");
 
   const apiKey = cleanEnv(process.env.ELEVENLABS_API_KEY);
   if (!apiKey) throw new Error("ELEVENLABS_API_KEY not configured");

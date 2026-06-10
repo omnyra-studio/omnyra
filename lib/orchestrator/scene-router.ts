@@ -128,13 +128,13 @@ export function routeShot(shot: RoutableSot, opts: RouteOptions): ShotRoute {
   return r;
 }
 
-// Hedra duration cap by speed mode — controls audio length and generation time.
-// Hedra generation scales with audio: 8s audio ≈ 30-60s generation.
+// Hedra duration cap by speed mode — controls audio length fed to Hedra.
+// Hedra generation time ≈ 3-5× audio length; raise cap only with adequate timeout.
 function _hedraMaxSecs(speedMode: string): number {
-  if (speedMode === 'ultra-draft') return 6;   // ≈15 words, ~6s audio — fastest
-  if (speedMode === 'draft')       return 8;   // ≈20 words, ~8s audio
-  if (speedMode === 'balanced')    return 12;  // ≈30 words, ~12s audio
-  return 12;  // quality
+  if (speedMode === 'ultra-draft') return 9;   // 22 words — fastest Hedra + 45s fallback
+  if (speedMode === 'draft')       return 12;  // 30 words — quick with 60s fallback
+  if (speedMode === 'balanced')    return 25;  // 62 words — 25s audio, 60s fallback → Kling
+  return 30;  // quality: 75 words — 30s audio, 80s fallback
 }
 
 // Detects stylized / non-human characters that need softer motion tuning.

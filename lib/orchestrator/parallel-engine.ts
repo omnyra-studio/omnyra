@@ -113,17 +113,17 @@ interface HedraConfig {
 function getHedraConfig(speedMode: string = 'draft'): HedraConfig {
   switch (speedMode) {
     case 'ultra-draft':
-      // Lightning: 22 words (floor(9×2.5)=22, ~9s audio). Bail at 45s → Kling.
-      return { intervalMs: 2_000, maxPolls: 23, maxAudioSecs: 9,   fallbackAfterMs:  45_000 };
+      // Lightning: 22 words (~9s audio). Bail at 45s → Kling.
+      return { intervalMs: 2_000, maxPolls: 23, maxAudioSecs: 9,  fallbackAfterMs:  45_000 };
     case 'draft':
-      // Draft: 30 words (floor(12×2.5)=30, ~12s audio). Bail at 60s → Kling.
-      return { intervalMs: 2_000, maxPolls: 30, maxAudioSecs: 12,  fallbackAfterMs:  60_000 };
+      // Draft: 30 words (~12s audio). Bail at 60s → Kling.
+      return { intervalMs: 2_000, maxPolls: 30, maxAudioSecs: 12, fallbackAfterMs:  60_000 };
     case 'balanced':
-      // Normal: 70 words (floor(28×2.5)=70, ~28s audio). Bail at 80s → Kling.
-      return { intervalMs: 2_000, maxPolls: 40, maxAudioSecs: 28,  fallbackAfterMs:  80_000 };
+      // Normal: 62 words (~25s audio). Hard cap 60s → Kling fallback to keep total <3min.
+      return { intervalMs: 2_000, maxPolls: 30, maxAudioSecs: 25, fallbackAfterMs:  60_000 };
     default:  // quality
-      // Quality: 75 words (floor(30×2.5)=75, ~30s audio). Full 100s budget.
-      return { intervalMs: 2_000, maxPolls: 50, maxAudioSecs: 30,  fallbackAfterMs: 100_000 };
+      // Quality: 75 words (~30s audio). 80s budget — user opted in to quality.
+      return { intervalMs: 2_000, maxPolls: 40, maxAudioSecs: 30, fallbackAfterMs:  80_000 };
   }
 }
 
@@ -544,7 +544,7 @@ export async function runParallelEngine(
           provider: "elevenlabs",
         }),
         generateVoiceover(
-          { script: voiceScript, voiceId, targetDurationSecs: targetDurationSecs ?? 30 },
+          { script: voiceScript, voiceId, targetDurationSecs: targetDurationSecs ?? 30, speedMode },
           userId,
           planId,
         ).then(result => {
