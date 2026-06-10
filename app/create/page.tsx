@@ -1632,28 +1632,39 @@ function CreatePageInner() {
         const err = await res.json().catch(() => ({}));
         throw new Error((err as { error?: string }).error || 'Merge failed');
       }
-      const blob = await res.blob();
-      const merged = URL.createObjectURL(blob);
-      setMergedVideoUrl(merged);
 
-      // Save to library after successful merge — use videoUrl (persistent) not merged (blob)
-      if (videoUrl) {
-        void fetch('/api/save-render', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            video_url:        videoUrl,
-            audio_url:        voiceAudioUrl?.startsWith('blob:') ? null : voiceAudioUrl,
-            script:           generatedScript || briefResponse?.versions[selectedVersion]?.script || null,
-            template,
-            series_id:        continuationMode?.seriesId        ?? null,
-            episode_number:   continuationMode?.episodeNumber   ?? null,
-            parent_render_id: continuationMode?.parentRenderId  ?? null,
-          }),
-        }).then(r => r.json())
-          .then(d => console.log('[SAVE_RENDER:merge]', d))
-          .catch(e => console.warn('[SAVE_RENDER_ERR:merge]', e));
+      // Server returns JSON with permanent Supabase URL (or binary blob fallback)
+      const contentType = res.headers.get('content-type') ?? '';
+      let mergedUrl: string;
+      if (contentType.includes('application/json')) {
+        const data = await res.json() as { merged_url: string; duration_seconds?: number };
+        mergedUrl = data.merged_url;
+        console.log('[MERGE] permanent url:', mergedUrl.substring(0, 80), 'duration:', data.duration_seconds);
+      } else {
+        // Legacy binary fallback
+        const blob = await res.blob();
+        mergedUrl = URL.createObjectURL(blob);
+        console.log('[MERGE] blob url (fallback)');
       }
+      setMergedVideoUrl(mergedUrl);
+
+      // Save to library — use merged URL if permanent (Supabase), else original video URL
+      const libraryUrl = mergedUrl.startsWith('blob:') ? videoUrl : mergedUrl;
+      void fetch('/api/save-render', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          video_url:        libraryUrl,
+          audio_url:        voiceAudioUrl?.startsWith('blob:') ? null : voiceAudioUrl,
+          script:           generatedScript || briefResponse?.versions[selectedVersion]?.script || null,
+          template,
+          series_id:        continuationMode?.seriesId        ?? null,
+          episode_number:   continuationMode?.episodeNumber   ?? null,
+          parent_render_id: continuationMode?.parentRenderId  ?? null,
+        }),
+      }).then(r => r.json())
+        .then(d => console.log('[SAVE_RENDER:merge]', d))
+        .catch(e => console.warn('[SAVE_RENDER_ERR:merge]', e));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Combine failed');
     } finally {
