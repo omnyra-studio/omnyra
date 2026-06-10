@@ -6,6 +6,7 @@ import { cookies } from "next/headers";
 import { withTrace } from "@/lib/api/autopsy";
 import { getBrandProfile, getBrandSystemPrompt } from "@/lib/brand";
 import { checkCache, saveCache, logUsageEvent } from "@/lib/cache";
+import { guardFields } from "@/lib/security/prompt-guard";
 
 export interface BriefData {
   situation_analysis: string;
@@ -55,6 +56,19 @@ async function handler(req: Request): Promise<Response> {
     );
   }
 
+  // Sanitize AI-bound inputs — strip injection phrases, enforce length caps
+  const guarded = guardFields({
+    goal:           goal,
+    niche:          niche ?? null,
+    targetAudience: targetAudience ?? null,
+  });
+  if (!guarded.safe) {
+    return Response.json({ error: "invalid_request", message: "Input contains disallowed content" }, { status: 400 });
+  }
+  const safeGoal           = guarded.sanitized.goal           || goal;
+  const safeNiche          = guarded.sanitized.niche          || niche;
+  const safeTargetAudience = guarded.sanitized.targetAudience || targetAudience;
+
   // Brand context + user identity
   let brandContext = "";
   let userId: string | null = null;
@@ -87,10 +101,10 @@ async function handler(req: Request): Promise<Response> {
 
   const prompt = `You are a world-class short-form video content strategist. Produce a strategic creative brief for the following goal.${brandContext}
 
-Goal: ${goal}
+Goal: ${safeGoal}
 Template: ${template || "ugc-ad"}
-Niche: ${niche || "general"}
-Target Audience: ${targetAudience || "general"}
+Niche: ${safeNiche || "general"}
+Target Audience: ${safeTargetAudience || "general"}
 Platforms: ${platforms?.join(", ") || "TikTok, Instagram Reels"}
 
 Return ONLY valid JSON. No markdown. No backticks. No explanation. Exactly this structure:

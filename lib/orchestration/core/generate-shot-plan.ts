@@ -65,7 +65,7 @@ RENDER ASSIGNMENT RULES (follow exactly):
 - Avatar speaking to camera → render_assignment: "avatar", fal_model: null
 - Cinematic lifestyle, product, ambient → render_assignment: "fal", fal_model: "fal-ai/seedance-2"
 - Stylised, graphic, high-contrast → render_assignment: "fal", fal_model: "fal-ai/pixverse-v6"
-- Any shot requiring a specific camera move → render_assignment: "fal", fal_model: "fal-ai/kling-video-v3-pro"
+- Any shot requiring a specific camera move → render_assignment: "fal", fal_model: "fal-ai/kling-video/v3/pro/text-to-video"
 
 AVATAR MOTION RULES (non-negotiable — applied to every avatar shot):
 - idle_motion: ALWAYS "micro_movements". Never "none". A static avatar reads as dead.
@@ -125,7 +125,7 @@ Output a single JSON object. No markdown. No code fences. Raw JSON starting with
       "content_type": "broll",
       "visual_prompt": "...",
       "render_assignment": "fal",
-      "fal_model": "fal-ai/kling-video-v3-pro",
+      "fal_model": "fal-ai/kling-video/v3/pro/text-to-video",
       "transition_in": "hard_cut",
       "transition_after": "flash",
       "transition_duration": 0.0,

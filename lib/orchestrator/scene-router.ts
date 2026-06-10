@@ -11,7 +11,7 @@ import { classifyScene } from "@/lib/avatar/scene-classifier";
 import { KLING_T2V_PRO } from "@/lib/video-models";
 import { isMultiCharacterScene } from "./multi-character-handler";
 
-export type Provider = "hedra" | "kling";
+export type Provider = "hedra" | "kling" | "runway";
 
 export interface ShotRoute {
   shotId:           string;
@@ -22,6 +22,7 @@ export interface ShotRoute {
   motionStrength?:  number;   // 0-1 for Kling cfg_scale mapping
   preferI2V?:       boolean;  // use image-to-video when char ref exists
   isStylized?:      boolean;  // stylized/cartoon character — affects neg prompts
+  sourceImageProvider?: "getimg"; // generate source frame via GetImg before i2v
   reason:           string;
 }
 
@@ -40,6 +41,7 @@ export interface RouteOptions {
   draftMode?:        boolean;
   speedMode?:        string;
   isMultiCharacter?: boolean;  // force Kling — two characters can't use Hedra
+  enableRunway?:     boolean;  // opt-in: route quality i2v shots to Runway Gen-4
 }
 
 export function routeShot(shot: RoutableSot, opts: RouteOptions): ShotRoute {
@@ -104,6 +106,15 @@ export function routeShot(shot: RoutableSot, opts: RouteOptions): ShotRoute {
     return r;
   }
 
+  // ── 4. Runway — quality i2v when explicitly enabled ─────────────────────────
+  // Only when: opt-in flag set + character image available + quality mode.
+  // Runway Gen-4 Turbo is i2v only and produces highest-quality results.
+  if (opts.enableRunway && characterHasImage && speedMode === 'quality') {
+    const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "runway", reason: `runway quality i2v: ${routing.reason}` };
+    console.info(`[ROUTER] → RUNWAY ${label} reason=${r.reason}`);
+    return r;
+  }
+
   const motionStrength = getMotionStrength(speedMode, combinedText, stylized);
   const preferI2V      = stylized && characterHasImage && speedMode !== 'ultra-draft';
   const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "kling", klingModelId: shot.fal_model ?? KLING_T2V_PRO, motionStrength, preferI2V, isStylized: stylized, reason: `classifier: ${routing.reason}` };
@@ -114,8 +125,9 @@ export function routeShot(shot: RoutableSot, opts: RouteOptions): ShotRoute {
 // Hedra duration cap by speed mode — controls audio length and generation time.
 // Hedra generation scales with audio: 8s audio ≈ 30-60s generation.
 function _hedraMaxSecs(speedMode: string): number {
-  if (speedMode === 'draft')    return 8;   // ≈20 words, ~8s audio
-  if (speedMode === 'balanced') return 12;  // ≈30 words, ~12s audio
+  if (speedMode === 'ultra-draft') return 6;   // ≈15 words, ~6s audio — fastest
+  if (speedMode === 'draft')       return 8;   // ≈20 words, ~8s audio
+  if (speedMode === 'balanced')    return 12;  // ≈30 words, ~12s audio
   return 12;  // quality
 }
 

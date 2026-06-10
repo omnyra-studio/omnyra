@@ -156,6 +156,22 @@ export async function POST(request) {
 
   const db = getDb();
 
+  // ── Idempotency: skip if this event was already processed ────────────────
+  // Stripe retries on network errors — a second delivery must not double-credit.
+  // PK conflict (code 23505) = already processed → return 200 silently.
+  const { error: idempotencyErr } = await db
+    .from('stripe_webhook_events')
+    .insert({ event_id: event.id, event_type: event.type });
+
+  if (idempotencyErr) {
+    if (idempotencyErr.code === '23505') {
+      console.info(`[stripe] Duplicate event ${event.id} (${event.type}) — skipping replay`);
+      return new Response('ok', { status: 200 });
+    }
+    // Unexpected DB error: log and proceed (fail-open to avoid losing real events)
+    console.error(`[stripe] idempotency insert failed (proceeding): ${idempotencyErr.message}`);
+  }
+
   try {
     switch (event.type) {
 

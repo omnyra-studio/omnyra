@@ -48,11 +48,13 @@ export default function Landing() {
             letterSpacing: '0.05em',
             marginBottom: '16px',
           }}>
-            <span>✦ Predicts Hook Strength</span>
+            <span>✦ Characters</span>
             <span style={{ opacity: 0.3 }}>•</span>
-            <span>✦ Tracks Audience Behavior</span>
+            <span>✦ Brand</span>
             <span style={{ opacity: 0.3 }}>•</span>
-            <span>✦ Learns From Every Outcome</span>
+            <span>✦ Style</span>
+            <span style={{ opacity: 0.3 }}>•</span>
+            <span>✦ Performance</span>
           </div>
 
           {/* 2 — logo */}
@@ -81,14 +83,13 @@ export default function Landing() {
 
           {/* 4 — heading */}
           <h1 className="font-display text-5xl md:text-7xl lg:text-8xl font-bold leading-[1.05] mb-4" style={{ color: '#F5EFE6' }}>
-            <span className="block animate-fade-up" style={{ textShadow: '0 2px 20px rgba(0,0,0,0.8), 0 1px 4px rgba(0,0,0,0.9)' }}>Predict what</span>
-            <span className="block animate-fade-up" style={{ animationDelay: "0.15s" }}><span className="metallic-gold">performs.</span></span>
-            <span className="block animate-fade-up" style={{ animationDelay: "0.3s", textShadow: '0 2px 20px rgba(0,0,0,0.8), 0 1px 4px rgba(0,0,0,0.9)' }}>Then learn why.</span>
+            <span className="block animate-fade-up" style={{ textShadow: '0 2px 20px rgba(0,0,0,0.8), 0 1px 4px rgba(0,0,0,0.9)' }}>AI Video That</span>
+            <span className="block animate-fade-up" style={{ animationDelay: "0.15s" }}><span className="metallic-gold">Remembers.</span></span>
           </h1>
 
           {/* 5 — subtext */}
-          <p className="text-lg md:text-xl max-w-3xl mx-auto mb-10 leading-relaxed animate-fade-up" style={{ color: '#E8DDD0', animationDelay: "0.45s", textShadow: '0 1px 8px rgba(0,0,0,0.9)' }}>
-            Omnyra improves what you create by improving what you choose to create — 6 ranked content directions per idea, scored and ready before you produce a single frame.
+          <p className="text-lg md:text-xl max-w-3xl mx-auto mb-10 leading-relaxed animate-fade-up" style={{ color: '#E8DDD0', animationDelay: "0.3s", textShadow: '0 1px 8px rgba(0,0,0,0.9)' }}>
+            Omnyra is the only AI video platform with persistent memory &mdash; so your content stays consistent and improves over time.
           </p>
 
           {/* 6 — buttons */}
@@ -97,7 +98,7 @@ export default function Landing() {
               Start Free
             </Link>
             <a href="#how-it-works" className="w-full sm:w-auto px-10 py-5 rounded-full text-lg font-semibold" style={{ border: '1px solid #E8DEFF', color: '#E8DEFF' }}>
-              See How It Works →
+              Watch Demo →
             </a>
           </div>
 
@@ -265,24 +266,29 @@ export default function Landing() {
             <div className="space-y-10">
               {[
                 {
+                  icon: "🎭",
+                  title: "Persistent Character Memory",
+                  desc: "Same face, same voice, same energy across every video. Characters remember their look, tone, and brand identity — no re-uploading, no inconsistency.",
+                },
+                {
                   icon: "🧠",
-                  title: "Strategy Briefs That Think",
-                  desc: `Not "here's a hook." A full creative brief with objective, audience psychology, trend context, and honest risk assessment. Every recommendation has a reason.`,
-                },
-                {
-                  icon: "🎬",
-                  title: "AI Creative Director",
-                  desc: "Shot Intelligence breaks scripts into directed packets. Every shot has a psychological purpose, camera behavior, motion intensity, and energy curve — before a single frame is rendered.",
-                },
-                {
-                  icon: "💾",
-                  title: "Memory That Compounds",
-                  desc: "Every brief you approve, every hook you reject, every post outcome — stored, embedded, and referenced. Six months of Omnyra data is irreplaceable. That's the moat.",
+                  title: "Smart Brand Memory Injection",
+                  desc: "Every style preference, hook type, and performance lesson you've accumulated automatically shapes new content. Your brand gets smarter the more you use it.",
                 },
                 {
                   icon: "⚡",
-                  title: "Falsifiable Predictions",
-                  desc: '"I\'m 72% confident this hook will outperform your average by 15-20%. Here\'s why. Here\'s how we\'ll know if I\'m wrong. Here\'s what to try instead."',
+                  title: "Creator Intelligence Suggestions",
+                  desc: "After every generation, Omnyra surfaces actionable insights: hook strength score, estimated reach, best time to post, and what to try next.",
+                },
+                {
+                  icon: "🎬",
+                  title: "Multi-Model Production Engine",
+                  desc: "Flux for cinematic images, ElevenLabs for studio-quality voice, Kling for video — all coordinated by a single intelligent engine with automatic fallbacks.",
+                },
+                {
+                  icon: "💳",
+                  title: "Reliable Billing & Usage Tracking",
+                  desc: "Clear credit costs before you generate. No surprise charges. Real-time balance, full transaction history, and transparent tier limits.",
                 },
               ].map(({ icon, title, desc }) => (
                 <div key={title} className="flex gap-5">

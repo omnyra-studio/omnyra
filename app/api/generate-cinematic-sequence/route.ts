@@ -5,6 +5,15 @@ import { KLING_I2V_MODEL, KLING_T2V_MODEL, extractVideoUrl } from "@/lib/video-m
 import { generateSmartMotionClip, pickEffect } from "@/lib/smart-motion";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import {
+  loadCharacterMemory,
+  buildKlingCharacterSuffix,
+  findBestReference,
+  saveNewReference,
+  saveGeneratedClipAsReference,
+  type CharacterMemory,
+} from "@/lib/memory/character-memory";
+import { batchScoreConsistency, scoreImagePair } from "@/lib/memory/consistency-scorer";
+import {
   extractBibles,
   buildCharacterPrefix,
   buildConsistencySuffix,
@@ -17,6 +26,8 @@ import { applyGenerationGuardrail, type ModelTier } from "@/lib/generation-guard
 import { checkAbuse, releaseVideoSlot } from "@/lib/abuse-protection";
 import { videoCreditCost } from "@/lib/rules/creditRules";
 import { withCreditState, InsufficientCreditsError, CreditReservationError } from "@/lib/credits/withCreditState";
+import { loadBrandMemory } from "@/lib/memory/brand-memory";
+import { saveRenderToLibrary } from "@/lib/renders/save-render";
 
 export const maxDuration = 300;
 
@@ -65,35 +76,62 @@ async function uploadSmartMotionClip(
 
 const COUPLE_RE = /\b(couple|two people|both of them|together|partner|dancing with|walking with|holding hands|hand in hand|each other|lovers|husband|wife|boyfriend|girlfriend|fiancee?|spouse|relationship|romance|romantic)\b/i;
 
-async function generateSceneImage(prompt: string, isCouple: boolean, sceneIndex?: number): Promise<string> {
+async function generateSceneImage(
+  prompt:      string,
+  isCouple:    boolean,
+  sceneIndex?: number,
+  charRefUrl?: string,  // when set: score after gen and retry once if score < 0.72
+  charSuffix?: string,  // prepended on retry to anchor character description
+): Promise<string> {
   const label = sceneIndex !== undefined ? `scene=${sceneIndex + 1}` : "scene=?";
+
+  // Anatomy guard — appended to every positive prompt
+  const ANATOMY_GUARD =
+    `perfect anatomy, correct number of limbs, two arms two legs, anatomically correct hands, ` +
+    `five fingers per hand, natural hand pose, no extra limbs, no fused fingers, clean body proportions`;
+
+  // Detect hand/object scenes for extra grip guidance
+  const hasHandObject = /\b(coffee|mug|cup|glass|bottle|holding|gripping|handing|drink)\b/i.test(prompt);
+  const handObjectGuard = hasHandObject
+    ? `natural hand wrapped around object, correct finger count, realistic grip`
+    : "";
 
   const baseNegative =
     `AI render, CGI, hyperrealistic skin, studio lighting, perfect symmetry, ` +
     `fitness model, airbrushed, chiseled, glowing skin, professional athlete, ` +
-    `posed portrait, stock photo, fake smile, oversaturated`;
+    `posed portrait, stock photo, fake smile, oversaturated, ` +
+    `extra limbs, extra fingers, extra arms, extra hands, mutated hands, deformed hands, ` +
+    `fused fingers, too many fingers, missing fingers, ugly hands, distorted limbs, ` +
+    `bad anatomy, extra legs, malformed limbs, three hands, two left hands, ` +
+    `anatomical errors, wrong body proportions`;
 
   const coupleNegative = isCouple
-    ? `single person, solo, one person, alone, missing person, partial person, cropped person, ${baseNegative}`
+    ? `single person, solo, one person, alone, missing person, partial person, cropped person, ` +
+      `overlapping limbs, fused bodies, merged torsos, arm going through body, extra arm between people, ` +
+      `${baseNegative}`
     : baseNegative;
 
   const buildPrompt = (corePrompt: string, attempt: number): string => {
+    const anatomySuffix = [ANATOMY_GUARD, handObjectGuard].filter(Boolean).join(", ");
     if (!isCouple) {
-      return `${corePrompt}, 35mm candid photography, natural lighting, authentic unposed moment, ` +
+      return `${corePrompt}, ${anatomySuffix}, ` +
+        `35mm candid photography, natural lighting, authentic unposed moment, ` +
         `real people, documentary style, shot on iPhone or DSLR, imperfect natural beauty, ` +
         `fully clothed subjects, brand-safe, SFW, no nudity`;
     }
     // Attempt 1: strong couple prefix on the original prompt
     if (attempt === 1) {
       return `Two people together, both fully visible in frame, couple side by side, ` +
-        `${corePrompt}, two people in shot, ` +
+        `clear separation between bodies, no overlapping limbs, correct arm positions, ` +
+        `${corePrompt}, two people in shot, ${anatomySuffix}, ` +
         `35mm candid photography, natural lighting, authentic unposed moment, ` +
         `real people, documentary style, shot on iPhone or DSLR, imperfect natural beauty, ` +
         `fully clothed subjects, brand-safe, SFW, no nudity`;
     }
     // Attempt 2: override with maximum-specificity couple prompt
     return `A couple, two people standing together, both people fully visible from head to toe, ` +
-      `${corePrompt}, couple side by side both in frame, ` +
+      `clear physical separation between their bodies, each person has exactly two arms, ` +
+      `${corePrompt}, couple side by side both in frame, ${anatomySuffix}, ` +
       `35mm candid photography, natural lighting, authentic unposed moment, ` +
       `real people, documentary style, shot on iPhone or DSLR, ` +
       `fully clothed subjects, brand-safe, SFW, no nudity`;
@@ -121,13 +159,53 @@ async function generateSceneImage(prompt: string, isCouple: boolean, sceneIndex?
     return url;
   };
 
+  let url: string;
   try {
-    return await callFlux(1);
+    url = await callFlux(1);
   } catch (err) {
     if (!isCouple) throw err;
     console.warn(`[FLUX_RETRY] ${label} attempt=1 failed — retrying with explicit couple prompt: ${(err as Error).message}`);
-    return await callFlux(2);
+    url = await callFlux(2);
   }
+
+  // Character consistency retry.
+  // When a character reference URL is provided, score the generated image against it.
+  // On score < 0.72: regenerate once with the character description prepended to the prompt.
+  if (charRefUrl) {
+    try {
+      const score = await scoreImagePair(url, charRefUrl);
+      if (score !== null) {
+        console.log(`[CHAR_CONSISTENCY_GATE] ${label} score=${score.toFixed(2)} retry=${score < 0.72}`);
+        if (score < 0.72 && charSuffix) {
+          const charAnchoredPrompt = `${charSuffix}, ${prompt}`;
+          const retryR = await (fal as any).subscribe(FLUX_MODEL, {
+            input: {
+              prompt:                isCouple
+                ? `Two people together, both fully visible in frame, clear separation between bodies, no overlapping limbs, ${charAnchoredPrompt}, perfect anatomy, correct number of limbs, 35mm candid photography, natural lighting, real people, fully clothed, SFW`
+                : `${charAnchoredPrompt}, perfect anatomy, correct number of limbs, anatomically correct hands, five fingers per hand, 35mm candid photography, natural lighting, authentic unposed moment, real people, fully clothed, SFW`,
+              negative_prompt:       coupleNegative,
+              image_size:            { width: 720, height: 1280 },
+              num_inference_steps:   4,
+              num_images:            1,
+              enable_safety_checker: true,
+            },
+            logs: false,
+          });
+          const retryUrl: string | undefined =
+            (retryR as any)?.images?.[0]?.url ?? (retryR as any)?.data?.images?.[0]?.url;
+          if (retryUrl) {
+            const retryScore = await scoreImagePair(retryUrl, charRefUrl).catch(() => null);
+            console.log(`[CHAR_CONSISTENCY_RETRY] ${label} retry score=${retryScore?.toFixed(2) ?? "?"} (was ${score.toFixed(2)})`);
+            if (retryScore !== null && retryScore > score) return retryUrl;
+          }
+        }
+      }
+    } catch {
+      // consistency gating is non-fatal
+    }
+  }
+
+  return url;
 }
 
 // ── Clip generators ───────────────────────────────────────────────────────────
@@ -177,23 +255,25 @@ async function generateKlingClip(
 }
 
 async function generateSmartMotionClipWithUpload(
-  prompt: string,
-  imageUrl: string | null,
-  sceneType: string,
-  index: number,
-  userId: string,
-  label: string,
+  prompt:      string,
+  imageUrl:    string | null,
+  sceneType:   string,
+  index:       number,
+  userId:      string,
+  label:       string,
   clipReports: string[],
   durationSec: number,
   sourceImages: Array<string | null>,
-  isCouple: boolean,
+  isCouple:    boolean,
+  charRefUrl?: string,  // character reference for consistency-gated retry
+  charSuffix?: string,  // character description prefix used in retry prompt
 ): Promise<string | null> {
   const smT0 = Date.now();
   try {
     // Always generate a scene-specific image from the visual prompt.
     // The imageUrl from the client is a reference/brand image — reusing it for every
     // scene causes all clips to animate the same frame (identical output).
-    const sourceImageUrl = await generateSceneImage(prompt, isCouple, index);
+    const sourceImageUrl = await generateSceneImage(prompt, isCouple, index, charRefUrl, charSuffix);
 
     sourceImages[index] = sourceImageUrl;
 
@@ -260,11 +340,14 @@ async function executeClip(
   label:          string,
   isCouple:       boolean,
   negativePrompt?: string,
+  charRefUrl?:    string,  // threaded for smart_motion consistency retry
+  charSuffix?:    string,
 ): Promise<string> {
   const render = async (p: ProviderTier): Promise<string | null> => {
     if (p === "smart_motion") {
       return generateSmartMotionClipWithUpload(
         prompt, imageUrl, sceneType, index, userId, label, clipReports, rawSeconds, sourceImages, isCouple,
+        charRefUrl, charSuffix,
       );
     }
     return generateKlingClip(prompt, imageUrl, duration, label, clipReports, negativePrompt);
@@ -415,6 +498,7 @@ export async function POST(req: Request) {
   let sceneTypes: (string | null)[] | undefined;
   let script: string | undefined;
   let goal: string | undefined;
+  let characterId: string | undefined;
   try {
     const body = await req.json() as {
       prompts?: string[];
@@ -423,6 +507,7 @@ export async function POST(req: Request) {
       sceneTypes?: (string | null)[];
       script?: string;
       goal?: string;
+      characterId?: string;
     };
     prompts      = body.prompts ?? [];
     imageUrl     = body.imageUrl;
@@ -430,9 +515,42 @@ export async function POST(req: Request) {
     sceneTypes   = body.sceneTypes;
     script       = body.script;
     goal         = body.goal;
-    console.log(`[BRIEF_CONTEXT] goal="${(goal ?? "").substring(0, 120)}"`)
+    characterId  = body.characterId;
+    console.log(`[BRIEF_CONTEXT] goal="${(goal ?? "").substring(0, 120)}" characterId=${characterId ?? "none"}`)
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  // Load brand + character memory in parallel (non-blocking — generation continues without either)
+  const brandMemory = await loadBrandMemory(user.id).catch(err => {
+    console.warn("[BRAND_MEMORY] load failed (non-fatal):", err instanceof Error ? err.message : err);
+    return null;
+  });
+  if (brandMemory?.brandName) console.log(`[BRAND_MEMORY] loaded brand="${brandMemory.brandName}" fluxSuffix="${brandMemory.fluxStyleSuffix.substring(0, 60)}"`);
+
+  let charMemory: CharacterMemory | null = null;
+  if (characterId) {
+    try {
+      charMemory = await loadCharacterMemory(characterId, user.id);
+      if (charMemory) {
+        console.log(`[CHAR_MEMORY] loaded charId=${characterId} name="${charMemory.name}" hasImage=${charMemory.hasImage}`);
+        // Use best reference as imageUrl if the caller didn't supply one
+        if (!imageUrl) {
+          const bestRef = await findBestReference(characterId, user.id);
+          if (bestRef) {
+            imageUrl = bestRef;
+            console.log(`[CHAR_MEMORY] using best reference as imageUrl: ${bestRef.substring(0, 80)}`);
+          } else if (charMemory.ref_frame_url) {
+            imageUrl = charMemory.ref_frame_url;
+            console.log(`[CHAR_MEMORY] using ref_frame_url as imageUrl: ${charMemory.ref_frame_url.substring(0, 80)}`);
+          }
+        }
+      } else {
+        console.warn(`[CHAR_MEMORY] characterId=${characterId} not found for userId=${user.id}`);
+      }
+    } catch (charErr) {
+      console.warn("[CHAR_MEMORY] load failed (non-fatal):", charErr instanceof Error ? charErr.message : charErr);
+    }
   }
 
   if (!prompts?.length) {
@@ -562,9 +680,26 @@ export async function POST(req: Request) {
           console.warn("[CONTINUITY] bible extraction failed (non-fatal):", err instanceof Error ? err.message : err);
         }
 
+        // Character memory injection — stacks on top of continuity bibles
+        if (charMemory) {
+          const charSuffix = buildKlingCharacterSuffix(charMemory);
+          if (charSuffix.trim()) {
+            enforcedPrompts = enforcedPrompts.map(p => `${p}, ${charSuffix}`);
+            console.log(`[CHAR_INJECT] suffix="${charSuffix.substring(0, 80)}" injected into ${enforcedPrompts.length} prompts`);
+          }
+        }
+
+        // Brand memory injection — appends visual style to Flux image prompts
+        if (brandMemory?.fluxStyleSuffix) {
+          enforcedPrompts = enforcedPrompts.map(p => `${p}, ${brandMemory.fluxStyleSuffix}`);
+          console.log(`[BRAND_INJECT] fluxSuffix="${brandMemory.fluxStyleSuffix.substring(0, 80)}" injected into ${enforcedPrompts.length} prompts`);
+        }
+
         // Cinematic lighting + emotional arc injection
         const _combinedCtx  = `${goal ?? ""} ${script ?? ""}`.toLowerCase();
-        const _isEmotional  = /\b(beach|sunset|golden|tear|sad|cry|emotion|danc|shore|ocean|wave|romantic|intimate|dusk|twilight)\b/.test(_combinedCtx);
+        // Use prefix-match (no \b at end) so "tears" matches "tear", "emotional" matches "emotion", etc.
+        const _isEmotional  = /\b(beach|sunset|golden|tear|sad|cri|cry|weep|sob|emotion|danc|shore|ocean|wave|romantic|intimate|dusk|twilight|hug|embrac|comfort|vulnerab|loneli|ach|grief|coffee|mug)\b/.test(_combinedCtx)
+          || /tears|crying|emotional|dancing|hugging|embracing|comforting/.test(_combinedCtx);
         const _isCoupleCtx  = COUPLE_RE.test(goal ?? "") || COUPLE_RE.test(script ?? "");
         const _total        = enforcedPrompts.length;
 
@@ -609,8 +744,14 @@ export async function POST(req: Request) {
         });
         console.log(`[PROMPT_ARC] enhanced ${_total} scene(s) emotional=${_isEmotional} couple=${_isCoupleCtx}`);
 
-        // Per-scene negative prompts — suppress wrong tone in early scenes
-        const _negBase     = "stock photo pose, studio lighting, CGI, airbrushed, oversaturated, man facing backward, subject facing away from camera, back to camera";
+        // Per-scene negative prompts — suppress wrong tone + anatomy artifacts
+        const _negBase =
+          "stock photo pose, studio lighting, CGI, airbrushed, oversaturated, " +
+          "man facing backward, subject facing away from camera, back to camera, " +
+          "extra limbs, extra fingers, extra arms, extra hands, mutated hands, deformed hands, " +
+          "fused fingers, too many fingers, missing fingers, ugly hands, distorted limbs, " +
+          "bad anatomy, extra legs, malformed limbs, three hands, two left hands, " +
+          "overlapping limbs, fused bodies, merged torsos, anatomical errors";
         const _negEmotional = _isEmotional
           ? "premature smiling, overly joyful expression too early, laughing out loud, wrong orientation, generic romance without sadness"
           : "";
@@ -619,6 +760,22 @@ export async function POST(req: Request) {
           const sadGuard = (_isEmotional && pos <= 0.33) ? "smiling, happy expression, teeth showing, joyful face, laughing" : "";
           return [_negBase, _negEmotional, sadGuard].filter(Boolean).join(", ");
         });
+
+        // Extend with character-specific negative prompts
+        if (charMemory?.neg_prompt?.trim()) {
+          for (let i = 0; i < sceneNegativePrompts.length; i++) {
+            sceneNegativePrompts[i] = [sceneNegativePrompts[i], charMemory.neg_prompt].filter(Boolean).join(", ");
+          }
+          console.log(`[CHAR_NEG] extended ${sceneNegativePrompts.length} scene neg prompts with charMemory.neg_prompt`);
+        }
+
+        // Extend with brand-specific negative style terms
+        if (brandMemory?.negativeStyleSuffix) {
+          for (let i = 0; i < sceneNegativePrompts.length; i++) {
+            sceneNegativePrompts[i] = [sceneNegativePrompts[i], brandMemory.negativeStyleSuffix].filter(Boolean).join(", ");
+          }
+          console.log(`[BRAND_NEG] extended ${sceneNegativePrompts.length} scene neg prompts with brand negative terms`);
+        }
 
         const sourceImages: Array<string | null> = new Array(prompts.length).fill(null);
         const clipReports: string[] = [];
@@ -641,10 +798,13 @@ export async function POST(req: Request) {
             console.log(`[SCENE_ROUTER] scene=${i + 1} provider=${provider} sceneType=${sceneType} motion=${motionScore.toFixed(2)}`);
 
             const isCouple = COUPLE_RE.test(goal ?? "") || COUPLE_RE.test(script ?? "") || COUPLE_RE.test(prompt);
+            const clipCharRefUrl = charMemory ? (imageUrl ?? charMemory.ref_frame_url ?? undefined) : undefined;
+            const clipCharSuffix = charMemory ? buildKlingCharacterSuffix(charMemory) : undefined;
             const url = await executeClip(
               prompt, imageUrl ?? null, duration, provider,
               sceneType, i, user.id, rawSeconds, sourceImages, clipReports,
               clipBudget, label, isCouple, sceneNegativePrompts[i],
+              clipCharRefUrl, clipCharSuffix,
             );
 
             const elapsed = Date.now() - clipT0;
@@ -738,6 +898,21 @@ export async function POST(req: Request) {
           });
         }
 
+        // Score + save first good Flux source image as character reference (fire-and-forget)
+        if (characterId && charMemory) {
+          const firstSourceImage = sourceImages.find(u => u !== null);
+          if (firstSourceImage) {
+            void batchScoreConsistency([firstSourceImage], characterId, user.id)
+              .then(async result => {
+                const score = result?.score ?? 0.75;
+                console.log(`[CONSISTENCY] charId=${characterId} score=${score.toFixed(2)} shouldRetry=${result?.shouldRetry ?? false}`);
+                const ref = await saveGeneratedClipAsReference(characterId, user.id, firstSourceImage, score);
+                if (ref) console.log(`[CHAR_REF_SAVE] saved id=${ref.id} score=${score.toFixed(2)}`);
+              })
+              .catch(e => console.warn("[CONSISTENCY/SAVE] failed (non-fatal):", e instanceof Error ? e.message : e));
+          }
+        }
+
         // ── Visual Continuity: validate consecutive source image pairs ─────────
         let continuityScore: ContinuityScore | null = null;
         const validSourcePairs: Array<[string, string, number, number]> = [];
@@ -801,6 +976,7 @@ export async function POST(req: Request) {
           data: {
             stitched_url,
             clip_urls,
+            source_images:       sourceImages.filter((u): u is string => u !== null),
             clips_generated:     clip_urls.length,
             clip_duration:       Number(duration),
             total_duration:      clip_urls.length * Number(duration),
@@ -825,6 +1001,17 @@ export async function POST(req: Request) {
         };
       },
     });
+
+    // Auto-save to My Videos (fire-and-forget; failure is non-fatal)
+    const payload = responsePayload as { clip_urls?: string[]; stitched_url?: string };
+    const saveUrl = payload.stitched_url ?? payload.clip_urls?.[0];
+    if (saveUrl) {
+      void saveRenderToLibrary({
+        userId:   user.id,
+        videoUrl: saveUrl,
+        template: "cinematic-sequence",
+      }).catch(err => console.warn("[cinematic-sequence] auto-save failed:", err));
+    }
 
     return Response.json(responsePayload);
 

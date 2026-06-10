@@ -32,7 +32,7 @@ export async function saveRenderToLibrary(params: SaveRenderParams): Promise<str
         .single();
 
       if (error) throw error;
-      console.info(`[save-render] id=${data.id} user=${params.userId} template=${params.template}`);
+      console.info(`[SAVE_RENDER] user=${params.userId} video=${params.videoUrl.substring(0, 80)} template=${params.template} render_id=${data.id} status=success`);
 
       if (params.sendEmail) {
         void (async () => {

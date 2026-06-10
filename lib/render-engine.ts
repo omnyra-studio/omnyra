@@ -167,7 +167,7 @@ async function generateKlingVideo(prompt: string, durationSecs: number): Promise
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model_name: "kling-v1",
+      model_name: "kling-v3",
       prompt,
       aspect_ratio: "9:16",
       duration: durationSecs,

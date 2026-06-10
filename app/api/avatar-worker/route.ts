@@ -208,20 +208,21 @@ async function executeTtsStage(
   // ── Hedra speed cap — hard-limit total audio before Director Core planning ──
   // Hedra generation time scales with audio length. Cap total words so the
   // combined audio stays under target seconds, regardless of input script length.
-  // starter: 22 words ≈ 8-9s, creator: 35 words ≈ 14s, studio: 50 words ≈ 20s
-  const HEDRA_WORD_BUDGET: Record<string, number> = { starter: 22, creator: 35, studio: 50 };
+  // starter: 20 words ≈ 8s, creator: 28 words ≈ 11s, studio: 40 words ≈ 16s
+  const HEDRA_WORD_BUDGET: Record<string, number> = { starter: 20, creator: 28, studio: 40 };
   const HEDRA_SCENE_CAP:   Record<string, number> = { starter: 1,  creator: 2,  studio: 3  };
-  const hedraWordBudget = HEDRA_WORD_BUDGET[job.input.plan ?? "starter"] ?? 22;
+  const hedraWordBudget = HEDRA_WORD_BUDGET[job.input.plan ?? "starter"] ?? 20;
   const hedraSceneCap   = HEDRA_SCENE_CAP[job.input.plan ?? "starter"]   ?? 1;
   const hedraMaxScenes  = Math.min(effectiveMaxScenes, hedraSceneCap);
 
   const rawScriptWords = job.input.script.trim().split(/\s+/).filter(Boolean);
+  const estAudioSec    = Math.round((Math.min(rawScriptWords.length, hedraWordBudget) / 2.5) * 10) / 10;
   let cappedScript     = job.input.script.trim();
   if (rawScriptWords.length > hedraWordBudget) {
     cappedScript = rawScriptWords.slice(0, hedraWordBudget).join(" ").replace(/[,;.!?]+$/, "") + ".";
-    log(`[HEDRA_TRUNCATE] script words ${rawScriptWords.length}→${hedraWordBudget} plan=${job.input.plan ?? "starter"} est_sec=~${Math.round(hedraWordBudget / 2.5)}s scenes_cap=${hedraMaxScenes}`);
+    log(`[AVATAR_CAP] words ${rawScriptWords.length}→${hedraWordBudget} est_audio_sec=${estAudioSec}s plan=${job.input.plan ?? "starter"} scenes_cap=${hedraMaxScenes}`);
   } else {
-    log(`[HEDRA_TRUNCATE] no_cap words=${rawScriptWords.length} budget=${hedraWordBudget} est_sec=~${Math.round(rawScriptWords.length / 2.5)}s`);
+    log(`[AVATAR_CAP] no_cap words=${rawScriptWords.length} est_audio_sec=${estAudioSec}s budget=${hedraWordBudget}`);
   }
 
   // ── Load creator + character memory (Director Core context) ───────────────
@@ -321,8 +322,11 @@ async function executeTtsStage(
           log(`[HEDRA_TRUNCATE] seg=${scene.index} words ${spokenWords.length}→${perSceneWordCap} (budget=${hedraWordBudget} / scenes=${scenes.length})`);
         }
 
+        const estSegSec = Math.round((Math.min(spokenWords.length, perSceneWordCap) / 2.5) * 10) / 10;
+        log(`[AVATAR_CAP] seg=${scene.index} words=${Math.min(spokenWords.length, perSceneWordCap)} est_audio_sec=${estSegSec}s`);
         log(`[TTS_SEGMENT_START] seg=${scene.index} chars=${finalText.length} words=${Math.min(spokenWords.length, perSceneWordCap)}`);
-        const t1  = Date.now();
+        const t1       = Date.now();
+        const baseVS   = voiceSettingsForScene(scene.energy ?? 3, scene.pacing ?? "measured");
         const res = await fetch(
           `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
           {
@@ -330,8 +334,8 @@ async function executeTtsStage(
             headers: { "xi-api-key": process.env.ELEVENLABS_API_KEY!, "Content-Type": "application/json" },
             body:    JSON.stringify({
               text:           finalText,
-              model_id:       "eleven_turbo_v2",
-              voice_settings: voiceSettingsForScene(scene.energy ?? 3, scene.pacing ?? "measured"),
+              model_id:       "eleven_flash_v2_5",
+              voice_settings: { ...baseVS, speed: 1.05 },
             }),
           },
         );
@@ -371,7 +375,7 @@ async function executeTtsStage(
           buffer,
           contentType:  "audio/mpeg",
           extension:    "mp3",
-          modelVersion: "eleven_turbo_v2",
+          modelVersion: "eleven_flash_v2_5",
         });
         return { index, text, audio_url, char_count };
       }),
@@ -533,7 +537,7 @@ async function executeLipsyncStage(
       buffer:       stitchedBuffer,
       contentType:  "audio/mpeg",
       extension:    "mp3",
-      modelVersion: "eleven_turbo_v2",
+      modelVersion: "eleven_flash_v2_5",
     });
     log(`[HEDRA_AUDIO] concat done elapsed=${Date.now() - stitchT0}ms url=${combinedAudioUrl.substring(0, 80)}`);
   } catch (err) {

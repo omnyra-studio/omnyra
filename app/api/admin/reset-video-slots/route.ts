@@ -20,12 +20,12 @@ import { type NextRequest } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
 export async function POST(req: NextRequest) {
-  const secret = process.env.ADMIN_SECRET;
-  if (secret) {
-    const provided = req.headers.get("x-admin-secret");
-    if (provided !== secret) {
-      return Response.json({ error: "Unauthorized" }, { status: 401 });
-    }
+  // Fail-closed: if ADMIN_SECRET is not configured, block all requests.
+  // The previous if(secret){} pattern allowed bypass when the env var was unset.
+  const secret   = process.env.ADMIN_SECRET;
+  const provided = req.headers.get("x-admin-secret");
+  if (!secret || !provided || provided !== secret) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   let userId: string | null = null;

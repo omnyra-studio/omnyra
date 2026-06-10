@@ -126,7 +126,7 @@ export function animateRequestHash(
   imageUrl: string,
 ): string {
   return createHash("sha256")
-    .update(`kling|i2v-pro|v2.1|10s|9:16|0.35|${imageUrl}|scene-planner-v1`)
+    .update(`kling|i2v-pro|v3|10s|9:16|0.35|${imageUrl}|scene-planner-v1`)
     .digest("hex");
 }
 

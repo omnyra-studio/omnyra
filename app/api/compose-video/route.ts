@@ -22,6 +22,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { writeFileSync, readFileSync, unlinkSync, existsSync } from "fs";
 import { randomUUID } from "crypto";
+import { saveRenderToLibrary } from "@/lib/renders/save-render";
 import {
   buildRenderContract,
   assertContractRenderable,
@@ -390,6 +391,8 @@ export async function POST(request: Request) {
             console.log(`[TIMING] PHASE6 UPLOAD complete ${Date.now() - phase6T0}ms`);
             console.log(`[TIMING] compose-video TOTAL ${Date.now() - routeT0}ms clips=${clipUrls.length}`);
             console.log(`[PHASE6] cinematic done (railway) → ${publicUrl.substring(0, 80)}`);
+            void saveRenderToLibrary({ userId: user.id, videoUrl: publicUrl, template: "cinematic" })
+              .catch(e => console.warn("[compose-video] save-render failed:", e instanceof Error ? e.message : e));
             return NextResponse.json({
               success:          true,
               video_url:        publicUrl,
@@ -534,6 +537,8 @@ export async function POST(request: Request) {
 
       console.log(`[PHASE6:local] done → ${publicUrl.substring(0, 80)}`);
       console.log(`[TIMING] compose-video TOTAL ${Date.now() - routeT0}ms clips=${clipUrls.length}`);
+      void saveRenderToLibrary({ userId: user.id, videoUrl: publicUrl, template: "cinematic" })
+        .catch(e => console.warn("[compose-video] save-render failed:", e instanceof Error ? e.message : e));
       return NextResponse.json({ success: true, video_url: publicUrl, has_audio: !!voiceBuffer });
 
     } catch (err) {
@@ -635,6 +640,8 @@ export async function POST(request: Request) {
       }
 
       console.log(`[PHASE6:single] done → ${publicUrl.substring(0, 80)}`);
+      void saveRenderToLibrary({ userId: user.id, videoUrl: publicUrl, template: "avatar" })
+        .catch(e => console.warn("[compose-video:single] save-render failed:", e instanceof Error ? e.message : e));
       return NextResponse.json({ success: true, video_url: publicUrl, has_audio: !!voiceBufferSingle });
 
     } else {
@@ -720,6 +727,8 @@ export async function POST(request: Request) {
         }
 
         console.log(`[PHASE6:single] done → ${publicUrl.substring(0, 80)}`);
+        void saveRenderToLibrary({ userId: user.id, videoUrl: publicUrl, template: "avatar" })
+          .catch(e => console.warn("[compose-video:single:local] save-render failed:", e instanceof Error ? e.message : e));
         return NextResponse.json({ success: true, video_url: publicUrl, has_audio: !!singleVoiceUrl });
 
       } catch (err) {

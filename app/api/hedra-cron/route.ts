@@ -31,7 +31,13 @@ import type { SceneSpec } from "@/lib/avatar-scene-planner";
 
 export const maxDuration = 60;
 
+// Per-job timeout budget — leave 10s for post-processing + response
+const JOB_TIMEOUT_MS = 40_000;
+// Cron wall-clock deadline — bail before Vercel/Cloudflare cuts us at ~55s
+const CRON_DEADLINE_MS = 50_000;
+
 export async function GET(req: NextRequest) {
+  const cronT0  = Date.now();
   const invoked = new Date().toISOString();
   console.log(`[hedra-cron] [CRON_INVOKED] at=${invoked}`);
 
@@ -44,14 +50,14 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Find all jobs in lipsync stage that the worker handed off (lock released after submit)
+  // Shorter query: limit 5 per tick (process fast, stay under deadline)
   const { data: rawJobs, error: queryErr } = await supabaseAdmin
     .from("avatar_jobs")
-    .select("*")
+    .select("id, user_id, status, stage, stage_outputs, input, retry_count, retry_count_per_stage")
     .eq("status", "processing")
     .is("locked_by", null)
     .eq("stage", "lipsync")
-    .limit(20);
+    .limit(5);
 
   if (queryErr) {
     console.log(`[hedra-cron] [CRON_QUERY_ERROR] ${queryErr.message}`);
@@ -72,7 +78,15 @@ export async function GET(req: NextRequest) {
   let failed    = 0;
   let pending   = 0;
 
-  for (const job of jobs) {
+  // Process jobs in parallel — each with an individual AbortSignal timeout
+  await Promise.all(jobs.map(async (job) => {
+    // Bail early if we're approaching the cron wall-clock deadline
+    if (Date.now() - cronT0 > CRON_DEADLINE_MS) {
+      console.log(`[hedra-cron] [${job.id.slice(0, 8)}] DEADLINE_SKIP — bailing to stay under ${CRON_DEADLINE_MS}ms`);
+      pending++;
+      return;
+    }
+
     const outputs  = job.stage_outputs as Record<string, string>;
     const genId    = outputs.hedra_generation_id;
     const reqHash  = outputs.hedra_req_hash ?? "";
@@ -80,10 +94,22 @@ export async function GET(req: NextRequest) {
 
     log(`[CRON_JOB] generation_id=${genId} submitted_at=${outputs.hedra_submitted_at ?? "unknown"}`);
 
+    let result: { status: string; videoUrl?: string; errorMessage?: string };
     try {
-      const result = await checkHedraGenerationStatus(genId);
-      log(`[CRON_JOB] status=${result.status} has_url=${!!result.videoUrl}`);
+      // Hard timeout on status check — prevents 522s from slow Hedra responses
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), JOB_TIMEOUT_MS);
+      result = await checkHedraGenerationStatus(genId).finally(() => clearTimeout(timer));
+    } catch (fetchErr) {
+      const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+      const isTimeout = msg.includes("aborted") || msg.includes("timeout") || msg.includes("ETIMEDOUT");
+      log(`[CRON_STATUS_ERROR] ${isTimeout ? "TIMEOUT" : "FETCH_ERROR"} — ${msg} — will retry next tick`);
+      pending++;
+      return; // non-fatal: leave job in processing, next cron tick retries
+    }
+    log(`[CRON_JOB] status=${result.status} has_url=${!!result.videoUrl}`);
 
+    try {
       if (result.status === "complete" && result.videoUrl) {
         // 1. Download ephemeral S3 video before it expires
         log(`[HEDRA_DONE] downloading video url_len=${result.videoUrl.length}`);
@@ -117,7 +143,7 @@ export async function GET(req: NextRequest) {
         if (!jobCompleted) {
           log(`[RACE_LOST] another cron tick already completed this job — skipping renders insert`);
           completed++;
-          continue;
+          return;
         }
 
         // 5. Insert into renders table so the video appears in My Videos.
@@ -186,7 +212,7 @@ export async function GET(req: NextRequest) {
       log(`[CRON_ERROR] job_id=${job.id} error=${msg}`);
       // Transient error — do not fail the job; next cron will retry
     }
-  }
+  }));
 
   console.log(`[hedra-cron] [CRON_DONE] completed=${completed} failed=${failed} pending=${pending} total=${jobs.length}`);
   return Response.json({ processed: jobs.length, completed, failed, pending });

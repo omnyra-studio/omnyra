@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { sendWelcomeEmail } from "@/lib/email";
+import { sendOnboardingWelcome } from "@/lib/email";
 import { trackEvent } from "@/lib/events/trackEvent";
 
 const log = (step, data) =>
@@ -133,8 +133,8 @@ export async function POST(request) {
     email, name: displayName || null, signup_source: "password", promo_code: promoCode,
   }).catch(err => console.error("[auth/signup] event emit failed:", err.message));
 
-  sendWelcomeEmail(email)
-    .catch(err => console.error("[auth/signup] welcome email failed:", err.message));
+  sendOnboardingWelcome(email, { firstName: firstName?.trim() || null, credits: resolvedCredits })
+    .catch(err => console.error("[auth/signup] onboarding email failed:", err.message));
 
   // ── 9. Always return 200 once user is created ────────────────────────────
   return NextResponse.json({

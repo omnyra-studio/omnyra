@@ -90,12 +90,12 @@ async function generateCompositeImage(
   ].join(" ");
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const result = await (fal.subscribe as any)("fal-ai/flux/schnell", {
+  const result = await (fal.subscribe as any)("fal-ai/flux/dev", {
     input: {
       prompt:              compositePrompt,
       num_images:          1,
       image_size:          "portrait_4_3",
-      num_inference_steps: 8,
+      num_inference_steps: 28,
     },
   }) as { images?: Array<{ url: string }> };
 
@@ -140,7 +140,7 @@ export async function generateMultiCharacterClip(
 
   let result: unknown;
   try {
-    result = await fal.subscribe(KLING_I2V_PRO, {
+    result = await (fal as any).subscribe(KLING_I2V_PRO, {
       input: {
         prompt,
         negative_prompt,

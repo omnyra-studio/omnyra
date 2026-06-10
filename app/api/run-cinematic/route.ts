@@ -23,9 +23,6 @@ import { generateGetImgFrame }   from "@/lib/orchestrator/getimg-worker";
 
 export const maxDuration = 600;
 
-const SCENE_COUNT    = 3;
-const CLIP_DURATION  = 10;
-const TARGET_SECS    = 30;
 const MAX_SCRIPT_WORDS = 75;
 const DEFAULT_VOICE_ID = "EXAVITQu4vr4xnSDxMaO";
 
@@ -101,10 +98,16 @@ export async function POST(req: Request) {
     const niche        = (input.niche   as string ?? "").trim();
     const voiceId      = (input.voiceId as string ?? DEFAULT_VOICE_ID);
     const characterId  = input.characterId as string | undefined;
-    const speedMode    = (input.lightningMode ? "ultra-draft" : "draft") as string;
+    const lightningMode = !!input.lightningMode;
+    const speedMode    = (lightningMode ? "ultra-draft" : "draft") as string;
+
+    // Lightning: 2 × 7s = 14s; Standard: 3 × 10s = 30s
+    const SCENE_COUNT   = lightningMode ? 2 : 3;
+    const CLIP_DURATION = lightningMode ? 7 : 10;
+    const TARGET_SECS   = SCENE_COUNT * CLIP_DURATION;
 
     const trimmedScript = trimToWords(rawScript || goal, MAX_SCRIPT_WORDS);
-    console.log(`[run-cinematic] [DURATION_LOCK] scenes=${SCENE_COUNT} clip_sec=${CLIP_DURATION} target=${TARGET_SECS}s`);
+    console.log(`[run-cinematic] [DURATION_LOCK] mode=${speedMode} scenes=${SCENE_COUNT} clip_sec=${CLIP_DURATION} target=${TARGET_SECS}s`);
     console.log(`[run-cinematic] [SCRIPT_TRIM] original_words=${rawScript.split(/\s+/).length} trimmed_words=${trimmedScript.split(/\s+/).length}`);
 
     // Build scene prompts — motion-only descriptions, no appearance
@@ -146,43 +149,48 @@ export async function POST(req: Request) {
     const charSuffix  = charMemory ? buildKlingCharacterSuffix(charMemory) : "";
 
     // ── 3. Generate ONE reference image for character consistency ─────────────
-    // This single Flux Dev frame anchors the character/environment across all clips.
-    // All Kling calls use this as the I2V source — motion-only prompts drive the action.
+    // Lightning mode skips Flux entirely (T2V is faster without reference anchoring).
+    // Standard mode uses Flux schnell (4 steps) for speed; quality uses Dev (28 steps).
     await setJobStatus(jobId, "generating_clips", 15);
 
     const fluxT0 = Date.now();
     let referenceImageUrl: string | undefined;
-    const subjectHint = charSuffix ? charSuffix.split(",")[0].trim() : "";
-    const refPrompt = [
-      subjectHint || "lifestyle creator, mid-shot",
-      goal || trimmedScript.slice(0, 100),
-      "establishing shot, full body visible, facing camera directly",
-      "candid photography, sharp focus, natural light, real person",
-      brandSuffix || "minimal clean background",
-      "9:16 portrait, ultra-realistic, high detail",
-    ].filter(Boolean).join(", ");
 
-    const refNegative = [
-      "nudity, nude, nsfw, sexual, explicit, bare skin, underwear",
-      "extra limbs, deformed hands, bad anatomy, mutation, disfigured",
-      "text, watermark, logo, signature, frame, border",
-      "cartoon, anime, illustration, painting, cgi, render",
-      "blurry, out of focus, low quality, pixelated, noise",
-      "looking away, back turned, side profile",
-    ].join(", ");
+    if (!lightningMode) {
+      const subjectHint = charSuffix ? charSuffix.split(",")[0].trim() : "";
+      const refPrompt = [
+        subjectHint || "lifestyle creator, mid-shot",
+        goal || trimmedScript.slice(0, 100),
+        "establishing shot, full body visible, facing camera directly",
+        "candid photography, sharp focus, natural light, real person",
+        brandSuffix || "minimal clean background",
+        "9:16 portrait, ultra-realistic, high detail",
+      ].filter(Boolean).join(", ");
 
-    try {
-      const refFrame = await generateGetImgFrame({
-        prompt:          refPrompt,
-        negativePrompt:  refNegative,
-        width:           768,
-        height:          1344,
-        useQualityModel: true,
-      });
-      referenceImageUrl = refFrame.imageUrl;
-      console.log(`[run-cinematic] [CHARACTER_LOCK] flux_ms=${Date.now()-fluxT0} url=${referenceImageUrl.substring(0, 80)}`);
-    } catch (refErr) {
-      console.warn("[run-cinematic] reference image failed — falling back to T2V:", (refErr as Error).message);
+      const refNegative = [
+        "nudity, nude, nsfw, sexual, explicit, bare skin, underwear",
+        "extra limbs, deformed hands, bad anatomy, mutation, disfigured",
+        "text, watermark, logo, signature, frame, border",
+        "cartoon, anime, illustration, painting, cgi, render",
+        "blurry, out of focus, low quality, pixelated, noise",
+        "looking away, back turned, side profile",
+      ].join(", ");
+
+      try {
+        const refFrame = await generateGetImgFrame({
+          prompt:          refPrompt,
+          negativePrompt:  refNegative,
+          width:           768,
+          height:          1344,
+          useQualityModel: false, // schnell (4 steps) — fast enough for reference anchoring
+        });
+        referenceImageUrl = refFrame.imageUrl;
+        console.log(`[run-cinematic] [CHARACTER_LOCK] flux_ms=${Date.now()-fluxT0} url=${referenceImageUrl.substring(0, 80)}`);
+      } catch (refErr) {
+        console.warn("[run-cinematic] reference image failed — falling back to T2V:", (refErr as Error).message);
+      }
+    } else {
+      console.log(`[run-cinematic] [CHARACTER_LOCK] SKIPPED (lightning mode — pure T2V for speed)`);
     }
     const fluxMs = Date.now() - fluxT0;
 
@@ -269,6 +277,7 @@ export async function POST(req: Request) {
     }
 
     // ── 6. Save to renders table ──────────────────────────────────────────────
+    console.log(`[SAVE_RENDER] user=${userId} video=${finalVideoUrl.substring(0, 80)} template=cinematic status=attempting`);
     const { data: render, error: renderErr } = await supabaseAdmin
       .from("renders")
       .insert({
@@ -284,9 +293,9 @@ export async function POST(req: Request) {
       .single();
 
     if (renderErr) {
-      console.error("[run-cinematic] renders insert error:", renderErr.message);
+      console.error(`[SAVE_RENDER] FAILED user=${userId} code=${renderErr.code} msg=${renderErr.message}`);
     } else {
-      console.log(`[run-cinematic] [VIDEO_SAVED] render_id=${render.id} user=${userId}`);
+      console.log(`[SAVE_RENDER] user=${userId} render_id=${render.id} video=${finalVideoUrl.substring(0, 80)} status=success`);
     }
 
     // ── 7. Commit credits + mark job complete ────────────────────────────────

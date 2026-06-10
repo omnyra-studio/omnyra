@@ -29,11 +29,10 @@ export interface ShotExecutionResult {
 }
 
 
-// Seedance 2 — primary model for both text-to-video and image-to-video
-export const SEEDANCE_T2V_MODEL = "fal-ai/kling-video/v1.6/standard/text-to-video";
-export const SEEDANCE_I2V_MODEL = "fal-ai/kling-video/v1.6/standard/image-to-video";
-// Kling v3 Pro — fallback for image-to-video if Seedance 2 fails
-export const KLING_I2V_MODEL    = "fal-ai/kling-video/v1.6/standard/image-to-video";
+// Kling v3 standard — used by shot-executor (direct fal calls outside parallel engine)
+export const SEEDANCE_T2V_MODEL = "fal-ai/kling-video/v3/standard/text-to-video";
+export const SEEDANCE_I2V_MODEL = "fal-ai/kling-video/v3/standard/image-to-video";
+export const KLING_I2V_MODEL    = "fal-ai/kling-video/v3/standard/image-to-video";
 
 /**
  * Builds a structured Kling prompt — camera direction first, motion verbs injected.
@@ -122,11 +121,11 @@ async function executeTextOverlay(shot: ShotPacket): Promise<ShotExecutionResult
   ].join(" ");
 
    
-  const result = await (fal as any).subscribe("fal-ai/flux/schnell", {
+  const result = await (fal as any).subscribe("fal-ai/flux/dev", {
     input: {
       prompt,
       image_size: "portrait_16_9",
-      num_inference_steps: 4,
+      num_inference_steps: 28,
       num_images: 1,
     },
     logs: false,

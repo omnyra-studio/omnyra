@@ -1,6 +1,14 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { type NextRequest } from "next/server";
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  // Guard: require ADMIN_SECRET in production; block entirely if missing
+  const secret   = process.env.ADMIN_SECRET;
+  const provided = req.headers.get("x-admin-secret");
+  if (!secret || !provided || provided !== secret) {
+    return new Response(null, { status: 404 });
+  }
+
   if (!process.env.ANTHROPIC_API_KEY) {
     return Response.json({ error: "ANTHROPIC_API_KEY missing" }, { status: 500 });
   }

@@ -5,6 +5,40 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import AnimatedBackground from "@/components/AnimatedBackground";
 
+// ── Tool Performance types (from /api/intelligence/tool-performance) ──────────
+
+interface ProviderStat {
+  provider:               string;
+  total_generations:      number;
+  successful_generations: number;
+  selection_rate:         number;
+  avg_generation_ms:      number | null;
+  recent_30d:             number;
+}
+
+interface ConsistencyScore {
+  entity_id:   string;
+  entity_type: string;
+  score:       number;
+  sample_size: number;
+  computed_at: string;
+}
+
+interface Recommendation {
+  id:           string;
+  rec_type:     string;
+  headline:     string;
+  detail:       string | null;
+  confidence:   number;
+  was_acted_on: boolean;
+}
+
+interface ToolPerformancePayload {
+  providers:     ProviderStat[];
+  consistency:   ConsistencyScore[];
+  memorySummary: { hedra_cached_assets: number; recent_by_provider: Record<string, number> };
+}
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 interface Insight {
@@ -243,11 +277,115 @@ function QualityGauge({ score }: { score: number }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
+// ── Tool performance card ─────────────────────────────────────────────────────
+
+const PROVIDER_LABELS: Record<string, string> = {
+  hedra:       "Hedra",
+  kling:       "Kling",
+  elevenlabs:  "ElevenLabs",
+};
+
+const PROVIDER_DESC: Record<string, string> = {
+  hedra:       "Talking avatars",
+  kling:       "Video clips",
+  elevenlabs:  "Voiceover",
+};
+
+function ToolCard({ stat }: { stat: ProviderStat }) {
+  const label    = PROVIDER_LABELS[stat.provider] ?? stat.provider;
+  const desc     = PROVIDER_DESC[stat.provider]   ?? "";
+  const selPct   = Math.round(stat.selection_rate * 100);
+  const avgSec   = stat.avg_generation_ms ? (stat.avg_generation_ms / 1000).toFixed(0) : "—";
+  const barColor = selPct >= 70 ? "#4ECB8C" : selPct >= 45 ? "#CFA42F" : "#f87171";
+
+  return (
+    <div style={{
+      background: "rgba(45,10,62,0.5)",
+      border:     "1px solid rgba(207,164,47,0.15)",
+      borderRadius: "12px",
+      padding:    "16px",
+      minWidth:   0,
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "10px" }}>
+        <div>
+          <div style={{ fontSize: "14px", fontWeight: 700, color: "#fff" }}>{label}</div>
+          <div style={{ fontSize: "11px", color: "rgba(224,208,255,0.45)", marginTop: "2px" }}>{desc}</div>
+        </div>
+        <div style={{ fontSize: "22px", fontWeight: 700, color: barColor }}>{selPct}%</div>
+      </div>
+
+      <div style={{ height: "5px", borderRadius: "3px", background: "rgba(30,5,45,0.7)", marginBottom: "10px" }}>
+        <div style={{ height: "100%", width: `${selPct}%`, borderRadius: "3px", background: barColor, transition: "width 0.8s ease" }} />
+      </div>
+
+      <div style={{ display: "flex", gap: "12px", fontSize: "11px", color: "rgba(224,208,255,0.5)" }}>
+        <span>{stat.total_generations} total</span>
+        <span>{stat.recent_30d} this month</span>
+        {stat.avg_generation_ms && <span>avg {avgSec}s</span>}
+      </div>
+    </div>
+  );
+}
+
+function RecommendationCard({ rec, onAct, onDismiss }: {
+  rec:       Recommendation;
+  onAct:     (id: string) => void;
+  onDismiss: (id: string) => void;
+}) {
+  return (
+    <div style={{
+      background: "rgba(45,10,62,0.5)",
+      border:     `1px solid rgba(207,164,47,${0.1 + rec.confidence * 0.25})`,
+      borderRadius: "12px",
+      padding:    "16px",
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px", marginBottom: "6px" }}>
+        <div style={{ fontSize: "14px", fontWeight: 700, color: "#fff", flex: 1 }}>{rec.headline}</div>
+        <div style={{ fontSize: "10px", fontWeight: 600, color: "#CFA42F", whiteSpace: "nowrap" }}>
+          {Math.round(rec.confidence * 100)}% conf
+        </div>
+      </div>
+      {rec.detail && <p style={{ fontSize: "13px", color: "rgba(224,208,255,0.65)", margin: "0 0 10px", lineHeight: 1.5 }}>{rec.detail}</p>}
+      <div style={{ display: "flex", gap: "8px" }}>
+        {!rec.was_acted_on && (
+          <button
+            onClick={() => onAct(rec.id)}
+            style={{
+              fontSize: "12px", fontWeight: 600, color: "#0D0010",
+              background: "linear-gradient(105deg,#CFA42F,#F7D96B)",
+              border: "none", borderRadius: "8px", padding: "6px 14px", cursor: "pointer",
+            }}
+          >
+            Apply
+          </button>
+        )}
+        <button
+          onClick={() => onDismiss(rec.id)}
+          style={{
+            fontSize: "12px", color: "rgba(224,208,255,0.4)",
+            background: "transparent", border: "1px solid rgba(224,208,255,0.15)",
+            borderRadius: "8px", padding: "6px 12px", cursor: "pointer",
+          }}
+        >
+          Dismiss
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Main page ─────────────────────────────────────────────────────────────────
+
 export default function IntelligenceDashboard() {
   const router = useRouter();
   const [data, setData] = useState<AnalyticsPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Tool performance state
+  const [toolPerf, setToolPerf]         = useState<ToolPerformancePayload | null>(null);
+  const [recommendations, setRecs]      = useState<Recommendation[]>([]);
+  const [toolPerfLoading, setTPLoading] = useState(true);
 
   useEffect(() => {
     (async () => {
@@ -255,22 +393,66 @@ export default function IntelligenceDashboard() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) { router.replace("/signin"); return; }
 
+      // Load brand-brain analytics + tool performance in parallel
+      const [analyticsRes, toolPerfRes, recsRes] = await Promise.allSettled([
+        fetch("/api/brand-brain/analytics?insights=true"),
+        fetch("/api/intelligence/tool-performance"),
+        fetch("/api/intelligence/recommendations"),
+      ]);
+
+      // Brand analytics
       try {
-        const res = await fetch("/api/brand-brain/analytics?insights=true");
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({})) as { error?: string };
-          throw new Error(err.error ?? `HTTP ${res.status}`);
+        if (analyticsRes.status === "fulfilled" && analyticsRes.value.ok) {
+          setData(await analyticsRes.value.json() as AnalyticsPayload);
+        } else {
+          const err = analyticsRes.status === "fulfilled"
+            ? await analyticsRes.value.json().catch(() => ({})) as { error?: string }
+            : {};
+          throw new Error(err.error ?? "Failed to load analytics");
         }
-        setData(await res.json() as AnalyticsPayload);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load analytics");
       } finally {
         setLoading(false);
       }
+
+      // Tool performance
+      try {
+        if (toolPerfRes.status === "fulfilled" && toolPerfRes.value.ok) {
+          setToolPerf(await toolPerfRes.value.json() as ToolPerformancePayload);
+        }
+      } catch { /* non-fatal */ } finally { setTPLoading(false); }
+
+      // Recommendations
+      try {
+        if (recsRes.status === "fulfilled" && recsRes.value.ok) {
+          const json = await recsRes.value.json() as { recommendations: Recommendation[] };
+          setRecs(json.recommendations ?? []);
+        }
+      } catch { /* non-fatal */ }
     })();
   }, [router]);
 
+  const handleActRec = async (id: string) => {
+    await fetch("/api/intelligence/recommendations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "act", id }),
+    });
+    setRecs(r => r.map(x => x.id === id ? { ...x, was_acted_on: true } : x));
+  };
+
+  const handleDismissRec = async (id: string) => {
+    await fetch("/api/intelligence/recommendations", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "dismiss", id }),
+    });
+    setRecs(r => r.filter(x => x.id !== id));
+  };
+
   const noHistory = !data?.context.hasEnoughHistory;
+  const hasToolData = toolPerf && toolPerf.providers.length > 0;
 
   return (
     <div className="min-h-screen" style={{ position: "relative", background: "transparent" }}>
@@ -623,6 +805,94 @@ export default function IntelligenceDashboard() {
                   </p>
                 </div>
               </div>
+
+              {/* ── Section: Tool Performance (Hedra / Kling / ElevenLabs) ──────── */}
+              <div style={CARD}>
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+                  <span style={{ fontSize: "18px" }}>⚙️</span>
+                  <div style={SECTION_TITLE}>Tool Performance</div>
+                </div>
+
+                {toolPerfLoading && (
+                  <p style={{ color: "rgba(224,208,255,0.4)", fontSize: "13px" }}>Loading tool stats…</p>
+                )}
+
+                {!toolPerfLoading && !hasToolData && (
+                  <p style={{ color: "rgba(224,208,255,0.4)", fontSize: "13px" }}>
+                    Generate your first video to see Hedra, Kling and ElevenLabs performance stats.
+                  </p>
+                )}
+
+                {!toolPerfLoading && hasToolData && (
+                  <>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: "12px", marginBottom: "20px" }}>
+                      {toolPerf!.providers.map(p => <ToolCard key={p.provider} stat={p} />)}
+                    </div>
+
+                    {/* Consistency scores */}
+                    {toolPerf!.consistency.length > 0 && (
+                      <div style={{ marginBottom: "16px" }}>
+                        <div style={{ ...LABEL, marginBottom: "10px" }}>Character Consistency</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                          {toolPerf!.consistency.filter(c => c.entity_type === "character").map(c => {
+                            const pctVal  = Math.round(c.score * 100);
+                            const color   = pctVal >= 80 ? "#4ECB8C" : pctVal >= 55 ? "#CFA42F" : "#f87171";
+                            const label   = pctVal >= 80 ? "Consistent" : pctVal >= 55 ? "Some drift" : "High drift";
+                            return (
+                              <div key={c.entity_id} style={{
+                                display: "flex", alignItems: "center", gap: "12px",
+                                background: "rgba(30,5,45,0.5)", borderRadius: "10px", padding: "10px 14px",
+                              }}>
+                                <div style={{ flex: 1 }}>
+                                  <div style={{ height: "6px", borderRadius: "3px", background: "rgba(45,10,62,0.6)" }}>
+                                    <div style={{ height: "100%", width: `${pctVal}%`, borderRadius: "3px", background: color, transition: "width 0.8s ease" }} />
+                                  </div>
+                                </div>
+                                <span style={{ fontSize: "13px", fontWeight: 700, color, minWidth: "28px" }}>{pctVal}%</span>
+                                <span style={{ fontSize: "12px", color: "rgba(224,208,255,0.45)" }}>{label} · {c.sample_size} samples</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Memory footprint */}
+                    <div style={{
+                      background: "rgba(30,5,45,0.5)", border: "1px solid rgba(207,164,47,0.1)",
+                      borderRadius: "10px", padding: "12px 14px",
+                    }}>
+                      <div style={{ ...LABEL, marginBottom: "6px" }}>Cache & Memory</div>
+                      <div style={{ fontSize: "13px", color: "rgba(224,208,255,0.65)" }}>
+                        {toolPerf!.memorySummary.hedra_cached_assets} Hedra avatar assets cached
+                        {toolPerf!.memorySummary.hedra_cached_assets > 0
+                          ? " — skipping upload on repeat generations"
+                          : ""}
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* ── Section: AI Recommendations ──────────────────────────────────── */}
+              {recommendations.length > 0 && (
+                <div style={CARD}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px" }}>
+                    <span style={{ fontSize: "18px" }}>✦</span>
+                    <div style={SECTION_TITLE}>Recommendations</div>
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                    {recommendations.map(rec => (
+                      <RecommendationCard
+                        key={rec.id}
+                        rec={rec}
+                        onAct={handleActRec}
+                        onDismiss={handleDismissRec}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* No history CTA */}
               {noHistory && (

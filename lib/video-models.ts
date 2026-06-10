@@ -1,19 +1,26 @@
 // ── Canonical fal.ai video model slugs ───────────────────────────────────────
 // All video generation routes must import from here — no hardcoded strings elsewhere.
 
-export const KLING_I2V_MODEL   = "fal-ai/kling-video/v1.6/standard/image-to-video";
-export const KLING_T2V_MODEL   = "fal-ai/kling-video/v1.6/standard/text-to-video";
-export const KLING_I2V_PRO     = "fal-ai/kling-video/v2.1/pro/image-to-video";  // used by avatar animate stage
-export const KLING_T2V_PRO     = "fal-ai/kling-video/v2.1/pro/text-to-video";   // v2.1 text-to-video for parallel engine
+// ── Kling v3 (default — best motion quality, June 2026) ──────────────────────
+export const KLING_I2V_PRO     = "fal-ai/kling-video/v3/pro/image-to-video";     // avatar animate, multi-char composite
+export const KLING_T2V_PRO     = "fal-ai/kling-video/v3/pro/text-to-video";      // cinematic clips (parallel engine)
+export const KLING_I2V_MODEL   = "fal-ai/kling-video/v3/standard/image-to-video"; // lower-cost i2v fallback
+export const KLING_T2V_MODEL   = "fal-ai/kling-video/v3/standard/text-to-video";  // lower-cost t2v fallback
+
+// ── Kling v2.1 (explicit fallback only — do not use as default) ──────────────
+export const KLING_I2V_PRO_V2  = "fal-ai/kling-video/v2.1/pro/image-to-video";
+export const KLING_T2V_PRO_V2  = "fal-ai/kling-video/v2.1/pro/text-to-video";
+
 export const RUNWAY_MODEL      = "fal-ai/runway-gen4/turbo";
 
 // Models that have been removed from fal.ai and must never be used.
 const DEPRECATED_MODELS = [
   "fal-ai/fast-animatediff/turbo/text-to-video",
   "fal-ai/fast-svd-lcm",
+  "fal-ai/kling-video/v1.6/standard/image-to-video",
+  "fal-ai/kling-video/v1.6/standard/text-to-video",
   "fal-ai/kling-video/v1.6/pro/image-to-video",
   "fal-ai/kling-video/v1.6/pro/text-to-video",
-  "fal-ai/kling-video/v3/pro/image-to-video",
   "fal-ai/hedra/character-1",   // replaced by direct Hedra API (lib/providers/hedra.ts)
   "fal-ai/sync-lipsync",        // replaced by Hedra
 ];
@@ -34,7 +41,7 @@ console.log("[video-models] active models:", ACTIVE_MODELS.join(", "));
 // ── Shared response URL extractor ─────────────────────────────────────────────
 // fal.ai wraps results differently depending on the SDK version and model.
 // Confirmed response shapes:
-//   { data: { video: { url } } }   ← Kling v1.6 via fal.subscribe()
+//   { data: { video: { url } } }   ← Kling v3/v2.1 via fal.subscribe()
 //   { video: { url } }             ← some older models
 //   { output: { video_url } }      ← Runway and others
 // Use this function everywhere — never write inline r?.video?.url extraction.
