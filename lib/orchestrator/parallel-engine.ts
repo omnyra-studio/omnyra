@@ -444,6 +444,10 @@ export async function runParallelEngine(
   const draftMode  = input.draftMode ?? (speedMode === 'ultra-draft' || speedMode === 'draft');
   const maxClips   = (speedMode === 'ultra-draft' || speedMode === 'draft') ? Math.min(input.maxClips ?? 2, 2) : (input.maxClips ?? 3);
 
+  if (speedMode === 'ultra-draft') {
+    console.info(`[LIGHTNING_ENFORCED] planId=${planId} maxClips=${maxClips} speedMode=${speedMode} model=v3-standard target=${targetDurationSecs}s`);
+  }
+
   // Resolve primary + secondary character IDs
   const characterIds = input.characterIds?.length
     ? input.characterIds

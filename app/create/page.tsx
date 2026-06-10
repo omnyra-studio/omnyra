@@ -1472,13 +1472,18 @@ function CreatePageInner() {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body:    JSON.stringify({
-            prompts:     enhancedPrompts,
-            script:      scriptText || undefined,
-            goal:        goal || undefined,
-            niche:       niche || undefined,
-            voiceId:     selectedVoiceId || undefined,
-            characterId: selectedCharacterId || undefined,
+            prompts:          enhancedPrompts,
+            script:           scriptText || undefined,
+            goal:             goal || undefined,
+            niche:            niche || undefined,
+            voiceId:          selectedVoiceId || undefined,
+            characterId:      selectedCharacterId || undefined,
             lightningMode,
+            ...(lightningMode && {
+              speedMode:          'ultra-draft',
+              maxClips:           2,
+              targetDurationSecs: 20,
+            }),
           }),
         });
 

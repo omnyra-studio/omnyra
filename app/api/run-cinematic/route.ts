@@ -16,7 +16,7 @@ import { supabaseAdmin }         from "@/lib/supabase/admin";
 import { generateKlingClip }     from "@/lib/orchestrator/kling-worker";
 import { generateVoiceover }     from "@/lib/orchestrator/elevenlabs-worker";
 import { stitchClips }           from "@/lib/orchestrator/clip-stitcher";
-import { KLING_T2V_PRO, KLING_I2V_PRO } from "@/lib/video-models";
+import { KLING_T2V_PRO, KLING_T2V_MODEL, KLING_I2V_PRO, KLING_I2V_MODEL } from "@/lib/video-models";
 import { loadBrandMemory }       from "@/lib/memory/brand-memory";
 import { loadCharacterMemory, buildKlingCharacterSuffix } from "@/lib/memory/character-memory";
 import { generateGetImgFrame }   from "@/lib/orchestrator/getimg-worker";
@@ -99,14 +99,22 @@ export async function POST(req: Request) {
     const voiceId      = (input.voiceId as string ?? DEFAULT_VOICE_ID);
     const characterId  = input.characterId as string | undefined;
     const lightningMode = !!input.lightningMode;
-    const speedMode    = (lightningMode ? "ultra-draft" : "draft") as string;
+    // Explicit speedMode from client wins; lightningMode is the backward-compat toggle
+    const speedMode    = (input.speedMode as string | undefined) ?? (lightningMode ? "ultra-draft" : "draft");
+    const isUltraDraft = speedMode === "ultra-draft";
 
-    // Lightning: 2 × 7s = 14s; Standard: 3 × 10s = 30s
-    const SCENE_COUNT   = lightningMode ? 2 : 3;
-    const CLIP_DURATION = lightningMode ? 7 : 10;
+    // Lightning/ultra-draft: 2 scenes × 10s = 20s preview; Standard: 3 scenes × 10s = 30s
+    // Explicit maxClips from client caps scene count (never exceed 3 to stay under Vercel timeout)
+    const SCENE_COUNT   = Math.min((input.maxClips as number | undefined) ?? (isUltraDraft ? 2 : 3), 3);
+    const CLIP_DURATION = 10;
     const TARGET_SECS   = SCENE_COUNT * CLIP_DURATION;
 
+    // Model selection: ultra-draft uses v3 standard (shorter queue), all other modes use v3 pro
+    const klingT2V = isUltraDraft ? KLING_T2V_MODEL : KLING_T2V_PRO;
+    const klingI2V = isUltraDraft ? KLING_I2V_MODEL : KLING_I2V_PRO;
+
     const trimmedScript = trimToWords(rawScript || goal, MAX_SCRIPT_WORDS);
+    console.log(`[LIGHTNING_ENFORCED] mode=${speedMode} scenes=${SCENE_COUNT} clip_dur=${CLIP_DURATION}s target=${TARGET_SECS}s model=v3-${isUltraDraft ? "standard" : "pro"} lightning=${lightningMode}`);
     console.log(`[run-cinematic] [DURATION_LOCK] mode=${speedMode} scenes=${SCENE_COUNT} clip_sec=${CLIP_DURATION} target=${TARGET_SECS}s`);
     console.log(`[run-cinematic] [SCRIPT_TRIM] original_words=${rawScript.split(/\s+/).length} trimmed_words=${trimmedScript.split(/\s+/).length}`);
 
@@ -204,7 +212,7 @@ export async function POST(req: Request) {
         shotId:        `${jobId}-${i}`,
         shotNumber:    i + 1,
         visualPrompt:  prompt,
-        modelId:       referenceImageUrl ? KLING_I2V_PRO : KLING_T2V_PRO,
+        modelId:       referenceImageUrl ? klingI2V : klingT2V,
         imageUrl:      referenceImageUrl,
         durationSecs:  CLIP_DURATION,
         aspectRatio:   "9:16",
