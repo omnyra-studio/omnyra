@@ -329,6 +329,11 @@ function CreatePageInner() {
   const [showVideoToast, setShowVideoToast] = useState(false);
   const videoSectionRef = useRef<HTMLDivElement>(null);
 
+  // Social upload state
+  const [connectedPlatforms, setConnectedPlatforms] = useState<Array<{ platform: string; handle: string; url: string }>>([]);
+  const [youtubeOAuthConnected, setYoutubeOAuthConnected] = useState(false);
+  const [socialUploadStatus, setSocialUploadStatus] = useState<Record<string, { uploading: boolean; result?: { url?: string; error?: string } }>>({});
+
   // Poll cleanup ref
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -349,60 +354,40 @@ function CreatePageInner() {
   } | null>(null);
   const [isLoadingContinuation, setIsLoadingContinuation] = useState(false);
 
-  // Restore in-progress video work from sessionStorage on mount.
-  // Intentionally does NOT restore goal / niche / selectedPlatforms — input fields
-  // always start blank so the user is never confused by a "stale" prompt on load.
-  // skipRestoreRef prevents this running if resetAllState() was called synchronously
-  // before this effect settled (eliminates the async race condition).
+  // Restore only user preferences and in-progress video clips from sessionStorage on mount.
+  // Brief, script, and scenes are intentionally NOT restored — always start with a clean form.
+  // restoredFromSession is NOT set here so brand pre-fill (niche, audience) always fires.
   useEffect(() => {
     if (skipRestoreRef.current) return;
     const saved = sessionStorage.getItem('omnyra_create_state');
     if (!saved) return;
-    restoredFromSession.current = true;
     try {
       const state = JSON.parse(saved) as Record<string, unknown>;
       if (skipRestoreRef.current) return;
-      // ── Input fields: NEVER restored — always start fresh ───────────────
-      // goal, niche, selectedPlatforms, targetAudience, pastWins, competitors,
-      // uniqueAngle are intentionally omitted so the prompt field is always blank.
-      // ── In-progress video work: restored so user doesn't lose clips/brief ─
       if (state.selectedImage)   setSelectedImage(state.selectedImage as string);
       if (state.selectedVoiceId) setSelectedVoiceId(state.selectedVoiceId as string);
       if (state.videoType)       setVideoType(state.videoType as string);
-      if (state.generatedScript) {
-        setGeneratedScript(state.generatedScript as string);
-        generatedScriptRef.current = state.generatedScript as string;
-      }
       if (Array.isArray(state.pendingClipUrls) && (state.pendingClipUrls as unknown[]).length) {
         setPendingClipUrls(state.pendingClipUrls as string[]);
         setPendingClipDuration((state.pendingClipDuration as number | undefined) ?? 10);
         setPendingScript((state.pendingScript as string | undefined) ?? '');
         setClipsReady((state.clipsReady as boolean | undefined) ?? false);
       }
-      if (state.briefResponse) {
-        setBriefResponse(state.briefResponse as BriefApiResponse);
-        setShowInput(false);
-        setSelectedVersion((state.selectedVersion as number | undefined) ?? 0);
-      }
     } catch { /* malformed JSON — ignore */ }
   }, []);
 
-  // Persist key state to sessionStorage on every change so navigation doesn't lose work
+  // Persist only user prefs + in-progress clips to sessionStorage — NOT brief/script/scenes.
+  // Brief and script are never restored; saving them would cause stale content to reappear.
   useEffect(() => {
-    if (!goal && !briefResponse && !generatedScript && !pendingClipUrls.length) return;
+    if (!pendingClipUrls.length && !selectedImage && !selectedVoiceId) return;
     try {
       sessionStorage.setItem('omnyra_create_state', JSON.stringify({
-        goal, niche, targetAudience, pastWins, competitors, uniqueAngle,
-        selectedPlatforms, briefResponse, selectedVersion,
-        generatedScript: generatedScriptRef.current,
         selectedImage, selectedVoiceId, videoType,
         pendingClipUrls, pendingClipDuration, pendingScript, clipsReady,
       }));
     } catch { /* storage quota exceeded — ignore */ }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [goal, niche, targetAudience, pastWins, competitors, uniqueAngle,
-      selectedPlatforms, briefResponse, selectedVersion, generatedScript,
-      selectedImage, selectedVoiceId, videoType, pendingClipUrls, clipsReady]);
+  }, [selectedImage, selectedVoiceId, videoType, pendingClipUrls, clipsReady]);
 
   // Auth check + brand profile pre-fill
   useEffect(() => {
@@ -437,22 +422,29 @@ function CreatePageInner() {
         .eq("user_id", session.user.id)
         .then(({ count }) => setMemoryCount(count ?? 0));
 
-      fetch("/api/brand", {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      })
-        .then((r) => (r.ok ? r.json() : null))
-        .then((p) => {
-          if (!p || restoredFromSession.current) return;
-          // 'omnyra_no_prefill' is written by resetAllState() so a hard refresh after
-          // "New Project" doesn't re-inject the previous brand niche/audience.
-          // Flag is one-shot: consumed immediately so subsequent visits pre-fill normally.
+      // Load brand profile (niche prefill) + connected social platforms in parallel
+      Promise.all([
+        fetch("/api/brand", { headers: { Authorization: `Bearer ${session.access_token}` } })
+          .then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch("/api/brand/get")
+          .then(r => r.ok ? r.json() : null).catch(() => null),
+      ]).then(([p, brandFull]) => {
+        if (p && !restoredFromSession.current) {
           const noPrefill = sessionStorage.getItem('omnyra_no_prefill');
-          if (noPrefill) { sessionStorage.removeItem('omnyra_no_prefill'); return; }
-          if (p.niche || p.primary_niche) setNiche(p.primary_niche || p.niche);
-          if (p.target_audience) setTargetAudience(p.target_audience);
-          if (p.competitors) setCompetitors(p.competitors);
-        })
-        .catch(() => {});
+          if (noPrefill) { sessionStorage.removeItem('omnyra_no_prefill'); }
+          else {
+            if (p.niche || p.primary_niche) setNiche(p.primary_niche || p.niche);
+            if (p.target_audience) setTargetAudience(p.target_audience);
+            if (p.competitors) setCompetitors(p.competitors);
+          }
+        }
+        if (brandFull) {
+          if (Array.isArray(brandFull.social_platforms)) {
+            setConnectedPlatforms(brandFull.social_platforms.filter((e: { handle?: string; url?: string }) => e.handle || e.url));
+          }
+          if (brandFull.youtube_oauth_connected) setYoutubeOAuthConnected(true);
+        }
+      });
     });
   }, [router]);
 
@@ -1720,6 +1712,62 @@ function CreatePageInner() {
       setError(err instanceof Error ? err.message : 'Combine failed');
     } finally {
       setIsMerging(false);
+    }
+  }
+
+  // Platform config for upload buttons — icon, label, color
+  const PLATFORM_UI: Record<string, { icon: string; label: string; color: string; isYouTube?: boolean }> = {
+    youtube:           { icon: "▶️", label: "YouTube",           color: "#FF0000", isYouTube: true  },
+    youtube_shorts:    { icon: "▶️", label: "Shorts",            color: "#FF0000", isYouTube: true  },
+    youtube_longform:  { icon: "▶️", label: "YouTube",           color: "#FF0000", isYouTube: true  },
+    tiktok:            { icon: "🎵", label: "TikTok",            color: "#010101" },
+    instagram:         { icon: "📸", label: "Instagram",         color: "#C13584" },
+    instagram_reels:   { icon: "📸", label: "Reels",             color: "#C13584" },
+    instagram_feed:    { icon: "🖼️", label: "Instagram",         color: "#C13584" },
+    instagram_stories: { icon: "⭕", label: "Stories",           color: "#C13584" },
+    facebook:          { icon: "👥", label: "Facebook",          color: "#1877F2" },
+    facebook_reels:    { icon: "👥", label: "FB Reels",          color: "#1877F2" },
+    facebook_feed:     { icon: "📘", label: "Facebook",          color: "#1877F2" },
+    twitter_x:         { icon: "✖️", label: "X",                 color: "#14171A" },
+    threads:           { icon: "🧵", label: "Threads",           color: "#1C1C1E" },
+    snapchat:          { icon: "👻", label: "Snapchat",          color: "#FFFC00" },
+    linkedin:          { icon: "💼", label: "LinkedIn",          color: "#0077B5" },
+    pinterest:         { icon: "📌", label: "Pinterest",         color: "#E60023" },
+    discord:           { icon: "🎮", label: "Discord",           color: "#5865F2" },
+    telegram:          { icon: "✈️", label: "Telegram",          color: "#229ED9" },
+    rumble:            { icon: "🎯", label: "Rumble",            color: "#85C742" },
+    twitch:            { icon: "💜", label: "Twitch",            color: "#9146FF" },
+    whatsapp:          { icon: "💬", label: "WhatsApp",          color: "#25D366" },
+    bereal:            { icon: "📷", label: "BeReal",            color: "#FFFFFF" },
+  };
+
+  async function handleSocialShare(platform: string, videoUrl: string) {
+    const ui = PLATFORM_UI[platform];
+    setSocialUploadStatus(prev => ({ ...prev, [platform]: { uploading: true } }));
+    try {
+      const title = briefResponse?.versions[selectedVersion]?.hook ?? goal.slice(0, 80) ?? "Omnyra Generated Video";
+      const res = await fetch('/api/social-upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ platform, video_url: videoUrl, title, description: goal || 'Created with Omnyra AI', tags: ['omnyra', 'ai', 'video'], privacy: 'public' }),
+      });
+      const data = await res.json() as { success?: boolean; video_url?: string; error?: string; connect_url?: string; deep_link?: string; action?: string };
+      if (data.success && data.video_url) {
+        // YouTube direct upload succeeded
+        setSocialUploadStatus(prev => ({ ...prev, [platform]: { uploading: false, result: { url: data.video_url } } }));
+      } else if (data.connect_url) {
+        // YouTube not connected
+        window.location.href = data.connect_url;
+      } else if (data.action === 'download_and_redirect' && data.deep_link) {
+        // Download the video then open the platform
+        handleDownload(videoUrl, `omnyra-for-${platform}-${Date.now()}.mp4`);
+        setTimeout(() => window.open(data.deep_link, '_blank'), 800);
+        setSocialUploadStatus(prev => ({ ...prev, [platform]: { uploading: false, result: { url: `downloaded_for_${ui?.label ?? platform}` } } }));
+      } else {
+        setSocialUploadStatus(prev => ({ ...prev, [platform]: { uploading: false, result: { error: data.error ?? 'Upload failed' } } }));
+      }
+    } catch (err) {
+      setSocialUploadStatus(prev => ({ ...prev, [platform]: { uploading: false, result: { error: err instanceof Error ? err.message : 'Failed' } } }));
     }
   }
 
@@ -3194,6 +3242,44 @@ function CreatePageInner() {
                       <button onClick={() => handleDownload(videoUrl!, `omnyra-video-${Date.now()}.mp4`)} className="gold-btn" style={{ padding: '9px 20px', borderRadius: 9999, border: 'none', fontWeight: 700, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
                         Download Video
                       </button>
+                      {/* Dynamic per-platform upload buttons */}
+                      {connectedPlatforms.length > 0 ? connectedPlatforms.map(({ platform }) => {
+                        const ui = PLATFORM_UI[platform];
+                        if (!ui) return null;
+                        const status = socialUploadStatus[platform];
+                        const isUploading = status?.uploading;
+                        const result = status?.result;
+                        const isYT = ui.isYouTube;
+                        return (
+                          <button
+                            key={platform}
+                            onClick={() => handleSocialShare(platform, videoUrl!)}
+                            disabled={isUploading}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 6,
+                              background: isUploading ? `${ui.color}55` : ui.color,
+                              color: platform === 'snapchat' ? '#000' : '#fff',
+                              border: 'none', borderRadius: 9999,
+                              padding: '9px 18px', fontWeight: 700, fontSize: 13,
+                              cursor: isUploading ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+                              boxShadow: isUploading ? 'none' : `0 4px 14px ${ui.color}55`,
+                            }}
+                            title={isYT ? `Upload to ${ui.label}` : `Download + open ${ui.label}`}
+                          >
+                            {isUploading ? '⏳' : ui.icon} {isUploading ? 'Sharing…' : result?.url ? '✓' : `Share to ${ui.label}`}
+                          </button>
+                        );
+                      }) : (
+                        /* Fallback: no connected platforms — show generic share nudge */
+                        <a href="/dashboard/brand" style={{
+                          display: 'flex', alignItems: 'center', gap: 6,
+                          background: 'rgba(201,168,76,0.12)', border: '1px solid rgba(201,168,76,0.35)',
+                          borderRadius: 9999, padding: '9px 18px', fontWeight: 600, fontSize: 13,
+                          color: '#C9A84C', cursor: 'pointer', textDecoration: 'none', fontFamily: 'inherit',
+                        }}>
+                          📤 Connect Platforms to Share
+                        </a>
+                      )}
                       <button
                         onClick={() => router.push('/videos')}
                         style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 10, color: 'white', padding: '9px 20px', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13 }}
@@ -3201,6 +3287,47 @@ function CreatePageInner() {
                         View in Library
                       </button>
                     </div>
+
+                    {/* Per-platform upload results */}
+                    {Object.entries(socialUploadStatus).some(([, s]) => s.result) && (
+                      <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {Object.entries(socialUploadStatus).map(([platform, status]) => {
+                          if (!status.result) return null;
+                          const ui = PLATFORM_UI[platform];
+                          const { url, error } = status.result;
+                          const isDownloaded = url?.startsWith('downloaded_for_');
+                          return (
+                            <div key={platform} style={{
+                              padding: '10px 14px', borderRadius: 10, fontSize: 13,
+                              background: error ? 'rgba(255,100,100,0.08)' : 'rgba(78,203,140,0.08)',
+                              border: `1px solid ${error ? 'rgba(255,100,100,0.25)' : 'rgba(78,203,140,0.25)'}`,
+                              display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+                            }}>
+                              {error ? (
+                                <>
+                                  <span style={{ color: '#ff6b6b' }}>⚠️ {ui?.label ?? platform}: {error}</span>
+                                  {error.includes('not connected') && (
+                                    <a href="/dashboard/brand" style={{ color: '#C9A84C', fontSize: 12 }}>Connect →</a>
+                                  )}
+                                </>
+                              ) : isDownloaded ? (
+                                <>
+                                  <span style={{ color: '#4ECB8C', fontWeight: 700 }}>✅ Downloaded!</span>
+                                  <span style={{ color: '#8A7D92', fontSize: 12 }}>
+                                    {ui?.label ?? platform} opened — paste your video there
+                                  </span>
+                                </>
+                              ) : (
+                                <>
+                                  <span style={{ color: '#4ECB8C', fontWeight: 700 }}>🎉 Uploaded to {ui?.label ?? platform}!</span>
+                                  {url && <a href={url} target="_blank" rel="noopener noreferrer" style={{ color: '#C9A84C', fontWeight: 600 }}>View →</a>}
+                                </>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
 
                     {continuityScore && (
                       <div style={{ marginTop: 16, background: 'rgba(124,111,255,0.06)', border: '1px solid rgba(124,111,255,0.25)', borderRadius: 12, padding: '16px 18px' }}>
