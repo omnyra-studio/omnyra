@@ -85,8 +85,8 @@ export async function generateKlingClip(input: KlingWorkerInput): Promise<KlingW
   // ultra-draft: honor explicit durationSecs when provided; default "5" when caller omits it
   const duration    = (isUltraDraft && !input.durationSecs) ? "5" : clampDuration(input.durationSecs);
   const aspectRatio = (input.aspectRatio ?? "9:16") as "9:16" | "16:9" | "1:1";
-  // ultra-draft 90s (standard queue, shorter clips), draft 200s, balanced 260s — within Vercel 300s
-  const timeoutMs   = isUltraDraft ? 90_000 : isDraft ? 200_000 : 260_000;
+  // ultra-draft 75s (standard queue, 5s clips), draft 120s, balanced/quality 180s — within Vercel 300s
+  const timeoutMs   = isUltraDraft ? 75_000 : isDraft ? 120_000 : 180_000;
 
   // ── Motion tuning ─────────────────────────────────────────────────────────────
   // motionStrength (0-1) maps inversely to cfg_scale: higher strength = lower cfg_scale = more motion.
@@ -161,42 +161,48 @@ export async function generateKlingClip(input: KlingWorkerInput): Promise<KlingW
     prompt_preview: prompt.slice(0, 80),
   });
 
-  let result: unknown;
-  try {
-    const falInput: Record<string, unknown> = {
-      prompt,
-      negative_prompt,
-      duration,
-      aspect_ratio: aspectRatio,
-      cfg_scale:    cfgScale,
-    };
-    if (isI2V) falInput.image_url = resolvedImageUrl;
-
-    result = await withTimeout(
-      fal.subscribe(modelId, { input: falInput }),
-      timeoutMs,
-      `shot=${input.shotId}`,
-    );
-  } catch (err) {
-    throw new Error(
-      `[kling-worker] fal.ai error shot=${input.shotId}: ${err instanceof Error ? err.message : String(err)}`,
-    );
-  }
-
-  const video_url = extractVideoUrl(result);
-  if (!video_url) {
-    throw new Error(`[kling-worker] no video URL in response for shot=${input.shotId}`);
-  }
-
-  const generation_ms = Date.now() - startMs;
-  console.info(`[KLING_TIMING] shot=${input.shotId} model=${modelId} duration=${duration}s ms=${generation_ms}`);
-
-  return {
-    shotId:           input.shotId,
-    shotNumber:       input.shotNumber,
-    video_url,
-    duration_seconds: Number(duration),
-    model_used:       modelId,
-    generation_ms,
+  const falInput: Record<string, unknown> = {
+    prompt,
+    negative_prompt,
+    duration,
+    aspect_ratio: aspectRatio,
+    cfg_scale:    cfgScale,
   };
+  if (isI2V) falInput.image_url = resolvedImageUrl;
+
+  const MAX_RETRIES = 2;
+  let lastError: Error | null = null;
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const result = await withTimeout(
+        fal.subscribe(modelId, { input: falInput }),
+        timeoutMs,
+        `shot=${input.shotId}`,
+      );
+
+      const video_url = extractVideoUrl(result);
+      if (!video_url) throw new Error(`no video URL in response for shot=${input.shotId}`);
+
+      const generation_ms = Date.now() - startMs;
+      console.info(`[KLING_TIMING] shot=${input.shotId} model=${modelId} duration=${duration}s ms=${generation_ms} attempt=${attempt}`);
+
+      return {
+        shotId:           input.shotId,
+        shotNumber:       input.shotNumber,
+        video_url,
+        duration_seconds: Number(duration),
+        model_used:       modelId,
+        generation_ms,
+      };
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      console.error(`[KLING_RETRY] shot=${input.shotId} attempt=${attempt}/${MAX_RETRIES}: ${lastError.message}`);
+      if (attempt < MAX_RETRIES) {
+        await new Promise(r => setTimeout(r, 1_500 * attempt));
+      }
+    }
+  }
+
+  throw new Error(`[kling-worker] fal.ai error shot=${input.shotId}: ${lastError?.message ?? "unknown"}`);
 }

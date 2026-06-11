@@ -198,6 +198,19 @@ async function pollHedra(
 
 // ── Avatar lane ───────────────────────────────────────────────────────────────
 
+// Convert third-person narration to first-person avatar dialogue.
+// Skips text already in first person to avoid double-processing.
+function adaptToAvatarDialogue(text: string): string {
+  if (!text || /^\s*I\b/.test(text)) return text;
+  return text
+    .replace(/\bShe\b/g, "I").replace(/\bHe\b/g, "I").replace(/\bThey\b/g, "I")
+    .replace(/\bshe\b/g, "I").replace(/\bhe\b/g, "I").replace(/\bthey\b/g, "I")
+    .replace(/\bher\b/g, "my").replace(/\bhis\b/g, "my").replace(/\btheir\b/g, "my")
+    .replace(/\bherself\b/g, "myself").replace(/\bhimself\b/g, "myself")
+    .replace(/\bthemselves\b/g, "myself")
+    .trim();
+}
+
 async function processAvatarShot(
   shot:              ShotRow,
   characterImageUrl: string,
@@ -215,20 +228,22 @@ async function processAvatarShot(
   const rawNarration = shot.audio_intent.trim();
   if (!rawNarration) throw new Error(`Avatar shot ${shot.id}: no narration text`);
 
-  const hedraConf  = getHedraConfig(speedMode);
-  const audioCap   = maxDurationSecs ? Math.min(maxDurationSecs, hedraConf.maxAudioSecs) : hedraConf.maxAudioSecs;
-  const maxWords   = Math.floor(audioCap * 2.5);
-  const allWords   = rawNarration.split(/\s+/).filter(Boolean);
-  const wordCount  = allWords.length;
+  // Avatar shots drive duration from the full script — no speedMode word cap.
+  // Hard-cap at 12s for Lightning (fast + cheap), 35s for all other modes.
+  const HEDRA_MAX_SECS = speedMode === 'ultra-draft' ? 12 : 35;
+  const audioCap  = Math.min(maxDurationSecs ?? HEDRA_MAX_SECS, HEDRA_MAX_SECS);
+  const maxWords  = Math.floor(audioCap * 2.5);
+  const allWords  = rawNarration.split(/\s+/).filter(Boolean);
+  const wordCount = allWords.length;
   let narrationText: string;
 
   if (wordCount > maxWords) {
-    narrationText = allWords.slice(0, maxWords).join(" ").replace(/[,;.!?]+$/, "") + ".";
+    narrationText = adaptToAvatarDialogue(allWords.slice(0, maxWords).join(" ").replace(/[,;.!?]+$/, "") + ".");
     const estSec  = Math.round((maxWords / 2.5) * 10) / 10;
     console.info(`[AVATAR_CAP] shot=${shot.id} words ${wordCount}→${maxWords} est_audio_sec=${estSec}s audioCap=${audioCap}s speedMode=${speedMode}`);
   } else {
     const estSec  = Math.round((wordCount / 2.5) * 10) / 10;
-    narrationText = rawNarration;
+    narrationText = adaptToAvatarDialogue(rawNarration);
     console.info(`[AVATAR_CAP] shot=${shot.id} words=${wordCount} est_audio_sec=${estSec}s no-truncate speedMode=${speedMode}`);
   }
 
@@ -239,7 +254,7 @@ async function processAvatarShot(
   });
 
   const { audio_url } = await generateSceneAudio(
-    { text: narrationText, voiceId: voiceId ?? undefined },
+    { text: narrationText, voiceId: voiceId ?? undefined, speed: 1.10 },
     correlationId,
     shot.id,
   );
@@ -293,8 +308,9 @@ async function processAvatarShot(
 
 // ── Kling lane ────────────────────────────────────────────────────────────────
 
-const PARALLEL_ANIM_PREFIX = "In vibrant Disney Pixar 3D animated style, colorful cartoon characters with big expressive eyes, smooth CGI animation, stylized proportions, highly detailed 3D animated render, cinematic lighting, ";
-const PARALLEL_ANIM_NEG    = "photorealistic, realistic humans, live action, real people, photograph, photo, human skin texture, detailed pores, realistic faces, 35mm film, documentary style, human actors, candid photography, stock photo, blurry, deformed, extra limbs, text, watermark, low quality, ugly, bad anatomy";
+const PARALLEL_ANIM_PREFIX     = "In vibrant Disney Pixar 3D animated style, colorful cartoon characters with big expressive eyes, smooth CGI animation, stylized proportions, highly detailed 3D animated render, cinematic lighting, ";
+const PARALLEL_ANIM_NEG        = "photorealistic, realistic humans, live action, real people, photograph, photo, human skin texture, detailed pores, realistic faces, 35mm film, documentary style, human actors, candid photography, stock photo, blurry, deformed, extra limbs, text, watermark, low quality, ugly, bad anatomy";
+const CINEMATIC_QUALITY_PREFIX = "Highly detailed cinematic shot, accurate anatomy, correct lighting, no deformities, sharp focus, emotional expression, ";
 
 async function processKlingShot(
   shot:          ShotRow,
@@ -321,6 +337,7 @@ async function processKlingShot(
     refImage = undefined;       // never use char photo as i2v ref for animated — causes human bleed
     console.info(`[STYLE_ENFORCED] animation=true shot=${shot.id} prefix="${PARALLEL_ANIM_PREFIX.substring(0, 60)}"`);
   } else {
+    visualPrompt = `${CINEMATIC_QUALITY_PREFIX}${visualPrompt}`;
     // Use character image as i2v reference when router flagged preferI2V
     refImage = (route.preferI2V && charImageUrl) ? charImageUrl : undefined;
     if (refImage) console.info(`[KLING_I2V] shot=${shot.id} using char ref image for i2v mode`);
@@ -576,7 +593,7 @@ export async function runParallelEngine(
           provider: "elevenlabs",
         }),
         generateVoiceover(
-          { script: voiceScript, voiceId, targetDurationSecs: targetDurationSecs ?? 30, speedMode: 'cinematic' },
+          { script: voiceScript, voiceId, targetDurationSecs: targetDurationSecs ?? 30, speedMode: 'cinematic', speed: speedMode === 'ultra-draft' ? 1.10 : 1.05 },
           userId,
           planId,
         ).then(result => {
@@ -712,36 +729,46 @@ export async function runParallelEngine(
   const willStitch = !skipStitch && allClips.length > 0 && (targetDurationSecs ?? 0) > 0;
   console.info("[STITCH_GATE]", { willStitch, skipStitch, clipCount: allClips.length, targetDurationSecs, hasVoiceover: !!voiceoverResult });
   if (willStitch) {
-    try {
-      const stitch = await stitchClips(allClips, {
-        targetSecs:        targetDurationSecs,
-        voiceDurationSecs: voiceoverResult?.duration,
-        userId,
-        planId,
-        voiceoverUrl:      voiceoverResult?.audioUrl,
-        speedMode,
-      });
-      assembledUrl = stitch.output_url;
-      const finalDuration = voiceoverResult?.duration ?? stitch.duration_seconds;
-      emitRaw("PARALLEL_ENGINE_ASSEMBLED", planId, {
-        output_url:       stitch.output_url,
-        duration_seconds: finalDuration,
-        clip_count:       stitch.clip_count,
-        voice_driven:     !!voiceoverResult,
-      });
-      console.info("[parallel-engine] assembled", { planId, url: assembledUrl?.slice(0, 80) });
+    let stitchErr: unknown;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const stitch = await stitchClips(allClips, {
+          targetSecs:        targetDurationSecs,
+          voiceDurationSecs: voiceoverResult?.duration,
+          minDurationSecs:   speedMode === 'ultra-draft' ? 20 : 26,
+          userId,
+          planId,
+          voiceoverUrl:      voiceoverResult?.audioUrl,
+          speedMode,
+        });
+        assembledUrl = stitch.output_url;
+        const finalDuration = voiceoverResult?.duration ?? stitch.duration_seconds;
+        emitRaw("PARALLEL_ENGINE_ASSEMBLED", planId, {
+          output_url:       stitch.output_url,
+          duration_seconds: finalDuration,
+          clip_count:       stitch.clip_count,
+          voice_driven:     !!voiceoverResult,
+        });
+        console.info("[parallel-engine] assembled", { planId, url: assembledUrl?.slice(0, 80) });
 
-      // Auto-save to library + fire post-gen thank-you email (non-blocking)
-      void saveRenderToLibrary({
-        userId,
-        videoUrl:  assembledUrl,
-        audioUrl:  voiceoverResult?.audioUrl ?? null,
-        template:  "parallel",
-        sendEmail: true,
-      }).catch(err => console.warn("[parallel-engine] auto-save failed:", err));
-    } catch (err) {
-      console.error("[parallel-engine] stitch failed (non-fatal):", err);
-      emitRaw("PARALLEL_ENGINE_STITCH_FAILED", planId, { error: err instanceof Error ? err.message : String(err) });
+        // Auto-save to library + fire post-gen thank-you email (non-blocking)
+        void saveRenderToLibrary({
+          userId,
+          videoUrl:  assembledUrl,
+          audioUrl:  voiceoverResult?.audioUrl ?? null,
+          template:  "parallel",
+          sendEmail: true,
+        }).catch(err => console.warn("[parallel-engine] auto-save failed:", err));
+        break;
+      } catch (err) {
+        stitchErr = err;
+        console.error(`[STITCH_RETRY_${attempt}] planId=${planId}:`, err);
+        if (attempt < 2) await new Promise(r => setTimeout(r, 1_000));
+      }
+    }
+    if (!assembledUrl) {
+      console.error("[parallel-engine] stitch failed after retries (non-fatal):", stitchErr);
+      emitRaw("PARALLEL_ENGINE_STITCH_FAILED", planId, { error: stitchErr instanceof Error ? stitchErr.message : String(stitchErr) });
     }
   }
 

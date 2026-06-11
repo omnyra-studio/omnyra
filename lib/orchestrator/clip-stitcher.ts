@@ -57,6 +57,7 @@ export interface StitchClip {
 export interface StitchOptions {
   targetSecs?:        number;   // video clip selection ceiling — default 30
   voiceDurationSecs?: number;   // actual voiceover duration — clips selected to cover this
+  minDurationSecs?:   number;   // hard floor: final video never shorter than this (e.g. 26 for normal, 20 for lightning)
   userId:             string;
   planId:             string;
   voiceoverUrl?:      string;   // full-video voiceover to mix in
@@ -89,13 +90,26 @@ export async function stitchClips(
   // Select clips to cover the voiceover duration (or targetSecs fallback).
   // Always include at least 1 clip; don't hard-stop at targetSecs if voice is longer.
   const targetSecs  = options.targetSecs ?? 30;
-  const coverTarget = Math.max(targetSecs, options.voiceDurationSecs ?? 0);
+  const minDur      = options.minDurationSecs ?? 0;
+  const coverTarget = Math.max(targetSecs, options.voiceDurationSecs ?? 0, minDur);
   let accumulated   = 0;
   const selected: StitchClip[] = [];
   for (const clip of sorted) {
     selected.push(clip);
     accumulated += clip.duration_seconds;
     if (accumulated >= coverTarget) break;
+  }
+  // Loop clips if a single clip (or few clips) can't cover the voiceover duration.
+  // This happens when only 1 of 3 Kling clips succeeds (10s video, 28s voice).
+  if (accumulated < coverTarget && sorted.length > 0) {
+    let loopIdx = 0;
+    while (accumulated < coverTarget && selected.length < sorted.length * 8) {
+      const clip = sorted[loopIdx % sorted.length];
+      selected.push({ ...clip });
+      accumulated += clip.duration_seconds;
+      loopIdx++;
+    }
+    console.info(`[STITCH] clip-loop to cover voiceover: clips=${selected.length} accumulated=${accumulated.toFixed(1)}s target=${coverTarget.toFixed(1)}s`);
   }
 
   // Download video clips + voiceover in parallel
@@ -119,10 +133,31 @@ export async function stitchClips(
   const dlMs = Date.now() - dlT0;
   console.info(`[STITCH] download done clips=${selected.length} hasVoice=${!!resolvedVoiceoverPath} ms=${dlMs}`);
 
+  // Pre-extend the last local clip to smoothly cover any voiceover shortfall.
+  // Uses a last-frame loop (~2s freeze) — much better visually than stream_loop restarting at frame 0.
+  // stream_loop in runConcat is the final fallback if this fails.
+  if (resolvedVoiceoverPath && options.voiceDurationSecs) {
+    const videoTotalSecs = selected.reduce((s, c) => s + c.duration_seconds, 0);
+    const shortfall      = options.voiceDurationSecs - videoTotalSecs;
+    if (shortfall > 0.5 && localPaths.length > 0) {
+      const extraSecs = Math.ceil(shortfall + 2);
+      const origLast  = localPaths[localPaths.length - 1];
+      const extLast   = origLast.replace('.mp4', '_ext.mp4');
+      try {
+        await extendLastClip(origLast, extLast, extraSecs);
+        localPaths[localPaths.length - 1] = extLast;
+        try { fs.unlinkSync(origLast); } catch { /* already gone */ }
+        console.info(`[STITCH] pre-extended last clip +${extraSecs}s shortfall=${shortfall.toFixed(1)}s`);
+      } catch (e) {
+        console.warn(`[STITCH] extendLastClip failed — stream_loop will cover: ${(e as Error).message}`);
+      }
+    }
+  }
+
   const outputPath = path.join(WORK_DIR, `stitch_${randomUUID()}.mp4`);
   const concatT0 = Date.now();
 
-  await runConcat(localPaths, outputPath, resolvedVoiceoverPath ?? null, coverTarget, speedMode);
+  await runConcat(localPaths, outputPath, resolvedVoiceoverPath ?? null, coverTarget, speedMode, minDur);
   const concatMs = Date.now() - concatT0;
 
   // Upload to Supabase storage
@@ -144,8 +179,16 @@ export async function stitchClips(
   const { data: publicData } = supabaseAdmin.storage.from("videos").getPublicUrl(storagePath);
   const uploadMs = Date.now() - uploadT0;
 
-  // If voiceover is present, it drives duration via -shortest.
-  const outputDuration = options.voiceDurationSecs ?? Math.min(accumulated, targetSecs);
+  // Duration = max(voiceover actual, minimum floor, clips sum).
+  // Voice-driven when voiceover is present; otherwise clips sum capped at targetSecs.
+  const rawOutput = options.voiceDurationSecs
+    ? Math.max(options.voiceDurationSecs, minDur)
+    : Math.min(accumulated, Math.max(targetSecs, minDur));
+  const outputDuration = rawOutput;
+  if (minDur > 0 && outputDuration < minDur) {
+    console.warn(`[DURATION_VIOLATION] outputDuration=${outputDuration.toFixed(1)}s < minDur=${minDur}s — extending to floor`);
+  }
+  console.info(`[DURATION_ENFORCED] voice=${(options.voiceDurationSecs ?? 0).toFixed(1)}s min=${minDur}s final=${outputDuration.toFixed(1)}s extended=${outputDuration > (options.voiceDurationSecs ?? 0)}`);
   const totalMs = Date.now() - stitchT0;
 
   console.info(
@@ -160,9 +203,7 @@ export async function stitchClips(
   };
 }
 
-// ── FFmpeg two-pass stitch ────────────────────────────────────────────────────
-// Pass 1: concat demuxer — stitch clips into a silent video (fast, stream copy)
-// Pass 2: mix silent video + voiceover, -shortest so voice drives final length
+// ── FFmpeg helpers ─────────────────────────────────────────────────────────────
 
 function probeDuration(filePath: string): Promise<number> {
   return new Promise(resolve => {
@@ -174,12 +215,30 @@ function probeDuration(filePath: string): Promise<number> {
   });
 }
 
+// Extend a local clip by looping its last ~2 seconds (60 frames) for `extraSeconds`.
+// Produces a smooth freeze-style tail — much better than stream_loop which jumps to frame 0.
+async function extendLastClip(inputPath: string, outputPath: string, extraSeconds: number): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    ffmpeg(inputPath)
+      .outputOptions([
+        `-t ${extraSeconds}`,
+        `-vf loop=loop=-1:size=60`,   // repeat last 60 frames (~2s) indefinitely then cut at -t
+        `-c:v libx264`, `-preset veryfast`, `-crf 22`, `-pix_fmt yuv420p`,
+      ])
+      .output(outputPath)
+      .on("error", (e) => reject(new Error(`extendLastClip: ${e.message}`)))
+      .on("end", () => resolve())
+      .run();
+  });
+}
+
 async function runConcat(
   localPaths:    string[],
   outputPath:    string,
   voiceoverPath: string | null,
   targetSecs:    number,
   speedMode:     'ultra-draft' | 'draft' | 'balanced' | 'quality' = 'balanced',
+  minDurationSecs: number = 0,
 ): Promise<void> {
   const isUltraDraft = speedMode === 'ultra-draft';
   // veryfast+22 → great quality with big speed gain; slow+16 → max quality
@@ -239,37 +298,35 @@ async function runConcat(
     target_secs: targetSecs,
   });
 
-  // If audio is longer than video, extend video with last-frame freeze.
-  // This prevents audio from being cut short by -shortest.
-  let videoForMix = silentPath;
-  const paddedPath = silentPath.replace(".mp4", "-padded.mp4");
-  if (audDur > vidDur + 0.5 && !isUltraDraft) {
-    const extraSecs = (audDur - vidDur + 0.5).toFixed(2);
-    console.info(`[STITCH] audio longer by ${(audDur - vidDur).toFixed(1)}s — extending video with last-frame freeze (+${extraSecs}s)`);
-    await new Promise<void>((resolve) => {
-      ffmpeg(silentPath)
-        .outputOptions([
-          `-vf tpad=stop_mode=clone:stop_duration=${extraSecs}`,
-          `-c:v libx264`, `-preset ${preset}`, `-crf ${crf}`, "-pix_fmt yuv420p",
-        ])
-        .output(paddedPath)
-        .on("error", (e) => {
-          console.warn("[STITCH] tpad failed — using original video:", e.message);
-          resolve();
-        })
-        .on("end", () => { videoForMix = paddedPath; resolve(); })
-        .run();
-    });
+  // Voice drives final duration; apply the minimum floor so short scripts don't produce short videos.
+  // If minDurationSecs=26 and audio=10s, video plays for 26s (audio stops at 10s, video continues silent).
+  const rawAudioTarget = audDur > 0 ? Math.max(audDur, minDurationSecs) : 0;
+  const finalDuration  = rawAudioTarget > 0
+    ? rawAudioTarget + 0.1
+    : Math.min(vidDur + 0.1, Math.max(targetSecs, minDurationSecs) + 15);
+  const needsVideoLoop = finalDuration - 0.1 > vidDur + 0.3;
+  if (minDurationSecs > 0 && audDur > 0 && audDur < minDurationSecs) {
+    console.info(`[DURATION_FLOOR] audio=${audDur.toFixed(1)}s < min=${minDurationSecs}s → extending final to ${finalDuration.toFixed(1)}s`);
   }
 
-  // Final duration: voice-driven, capped at targetSecs + 15s safety margin
-  const finalDuration = Math.min(Math.max(audDur, vidDur) + 0.5, targetSecs + 15);
+  console.info("[STITCH] pass2", {
+    video_secs:   vidDur.toFixed(2),
+    audio_secs:   audDur.toFixed(2),
+    final_dur:    finalDuration.toFixed(2),
+    needs_loop:   needsVideoLoop,
+  });
+
+  // stream_loop requires re-encoding; non-loop ultra-draft can still stream-copy
+  const p2VideoCodec = (!needsVideoLoop && isUltraDraft)
+    ? ["-c:v copy"]
+    : ["-c:v libx264", `-preset ${preset}`, `-crf ${crf}`, "-pix_fmt yuv420p"];
+
   const p2T0 = Date.now();
-  // ultra-draft: copy video stream (no re-encode), only encode the new audio track
-  const p2VideoCodec = isUltraDraft ? ["-c:v copy"] : ["-c:v libx264", `-preset ${preset}`, `-crf ${crf}`, "-pix_fmt yuv420p"];
   await new Promise<void>((resolve, reject) => {
-    ffmpeg()
-      .input(videoForMix)
+    const cmd = ffmpeg();
+    if (needsVideoLoop) cmd.inputOption("-stream_loop -1");
+    cmd
+      .input(silentPath)
       .input(voiceoverPath)
       .outputOptions([
         ...p2VideoCodec,
@@ -285,12 +342,10 @@ async function runConcat(
         console.error("[STITCH] pass2 error:", err.message, (stderr as string | undefined)?.slice(-800));
         reject(err);
       })
-      .on("end", () => { console.info(`[STITCH] pass2 done ms=${Date.now() - p2T0} finalDur=${finalDuration.toFixed(1)}s ultra=${isUltraDraft}`); resolve(); })
+      .on("end", () => { console.info(`[STITCH] pass2 done ms=${Date.now() - p2T0} finalDur=${finalDuration.toFixed(1)}s loop=${needsVideoLoop}`); resolve(); })
       .run();
   });
 
-  // Cleanup temp files
-  if (videoForMix === paddedPath) { try { fs.unlinkSync(paddedPath); } catch { /* noop */ } }
   try { fs.unlinkSync(silentPath); } catch { /* noop */ }
 }
 

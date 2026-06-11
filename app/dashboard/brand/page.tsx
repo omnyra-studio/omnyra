@@ -39,6 +39,13 @@ interface SocialEntry {
   url:      string;
 }
 
+interface ManualAnalytics {
+  avg_views:        string;
+  engagement_rate:  string;
+  best_post_time:   string;
+  top_styles:       string[];
+}
+
 interface BrandForm {
   brand_name: string;
   logo_url: string;
@@ -56,6 +63,7 @@ interface BrandForm {
   facebook_page: string;
   target_platforms: string[];
   social_platforms: SocialEntry[];
+  manual_analytics: ManualAnalytics;
 }
 
 const SOCIAL_PLATFORM_OPTIONS = [
@@ -66,6 +74,8 @@ const SOCIAL_PLATFORM_OPTIONS = [
   { id: "facebook",  label: "Facebook",  icon: "👥",  placeholder: "Page name",      urlLabel: "Page URL" },
   { id: "linkedin",  label: "LinkedIn",  icon: "💼",  placeholder: "@yourprofile",   urlLabel: "Profile URL" },
 ];
+
+const EMPTY_ANALYTICS: ManualAnalytics = { avg_views: "", engagement_rate: "", best_post_time: "", top_styles: [] };
 
 const EMPTY: BrandForm = {
   brand_name: "",
@@ -84,6 +94,7 @@ const EMPTY: BrandForm = {
   facebook_page: "",
   target_platforms: [],
   social_platforms: [],
+  manual_analytics: { ...EMPTY_ANALYTICS },
 };
 
 const CARD: React.CSSProperties = {
@@ -132,6 +143,8 @@ export default function BrandMemoryPage() {
   const [loading, setLoading] = useState(true);
   const [savedMsg, setSavedMsg] = useState("");
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [youtubeConnected, setYoutubeConnected] = useState(false);
+  const [youtubeChannel, setYoutubeChannel] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Auth guard
@@ -141,10 +154,23 @@ export default function BrandMemoryPage() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) { router.replace("/signin"); return; }
 
+      // Check for YouTube OAuth callback result in URL
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("youtube_connected") === "1") {
+        setYoutubeConnected(true);
+        setYoutubeChannel(decodeURIComponent(params.get("channel") ?? ""));
+        window.history.replaceState({}, "", window.location.pathname);
+      }
+
       try {
         const res = await fetch("/api/brand/get");
         if (res.ok) {
           const data = await res.json();
+          // Check if YouTube OAuth is stored (youtube_oauth is server-only; infer from brand_profiles)
+          if (data?.youtube_oauth_connected) {
+            setYoutubeConnected(true);
+            setYoutubeChannel(data.youtube_channel_title ?? "");
+          }
           if (data && Object.keys(data).length) {
             setForm({
               brand_name:          data.brand_name          ?? "",
@@ -165,6 +191,9 @@ export default function BrandMemoryPage() {
               facebook_page:       data.facebook_page       ?? "",
                 target_platforms:    Array.isArray(data.target_platforms) ? data.target_platforms : [],
               social_platforms:    Array.isArray(data.social_platforms)  ? data.social_platforms  : [],
+              manual_analytics:    (data.manual_analytics && typeof data.manual_analytics === 'object')
+                                     ? { ...EMPTY_ANALYTICS, ...data.manual_analytics }
+                                     : { ...EMPTY_ANALYTICS },
             });
           }
         }
@@ -642,6 +671,108 @@ export default function BrandMemoryPage() {
                     Tap a platform above to connect it.
                   </p>
                 )}
+              </div>
+
+              {/* YouTube Direct Upload — OAuth Connection */}
+              <div style={CARD}>
+                <div style={SECTION_TITLE}>YouTube Direct Upload</div>
+                <p style={{ color: "rgba(224,208,255,0.5)", fontSize: "13px", marginBottom: "16px" }}>
+                  Connect your YouTube channel so you can upload generated videos with one click.
+                </p>
+                {youtubeConnected ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <span style={{ fontSize: "22px" }}>▶️</span>
+                    <div>
+                      <div style={{ color: "#4ECB8C", fontWeight: 700, fontSize: "14px" }}>
+                        ✓ Connected{youtubeChannel ? ` — ${youtubeChannel}` : ""}
+                      </div>
+                      <div style={{ color: "rgba(224,208,255,0.45)", fontSize: "12px", marginTop: "2px" }}>
+                        Your videos can now be uploaded to YouTube from the video preview screen.
+                      </div>
+                    </div>
+                    <a
+                      href="/api/auth/youtube"
+                      style={{
+                        marginLeft: "auto", padding: "6px 14px", borderRadius: "8px", fontSize: "12px",
+                        fontWeight: 600, color: "rgba(224,208,255,0.6)",
+                        background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)",
+                        textDecoration: "none",
+                      }}
+                    >
+                      Reconnect
+                    </a>
+                  </div>
+                ) : (
+                  <a
+                    href="/api/auth/youtube"
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: "8px",
+                      padding: "10px 20px", borderRadius: "9999px", fontSize: "14px", fontWeight: 700,
+                      background: "#FF0000", color: "#FFFFFF", textDecoration: "none",
+                      boxShadow: "0 4px 16px rgba(255,0,0,0.35)",
+                    }}
+                  >
+                    ▶️ Connect YouTube Channel
+                  </a>
+                )}
+                <p style={{ color: "rgba(224,208,255,0.3)", fontSize: "11px", marginTop: "12px" }}>
+                  TikTok & Instagram direct upload coming soon. Download + share manually for now.
+                </p>
+              </div>
+
+              {/* Manual Analytics */}
+              <div style={CARD}>
+                <div style={SECTION_TITLE}>My Analytics (Manual)</div>
+                <p style={{ color: "rgba(224,208,255,0.45)", fontSize: "13px", marginBottom: "16px" }}>
+                  Enter your average stats so Omnyra can tailor scripts and strategies to your real-world performance.
+                </p>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                  <div>
+                    <label style={LABEL}>Avg Views per Video</label>
+                    <input
+                      style={INPUT}
+                      type="number"
+                      placeholder="e.g. 5000"
+                      value={form.manual_analytics.avg_views}
+                      onChange={e => setForm(f => ({ ...f, manual_analytics: { ...f.manual_analytics, avg_views: e.target.value } }))}
+                    />
+                  </div>
+                  <div>
+                    <label style={LABEL}>Avg Engagement Rate (%)</label>
+                    <input
+                      style={INPUT}
+                      type="number"
+                      step="0.1"
+                      placeholder="e.g. 4.5"
+                      value={form.manual_analytics.engagement_rate}
+                      onChange={e => setForm(f => ({ ...f, manual_analytics: { ...f.manual_analytics, engagement_rate: e.target.value } }))}
+                    />
+                  </div>
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <label style={LABEL}>Best Posting Time</label>
+                    <input
+                      style={INPUT}
+                      placeholder="e.g. Weekdays 6–9pm"
+                      value={form.manual_analytics.best_post_time}
+                      onChange={e => setForm(f => ({ ...f, manual_analytics: { ...f.manual_analytics, best_post_time: e.target.value } }))}
+                    />
+                  </div>
+                  <div style={{ gridColumn: "1 / -1" }}>
+                    <label style={LABEL}>Top-Performing Content Styles</label>
+                    <input
+                      style={INPUT}
+                      placeholder="e.g. storytime, product demo, trending audio (comma-separated)"
+                      value={form.manual_analytics.top_styles.join(", ")}
+                      onChange={e => setForm(f => ({
+                        ...f,
+                        manual_analytics: {
+                          ...f.manual_analytics,
+                          top_styles: e.target.value.split(",").map(s => s.trim()).filter(Boolean),
+                        },
+                      }))}
+                    />
+                  </div>
+                </div>
               </div>
 
               {/* Save */}

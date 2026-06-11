@@ -32,7 +32,7 @@ export async function POST(req: Request) {
     brand_name, tagline, colors, tone_of_voice, target_audience, niche,
     content_style_notes, logo_url, tone_tags, products, style_preset,
     tiktok_handle, instagram_handle, youtube_handle, facebook_page, target_platforms,
-    social_platforms,
+    social_platforms, manual_analytics,
   } = body as {
     brand_name?: string;
     tagline?: string;
@@ -51,6 +51,7 @@ export async function POST(req: Request) {
     facebook_page?: string;
     target_platforms?: string[];
     social_platforms?: Array<{ platform: string; handle: string; url: string }>;
+    manual_analytics?: { avg_views?: string; engagement_rate?: string; best_post_time?: string; top_styles?: string[] };
   };
 
   try {
@@ -72,6 +73,7 @@ export async function POST(req: Request) {
       facebook_page:       facebook_page       ?? null,
       target_platforms:    target_platforms    ?? [],
       social_platforms:    social_platforms    ?? [],
+      manual_analytics:    manual_analytics    ?? null,
     });
     return Response.json(row);
   } catch (err) {

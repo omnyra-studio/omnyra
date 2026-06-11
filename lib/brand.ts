@@ -1,5 +1,9 @@
 import { createClient } from "@supabase/supabase-js";
-import { cleanEnv } from "@/lib/supabase/admin";
+
+// Local cleanEnv — strips non-ASCII chars that corrupt JWT headers
+function cleanEnv(val: string | undefined): string {
+  return (val || "").replace(/[^\x20-\x7E]/g, "").trim();
+}
 
 // Columns required beyond base migration:
 // ALTER TABLE brand_profiles ADD COLUMN IF NOT EXISTS logo_url text;
@@ -27,11 +31,16 @@ export interface BrandProfile {
   facebook_page?: string | null;
   target_platforms?: string[] | null;
   social_platforms?: Array<{ platform: string; handle: string; url: string }> | null;
+  manual_analytics?: { avg_views?: string; engagement_rate?: string; best_post_time?: string; top_styles?: string[] } | null;
   created_at?: string;
   updated_at?: string;
 }
 
+// Server-only admin client — only usable from API routes / server components
 function adminClient() {
+  if (typeof window !== "undefined") {
+    throw new Error("[lib/brand] adminClient() called from browser — use /api/brand/get instead");
+  }
   return createClient(
     cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL),
     cleanEnv(process.env.SUPABASE_SERVICE_ROLE_KEY),
@@ -39,6 +48,17 @@ function adminClient() {
 }
 
 export async function getBrandProfile(userId: string): Promise<BrandProfile | null> {
+  // Browser: call the API route (avoids service-role key in browser bundle)
+  if (typeof window !== "undefined") {
+    try {
+      const res = await fetch("/api/brand/get");
+      if (!res.ok) return null;
+      return await res.json() as BrandProfile;
+    } catch {
+      return null;
+    }
+  }
+  // Server: use admin client
   const db = adminClient();
   const { data, error } = await db
     .from("brand_profiles")
@@ -56,8 +76,11 @@ export async function upsertBrandProfile(
   userId: string,
   data: Partial<BrandProfile>,
 ): Promise<BrandProfile> {
+  if (typeof window !== "undefined") {
+    // Browser: use the save API route
+    return saveBrandProfile({ ...data, user_id: userId });
+  }
   const db = adminClient();
-   
   const { id: _id, user_id: _uid, created_at: _ca, ...rest } = data as Record<string, unknown>;
   const { data: row, error } = await db
     .from("brand_profiles")

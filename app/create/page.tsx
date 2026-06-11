@@ -9,6 +9,8 @@ import { usePostHog } from "posthog-js/react";
 import ImageGenerator from "@/components/ImageGenerator";
 import AssetUpload from "@/components/AssetUpload";
 import { getUserTier, TIER_VIDEO_LIMITS, type UserTier } from "@/lib/getUserTier";
+import { useBrand } from "@/hooks/useBrand";
+import { useCharacters } from "@/hooks/useCharacters";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -285,9 +287,14 @@ function CreatePageInner() {
   const [pendingSourceImages, setPendingSourceImages] = useState<string[]>([]);
   const [savedReferenceId, setSavedReferenceId] = useState<string | null>(null);
 
-  // Character registry
-  const [characters, setCharacters] = useState<Array<{ id: string; name: string; ref_frame_url: string | null }>>([]);
+  // Character registry — loaded via React Query when avatar/cinematic mode is active
+  const needsCharacters = videoType === 'avatar' || videoType === 'cinematic';
+  const { data: _charactersData } = useCharacters(needsCharacters);
+  const characters = _charactersData ?? [];
   const [selectedCharacterId, setSelectedCharacterId] = useState<string>('');
+
+  // Brand data — React Query cache, shared across the whole app
+  const { data: brandData } = useBrand();
 
   // Selected scene image (from ImageGenerator or upload)
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
@@ -329,9 +336,13 @@ function CreatePageInner() {
   const [showVideoToast, setShowVideoToast] = useState(false);
   const videoSectionRef = useRef<HTMLDivElement>(null);
 
-  // Social upload state
-  const [connectedPlatforms, setConnectedPlatforms] = useState<Array<{ platform: string; handle: string; url: string }>>([]);
-  const [youtubeOAuthConnected, setYoutubeOAuthConnected] = useState(false);
+  // Social upload state — connectedPlatforms derived from React Query brand cache
+  const connectedPlatforms: Array<{ platform: string; handle: string; url: string }> =
+    Array.isArray(brandData?.social_platforms)
+      ? (brandData.social_platforms as Array<{ platform: string; handle: string; url: string }>).filter(
+          (e) => e.handle || e.url,
+        )
+      : [];
   const [socialUploadStatus, setSocialUploadStatus] = useState<Record<string, { uploading: boolean; result?: { url?: string; error?: string } }>>({});
 
   // Poll cleanup ref
@@ -339,6 +350,12 @@ function CreatePageInner() {
 
   // Track previous videoType to detect tool switches
   const prevVideoTypeRef = useRef<string | null>(null);
+
+  // Track previous URL template to detect nav switches (UGC Ad → Storytime → etc.)
+  const prevTemplateRef = useRef<string | null>(null);
+
+  // Set to true by resetToFreshState so any in-flight brand pre-fill callbacks are cancelled.
+  const skipBrandPrefillRef = useRef(false);
 
   // Prevents stale sessionStorage setTimeout from restoring state after a reset
   const skipRestoreRef = useRef(false);
@@ -353,6 +370,13 @@ function CreatePageInner() {
     parentSummary:  string;
   } | null>(null);
   const [isLoadingContinuation, setIsLoadingContinuation] = useState(false);
+
+  // Nuclear mount reset — runs once on mount, ensures completely blank form every visit.
+  // Fires before the sessionStorage restore and auth effects so omnyra_no_prefill blocks brand prefill.
+  useEffect(() => {
+    resetToFreshState();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Restore only user preferences and in-progress video clips from sessionStorage on mount.
   // Brief, script, and scenes are intentionally NOT restored — always start with a clean form.
@@ -422,31 +446,47 @@ function CreatePageInner() {
         .eq("user_id", session.user.id)
         .then(({ count }) => setMemoryCount(count ?? 0));
 
-      // Load brand profile (niche prefill) + connected social platforms in parallel
-      Promise.all([
-        fetch("/api/brand", { headers: { Authorization: `Bearer ${session.access_token}` } })
-          .then(r => r.ok ? r.json() : null).catch(() => null),
-        fetch("/api/brand/get")
-          .then(r => r.ok ? r.json() : null).catch(() => null),
-      ]).then(([p, brandFull]) => {
-        if (p && !restoredFromSession.current) {
-          const noPrefill = sessionStorage.getItem('omnyra_no_prefill');
-          if (noPrefill) { sessionStorage.removeItem('omnyra_no_prefill'); }
-          else {
-            if (p.niche || p.primary_niche) setNiche(p.primary_niche || p.niche);
-            if (p.target_audience) setTargetAudience(p.target_audience);
-            if (p.competitors) setCompetitors(p.competitors);
+      // Brand niche/audience prefill — skipped when omnyra_no_prefill is set (mount reset sets this flag)
+      // Social platforms are derived from the useBrand() React Query cache — no manual fetch needed.
+      fetch("/api/brand", { headers: { Authorization: `Bearer ${session.access_token}` } })
+        .then(r => r.ok ? r.json() : null)
+        .catch(() => null)
+        .then((p) => {
+          // Bail if a reset fired while the fetch was in-flight (race condition guard)
+          if (skipBrandPrefillRef.current) return;
+          if (p) {
+            const noPrefill = sessionStorage.getItem('omnyra_no_prefill');
+            if (noPrefill) { sessionStorage.removeItem('omnyra_no_prefill'); }
+            else {
+              if (p.niche || p.primary_niche) setNiche(p.primary_niche || p.niche);
+              if (p.target_audience) setTargetAudience(p.target_audience);
+              if (p.competitors) setCompetitors(p.competitors);
+            }
           }
-        }
-        if (brandFull) {
-          if (Array.isArray(brandFull.social_platforms)) {
-            setConnectedPlatforms(brandFull.social_platforms.filter((e: { handle?: string; url?: string }) => e.handle || e.url));
-          }
-          if (brandFull.youtube_oauth_connected) setYoutubeOAuthConnected(true);
-        }
-      });
+        });
     });
   }, [router]);
+
+  // On mount: ensure the form starts blank and the brand pre-fill race-condition flag is armed.
+  // This runs after the auth effect, so it cancels any in-flight brand pre-fill via skipBrandPrefillRef.
+  // Voice preference (selectedVoiceId) is intentionally kept — it's loaded separately from profiles.
+  useEffect(() => {
+    skipBrandPrefillRef.current = true;
+    setGoal('');
+    setNiche('');
+    setSelectedPlatforms([]);
+    setTargetAudience('');
+    setPastWins('');
+    setCompetitors('');
+    setUniqueAngle('');
+    setBriefResponse(null);
+    setGeneratedScript('');
+    generatedScriptRef.current = '';
+    setStreamedText('');
+    setError(null);
+    setShowInput(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Cycling loading messages
   useEffect(() => {
@@ -492,44 +532,31 @@ function CreatePageInner() {
     }
   }, [isGeneratingVideo]);
 
-  // Clear results (but keep form inputs) when user switches video tool type.
+  // Full reset when user switches video tool type — clears both form inputs and output state.
   // Only fires when switching from one valid type to another — not on null → type (initial pick).
   useEffect(() => {
     const prev = prevVideoTypeRef.current;
     prevVideoTypeRef.current = videoType;
     if (!prev || !videoType || prev === videoType) return; // no tool switch
     if (isGeneratingVideo) return; // don't interrupt active generation
-    // Clear output-side state only — keep goal/niche/form so user can re-generate in the new tool
-    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-    setBriefResponse(null);
-    setProjectId(null);
-    setSelectedVersion(0);
-    setSelectedHookIndex(null);
-    setShowInput(true);
-    setGeneratedScript('');
-    generatedScriptRef.current = '';
-    setScriptId(null);
-    setStreamedText('');
-    setError(null);
-    setVideoUrl(null);
-    setVideoProgress(0);
-    setMergedVideoUrl(null);
-    setContinuityScore(null);
-    setVoiceUrl(null);
-    setVoiceAudioUrl(null);
-    setClipsReady(false);
-    setPendingClipUrls([]);
-    setPendingScript('');
-    setPendingSourceImages([]);
-    setCinematicJobId(null);
-    setAvatarJobId(null);
-    setPipelineStatusDisplay(null);
-    setGenStage('');
-    setGenMessage('');
-    setGenEta(null);
-    try { sessionStorage.clear(); } catch { /* ok */ }
+    // resetToFreshState clears videoType — snapshot and restore so we stay on the chosen tool
+    const chosenType = videoType;
+    resetToFreshState(false);
+    // Restore the tool the user just picked (resetToFreshState sets videoType = null)
+    setTimeout(() => setVideoType(chosenType), 0);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoType]);
+
+  // Nuclear reset when the user switches content template (UGC Ad → Storytime → etc.) via nav.
+  // Fires only on template changes after initial mount — never on the first render.
+  useEffect(() => {
+    const prev = prevTemplateRef.current;
+    prevTemplateRef.current = template;
+    if (prev === null || prev === template) return; // skip mount + no-change
+    if (isGeneratingVideo) return; // don't interrupt active generation
+    resetAllState();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [template]);
 
   // Drive stage label / message / ETA from progress + videoType + pipelineStatus
   useEffect(() => {
@@ -582,16 +609,7 @@ function CreatePageInner() {
     }
   }, [isGeneratingVideo, videoProgress, videoType, pipelineStatus, hedraResuming]);
 
-  // Load characters when avatar or cinematic mode is selected
-  useEffect(() => {
-    if ((videoType !== 'avatar' && videoType !== 'cinematic') || characters.length > 0) return;
-    fetch('/api/characters')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (data?.characters) setCharacters(data.characters);
-      })
-      .catch(() => {});
-  }, [videoType, characters.length]);
+  // Characters are loaded by the useCharacters hook above — no manual effect needed.
 
   // ─── File upload helpers ─────────────────────────────────────────────────
 
@@ -687,6 +705,7 @@ function CreatePageInner() {
 
     posthog?.capture('generation_started', {
       template,
+      niche,
       platforms: template === "storytime" ? ["tiktok"] : selectedPlatforms,
     });
 
@@ -695,7 +714,8 @@ function CreatePageInner() {
       template,
       niche,
       targetAudience,
-      platforms: template === "storytime" ? ["tiktok"] : selectedPlatforms,
+      platforms:      template === "storytime" ? ["tiktok"] : selectedPlatforms,
+      isContinuation: !!continuationMode,
     };
 
     try {
@@ -1087,6 +1107,7 @@ function CreatePageInner() {
         }),
       });
       const data = await res.json();
+      if (res.status === 402) throw new Error(data?.error || 'Not enough credits for this video. Upgrade your plan to continue.');
       if (!res.ok) {
         throw new Error(data?.error || 'Failed to queue avatar job');
       }
@@ -1164,6 +1185,7 @@ function CreatePageInner() {
             }).then(r => r.json())
               .then(d => console.log('[SAVE_RENDER:avatar]', d))
               .catch(e => console.warn('[SAVE_RENDER_ERR:avatar]', e));
+            posthog?.capture('generation_completed', { video_type: 'avatar', lightning_mode: lightningMode, niche });
           } else if (status.status === 'failed') {
             clearInterval(pollRef.current!);
             pollRef.current = null;
@@ -1177,6 +1199,7 @@ function CreatePageInner() {
             setAvatarJobId(null);
             const stageLabel = status.stage ? ` [stage: ${status.stage}]` : '';
             setError(`${status.error || 'Avatar generation failed'}${stageLabel}`);
+            posthog?.capture('generation_failed', { video_type: 'avatar', lightning_mode: lightningMode, error_type: 'pipeline_error', stage: status.stage });
             setPipelineStatusDisplay(null);
           }
         } catch (pollErr) {
@@ -1404,41 +1427,11 @@ function CreatePageInner() {
           using: (generatedScriptRef.current || generatedScript) ? 'generatedScript' : 'FALLBACK',
         });
         if (!scriptForCinematic) {
-          console.log('[cinematic] no generatedScript — fetching from generate-script');
-          setVideoProgress(8);
-          try {
-            const sRes = await fetch('/api/generate-script', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                hook: v.hook, script: v.script, cta: v.cta, title: v.title,
-                template, niche, targetAudience,
-                platforms: template === 'storytime' ? ['tiktok'] : selectedPlatforms,
-              }),
-            });
-            if (sRes.ok && sRes.body) {
-              const reader = sRes.body.getReader();
-              const decoder = new TextDecoder();
-              let text = '';
-              while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                text += decoder.decode(value, { stream: true });
-                setGeneratedScript(text);
-              }
-              generatedScriptRef.current = text;
-              scriptForCinematic = text;
-            }
-          } catch (sErr) {
-            console.warn('[cinematic][SCRIPT_FALLBACK] generate-script threw — falling back to brief v.script:', sErr);
-          }
-          if (!scriptForCinematic) {
-            scriptForCinematic = v.script || '';
-            console.warn('[cinematic][SCRIPT_FALLBACK] using brief v.script as fallback', {
-              word_count: scriptForCinematic.trim().split(/\s+/).length,
-              estimated_sec: (scriptForCinematic.trim().split(/\s+/).length / 2.5).toFixed(1),
-            });
-          }
+          scriptForCinematic = v.script || '';
+          console.log('[cinematic][SCRIPT_FALLBACK] using brief v.script directly — no blocking API call', {
+            word_count: scriptForCinematic.trim().split(/\s+/).length,
+            estimated_sec: (scriptForCinematic.trim().split(/\s+/).length / 2.5).toFixed(1),
+          });
         }
 
         const _auditWordCount = scriptForCinematic.trim().split(/\s+/).length;
@@ -1540,7 +1533,7 @@ function CreatePageInner() {
         pollRef.current = setInterval(async () => {
           try {
             const st = await fetch(`/api/cinematic-status?jobId=${jobId}`).then(r => r.json()) as {
-              status: string; video_url?: string; error?: string;
+              status: string; video_url?: string; error?: string; progress?: number;
             };
             if (st.status === 'complete' && st.video_url) {
               clearInterval(pollRef.current!);
@@ -1551,18 +1544,48 @@ function CreatePageInner() {
               setShowVideoToast(true);
               setTimeout(() => setShowVideoToast(false), 5000);
               setTimeout(() => videoSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200);
+              // Safety-net save (server already saves in run-cinematic, but client fires too in case of server insert failure)
+              void fetch('/api/save-render', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  video_url:        st.video_url,
+                  script:           generatedScriptRef.current || generatedScript || null,
+                  template:         'cinematic',
+                  series_id:        continuationMode?.seriesId        ?? null,
+                  episode_number:   continuationMode?.episodeNumber   ?? null,
+                  parent_render_id: continuationMode?.parentRenderId  ?? null,
+                }),
+              }).then(r => r.json())
+                .then(d => console.log('[LIBRARY_SAVE:cinematic]', d))
+                .catch(e => console.warn('[LIBRARY_SAVE_ERR:cinematic]', e));
+              posthog?.capture('generation_completed', {
+                video_type:    'cinematic',
+                lightning_mode: lightningMode,
+                niche,
+              });
             } else if (st.status === 'failed') {
               clearInterval(pollRef.current!);
               pollRef.current = null;
               setCinematicJobId(null);
-              setError(st.error || 'Cinematic generation failed — try again');
+              const errMsg = st.error?.includes('timeout') || st.error?.includes('timed out')
+                ? 'Generation timed out. Your credits are safe — try again with Lightning Mode for faster results.'
+                : st.error || 'Cinematic generation failed — try again';
+              setError(errMsg);
+              posthog?.capture('generation_failed', {
+                video_type:    'cinematic',
+                lightning_mode: lightningMode,
+                error_type:    st.error?.includes('timeout') ? 'timeout' : 'pipeline_error',
+              });
             }
           } catch { /* keep polling on network error */ }
         }, 10_000);
 
       } catch (err) {
         console.error('Cinematic error:', err);
-        setError(err instanceof Error ? err.message : 'Cinematic generation failed');
+        const errMsg = err instanceof Error ? err.message : 'Cinematic generation failed';
+        setError(errMsg);
+        posthog?.capture('generation_failed', { video_type: 'cinematic', lightning_mode: lightningMode, error_type: 'submit_error' });
         setIsGeneratingVideo(false);
       }
       return;
@@ -1773,6 +1796,7 @@ function CreatePageInner() {
 
   async function handleDownload(url: string, filename: string) {
     console.info('[DOWNLOAD_TRIGGERED]', url);
+    posthog?.capture('download_clicked', { video_type: videoType, filename });
     // Route through server-side proxy so Content-Disposition: attachment is set.
     // This guarantees a Save-As dialog instead of the browser opening the video player.
     const proxyUrl = `/api/download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`;
@@ -1810,7 +1834,7 @@ function CreatePageInner() {
     }
   }
 
-  const resetAllState = useCallback(() => {
+  const resetToFreshState = useCallback((keepPreview = false) => {
     // Kill any running poll immediately
     if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
     genStartRef.current = null;
@@ -1819,12 +1843,24 @@ function CreatePageInner() {
     // Block any pending sessionStorage restore setTimeout from re-applying old state
     skipRestoreRef.current = true;
 
-    // Nuke all storage — both sessionStorage and localStorage, all keys
+    // Cancel any in-flight brand pre-fill fetch callbacks so they can't overwrite the reset
+    skipBrandPrefillRef.current = true;
+
+    // Nuke all storage — sessionStorage entirely, localStorage for all omnyra_ prefixed keys
     try { sessionStorage.clear(); } catch { /* quota / private mode */ }
-    try { localStorage.removeItem('omnyra-draft'); localStorage.removeItem('omnyra_create_state'); } catch { /* ok */ }
-    // One-shot flag: survives the hard refresh and prevents brand pre-fill from
-    // re-injecting the old niche/audience on the next mount.
+    try {
+      const toRemove = Object.keys(localStorage).filter(k => k.startsWith('omnyra'));
+      toRemove.forEach(k => localStorage.removeItem(k));
+    } catch { /* ok */ }
+    // One-shot flag: prevents brand pre-fill from re-injecting old niche/audience on next mount.
     try { sessionStorage.setItem('omnyra_no_prefill', '1'); } catch { /* ok */ }
+
+    // Force-clear any browser-autofilled textarea/input DOM values
+    setTimeout(() => {
+      document.querySelectorAll('textarea, input[type="text"]').forEach(el => {
+        (el as HTMLInputElement).value = '';
+      });
+    }, 10);
 
     // ── Form inputs ──────────────────────────────────────────────────────────
     setGoal('');
@@ -1861,12 +1897,17 @@ function CreatePageInner() {
 
     // ── Voice ────────────────────────────────────────────────────────────────
     setIsGeneratingVoice(false);
-    setVoiceAudioUrl(null);
     setVoiceDuration(0);
-    setVoiceUrl(null);
+    if (!keepPreview) {
+      setVoiceAudioUrl(null);
+      setVoiceUrl(null);
+    }
 
     // ── Video generation ─────────────────────────────────────────────────────
-    setVideoUrl(null);
+    if (!keepPreview) {
+      setVideoUrl(null);
+      setMergedVideoUrl(null);
+    }
     setIsGeneratingVideo(false);
     setVideoProgress(0);
     setVideoType(null);
@@ -1893,8 +1934,7 @@ function CreatePageInner() {
     setSelectedVoiceId('');
 
     // ── Output ───────────────────────────────────────────────────────────────
-    setMergedVideoUrl(null);
-    setContinuityScore(null);
+    if (!keepPreview) setContinuityScore(null);
     setIsMerging(false);
 
     // ── Progress indicators ──────────────────────────────────────────────────
@@ -1908,9 +1948,12 @@ function CreatePageInner() {
     setIsLoadingContinuation(false);
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    console.info('[NUCLEAR_RESET] All form state and storage cleared');
+    console.info('[NUCLEAR_RESET] Complete fresh state — old data cleared');
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Alias for backward compatibility with existing call sites
+  const resetAllState = resetToFreshState;
 
   async function handleContinueStory() {
     setIsLoadingContinuation(true);
@@ -2233,6 +2276,19 @@ function CreatePageInner() {
                   }}
                 >
                   <p style={{ color: "#CCABAF", fontSize: 13, margin: 0 }}>⚠ {error}</p>
+                  {(error.toLowerCase().includes('credit') || error.toLowerCase().includes('upgrade')) && (
+                    <a
+                      href="/dashboard/billing"
+                      style={{ display: 'inline-block', marginTop: 8, color: '#C9A84C', fontSize: 12, fontWeight: 600, textDecoration: 'underline' }}
+                    >
+                      Upgrade Plan →
+                    </a>
+                  )}
+                  {error.toLowerCase().includes('timed out') && (
+                    <p style={{ color: '#888', fontSize: 11, margin: '6px 0 0' }}>
+                      Your credits are safe. Try Lightning Mode for faster results.
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -2365,7 +2421,7 @@ function CreatePageInner() {
                   Edit
                 </button>
                 <button
-                  onClick={resetAllState}
+                  onClick={() => resetAllState()}
                   style={{
                     padding: "6px 14px",
                     borderRadius: 8,
@@ -2982,7 +3038,7 @@ function CreatePageInner() {
                   {(videoType === 'cinematic' || videoType === 'avatar') && (
                     <button
                       type="button"
-                      onClick={() => setLightningMode(prev => !prev)}
+                      onClick={() => { const next = !lightningMode; setLightningMode(next); posthog?.capture('lightning_mode_toggled', { enabled: next, video_type: videoType }); }}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
@@ -3625,7 +3681,7 @@ function CreatePageInner() {
                     View in My Library →
                   </button>
 
-                  <button onClick={resetAllState} style={{
+                  <button onClick={() => resetAllState()} style={{
                     background: 'none',
                     border: 'none',
                     color: 'rgba(255,255,255,0.4)',
@@ -3755,7 +3811,7 @@ function CreatePageInner() {
                 {exported ? "✓ Copied to clipboard" : "Export Brief"}
               </button>
               <button
-                onClick={resetAllState}
+                onClick={() => resetAllState()}
                 style={{
                   background: "none",
                   border: "none",
