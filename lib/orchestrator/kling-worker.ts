@@ -28,6 +28,7 @@ export interface KlingWorkerInput {
   speedMode?:    string;           // 'ultra-draft' | 'draft' | 'balanced' | 'quality'
   motionStrength?: number;         // 0-1; maps to cfg_scale (inverse)
   isStylized?:   boolean;          // cartoon/furry/creature — affects neg prompts
+  negativePrompt?: string;         // explicit negative override — replaces computed negative when set
 }
 
 export interface KlingWorkerResult {
@@ -122,7 +123,10 @@ export async function generateKlingClip(input: KlingWorkerInput): Promise<KlingW
     ? "melting fur, melting feathers, fused limbs, wrong proportions, extra heads, three legs, deformed beak, corrupted plumage, anatomy mutation, uncanny valley, realistic skin on cartoon character, photorealistic, live action, real people, documentary style, 35mm film, human actors, photo, photograph"
     : "";
   const negMotion    = clampedMs < 0.52 ? "shaky, jittery, unstable camera" : "";
-  const negative_prompt = [negBase, negAnatomy, negStylized, negMotion].filter(Boolean).join(", ");
+  // Caller may supply an explicit override (e.g. animation-specific negatives from parallel engine)
+  const negative_prompt = input.negativePrompt
+    ? input.negativePrompt
+    : [negBase, negAnatomy, negStylized, negMotion].filter(Boolean).join(", ");
 
   console.info(`[MOTION_TUNE] shot=${input.shotId} motionStrength=${ms} clamped=${clampedMs} cfg_scale=${cfgScale} stylized=${input.isStylized ?? false} modifier="${motionModifier}"`);
 

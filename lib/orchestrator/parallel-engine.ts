@@ -45,6 +45,7 @@ export interface ParallelEngineInput {
   voiceId?:           string;    // ElevenLabs voice override for voiceover
   maxClips?:          number;    // cap number of shots (default 3 for 30s target)
   enableRunway?:      boolean;   // opt-in: route quality i2v shots to Runway Gen-4
+  niche?:             string;    // user-selected content niche (e.g. "Animation") for style gating
 }
 
 export interface ClipResult {
@@ -292,6 +293,9 @@ async function processAvatarShot(
 
 // ── Kling lane ────────────────────────────────────────────────────────────────
 
+const PARALLEL_ANIM_PREFIX = "In vibrant Disney Pixar 3D animated style, colorful cartoon characters with big expressive eyes, smooth CGI animation, stylized proportions, highly detailed 3D animated render, cinematic lighting, ";
+const PARALLEL_ANIM_NEG    = "photorealistic, realistic humans, live action, real people, photograph, photo, human skin texture, detailed pores, realistic faces, 35mm film, documentary style, human actors, candid photography, stock photo, blurry, deformed, extra limbs, text, watermark, low quality, ugly, bad anatomy";
+
 async function processKlingShot(
   shot:          ShotRow,
   route:         ShotRoute,
@@ -300,25 +304,42 @@ async function processKlingShot(
   correlationId: string,
   speedMode:     string = 'balanced',
   charImageUrl?: string | null,
+  isAnimated?:   boolean,
 ): Promise<ClipResult> {
   const shotT0   = Date.now();
-  // Use character image as i2v reference when router flagged preferI2V
-  const refImage = (route.preferI2V && charImageUrl) ? charImageUrl : undefined;
-  if (refImage) console.info(`[KLING_I2V] shot=${shot.id} using char ref image for i2v mode`);
+
+  // Animation style enforcement: prepend Disney/Pixar prefix, suppress char ref (causes live-action bleed)
+  let visualPrompt = shot.visual_prompt;
+  let effectiveCharSuffix = charSuffix;
+  let effectiveBrandSuffix = brandSuffix;
+  let refImage: string | undefined;
+
+  if (isAnimated) {
+    visualPrompt = `${PARALLEL_ANIM_PREFIX}${visualPrompt}`;
+    effectiveCharSuffix = "";   // char ref suffix would anchor to live-action description
+    effectiveBrandSuffix = "";  // brand suffix may contain live-action style terms
+    refImage = undefined;       // never use char photo as i2v ref for animated — causes human bleed
+    console.info(`[STYLE_ENFORCED] animation=true shot=${shot.id} prefix="${PARALLEL_ANIM_PREFIX.substring(0, 60)}"`);
+  } else {
+    // Use character image as i2v reference when router flagged preferI2V
+    refImage = (route.preferI2V && charImageUrl) ? charImageUrl : undefined;
+    if (refImage) console.info(`[KLING_I2V] shot=${shot.id} using char ref image for i2v mode`);
+  }
 
   const result = await generateKlingClip({
     shotId:                shot.id,
     shotNumber:            shot.shot_number,
-    visualPrompt:          shot.visual_prompt,
+    visualPrompt,
     modelId:               route.klingModelId,
     durationSecs:          shot.duration_seconds,
     aspectRatio:           "9:16",
-    characterPromptSuffix: charSuffix || undefined,
-    brandSuffix:           brandSuffix || undefined,
+    characterPromptSuffix: effectiveCharSuffix || undefined,
+    brandSuffix:           effectiveBrandSuffix || undefined,
     speedMode,
-    motionStrength:        route.motionStrength,
+    motionStrength:        isAnimated ? Math.max(route.motionStrength ?? 0.65, 0.65) : route.motionStrength,
     imageUrl:              refImage,
-    isStylized:            route.isStylized,
+    isStylized:            isAnimated ? true : route.isStylized,
+    negativePrompt:        isAnimated ? PARALLEL_ANIM_NEG : undefined,
   });
   console.info(`[CLIP_TIMING] kling shot=${shot.id} num=${shot.shot_number} ms=${Date.now() - shotT0} model=${result.model_used}`);
 
@@ -439,6 +460,12 @@ export async function runParallelEngine(
     fullScript,
   } = input;
   const voiceId = input.voiceId ?? "EXAVITQu4vr4xnSDxMaO";
+
+  // Animation detection — niche="Animation" or any animated keyword in fullScript locks style
+  const _animCtx  = `${fullScript ?? ""} ${input.niche ?? ""}`.toLowerCase();
+  const isAnimated = /\banimation\b/i.test(input.niche ?? "") ||
+    /\b(disney|pixar|dreamworks|cartoon|animated|animation|3d animation|anime)\b/.test(_animCtx);
+  if (isAnimated) console.info(`[STYLE_ENFORCED] animation=true niche="${input.niche ?? ""}" planId=${planId}`);
 
   // ultra-draft forces draftMode + hard-caps at 2 clips
   const speedMode  = input.speedMode ?? (input.draftMode ? 'draft' : 'balanced');
@@ -566,7 +593,7 @@ export async function runParallelEngine(
 
   const klingPromises = klingShots.map(shot => {
     const route = routes[shotRows.indexOf(shot)];
-    return processKlingShot(shot, route, charSuffix, brandSuffix, planId, speedMode, charImageUrl)
+    return processKlingShot(shot, route, charSuffix, brandSuffix, planId, speedMode, charImageUrl, isAnimated)
       .catch(err => { console.error(`[parallel-engine] kling shot=${shot.id}:`, err); failedShots.push(shot.id); return null; });
   });
 
@@ -580,7 +607,7 @@ export async function runParallelEngine(
       .catch(async (err: Error) => {
         console.warn(`[HEDRA_FALLBACK] shot=${shot.id} hedra_error="${err.message.slice(0, 80)}" → kling`);
         const fallbackRoute: ShotRoute = { ...avatarRoute, provider: "kling", klingModelId: KLING_T2V_PRO, motionStrength: 0.55, reason: "hedra-fallback" };
-        return processKlingShot(shot, fallbackRoute, charSuffix, brandSuffix, planId, speedMode, charImageUrl)
+        return processKlingShot(shot, fallbackRoute, charSuffix, brandSuffix, planId, speedMode, charImageUrl, isAnimated)
           .catch(klingErr => {
             console.error(`[HEDRA_FALLBACK] kling also failed shot=${shot.id}:`, klingErr);
             failedShots.push(shot.id);
@@ -593,7 +620,7 @@ export async function runParallelEngine(
     if (!charImageUrl) {
       console.warn(`[parallel-engine] runway shot=${shot.id} skipped — no char image, falling back to kling`);
       const fallbackRoute: ShotRoute = { ...routes[shotRows.indexOf(shot)], provider: "kling", klingModelId: KLING_T2V_PRO, motionStrength: 0.62, reason: "runway-no-image-fallback" };
-      return processKlingShot(shot, fallbackRoute, charSuffix, brandSuffix, planId, speedMode, null)
+      return processKlingShot(shot, fallbackRoute, charSuffix, brandSuffix, planId, speedMode, null, isAnimated)
         .catch(err => { console.error(`[parallel-engine] runway-kling-fallback shot=${shot.id}:`, err); failedShots.push(shot.id); return null; });
     }
     const route = routes[shotRows.indexOf(shot)];
@@ -601,7 +628,7 @@ export async function runParallelEngine(
       .catch(async (err: Error) => {
         console.warn(`[RUNWAY_FALLBACK] shot=${shot.id} runway_error="${err.message.slice(0, 80)}" → kling`);
         const fallbackRoute: ShotRoute = { ...route, provider: "kling", klingModelId: KLING_T2V_PRO, motionStrength: 0.62, reason: "runway-fallback" };
-        return processKlingShot(shot, fallbackRoute, charSuffix, brandSuffix, planId, speedMode, charImageUrl)
+        return processKlingShot(shot, fallbackRoute, charSuffix, brandSuffix, planId, speedMode, charImageUrl, isAnimated)
           .catch(klingErr => {
             console.error(`[RUNWAY_FALLBACK] kling also failed shot=${shot.id}:`, klingErr);
             failedShots.push(shot.id);

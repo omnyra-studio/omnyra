@@ -76,7 +76,7 @@ async function uploadSmartMotionClip(
 
 const COUPLE_RE = /\b(couple|two people|both of them|together|partner|dancing with|walking with|holding hands|hand in hand|each other|lovers|husband|wife|boyfriend|girlfriend|fiancee?|spouse|relationship|romance|romantic)\b/i;
 
-// Detect animated / cartoon / Disney / Pixar style requests from goal or script text.
+// Detect animated / cartoon / Disney / Pixar style requests from goal, script, or niche.
 // When true: inject strong style directives and suppress photorealism negatives.
 const ANIMATED_RE = /\b(disney|pixar|dreamworks|cartoon|animated|animation|3d animation|cgi cartoon|anime|storybook|princess peach|mario|luigi|bowser|zelda|kirby|pikachu|yoshi|donkey kong|abraham lincoln as cartoon|fictional character|comic book character|illustrated character|caricature)\b/i;
 
@@ -123,12 +123,12 @@ async function generateSceneImage(
   const buildPrompt = (corePrompt: string, attempt: number): string => {
     const anatomySuffix = [ANATOMY_GUARD, handObjectGuard].filter(Boolean).join(", ");
     if (isAnimated) {
-      // For cartoon/animated characters: use strong CGI animation language, not photography
+      // For cartoon/animated characters: PREPEND strong CGI animation prefix so model reads it first
       const animStyle =
-        "Disney Pixar 3D animated style, highly detailed CGI render, vibrant saturated colors, " +
-        "stylized cartoon characters, big expressive eyes, smooth plastic surfaces, exaggerated proportions, " +
-        "cinematic studio lighting, animated film still, no photorealism, no real people, no live action";
-      return `${corePrompt}, ${animStyle}, brand-safe, SFW`;
+        "In vibrant Disney Pixar 3D animated style, colorful cartoon characters with big expressive eyes, " +
+        "smooth CGI animation, stylized proportions, highly detailed 3D animated render, " +
+        "cinematic studio lighting, animated film still";
+      return `${animStyle}, ${corePrompt}, brand-safe, SFW`;
     }
     if (!isCouple) {
       return `${corePrompt}, ${anatomySuffix}, ` +
@@ -197,10 +197,14 @@ async function generateSceneImage(
           const charAnchoredPrompt = `${charSuffix}, ${prompt}`;
           const retryR = await (fal as any).subscribe(FLUX_MODEL, {
             input: {
-              prompt:                isCouple
-                ? `Two people together, both fully visible in frame, clear separation between bodies, no overlapping limbs, ${charAnchoredPrompt}, perfect anatomy, correct number of limbs, 35mm candid photography, natural lighting, real people, fully clothed, SFW`
-                : `${charAnchoredPrompt}, perfect anatomy, correct number of limbs, anatomically correct hands, five fingers per hand, 35mm candid photography, natural lighting, authentic unposed moment, real people, fully clothed, SFW`,
-              negative_prompt:       coupleNegative,
+              prompt:                isAnimated
+                ? `In vibrant Disney Pixar 3D animated style, colorful cartoon character, big expressive eyes, smooth CGI animation, ${charAnchoredPrompt}, highly detailed 3D render, SFW`
+                : isCouple
+                  ? `Two people together, both fully visible in frame, clear separation between bodies, no overlapping limbs, ${charAnchoredPrompt}, perfect anatomy, correct number of limbs, 35mm candid photography, natural lighting, real people, fully clothed, SFW`
+                  : `${charAnchoredPrompt}, perfect anatomy, correct number of limbs, anatomically correct hands, five fingers per hand, 35mm candid photography, natural lighting, authentic unposed moment, real people, fully clothed, SFW`,
+              negative_prompt:       isAnimated
+                ? "photorealistic, realistic humans, live action, real people, photograph, photo, human skin texture, detailed pores, realistic faces"
+                : coupleNegative,
               image_size:            { width: 720, height: 1280 },
               num_inference_steps:   4,
               num_images:            1,
@@ -516,6 +520,7 @@ export async function POST(req: Request) {
   let script: string | undefined;
   let goal: string | undefined;
   let characterId: string | undefined;
+  let niche: string | undefined;
   try {
     const body = await req.json() as {
       prompts?: string[];
@@ -525,6 +530,7 @@ export async function POST(req: Request) {
       script?: string;
       goal?: string;
       characterId?: string;
+      niche?: string;
     };
     prompts      = body.prompts ?? [];
     imageUrl     = body.imageUrl;
@@ -533,7 +539,8 @@ export async function POST(req: Request) {
     script       = body.script;
     goal         = body.goal;
     characterId  = body.characterId;
-    console.log(`[BRIEF_CONTEXT] goal="${(goal ?? "").substring(0, 120)}" characterId=${characterId ?? "none"}`)
+    niche        = body.niche;
+    console.log(`[BRIEF_CONTEXT] goal="${(goal ?? "").substring(0, 120)}" characterId=${characterId ?? "none"} niche=${niche ?? "none"}`)
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
@@ -713,14 +720,14 @@ export async function POST(req: Request) {
         }
 
         // ── Animated / cartoon style enforcement ──────────────────────────────
-        const _combinedCtx  = `${goal ?? ""} ${script ?? ""}`.toLowerCase();
-        const _isAnimated   = detectAnimatedStyle(_combinedCtx);
-        const ANIM_PREFIX   = "Disney Pixar 3D animated style, vibrant colorful cartoon characters, smooth CGI animation, expressive faces, big stylized eyes, exaggerated proportions, cinematic lighting, highly detailed 3D render, ";
+        // Include niche in detection so "Animation" niche always triggers animated style
+        const _combinedCtx  = `${goal ?? ""} ${script ?? ""} ${niche ?? ""}`.toLowerCase();
+        const _isAnimated   = detectAnimatedStyle(_combinedCtx) || /\banimation\b/i.test(niche ?? "");
+        const ANIM_PREFIX   = "In vibrant Disney Pixar 3D animated style, colorful cartoon characters with big expressive eyes, smooth CGI animation, stylized proportions, highly detailed 3D animated render, cinematic lighting, ";
         if (_isAnimated) {
-          enforcedPrompts = enforcedPrompts.map(p =>
-            /\b(disney|pixar|animated|cartoon|cgi)\b/i.test(p) ? p : `${ANIM_PREFIX}${p}`
-          );
-          console.log(`[ANIMATED_INJECT] detected animated style — prepended Disney/Pixar prefix to ${enforcedPrompts.length} prompts`);
+          // Always prepend — unconditional so every scene is style-locked regardless of prompt wording
+          enforcedPrompts = enforcedPrompts.map(p => `${ANIM_PREFIX}${p}`);
+          console.log(`[STYLE_ENFORCED] animation=true niche="${niche ?? ""}" prefix="${ANIM_PREFIX.substring(0, 60)}" scenes=${enforcedPrompts.length}`);
         }
 
         // ── Cinematic lighting + emotional arc injection (SKIP for animated) ──
@@ -793,7 +800,7 @@ export async function POST(req: Request) {
 
         // Animated style: suppress photorealism + live-action with stronger terms
         if (_isAnimated) {
-          const negAnim = "photorealistic, realistic humans, live action, real people, photo, photograph, 35mm film, documentary style, human actors, skin texture, pores, candid photography, stock photo, blurry, deformed, extra limbs, text, watermark, low quality, ugly, bad anatomy";
+          const negAnim = "photorealistic, realistic humans, live action, real people, photograph, photo, human skin texture, detailed pores, realistic faces, 35mm film, documentary style, human actors, candid photography, stock photo, blurry, deformed, extra limbs, text, watermark, low quality, ugly, bad anatomy, 3d render artifacts";
           for (let i = 0; i < sceneNegativePrompts.length; i++) {
             sceneNegativePrompts[i] = negAnim; // replace entirely — animated negative is its own set
           }

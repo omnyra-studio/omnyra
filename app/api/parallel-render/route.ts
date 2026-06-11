@@ -46,6 +46,7 @@ export async function POST(request: Request) {
     fullScript?:         string;
     voiceId?:            string;
     maxClips?:           number;
+    niche?:              string;
   };
   try {
     body = await request.json();
@@ -64,6 +65,7 @@ export async function POST(request: Request) {
     fullScript,
     voiceId,  // resolved below — null from body must not bypass the default
     maxClips = 3,
+    niche,
   } = body;
 
   // Null from body bypasses destructuring defaults — resolve here
@@ -127,6 +129,7 @@ export async function POST(request: Request) {
     fullScript:          fullScript  ?? undefined,
     voiceId:             safeVoiceId,
     maxClips,
+    niche:               niche       ?? undefined,
   }).catch(err => {
     console.error("[parallel-render] engine error:", err);
     emitRaw("PARALLEL_ENGINE_FAILED", planId, { error: err instanceof Error ? err.message : String(err) });

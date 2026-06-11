@@ -27,7 +27,7 @@ const DEFAULT_VOICE_ID = "EXAVITQu4vr4xnSDxMaO";
 
 // Animated/cartoon style — affects reference image prompts, Kling prompts, and negative prompts
 const ANIMATED_RE = /\b(animated|animation|cartoon|3d animated|disney|pixar|dreamworks|anime|cgi character|stylized character|princess peach|mario|luigi|bowser|zelda|kirby|pikachu|yoshi|wario|donkey kong|storybook character|muppet|puppet|fictional character|historical cartoon)\b/i;
-const ANIMATION_STYLE_PREFIX = "Disney Pixar 3D animated style, vibrant colorful cartoon characters, smooth CGI animation, expressive faces, big stylized eyes, exaggerated proportions, cinematic lighting, highly detailed 3D render, ";
+const ANIMATION_STYLE_PREFIX = "In vibrant Disney Pixar 3D animated style, colorful cartoon characters with big expressive eyes, smooth CGI animation, stylized proportions, highly detailed 3D animated render, cinematic lighting, ";
 
 function detectAnimatedStyle(text: string): boolean {
   return ANIMATED_RE.test(text);
@@ -156,14 +156,11 @@ export async function POST(req: Request) {
     }
     scenePrompts = scenePrompts.slice(0, SCENE_COUNT);
 
-    // Inject animation style prefix into every scene prompt when animated content detected
+    // Inject animation style prefix into every scene prompt when animated content detected.
+    // Always prepend unconditionally — ensures style lock even when individual prompts lack keywords.
     if (isAnimated) {
-      scenePrompts = scenePrompts.map(p =>
-        p.toLowerCase().includes("disney") || p.toLowerCase().includes("pixar")
-          ? p
-          : ANIMATION_STYLE_PREFIX + p
-      );
-      console.log(`[run-cinematic] [ANIMATED_PROMPTS] injected style prefix into ${scenePrompts.length} prompts`);
+      scenePrompts = scenePrompts.map(p => ANIMATION_STYLE_PREFIX + p);
+      console.log(`[STYLE_ENFORCED] animation=true niche="${niche}" prefix="${ANIMATION_STYLE_PREFIX.substring(0, 60)}" scenes=${scenePrompts.length}`);
     }
 
     await setJobStatus(jobId, "running", 15);
