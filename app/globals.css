@@ -315,6 +315,11 @@ h1, h2, h3, h4 { color: #FFFFFF; }
   100% { opacity: 1; }
 }
 
+@keyframes slideInRight {
+  0%   { opacity: 0; transform: translateX(40px); }
+  100% { opacity: 1; transform: translateX(0); }
+}
+
 @keyframes pulseSoft {
   0%, 100% { box-shadow: 0 0 20px rgba(212, 175, 55, 0.15); }
   50% { box-shadow: 0 0 40px rgba(212, 175, 55, 0.4); }

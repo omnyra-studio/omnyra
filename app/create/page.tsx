@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState, type CSSProperties, type ChangeEvent, type DragEvent } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState, type CSSProperties, type ChangeEvent, type DragEvent } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import BrandContextFields from "@/components/BrandContextFields";
@@ -325,8 +325,18 @@ function CreatePageInner() {
   const [genEta,     setGenEta]     = useState<number | null>(null);
   const genStartRef = useRef<number | null>(null);
 
+  // Success toast + scroll-to-video
+  const [showVideoToast, setShowVideoToast] = useState(false);
+  const videoSectionRef = useRef<HTMLDivElement>(null);
+
   // Poll cleanup ref
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Track previous videoType to detect tool switches
+  const prevVideoTypeRef = useRef<string | null>(null);
+
+  // Prevents stale sessionStorage setTimeout from restoring state after a reset
+  const skipRestoreRef = useRef(false);
 
   // Series / continuation tracking
   const [continuationMode, setContinuationMode] = useState<{
@@ -339,41 +349,42 @@ function CreatePageInner() {
   } | null>(null);
   const [isLoadingContinuation, setIsLoadingContinuation] = useState(false);
 
-  // Restore form state from sessionStorage (persisted on every change below)
+  // Restore in-progress video work from sessionStorage on mount.
+  // Intentionally does NOT restore goal / niche / selectedPlatforms — input fields
+  // always start blank so the user is never confused by a "stale" prompt on load.
+  // skipRestoreRef prevents this running if resetAllState() was called synchronously
+  // before this effect settled (eliminates the async race condition).
   useEffect(() => {
+    if (skipRestoreRef.current) return;
     const saved = sessionStorage.getItem('omnyra_create_state');
     if (!saved) return;
     restoredFromSession.current = true;
     try {
-      const state = JSON.parse(saved);
-      setTimeout(() => {
-        if (state.goal) setGoal(state.goal);
-        if (state.niche) setNiche(state.niche);
-        if (state.targetAudience) setTargetAudience(state.targetAudience);
-        if (state.pastWins) setPastWins(state.pastWins);
-        if (state.competitors) setCompetitors(state.competitors);
-        if (state.uniqueAngle) setUniqueAngle(state.uniqueAngle);
-        if (state.selectedPlatforms?.length) setSelectedPlatforms(state.selectedPlatforms);
-        if (state.selectedImage) setSelectedImage(state.selectedImage);
-        if (state.selectedVoiceId) setSelectedVoiceId(state.selectedVoiceId);
-        if (state.videoType) setVideoType(state.videoType);
-        if (state.generatedScript) {
-          setGeneratedScript(state.generatedScript);
-          generatedScriptRef.current = state.generatedScript;
-        }
-        if (state.pendingClipUrls?.length) {
-          setPendingClipUrls(state.pendingClipUrls);
-          setPendingClipDuration(state.pendingClipDuration ?? 10);
-          setPendingScript(state.pendingScript ?? '');
-          setClipsReady(state.clipsReady ?? false);
-        }
-        if (state.briefResponse) {
-          setBriefResponse(state.briefResponse);
-          setShowInput(false);
-          setSelectedVersion(state.selectedVersion ?? 0);
-        }
-      }, 0);
-    } catch {}
+      const state = JSON.parse(saved) as Record<string, unknown>;
+      if (skipRestoreRef.current) return;
+      // ── Input fields: NEVER restored — always start fresh ───────────────
+      // goal, niche, selectedPlatforms, targetAudience, pastWins, competitors,
+      // uniqueAngle are intentionally omitted so the prompt field is always blank.
+      // ── In-progress video work: restored so user doesn't lose clips/brief ─
+      if (state.selectedImage)   setSelectedImage(state.selectedImage as string);
+      if (state.selectedVoiceId) setSelectedVoiceId(state.selectedVoiceId as string);
+      if (state.videoType)       setVideoType(state.videoType as string);
+      if (state.generatedScript) {
+        setGeneratedScript(state.generatedScript as string);
+        generatedScriptRef.current = state.generatedScript as string;
+      }
+      if (Array.isArray(state.pendingClipUrls) && (state.pendingClipUrls as unknown[]).length) {
+        setPendingClipUrls(state.pendingClipUrls as string[]);
+        setPendingClipDuration((state.pendingClipDuration as number | undefined) ?? 10);
+        setPendingScript((state.pendingScript as string | undefined) ?? '');
+        setClipsReady((state.clipsReady as boolean | undefined) ?? false);
+      }
+      if (state.briefResponse) {
+        setBriefResponse(state.briefResponse as BriefApiResponse);
+        setShowInput(false);
+        setSelectedVersion((state.selectedVersion as number | undefined) ?? 0);
+      }
+    } catch { /* malformed JSON — ignore */ }
   }, []);
 
   // Persist key state to sessionStorage on every change so navigation doesn't lose work
@@ -432,6 +443,11 @@ function CreatePageInner() {
         .then((r) => (r.ok ? r.json() : null))
         .then((p) => {
           if (!p || restoredFromSession.current) return;
+          // 'omnyra_no_prefill' is written by resetAllState() so a hard refresh after
+          // "New Project" doesn't re-inject the previous brand niche/audience.
+          // Flag is one-shot: consumed immediately so subsequent visits pre-fill normally.
+          const noPrefill = sessionStorage.getItem('omnyra_no_prefill');
+          if (noPrefill) { sessionStorage.removeItem('omnyra_no_prefill'); return; }
           if (p.niche || p.primary_niche) setNiche(p.primary_niche || p.niche);
           if (p.target_audience) setTargetAudience(p.target_audience);
           if (p.competitors) setCompetitors(p.competitors);
@@ -483,6 +499,45 @@ function CreatePageInner() {
       setGenEta(null);
     }
   }, [isGeneratingVideo]);
+
+  // Clear results (but keep form inputs) when user switches video tool type.
+  // Only fires when switching from one valid type to another — not on null → type (initial pick).
+  useEffect(() => {
+    const prev = prevVideoTypeRef.current;
+    prevVideoTypeRef.current = videoType;
+    if (!prev || !videoType || prev === videoType) return; // no tool switch
+    if (isGeneratingVideo) return; // don't interrupt active generation
+    // Clear output-side state only — keep goal/niche/form so user can re-generate in the new tool
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    setBriefResponse(null);
+    setProjectId(null);
+    setSelectedVersion(0);
+    setSelectedHookIndex(null);
+    setShowInput(true);
+    setGeneratedScript('');
+    generatedScriptRef.current = '';
+    setScriptId(null);
+    setStreamedText('');
+    setError(null);
+    setVideoUrl(null);
+    setVideoProgress(0);
+    setMergedVideoUrl(null);
+    setContinuityScore(null);
+    setVoiceUrl(null);
+    setVoiceAudioUrl(null);
+    setClipsReady(false);
+    setPendingClipUrls([]);
+    setPendingScript('');
+    setPendingSourceImages([]);
+    setCinematicJobId(null);
+    setAvatarJobId(null);
+    setPipelineStatusDisplay(null);
+    setGenStage('');
+    setGenMessage('');
+    setGenEta(null);
+    try { sessionStorage.clear(); } catch { /* ok */ }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoType]);
 
   // Drive stage label / message / ETA from progress + videoType + pipelineStatus
   useEffect(() => {
@@ -607,23 +662,6 @@ function CreatePageInner() {
     } catch {} finally {
       setIsGeneratingVoice(false);
     }
-  }
-
-  // ─── Session state persistence ───────────────────────────────────────────
-
-  function saveFormState() {
-    sessionStorage.setItem('omnyra_create_state', JSON.stringify({
-      goal,
-      niche,
-      targetAudience,
-      pastWins,
-      competitors,
-      uniqueAngle,
-      selectedPlatforms,
-      template,
-      briefResponse,
-      selectedVersion,
-    }));
   }
 
   // ─── Submission ──────────────────────────────────────────────────────────
@@ -1053,6 +1091,7 @@ function CreatePageInner() {
           avatar_image_url:  avatarImageUrl || undefined,
           plan:              userTier,
           character_id:      selectedCharacterId || null,
+          lightningMode,
         }),
       });
       const data = await res.json();
@@ -1116,6 +1155,9 @@ function CreatePageInner() {
             setMergedVideoUrl(status.result_url);
             setVideoProgress(100);
             setPipelineStatusDisplay(null);
+            setShowVideoToast(true);
+            setTimeout(() => setShowVideoToast(false), 5000);
+            setTimeout(() => videoSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200);
             void fetch('/api/save-render', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -1215,6 +1257,9 @@ function CreatePageInner() {
           setPipelineStatusDisplay(null);
           setIsGeneratingVideo(false);
           setHedraResuming(false);
+          setShowVideoToast(true);
+          setTimeout(() => setShowVideoToast(false), 5000);
+          setTimeout(() => videoSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200);
           void fetch('/api/save-render', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1511,6 +1556,9 @@ function CreatePageInner() {
               setCinematicJobId(null);
               setVideoUrl(st.video_url);
               setMergedVideoUrl(st.video_url);
+              setShowVideoToast(true);
+              setTimeout(() => setShowVideoToast(false), 5000);
+              setTimeout(() => videoSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200);
             } else if (st.status === 'failed') {
               clearInterval(pollRef.current!);
               pollRef.current = null;
@@ -1676,8 +1724,13 @@ function CreatePageInner() {
   }
 
   async function handleDownload(url: string, filename: string) {
+    console.info('[DOWNLOAD_TRIGGERED]', url);
+    // Route through server-side proxy so Content-Disposition: attachment is set.
+    // This guarantees a Save-As dialog instead of the browser opening the video player.
+    const proxyUrl = `/api/download?url=${encodeURIComponent(url)}&filename=${encodeURIComponent(filename)}`;
     try {
-      const res = await fetch(url);
+      const res = await fetch(proxyUrl);
+      if (!res.ok) throw new Error(`proxy ${res.status}`);
       const blob = await res.blob();
       const blobUrl = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -1686,42 +1739,130 @@ function CreatePageInner() {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 10_000);
-    } catch {
-      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 15_000);
+    } catch (proxyErr) {
+      console.warn('[DOWNLOAD] proxy failed, falling back to direct fetch:', proxyErr);
+      // Fallback: direct blob fetch (works when CORS allows it)
+      try {
+        const res = await fetch(url, { mode: 'cors', credentials: 'omit' });
+        if (!res.ok) throw new Error(`direct ${res.status}`);
+        const blob = new Blob([await res.arrayBuffer()], { type: 'video/mp4' });
+        const blobUrl = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 15_000);
+      } catch {
+        // Last resort: open in new tab (user can right-click → save)
+        window.open(url, '_blank', 'noopener');
+      }
     }
   }
 
-  function handleReset() {
-    try { sessionStorage.removeItem('omnyra_create_state'); } catch { /* ok */ }
+  const resetAllState = useCallback(() => {
+    // Kill any running poll immediately
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+    genStartRef.current = null;
+    restoredFromSession.current = false;
+
+    // Block any pending sessionStorage restore setTimeout from re-applying old state
+    skipRestoreRef.current = true;
+
+    // Nuke all storage — both sessionStorage and localStorage, all keys
+    try { sessionStorage.clear(); } catch { /* quota / private mode */ }
+    try { localStorage.removeItem('omnyra-draft'); localStorage.removeItem('omnyra_create_state'); } catch { /* ok */ }
+    // One-shot flag: survives the hard refresh and prevents brand pre-fill from
+    // re-injecting the old niche/audience on the next mount.
+    try { sessionStorage.setItem('omnyra_no_prefill', '1'); } catch { /* ok */ }
+
+    // ── Form inputs ──────────────────────────────────────────────────────────
+    setGoal('');
+    setNiche('');
+    setSelectedPlatforms([]);
+    setTargetAudience('');
+    setPastWins('');
+    setCompetitors('');
+    setUniqueAngle('');
+    setUploadedFiles([]);
+
+    // ── Submission / loading ─────────────────────────────────────────────────
+    setSubmitting(false);
+    setLoadingMessageIndex(0);
+    setLoadingProgress(0);
+    setStreamedText('');
+    setError(null);
+
+    // ── Results / brief ──────────────────────────────────────────────────────
     setBriefResponse(null);
     setProjectId(null);
     setSelectedVersion(0);
     setSelectedHookIndex(null);
     setShowInput(true);
-    setError(null);
-    setStreamedText('');
-    setVoiceUrl(null);
-    setVoiceAudioUrl(null);
-    setVideoUrl(null);
-    setVideoType(null);
-    setVideoProgress(0);
-    setSelectedImage(null);
-    setAvatarRefVideoUrl(null);
-    setGeneratedScript("");
-    generatedScriptRef.current = "";
+    setGeneratingScript(false);
+    setGeneratingMore(false);
+    setExported(false);
+
+    // ── Script ───────────────────────────────────────────────────────────────
+    setGeneratedScript('');
+    generatedScriptRef.current = '';
     setScriptId(null);
+    setGeneratingShotPlan(false);
+
+    // ── Voice ────────────────────────────────────────────────────────────────
+    setIsGeneratingVoice(false);
+    setVoiceAudioUrl(null);
+    setVoiceDuration(0);
+    setVoiceUrl(null);
+
+    // ── Video generation ─────────────────────────────────────────────────────
+    setVideoUrl(null);
+    setIsGeneratingVideo(false);
+    setVideoProgress(0);
+    setVideoType(null);
+    setPipelineStatusDisplay(null);
+    setHedraResuming(false);
+
+    // ── Cinematic pipeline ───────────────────────────────────────────────────
+    setClipsReady(false);
+    setPendingClipUrls([]);
+    setPendingClipDuration(10);
+    setPendingScript('');
+    setPendingSourceImages([]);
+    setSavedReferenceId(null);
+    setCinematicJobId(null);
+
+    // ── Avatar ───────────────────────────────────────────────────────────────
+    setAvatarJobId(null);
+    setAvatarImageUrl(null);
+    setAvatarRefVideoUrl(null);
+    setSelectedImage(null);
+
+    // ── Character / voice selection ──────────────────────────────────────────
+    setSelectedCharacterId('');
+    setSelectedVoiceId('');
+
+    // ── Output ───────────────────────────────────────────────────────────────
     setMergedVideoUrl(null);
     setContinuityScore(null);
-    if (pollRef.current) clearInterval(pollRef.current);
-  }
+    setIsMerging(false);
 
-  function resetAll() {
-    handleReset();
-    setGoal('');
+    // ── Progress indicators ──────────────────────────────────────────────────
+    setGenStage('');
+    setGenMessage('');
+    setGenEta(null);
+
+    // ── Modes / flags ────────────────────────────────────────────────────────
+    setLightningMode(false);
     setContinuationMode(null);
+    setIsLoadingContinuation(false);
+
     window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
+    console.info('[NUCLEAR_RESET] All form state and storage cleared');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleContinueStory() {
     setIsLoadingContinuation(true);
@@ -1746,7 +1887,7 @@ function CreatePageInner() {
         setError(data.error ?? 'Failed to load continuation');
         return;
       }
-      handleReset();
+      resetAllState();
       setContinuationMode({
         seriesId:       data.seriesId,
         episodeNumber:  data.episodeNumber,
@@ -2176,7 +2317,7 @@ function CreatePageInner() {
                   Edit
                 </button>
                 <button
-                  onClick={handleReset}
+                  onClick={resetAllState}
                   style={{
                     padding: "6px 14px",
                     borderRadius: 8,
@@ -2971,8 +3112,82 @@ function CreatePageInner() {
                   );
                 })()}
 
+                {/* ── Inline background-job progress (cinematic / avatar async) ── */}
+                {(cinematicJobId || avatarJobId) && !videoUrl && (
+                  <div style={{
+                    marginTop: 16,
+                    background: 'linear-gradient(135deg, rgba(61,7,52,0.7), rgba(18,5,32,0.8))',
+                    border: '1px solid rgba(201,168,76,0.4)',
+                    borderRadius: 16,
+                    padding: '20px 22px',
+                    boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+                      <div style={{
+                        width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
+                        border: '2.5px solid rgba(201,168,76,0.25)',
+                        borderTop: '2.5px solid #C9A84C',
+                        animation: 'spin 1s linear infinite',
+                      }} />
+                      <div>
+                        <div style={{ color: 'white', fontWeight: 700, fontSize: 14, lineHeight: 1.3 }}>
+                          {cinematicJobId ? '🎬 Cinematic video rendering…' : '🎤 Avatar video rendering…'}
+                        </div>
+                        <div style={{ color: 'rgba(255,255,255,0.45)', fontSize: 12, marginTop: 3 }}>
+                          {cinematicJobId
+                            ? (lightningMode ? 'Lightning Mode — ~45 seconds' : 'Cinematic AI — ~2–3 minutes')
+                            : 'Hedra lip-sync — ~2–4 minutes'}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Step pipeline */}
+                    {(() => {
+                      const bgSteps = cinematicJobId
+                        ? ['Script', 'Images', 'Clips', 'Voice', 'Stitch']
+                        : ['Voice', 'Hedra', 'Stitch'];
+                      return (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 0, marginBottom: 14 }}>
+                          {bgSteps.map((label, i) => (
+                            <div key={label} style={{ display: 'flex', flex: 1, alignItems: 'center' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 'none', width: 44 }}>
+                                <div style={{
+                                  width: 8, height: 8, borderRadius: '50%',
+                                  background: i === 0 ? '#C9A84C' : 'rgba(255,255,255,0.13)',
+                                  boxShadow: i === 0 ? '0 0 8px #C9A84C' : 'none',
+                                  animation: i === 0 ? 'pulseSoft 1.5s ease-in-out infinite' : 'none',
+                                }} />
+                                <span style={{
+                                  fontSize: 9, marginTop: 5, fontWeight: i === 0 ? 700 : 400,
+                                  color: i === 0 ? '#C9A84C' : 'rgba(255,255,255,0.28)',
+                                  letterSpacing: '0.03em', textTransform: 'uppercase',
+                                }}>{label}</span>
+                              </div>
+                              {i < bgSteps.length - 1 && (
+                                <div style={{ flex: 1, height: 1, marginBottom: 16, background: 'rgba(255,255,255,0.08)' }} />
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)', margin: 0 }}>
+                        Video will appear here automatically when ready.
+                      </p>
+                      <a
+                        href="/videos"
+                        style={{ color: '#C9A84C', fontWeight: 700, fontSize: 12, textDecoration: 'none', whiteSpace: 'nowrap', marginLeft: 12 }}
+                      >
+                        My Videos →
+                      </a>
+                    </div>
+                  </div>
+                )}
+
                 {videoUrl && (
-                  <div style={{ marginTop: 20 }}>
+                  <div ref={videoSectionRef} style={{ marginTop: 20 }}>
                     <p style={{ color: '#4ECB8C', marginBottom: 8, fontWeight: 600 }}>✓ Video ready</p>
                     <video controls src={videoUrl} style={{ maxWidth: 360, borderRadius: 12, border: '2px solid #C9A84C', width: '100%' }} />
                     <div style={{ display: 'flex', gap: 10, justifyContent: 'center', marginTop: 12, flexWrap: 'wrap' }}>
@@ -3271,38 +3486,6 @@ function CreatePageInner() {
                     </ol>
                   </div>
 
-                  {/* Continue This Story */}
-                  <button
-                    onClick={handleContinueStory}
-                    disabled={isLoadingContinuation}
-                    style={{
-                      background: isLoadingContinuation
-                        ? 'rgba(201,168,76,0.08)'
-                        : 'linear-gradient(135deg, rgba(201,168,76,0.18) 0%, rgba(201,168,76,0.08) 100%)',
-                      border: '1.5px solid rgba(201,168,76,0.55)',
-                      borderRadius: '12px',
-                      color: isLoadingContinuation ? 'rgba(201,168,76,0.5)' : '#C9A84C',
-                      padding: '14px',
-                      cursor: isLoadingContinuation ? 'not-allowed' : 'pointer',
-                      fontSize: '1rem',
-                      fontWeight: 700,
-                      fontFamily: 'inherit',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 8,
-                    }}
-                  >
-                    {isLoadingContinuation ? (
-                      <>
-                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#C9A84C', display: 'inline-block', animation: 'pulseSoft 1.2s ease-in-out infinite' }} />
-                        Loading memory...
-                      </>
-                    ) : (
-                      <>✦ Continue This Story</>
-                    )}
-                  </button>
-
                   <button onClick={() => router.push('/videos')} style={{
                     background: 'none',
                     border: '1px solid rgba(255,255,255,0.2)',
@@ -3315,7 +3498,7 @@ function CreatePageInner() {
                     View in My Library →
                   </button>
 
-                  <button onClick={resetAll} style={{
+                  <button onClick={resetAllState} style={{
                     background: 'none',
                     border: 'none',
                     color: 'rgba(255,255,255,0.4)',
@@ -3327,6 +3510,49 @@ function CreatePageInner() {
                   </button>
 
                 </div>
+              </div>
+            )}
+
+            {/* ── Continue This Story — shows whenever any video is complete ── */}
+            {videoUrl && !isGeneratingVideo && (
+              <div style={{ marginTop: 18, textAlign: 'center' }}>
+                <button
+                  onClick={handleContinueStory}
+                  disabled={isLoadingContinuation}
+                  style={{
+                    width: '100%',
+                    padding: '16px 20px',
+                    background: isLoadingContinuation
+                      ? 'rgba(201,168,76,0.06)'
+                      : 'linear-gradient(135deg, rgba(201,168,76,0.2) 0%, rgba(201,168,76,0.06) 100%)',
+                    border: '2px solid rgba(201,168,76,0.5)',
+                    borderRadius: '14px',
+                    color: isLoadingContinuation ? 'rgba(201,168,76,0.45)' : '#FFD700',
+                    fontSize: '1.05rem',
+                    fontWeight: 800,
+                    fontFamily: 'inherit',
+                    cursor: isLoadingContinuation ? 'not-allowed' : 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: 10,
+                    letterSpacing: '0.02em',
+                  }}
+                >
+                  {isLoadingContinuation ? (
+                    <>
+                      <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#C9A84C', display: 'inline-block', animation: 'pulseSoft 1.2s ease-in-out infinite' }} />
+                      Loading memory...
+                    </>
+                  ) : (
+                    <>✦ Continue This Story</>
+                  )}
+                </button>
+                {!isLoadingContinuation && (
+                  <p style={{ color: 'rgba(255,255,255,0.35)', fontSize: '0.8rem', margin: '8px 0 0' }}>
+                    Uses your character &amp; brand memory to write the next episode
+                  </p>
+                )}
               </div>
             )}
 
@@ -3402,7 +3628,7 @@ function CreatePageInner() {
                 {exported ? "✓ Copied to clipboard" : "Export Brief"}
               </button>
               <button
-                onClick={handleReset}
+                onClick={resetAllState}
                 style={{
                   background: "none",
                   border: "none",
@@ -3419,36 +3645,47 @@ function CreatePageInner() {
         )}
       </div>
 
-      {/* ── Async job banner ──────────────────────────────────────────────── */}
-      {(cinematicJobId || avatarJobId) && (
+      {/* ── Success toast (fires when poll completes) ─────────────────────── */}
+      {showVideoToast && (
         <div style={{
-          position: 'fixed', bottom: 24, right: 24, zIndex: 99999,
-          background: 'linear-gradient(135deg, rgba(61,7,52,0.97), rgba(30,10,50,0.97))',
-          border: '1px solid rgba(201,168,76,0.5)',
+          position: 'fixed', top: 24, right: 24, zIndex: 99999,
+          background: 'linear-gradient(135deg, rgba(8,32,16,0.98), rgba(5,22,12,0.98))',
+          border: '1.5px solid rgba(78,203,140,0.65)',
           borderRadius: 14, padding: '14px 20px',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
-          display: 'flex', alignItems: 'center', gap: 14,
-          maxWidth: 340,
+          boxShadow: '0 8px 32px rgba(0,0,0,0.6), 0 0 24px rgba(78,203,140,0.12)',
+          display: 'flex', alignItems: 'center', gap: 12,
+          maxWidth: 320,
+          animation: 'slideInRight 0.3s ease-out',
         }}>
-          <div style={{
-            width: 28, height: 28, borderRadius: '50%',
-            border: '2.5px solid rgba(201,168,76,0.3)',
-            borderTop: '2.5px solid #C9A84C',
-            animation: 'spin 1s linear infinite',
-            flexShrink: 0,
-          }} />
-          <div style={{ flex: 1 }}>
-            <div style={{ color: 'white', fontWeight: 700, fontSize: 13 }}>
-              {cinematicJobId ? 'Cinematic video generating…' : 'Avatar video generating…'}
-            </div>
+          <div style={{ fontSize: 26, lineHeight: 1 }}>🎉</div>
+          <div>
+            <div style={{ color: '#4ECB8C', fontWeight: 800, fontSize: 14 }}>Video ready!</div>
             <div style={{ color: 'rgba(255,255,255,0.55)', fontSize: 12, marginTop: 2 }}>
-              We&apos;ll show it here when ready
+              Scroll down to preview and download.
             </div>
           </div>
-          <a href="/videos" style={{
-            color: '#C9A84C', fontWeight: 700, fontSize: 13,
-            textDecoration: 'none', whiteSpace: 'nowrap',
-          }}>My Videos →</a>
+        </div>
+      )}
+
+      {/* ── Floating corner spinner (secondary indicator while async job runs) */}
+      {(cinematicJobId || avatarJobId) && !showVideoToast && (
+        <div style={{
+          position: 'fixed', bottom: 20, right: 20, zIndex: 9999,
+          background: 'rgba(20,5,35,0.9)',
+          border: '1px solid rgba(201,168,76,0.4)',
+          borderRadius: 12, padding: '10px 16px',
+          display: 'flex', alignItems: 'center', gap: 10,
+          boxShadow: '0 4px 20px rgba(0,0,0,0.5)',
+        }}>
+          <div style={{
+            width: 14, height: 14, borderRadius: '50%', flexShrink: 0,
+            border: '2px solid rgba(201,168,76,0.25)',
+            borderTop: '2px solid #C9A84C',
+            animation: 'spin 1s linear infinite',
+          }} />
+          <span style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, fontWeight: 600 }}>
+            {cinematicJobId ? 'Rendering cinematic…' : 'Rendering avatar…'}
+          </span>
         </div>
       )}
 

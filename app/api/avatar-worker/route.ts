@@ -212,7 +212,7 @@ async function executeTtsStage(
   const HEDRA_WORD_BUDGET: Record<string, number> = { starter: 22, creator: 70, studio: 85 };
   const HEDRA_SCENE_CAP:   Record<string, number> = { starter: 1,  creator: 2,  studio: 3  };
   const hedraWordBudget = HEDRA_WORD_BUDGET[job.input.plan ?? "starter"] ?? 20;
-  const hedraSceneCap   = HEDRA_SCENE_CAP[job.input.plan ?? "starter"]   ?? 1;
+  const hedraSceneCap   = job.input.lightningMode ? 1 : (HEDRA_SCENE_CAP[job.input.plan ?? "starter"] ?? 1);
   const hedraMaxScenes  = Math.min(effectiveMaxScenes, hedraSceneCap);
 
   const rawScriptWords = job.input.script.trim().split(/\s+/).filter(Boolean);

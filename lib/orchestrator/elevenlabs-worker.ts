@@ -58,7 +58,7 @@ export async function generateSceneAudio(
           similarity_boost: input.similarityBoost ?? 0.75,
           style:           input.style           ?? 0.65,
           use_speaker_boost: true,
-          speed:           input.speed           ?? 1.10,
+          speed:           input.speed           ?? 1.05,
         },
       }),
     },
@@ -195,7 +195,7 @@ async function callElevenLabs(
     body: JSON.stringify({
       text,
       model_id: EL_FLASH_V2_5,
-      voice_settings: { stability: 0.8, similarity_boost: 0.85, speed: 1.10 },
+      voice_settings: { stability: 0.8, similarity_boost: 0.85, speed: 1.05 },
     }),
   });
 
@@ -350,11 +350,13 @@ async function singleCallVoiceover(
 
 // Word cap by speed mode — keeps voiceover duration predictable and prevents
 // ultra-draft from generating long audio that doesn't fit the short clip window.
+// 'cinematic' bypasses the cap entirely — full script, ElevenLabs handles it.
 const VOICEOVER_WORD_CAP: Record<string, number> = {
-  'ultra-draft': 22,  // ~9s — matches Lightning clip duration
-  'draft':       35,  // ~14s
-  'balanced':    75,  // ~30s — full avatar narration
-  'quality':     85,  // ~34s
+  'ultra-draft': 22,   // ~9s — matches Lightning clip duration
+  'draft':       35,   // ~14s
+  'balanced':    75,   // ~30s — full avatar narration
+  'quality':     85,   // ~34s
+  'cinematic':   9999, // No cap — cinematic full-script voiceover
 };
 
 export async function generateVoiceover(

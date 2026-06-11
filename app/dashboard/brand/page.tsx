@@ -9,7 +9,35 @@ import AnimatedBackground from "@/components/AnimatedBackground";
 const TONE_TAGS = ["professional", "bold", "witty", "minimal", "luxury", "playful"];
 const STYLE_PRESETS = ["cinematic", "minimal", "bold", "editorial", "corporate"];
 
+const PLATFORMS = [
+  { id: "tiktok",              label: "TikTok",               icon: "🎵" },
+  { id: "instagram_reels",     label: "Instagram Reels",       icon: "📸" },
+  { id: "instagram_feed",      label: "Instagram Feed",        icon: "🖼️" },
+  { id: "instagram_stories",   label: "Instagram Stories",     icon: "⭕" },
+  { id: "youtube_shorts",      label: "YouTube Shorts",        icon: "▶️" },
+  { id: "youtube_longform",    label: "YouTube (Long Form)",   icon: "🎬" },
+  { id: "facebook_reels",      label: "Facebook Reels",        icon: "👥" },
+  { id: "facebook_feed",       label: "Facebook Feed",         icon: "📘" },
+  { id: "twitter_x",           label: "Twitter / X",           icon: "✖️" },
+  { id: "linkedin",            label: "LinkedIn",              icon: "💼" },
+  { id: "pinterest",           label: "Pinterest",             icon: "📌" },
+  { id: "snapchat",            label: "Snapchat",              icon: "👻" },
+  { id: "threads",             label: "Threads",               icon: "🧵" },
+  { id: "discord",             label: "Discord",               icon: "🎮" },
+  { id: "telegram",            label: "Telegram",              icon: "✈️" },
+  { id: "rumble",              label: "Rumble",                icon: "🎯" },
+  { id: "twitch",              label: "Twitch",                icon: "💜" },
+  { id: "bereal",              label: "BeReal",                icon: "📷" },
+  { id: "whatsapp",            label: "WhatsApp Status",       icon: "💬" },
+];
+
 interface Product { name: string; description: string }
+
+interface SocialEntry {
+  platform: string;
+  handle:   string;
+  url:      string;
+}
 
 interface BrandForm {
   brand_name: string;
@@ -22,7 +50,22 @@ interface BrandForm {
   niche: string;
   target_audience: string;
   content_style_notes: string;
+  tiktok_handle: string;
+  instagram_handle: string;
+  youtube_handle: string;
+  facebook_page: string;
+  target_platforms: string[];
+  social_platforms: SocialEntry[];
 }
+
+const SOCIAL_PLATFORM_OPTIONS = [
+  { id: "youtube",   label: "YouTube",   icon: "▶️",  placeholder: "@yourchannel",   urlLabel: "Channel URL" },
+  { id: "tiktok",    label: "TikTok",    icon: "🎵",  placeholder: "@yourhandle",    urlLabel: "Profile URL" },
+  { id: "instagram", label: "Instagram", icon: "📸",  placeholder: "@yourhandle",    urlLabel: "Profile URL" },
+  { id: "twitter_x", label: "X / Twitter", icon: "✖️", placeholder: "@yourhandle",  urlLabel: "Profile URL" },
+  { id: "facebook",  label: "Facebook",  icon: "👥",  placeholder: "Page name",      urlLabel: "Page URL" },
+  { id: "linkedin",  label: "LinkedIn",  icon: "💼",  placeholder: "@yourprofile",   urlLabel: "Profile URL" },
+];
 
 const EMPTY: BrandForm = {
   brand_name: "",
@@ -35,6 +78,12 @@ const EMPTY: BrandForm = {
   niche: "",
   target_audience: "",
   content_style_notes: "",
+  tiktok_handle: "",
+  instagram_handle: "",
+  youtube_handle: "",
+  facebook_page: "",
+  target_platforms: [],
+  social_platforms: [],
 };
 
 const CARD: React.CSSProperties = {
@@ -104,12 +153,18 @@ export default function BrandMemoryPage() {
                                      ? [...data.colors, ...Array(5).fill("")].slice(0, 5)
                                      : ["", "", "", "", ""],
               tone_of_voice:       data.tone_of_voice       ?? "",
-              tone_tags:           Array.isArray(data.tone_tags)    ? data.tone_tags    : [],
-              products:            Array.isArray(data.products)     ? data.products     : [],
+              tone_tags:           Array.isArray(data.tone_tags)       ? data.tone_tags       : [],
+              products:            Array.isArray(data.products)        ? data.products        : [],
               style_preset:        data.style_preset        ?? "",
               niche:               data.niche               ?? "",
               target_audience:     data.target_audience     ?? "",
               content_style_notes: data.content_style_notes ?? "",
+              tiktok_handle:       data.tiktok_handle       ?? "",
+              instagram_handle:    data.instagram_handle    ?? "",
+              youtube_handle:      data.youtube_handle      ?? "",
+              facebook_page:       data.facebook_page       ?? "",
+                target_platforms:    Array.isArray(data.target_platforms) ? data.target_platforms : [],
+              social_platforms:    Array.isArray(data.social_platforms)  ? data.social_platforms  : [],
             });
           }
         }
@@ -117,6 +172,28 @@ export default function BrandMemoryPage() {
       setLoading(false);
     })();
   }, [router]);
+
+  function getSocialEntry(platformId: string): SocialEntry | undefined {
+    return form.social_platforms.find((e) => e.platform === platformId);
+  }
+
+  function toggleSocialPlatform(platformId: string) {
+    const exists = !!getSocialEntry(platformId);
+    if (exists) {
+      setForm((f) => ({ ...f, social_platforms: f.social_platforms.filter((e) => e.platform !== platformId) }));
+    } else {
+      setForm((f) => ({ ...f, social_platforms: [...f.social_platforms, { platform: platformId, handle: "", url: "" }] }));
+    }
+  }
+
+  function setSocialField(platformId: string, field: keyof SocialEntry, val: string) {
+    setForm((f) => ({
+      ...f,
+      social_platforms: f.social_platforms.map((e) =>
+        e.platform === platformId ? { ...e, [field]: val } : e
+      ),
+    }));
+  }
 
   async function handleLogoUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -446,6 +523,125 @@ export default function BrandMemoryPage() {
                     onChange={(e) => setForm((f) => ({ ...f, content_style_notes: e.target.value }))}
                   />
                 </div>
+              </div>
+
+              {/* Target Platforms */}
+              <div style={CARD}>
+                <div style={SECTION_TITLE}>Target Platforms</div>
+                <p style={{ color: "rgba(224,208,255,0.5)", fontSize: "13px", marginBottom: "16px" }}>
+                  Select where you publish — Omnyra will optimise hooks and CTAs per platform.
+                </p>
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                  {PLATFORMS.map(({ id, label, icon }) => {
+                    const selected = form.target_platforms.includes(id);
+                    return (
+                      <button
+                        key={id}
+                        onClick={() => setForm((f) => ({
+                          ...f,
+                          target_platforms: selected
+                            ? f.target_platforms.filter((p) => p !== id)
+                            : [...f.target_platforms, id],
+                        }))}
+                        style={{
+                          padding: "6px 12px", borderRadius: "9999px", fontSize: "12px",
+                          fontWeight: 600, cursor: "pointer", transition: "all 0.15s",
+                          background: selected ? "rgba(207,164,47,0.25)" : "rgba(45,10,62,0.6)",
+                          border: selected ? "1px solid rgba(207,164,47,0.7)" : "1px solid rgba(207,164,47,0.2)",
+                          color: selected ? "#CFA42F" : "rgba(255,255,255,0.6)",
+                        }}
+                      >
+                        {icon} {label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Connected Social Platforms */}
+              <div style={CARD}>
+                <div style={SECTION_TITLE}>Connected Social Platforms</div>
+                <p style={{ color: "rgba(224,208,255,0.5)", fontSize: "13px", marginBottom: "16px" }}>
+                  Connect your accounts so Omnyra tailors content, hooks, and CTAs for each platform.
+                </p>
+                {/* Platform selector chips */}
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", marginBottom: "20px" }}>
+                  {SOCIAL_PLATFORM_OPTIONS.map(({ id, label, icon }) => {
+                    const connected = !!getSocialEntry(id);
+                    return (
+                      <button
+                        key={id}
+                        onClick={() => toggleSocialPlatform(id)}
+                        style={{
+                          padding: "7px 14px", borderRadius: "9999px", fontSize: "13px",
+                          fontWeight: 600, cursor: "pointer", transition: "all 0.15s",
+                          background: connected ? "rgba(78,203,140,0.15)" : "rgba(45,10,62,0.6)",
+                          border: connected ? "1px solid rgba(78,203,140,0.6)" : "1px solid rgba(207,164,47,0.2)",
+                          color: connected ? "#4ECB8C" : "rgba(255,255,255,0.6)",
+                          display: "flex", alignItems: "center", gap: "5px",
+                        }}
+                      >
+                        <span>{icon}</span>
+                        <span>{label}</span>
+                        {connected && <span style={{ fontSize: "11px", marginLeft: "2px" }}>✓</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+                {/* Expanded inputs for connected platforms */}
+                {SOCIAL_PLATFORM_OPTIONS.filter(({ id }) => !!getSocialEntry(id)).map(({ id, label, icon, placeholder, urlLabel }) => {
+                  const entry = getSocialEntry(id)!;
+                  return (
+                    <div key={id} style={{
+                      background: "rgba(30,5,50,0.5)",
+                      border: "1px solid rgba(78,203,140,0.2)",
+                      borderRadius: "10px",
+                      padding: "14px 16px",
+                      marginBottom: "10px",
+                    }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "12px" }}>
+                        <span style={{ fontSize: "14px", fontWeight: 700, color: "#4ECB8C" }}>
+                          {icon} {label}
+                        </span>
+                        <button
+                          onClick={() => toggleSocialPlatform(id)}
+                          style={{
+                            padding: "4px 10px", borderRadius: "6px", fontSize: "12px",
+                            background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.3)",
+                            color: "#f87171", cursor: "pointer",
+                          }}
+                        >
+                          Disconnect
+                        </button>
+                      </div>
+                      <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+                        <div style={{ flex: "1 1 160px" }}>
+                          <label style={{ ...LABEL, marginBottom: "4px" }}>Handle</label>
+                          <input
+                            style={INPUT}
+                            value={entry.handle}
+                            placeholder={placeholder}
+                            onChange={(e) => setSocialField(id, "handle", e.target.value)}
+                          />
+                        </div>
+                        <div style={{ flex: "2 1 200px" }}>
+                          <label style={{ ...LABEL, marginBottom: "4px" }}>{urlLabel}</label>
+                          <input
+                            style={INPUT}
+                            value={entry.url}
+                            placeholder="https://..."
+                            onChange={(e) => setSocialField(id, "url", e.target.value)}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+                {form.social_platforms.length === 0 && (
+                  <p style={{ color: "rgba(224,208,255,0.3)", fontSize: "13px", textAlign: "center", padding: "8px 0" }}>
+                    Tap a platform above to connect it.
+                  </p>
+                )}
               </div>
 
               {/* Save */}

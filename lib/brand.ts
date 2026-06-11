@@ -21,6 +21,12 @@ export interface BrandProfile {
   tone_tags?: string[] | null;
   products?: Array<{ name: string; description: string }> | null;
   style_preset?: string | null;
+  tiktok_handle?: string | null;
+  instagram_handle?: string | null;
+  youtube_handle?: string | null;
+  facebook_page?: string | null;
+  target_platforms?: string[] | null;
+  social_platforms?: Array<{ platform: string; handle: string; url: string }> | null;
   created_at?: string;
   updated_at?: string;
 }
@@ -96,6 +102,28 @@ export function getBrandSystemPrompt(brand: BrandProfile | null): string {
   if (brand.target_audience)      parts.push(`Target Audience: ${brand.target_audience}`);
   if (brand.niche)                parts.push(`Industry/Niche: ${brand.niche}`);
   if (brand.content_style_notes)  parts.push(`Content Style Notes: ${brand.content_style_notes}`);
+  if (Array.isArray(brand.target_platforms) && brand.target_platforms.length)
+    parts.push(`Target Platforms: ${brand.target_platforms.join(", ")} — optimise hook and CTA for these platforms`);
+  if (Array.isArray(brand.social_platforms) && brand.social_platforms.length) {
+    const socialLines = brand.social_platforms
+      .filter((e) => e.handle || e.url)
+      .map((e) => {
+        const label = e.platform.replace("_", "/").replace(/\b\w/g, (c) => c.toUpperCase());
+        const parts: string[] = [label];
+        if (e.handle) parts.push(e.handle);
+        if (e.url)    parts.push(`(${e.url})`);
+        return parts.join(" ");
+      });
+    if (socialLines.length)
+      parts.push(`Connected Social Accounts: ${socialLines.join(" | ")}`);
+  } else {
+    const handles: string[] = [];
+    if (brand.tiktok_handle)    handles.push(`TikTok: ${brand.tiktok_handle}`);
+    if (brand.instagram_handle) handles.push(`Instagram: ${brand.instagram_handle}`);
+    if (brand.youtube_handle)   handles.push(`YouTube: ${brand.youtube_handle}`);
+    if (brand.facebook_page)    handles.push(`Facebook: ${brand.facebook_page}`);
+    if (handles.length) parts.push(`Social Handles: ${handles.join(" | ")}`);
+  }
   if (!parts.length) return "";
   return [
     "\n\n— BRAND IDENTITY (align ALL content to this brand) —",

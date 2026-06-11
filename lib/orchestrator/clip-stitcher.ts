@@ -234,17 +234,42 @@ async function runConcat(
     probeDuration(voiceoverPath),
   ]);
   console.info("[STITCH] pass2 probe", {
-    video_secs: vidDur.toFixed(2),
-    audio_secs: audDur.toFixed(2),
-    cap_secs:   targetSecs + 5,
+    video_secs:  vidDur.toFixed(2),
+    audio_secs:  audDur.toFixed(2),
+    target_secs: targetSecs,
   });
 
+  // If audio is longer than video, extend video with last-frame freeze.
+  // This prevents audio from being cut short by -shortest.
+  let videoForMix = silentPath;
+  const paddedPath = silentPath.replace(".mp4", "-padded.mp4");
+  if (audDur > vidDur + 0.5 && !isUltraDraft) {
+    const extraSecs = (audDur - vidDur + 0.5).toFixed(2);
+    console.info(`[STITCH] audio longer by ${(audDur - vidDur).toFixed(1)}s — extending video with last-frame freeze (+${extraSecs}s)`);
+    await new Promise<void>((resolve) => {
+      ffmpeg(silentPath)
+        .outputOptions([
+          `-vf tpad=stop_mode=clone:stop_duration=${extraSecs}`,
+          `-c:v libx264`, `-preset ${preset}`, `-crf ${crf}`, "-pix_fmt yuv420p",
+        ])
+        .output(paddedPath)
+        .on("error", (e) => {
+          console.warn("[STITCH] tpad failed — using original video:", e.message);
+          resolve();
+        })
+        .on("end", () => { videoForMix = paddedPath; resolve(); })
+        .run();
+    });
+  }
+
+  // Final duration: voice-driven, capped at targetSecs + 15s safety margin
+  const finalDuration = Math.min(Math.max(audDur, vidDur) + 0.5, targetSecs + 15);
   const p2T0 = Date.now();
   // ultra-draft: copy video stream (no re-encode), only encode the new audio track
   const p2VideoCodec = isUltraDraft ? ["-c:v copy"] : ["-c:v libx264", `-preset ${preset}`, `-crf ${crf}`, "-pix_fmt yuv420p"];
   await new Promise<void>((resolve, reject) => {
     ffmpeg()
-      .input(silentPath)
+      .input(videoForMix)
       .input(voiceoverPath)
       .outputOptions([
         ...p2VideoCodec,
@@ -252,8 +277,7 @@ async function runConcat(
         "-map 0:v:0",
         "-map 1:a:0",
         `-b:a ${audioBitrate}`,
-        "-shortest",
-        `-t ${targetSecs + 5}`,
+        `-t ${finalDuration.toFixed(2)}`,
         "-movflags +faststart",
       ])
       .output(outputPath)
@@ -261,10 +285,12 @@ async function runConcat(
         console.error("[STITCH] pass2 error:", err.message, (stderr as string | undefined)?.slice(-800));
         reject(err);
       })
-      .on("end", () => { console.info(`[STITCH] pass2 done ms=${Date.now() - p2T0} ultra=${isUltraDraft}`); resolve(); })
+      .on("end", () => { console.info(`[STITCH] pass2 done ms=${Date.now() - p2T0} finalDur=${finalDuration.toFixed(1)}s ultra=${isUltraDraft}`); resolve(); })
       .run();
   });
 
+  // Cleanup temp files
+  if (videoForMix === paddedPath) { try { fs.unlinkSync(paddedPath); } catch { /* noop */ } }
   try { fs.unlinkSync(silentPath); } catch { /* noop */ }
 }
 

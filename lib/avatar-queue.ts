@@ -25,6 +25,7 @@ export interface AvatarJobInput {
   avatar_image_url?: string; // explicit face photo; takes priority over image_url for Hedra
   plan?:             "starter" | "creator" | "studio";
   character_id?:     string | null;
+  lightningMode?:    boolean;
 }
 
 export interface AvatarJob {

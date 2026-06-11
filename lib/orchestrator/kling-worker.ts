@@ -119,7 +119,7 @@ export async function generateKlingClip(input: KlingWorkerInput): Promise<KlingW
     "bad anatomy, extra legs, malformed limbs, three hands, two left hands, " +
     "overlapping limbs, fused bodies, merged torsos, anatomical errors";
   const negStylized  = input.isStylized
-    ? "melting fur, melting feathers, fused limbs, wrong proportions, extra heads, three legs, deformed beak, corrupted plumage, anatomy mutation, uncanny valley, realistic skin on cartoon character"
+    ? "melting fur, melting feathers, fused limbs, wrong proportions, extra heads, three legs, deformed beak, corrupted plumage, anatomy mutation, uncanny valley, realistic skin on cartoon character, photorealistic, live action, real people, documentary style, 35mm film, human actors, photo, photograph"
     : "";
   const negMotion    = clampedMs < 0.52 ? "shaky, jittery, unstable camera" : "";
   const negative_prompt = [negBase, negAnatomy, negStylized, negMotion].filter(Boolean).join(", ");
@@ -127,7 +127,18 @@ export async function generateKlingClip(input: KlingWorkerInput): Promise<KlingW
   console.info(`[MOTION_TUNE] shot=${input.shotId} motionStrength=${ms} clamped=${clampedMs} cfg_scale=${cfgScale} stylized=${input.isStylized ?? false} modifier="${motionModifier}"`);
 
   // Build enriched positive prompt
-  const parts: string[] = [input.visualPrompt];
+  // Animated/stylized: ensure the Disney/Pixar style descriptor is in the prompt.
+  // run-cinematic injects it upstream; this is a fallback so parallel-engine path also gets it.
+  let visualPromptFinal = input.visualPrompt;
+  if (input.isStylized) {
+    const hasAnimStyle = /\b(disney|pixar|animated|cartoon|3d animation|cgi)\b/i.test(input.visualPrompt);
+    if (!hasAnimStyle) {
+      visualPromptFinal =
+        "Highly detailed 3D Disney Pixar style animation, vibrant colors, stylized cartoon characters, expressive faces, cinematic lighting, " +
+        input.visualPrompt;
+    }
+  }
+  const parts: string[] = [visualPromptFinal];
   if (motionModifier)              parts.push(motionModifier);
   if (input.characterPromptSuffix) parts.push(input.characterPromptSuffix);
   if (input.brandSuffix)           parts.push(input.brandSuffix);

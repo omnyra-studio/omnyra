@@ -8,6 +8,12 @@
 
 import { supabaseAdmin } from "@/lib/supabase/admin";
 
+export interface SocialPlatformEntry {
+  platform: string;
+  handle:   string;
+  url:      string;
+}
+
 export interface BrandMemory {
   brandName:           string | null;
   toneKeywords:        string[];
@@ -19,6 +25,8 @@ export interface BrandMemory {
   klingStyleSuffix:    string;   // ready-to-append Kling prompt fragment
   fluxStyleSuffix:     string;   // ready-to-append Flux image prompt fragment
   negativeStyleSuffix: string;   // ready-to-append negative prompt fragment
+  socialPlatforms:     SocialPlatformEntry[];  // connected social accounts
+  socialContext:       string;   // ready-to-inject AI context fragment
 }
 
 const EMPTY_BRAND: BrandMemory = {
@@ -32,16 +40,31 @@ const EMPTY_BRAND: BrandMemory = {
   klingStyleSuffix:    "",
   fluxStyleSuffix:     "",
   negativeStyleSuffix: "",
+  socialPlatforms:     [],
+  socialContext:       "",
 };
 
 export async function loadBrandMemory(userId: string): Promise<BrandMemory> {
-  const { data, error } = await supabaseAdmin
-    .from("brand_brain")
-    .select("brand_name, tone_keywords, visual_style, content_pillars, tagline, preferred_hooks, negative_style_terms, performance_summary")
-    .eq("user_id", userId)
-    .maybeSingle();
+  // Load from brand_brain (AI-curated data) AND brand_profiles (user-entered data) in parallel
+  const [brainResult, profileResult] = await Promise.all([
+    supabaseAdmin
+      .from("brand_brain")
+      .select("brand_name, tone_keywords, visual_style, content_pillars, tagline, preferred_hooks, negative_style_terms, performance_summary")
+      .eq("user_id", userId)
+      .maybeSingle(),
+    supabaseAdmin
+      .from("brand_profiles")
+      .select("social_platforms")
+      .eq("user_id", userId)
+      .maybeSingle(),
+  ]);
 
-  if (error || !data) return EMPTY_BRAND;
+  const { data, error } = brainResult;
+  if (error || !data) {
+    // Still return social platforms if brand_brain is empty
+    const socialPlatforms = extractSocialPlatforms(profileResult.data?.social_platforms);
+    return { ...EMPTY_BRAND, socialPlatforms, socialContext: buildSocialContext(socialPlatforms) };
+  }
 
   const record = data as {
     brand_name:           string | null;
@@ -71,6 +94,9 @@ export async function loadBrandMemory(userId: string): Promise<BrandMemory> {
 
   const negativeStyleSuffix = record.negative_style_terms?.filter(Boolean).join(", ") ?? "";
 
+  const socialPlatforms = extractSocialPlatforms(profileResult.data?.social_platforms);
+  const socialContext   = buildSocialContext(socialPlatforms);
+
   return {
     brandName:           record.brand_name,
     toneKeywords:        record.tone_keywords ?? [],
@@ -82,5 +108,29 @@ export async function loadBrandMemory(userId: string): Promise<BrandMemory> {
     klingStyleSuffix:    klingParts.filter(Boolean).join(", "),
     fluxStyleSuffix:     fluxParts.filter(Boolean).join(", "),
     negativeStyleSuffix,
+    socialPlatforms,
+    socialContext,
   };
+}
+
+function extractSocialPlatforms(raw: unknown): SocialPlatformEntry[] {
+  if (!Array.isArray(raw)) return [];
+  return (raw as unknown[])
+    .filter((e): e is SocialPlatformEntry =>
+      typeof e === "object" && e !== null &&
+      typeof (e as SocialPlatformEntry).platform === "string" &&
+      !!((e as SocialPlatformEntry).handle?.trim() || (e as SocialPlatformEntry).url?.trim())
+    );
+}
+
+function buildSocialContext(platforms: SocialPlatformEntry[]): string {
+  if (!platforms.length) return "";
+  const lines = platforms.map(e => {
+    const label = e.platform.replace(/_/g, "/").replace(/\b\w/g, c => c.toUpperCase());
+    const parts = [label];
+    if (e.handle) parts.push(e.handle);
+    if (e.url)    parts.push(`(${e.url})`);
+    return parts.join(" ");
+  });
+  return `Connected Social Channels: ${lines.join(" | ")} — tailor hooks, CTAs, and content style for these platforms.`;
 }

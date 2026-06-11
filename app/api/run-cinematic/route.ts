@@ -23,8 +23,15 @@ import { generateGetImgFrame }   from "@/lib/orchestrator/getimg-worker";
 
 export const maxDuration = 600;
 
-const MAX_SCRIPT_WORDS = 75;
 const DEFAULT_VOICE_ID = "EXAVITQu4vr4xnSDxMaO";
+
+// Animated/cartoon style — affects reference image prompts, Kling prompts, and negative prompts
+const ANIMATED_RE = /\b(animated|animation|cartoon|3d animated|disney|pixar|dreamworks|anime|cgi character|stylized character|princess peach|mario|luigi|bowser|zelda|kirby|pikachu|yoshi|wario|donkey kong|storybook character|muppet|puppet|fictional character|historical cartoon)\b/i;
+const ANIMATION_STYLE_PREFIX = "Disney Pixar 3D animated style, vibrant colorful cartoon characters, smooth CGI animation, expressive faces, big stylized eyes, exaggerated proportions, cinematic lighting, highly detailed 3D render, ";
+
+function detectAnimatedStyle(text: string): boolean {
+  return ANIMATED_RE.test(text);
+}
 
 function trimToWords(text: string, max: number): string {
   const words = text.trim().split(/\s+/).filter(Boolean);
@@ -113,10 +120,14 @@ export async function POST(req: Request) {
     const klingT2V = isUltraDraft ? KLING_T2V_MODEL : KLING_T2V_PRO;
     const klingI2V = isUltraDraft ? KLING_I2V_MODEL : KLING_I2V_PRO;
 
-    const trimmedScript = trimToWords(rawScript || goal, MAX_SCRIPT_WORDS);
+    const trimmedScript = trimToWords(rawScript || goal, 300);
     console.log(`[LIGHTNING_ENFORCED] mode=${speedMode} scenes=${SCENE_COUNT} clip_dur=${CLIP_DURATION}s target=${TARGET_SECS}s model=v3-${isUltraDraft ? "standard" : "pro"} lightning=${lightningMode}`);
     console.log(`[run-cinematic] [DURATION_LOCK] mode=${speedMode} scenes=${SCENE_COUNT} clip_sec=${CLIP_DURATION} target=${TARGET_SECS}s`);
-    console.log(`[run-cinematic] [SCRIPT_TRIM] original_words=${rawScript.split(/\s+/).length} trimmed_words=${trimmedScript.split(/\s+/).length}`);
+    console.log(`[run-cinematic] [SCRIPT_TRIM] original_words=${rawScript.split(/\s+/).length} scene_split_words=${trimmedScript.split(/\s+/).length}`);
+
+    // ── Animated style detection ─────────────────────────────────────────────
+    const isAnimated = detectAnimatedStyle(`${rawScript} ${goal} ${niche}`);
+    console.log(`[run-cinematic] [ANIMATED_DETECT] isAnimated=${isAnimated} niche="${niche}" goal="${goal.slice(0, 80)}"`);
 
     // Build scene prompts — motion-only descriptions, no appearance
     let scenePrompts: string[] = (input.prompts as string[] | undefined) ?? [];
@@ -145,6 +156,16 @@ export async function POST(req: Request) {
     }
     scenePrompts = scenePrompts.slice(0, SCENE_COUNT);
 
+    // Inject animation style prefix into every scene prompt when animated content detected
+    if (isAnimated) {
+      scenePrompts = scenePrompts.map(p =>
+        p.toLowerCase().includes("disney") || p.toLowerCase().includes("pixar")
+          ? p
+          : ANIMATION_STYLE_PREFIX + p
+      );
+      console.log(`[run-cinematic] [ANIMATED_PROMPTS] injected style prefix into ${scenePrompts.length} prompts`);
+    }
+
     await setJobStatus(jobId, "running", 15);
 
     // ── 2. Load brand + character memory ─────────────────────────────────────
@@ -166,23 +187,33 @@ export async function POST(req: Request) {
 
     if (!lightningMode) {
       const subjectHint = charSuffix ? charSuffix.split(",")[0].trim() : "";
-      const refPrompt = [
-        subjectHint || "lifestyle creator, mid-shot",
-        goal || trimmedScript.slice(0, 100),
-        "establishing shot, full body visible, facing camera directly",
-        "candid photography, sharp focus, natural light, real person",
-        brandSuffix || "minimal clean background",
-        "9:16 portrait, ultra-realistic, high detail",
-      ].filter(Boolean).join(", ");
 
-      const refNegative = [
-        "nudity, nude, nsfw, sexual, explicit, bare skin, underwear",
-        "extra limbs, deformed hands, bad anatomy, mutation, disfigured",
-        "text, watermark, logo, signature, frame, border",
-        "cartoon, anime, illustration, painting, cgi, render",
-        "blurry, out of focus, low quality, pixelated, noise",
-        "looking away, back turned, side profile",
-      ].join(", ");
+      const refPrompt = isAnimated
+        ? [
+            "highly detailed 3D Disney Pixar style animated character",
+            subjectHint || goal.slice(0, 80),
+            "stylized cartoon, vibrant colors, expressive face, smooth CGI surfaces",
+            "animated film still, studio lighting, 9:16 portrait, no photorealism",
+          ].filter(Boolean).join(", ")
+        : [
+            subjectHint || "lifestyle creator, mid-shot",
+            goal || trimmedScript.slice(0, 100),
+            "establishing shot, full body visible, facing camera directly",
+            "candid photography, sharp focus, natural light, real person",
+            brandSuffix || "minimal clean background",
+            "9:16 portrait, ultra-realistic, high detail",
+          ].filter(Boolean).join(", ");
+
+      const refNegative = isAnimated
+        ? "photorealistic, live action, real people, blurry, deformed, extra limbs, text, watermark, nsfw, nude"
+        : [
+            "nudity, nude, nsfw, sexual, explicit, bare skin, underwear",
+            "extra limbs, deformed hands, bad anatomy, mutation, disfigured",
+            "text, watermark, logo, signature, frame, border",
+            "cartoon, anime, illustration, painting, cgi, render",
+            "blurry, out of focus, low quality, pixelated, noise",
+            "looking away, back turned, side profile",
+          ].join(", ");
 
       try {
         const refFrame = await generateGetImgFrame({
@@ -219,6 +250,7 @@ export async function POST(req: Request) {
         brandSuffix,
         characterPromptSuffix: charSuffix,
         speedMode,
+        isStylized:    isAnimated,
       }).catch(err => {
         console.error(`[run-cinematic] clip ${i} failed:`, err.message);
         return null;
@@ -236,20 +268,25 @@ export async function POST(req: Request) {
     console.log(`[run-cinematic] [VIDEO_DURATION] sec=${validClips.length * CLIP_DURATION} clips=${validClips.length}`);
     await setJobStatus(jobId, "generating_audio", 60);
 
-    // ── 5. Generate voiceover ─────────────────────────────────────────────────
+    // ── 5. Generate voiceover — use full script, no aggressive word cap ──────────
     const voiceT0 = Date.now();
     let voiceoverUrl: string | undefined;
     let voiceDuration = TARGET_SECS;
-    if (trimmedScript.length > 10) {
+    // Use the FULL raw script — not the trimmed 75-word version.
+    // 'cinematic' mode bypasses the per-mode word cap in generateVoiceover.
+    const voiceScript = rawScript || goal;
+    const voiceWordCount = voiceScript.trim().split(/\s+/).filter(Boolean).length;
+    console.log(`[VOICEOVER_CINEMATIC] fullScriptWords=${voiceWordCount} targetSecs=${TARGET_SECS} voiceId=${voiceId}`);
+    if (voiceScript.length > 10) {
       try {
         const voResult = await generateVoiceover(
-          { script: trimmedScript, targetDurationSecs: TARGET_SECS, voiceId },
+          { script: voiceScript, targetDurationSecs: TARGET_SECS, voiceId, speedMode: "cinematic" },
           userId,
           jobId,
         );
         voiceoverUrl = voResult.audioUrl;
         voiceDuration = voResult.duration;
-        console.log(`[run-cinematic] [AUDIO_DURATION] sec=${voiceDuration.toFixed(2)}`);
+        console.log(`[VOICEOVER_CINEMATIC] finalDuration=${voiceDuration.toFixed(2)}s url=${voiceoverUrl?.slice(0, 60)}`);
       } catch (voErr) {
         console.warn("[run-cinematic] voiceover failed (continuing without audio):", (voErr as Error).message);
       }
@@ -278,6 +315,7 @@ export async function POST(req: Request) {
       });
       finalVideoUrl = stitchResult.output_url;
       stitchMs = Date.now() - stitchT0;
+      console.log(`[FINAL_VIDEO] duration=${stitchResult.duration_seconds.toFixed(1)}s clips=${stitchResult.clip_count} hasAudio=${!!voiceoverUrl} url=${finalVideoUrl.substring(0, 80)}`);
     } catch (stitchErr) {
       console.warn("[run-cinematic] stitch failed, using first clip:", (stitchErr as Error).message);
       finalVideoUrl = validClips[0].video_url;

@@ -252,10 +252,11 @@ async function processAvatarShot(
 
   // Step 2: Submit to Hedra
   const hedraInput: HedraInput = {
-    image_url:  characterImageUrl,
+    image_url:   characterImageUrl,
     audio_url,
-    resolution: "720p",
-    _jobId:     `parallel-${shot.id}`,
+    resolution:  "720p",
+    _jobId:      `parallel-${shot.id}`,
+    text_prompt: "Only the primary character is speaking directly to the camera. One person talking.",
   };
 
   const generationId = await submitHedraJob(
@@ -536,6 +537,10 @@ export async function runParallelEngine(
     targetSecs:  targetDurationSecs ?? 30,
   });
 
+  // Voiceover always uses 'cinematic' mode (no word cap) regardless of rendering speedMode.
+  // Rendering speed controls clip quality/queue, not how long the narration is.
+  const voiceWordCount = voiceScript.split(/\s+/).filter(Boolean).length;
+  console.info(`[FULL_VOICEOVER] words=${voiceWordCount} targetSecs=${targetDurationSecs ?? 30} renderSpeed=${speedMode}`);
   const voiceoverPromise = voiceScript.length > 0
     ? (
         emitRaw("PROGRESS_UPDATE", planId, {
@@ -544,10 +549,11 @@ export async function runParallelEngine(
           provider: "elevenlabs",
         }),
         generateVoiceover(
-          { script: voiceScript, voiceId, targetDurationSecs: targetDurationSecs ?? 30, speedMode },
+          { script: voiceScript, voiceId, targetDurationSecs: targetDurationSecs ?? 30, speedMode: 'cinematic' },
           userId,
           planId,
         ).then(result => {
+          console.info(`[FULL_VOICEOVER] done duration=${result.duration.toFixed(1)}s words=${voiceWordCount}`);
           emitRaw("PROGRESS_UPDATE", planId, {
             stage: "generating_audio", progress: 28,
             message: `Voiceover ready — ${result.duration.toFixed(1)}s audio`,

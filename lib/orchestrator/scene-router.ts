@@ -140,7 +140,7 @@ function _hedraMaxSecs(speedMode: string): number {
 // Detects stylized / non-human characters that need softer motion tuning.
 // High motion strength + complex fur/feathers = model artifact spiral.
 function isStylizedCharacter(t: string): boolean {
-  return /\b(big bird|snuffleupagus|snuffy|muppet|puppet|sesame|cartoon|anime|pokemon|furry|creature|monster|dragon|fairy|elf|gnome|troll|goblin|unicorn|dinosaur|robot|alien|plush|stuffed animal|mascot)\b/.test(t);
+  return /\b(big bird|snuffleupagus|snuffy|muppet|puppet|sesame|cartoon|anime|pokemon|furry|creature|monster|dragon|fairy|elf|gnome|troll|goblin|unicorn|dinosaur|robot|alien|plush|stuffed animal|mascot|disney|pixar|dreamworks|animated character|3d animation|cgi character|princess peach|mario|luigi|bowser|zelda|kirby|pikachu|yoshi|wario|donkey kong|abraham lincoln|george washington|napoleon|historical cartoon|fictional character|storybook)\b/.test(t);
 }
 
 // Motion strength for Kling — higher = more dynamic motion.
@@ -156,10 +156,10 @@ function getMotionStrength(speedMode: string, combinedText: string, stylized = f
   const isCalm    = /\b(gentle|calm|slow|emotional|tender|intimate|peaceful|serene|soft|still|standing|sitting)\b/.test(t);
 
   if (stylized) {
-    // Complex fur/feathers: moderate motion avoids artifact spiral while still animating
-    if (isDance || isAction) return 0.60;
-    if (isCalm)              return 0.48;
-    return 0.55;
+    // Animated/cartoon: higher motion for lively cartoon feel — CGI handles motion better than fur/feathers
+    if (isDance || isAction) return 0.65;
+    if (isCalm)              return 0.55;
+    return 0.60;
   }
 
   // Realistic / human characters

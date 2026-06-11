@@ -76,13 +76,22 @@ async function uploadSmartMotionClip(
 
 const COUPLE_RE = /\b(couple|two people|both of them|together|partner|dancing with|walking with|holding hands|hand in hand|each other|lovers|husband|wife|boyfriend|girlfriend|fiancee?|spouse|relationship|romance|romantic)\b/i;
 
+// Detect animated / cartoon / Disney / Pixar style requests from goal or script text.
+// When true: inject strong style directives and suppress photorealism negatives.
+const ANIMATED_RE = /\b(disney|pixar|dreamworks|cartoon|animated|animation|3d animation|cgi cartoon|anime|storybook|princess peach|mario|luigi|bowser|zelda|kirby|pikachu|yoshi|donkey kong|abraham lincoln as cartoon|fictional character|comic book character|illustrated character|caricature)\b/i;
+
+function detectAnimatedStyle(text: string): boolean {
+  return ANIMATED_RE.test(text);
+}
+
 async function generateSceneImage(
-  prompt:      string,
-  isCouple:    boolean,
-  sceneIndex?: number,
-  charRefUrl?: string,  // when set: score after gen and retry once if score < 0.72
-  charSuffix?: string,  // prepended on retry to anchor character description
+  prompt:       string,
+  isCouple:     boolean,
+  sceneIndex?:  number,
+  charRefUrl?:  string,  // when set: score after gen and retry once if score < 0.72
+  charSuffix?:  string,  // prepended on retry to anchor character description
 ): Promise<string> {
+  const isAnimated = detectAnimatedStyle(prompt);
   const label = sceneIndex !== undefined ? `scene=${sceneIndex + 1}` : "scene=?";
 
   // Anatomy guard — appended to every positive prompt
@@ -113,6 +122,14 @@ async function generateSceneImage(
 
   const buildPrompt = (corePrompt: string, attempt: number): string => {
     const anatomySuffix = [ANATOMY_GUARD, handObjectGuard].filter(Boolean).join(", ");
+    if (isAnimated) {
+      // For cartoon/animated characters: use strong CGI animation language, not photography
+      const animStyle =
+        "Disney Pixar 3D animated style, highly detailed CGI render, vibrant saturated colors, " +
+        "stylized cartoon characters, big expressive eyes, smooth plastic surfaces, exaggerated proportions, " +
+        "cinematic studio lighting, animated film still, no photorealism, no real people, no live action";
+      return `${corePrompt}, ${animStyle}, brand-safe, SFW`;
+    }
     if (!isCouple) {
       return `${corePrompt}, ${anatomySuffix}, ` +
         `35mm candid photography, natural lighting, authentic unposed moment, ` +
@@ -695,54 +712,67 @@ export async function POST(req: Request) {
           console.log(`[BRAND_INJECT] fluxSuffix="${brandMemory.fluxStyleSuffix.substring(0, 80)}" injected into ${enforcedPrompts.length} prompts`);
         }
 
-        // Cinematic lighting + emotional arc injection
+        // ── Animated / cartoon style enforcement ──────────────────────────────
         const _combinedCtx  = `${goal ?? ""} ${script ?? ""}`.toLowerCase();
-        // Use prefix-match (no \b at end) so "tears" matches "tear", "emotional" matches "emotion", etc.
-        const _isEmotional  = /\b(beach|sunset|golden|tear|sad|cri|cry|weep|sob|emotion|danc|shore|ocean|wave|romantic|intimate|dusk|twilight|hug|embrac|comfort|vulnerab|loneli|ach|grief|coffee|mug)\b/.test(_combinedCtx)
-          || /tears|crying|emotional|dancing|hugging|embracing|comforting/.test(_combinedCtx);
-        const _isCoupleCtx  = COUPLE_RE.test(goal ?? "") || COUPLE_RE.test(script ?? "");
+        const _isAnimated   = detectAnimatedStyle(_combinedCtx);
+        const ANIM_PREFIX   = "Disney Pixar 3D animated style, vibrant colorful cartoon characters, smooth CGI animation, expressive faces, big stylized eyes, exaggerated proportions, cinematic lighting, highly detailed 3D render, ";
+        if (_isAnimated) {
+          enforcedPrompts = enforcedPrompts.map(p =>
+            /\b(disney|pixar|animated|cartoon|cgi)\b/i.test(p) ? p : `${ANIM_PREFIX}${p}`
+          );
+          console.log(`[ANIMATED_INJECT] detected animated style — prepended Disney/Pixar prefix to ${enforcedPrompts.length} prompts`);
+        }
+
+        // ── Cinematic lighting + emotional arc injection (SKIP for animated) ──
+        // Animated content uses CGI-style prompts — camera/arc direction is for live-action only.
+        const _isEmotional  = !_isAnimated && (
+          /\b(beach|sunset|golden|tear|sad|cri|cry|weep|sob|emotion|danc|shore|ocean|wave|romantic|intimate|dusk|twilight|hug|embrac|comfort|vulnerab|loneli|ach|grief|coffee|mug)\b/.test(_combinedCtx)
+          || /tears|crying|emotional|dancing|hugging|embracing|comforting/.test(_combinedCtx)
+        );
+        const _isCoupleCtx  = !_isAnimated && (COUPLE_RE.test(goal ?? "") || COUPLE_RE.test(script ?? ""));
         const _total        = enforcedPrompts.length;
 
-        // Always add front-facing camera rule + match exact emotional tone from script
-        enforcedPrompts = enforcedPrompts.map((p, i) => {
-          const pLow    = p.toLowerCase();
-          const isBeach = /\b(beach|shore|ocean|sand|wave|water|sea)\b/.test(pLow);
-          const isSad   = /\b(sad|cry|tear|lonely|ache|pain|grief)\b/.test(pLow);
-          const isDance = /\b(danc|sway|spin|twirl|embrac|hold|pull)\b/.test(pLow);
+        if (!_isAnimated) {
+          // Live-action: add front-facing camera rule + emotional arc
+          enforcedPrompts = enforcedPrompts.map((p, i) => {
+            const pLow    = p.toLowerCase();
+            const isBeach = /\b(beach|shore|ocean|sand|wave|water|sea)\b/.test(pLow);
+            const isSad   = /\b(sad|cry|tear|lonely|ache|pain|grief)\b/.test(pLow);
+            const isDance = /\b(danc|sway|spin|twirl|embrac|hold|pull)\b/.test(pLow);
 
-          // Camera direction: front-facing unless scene explicitly requests a rear shot
-          const cameraRule = "subjects facing camera, front-facing, faces clearly visible";
-          const facingNote = _isCoupleCtx ? ", man facing toward woman, correct orientation, proper eye line, both faces visible" : `, ${cameraRule}`;
+            const cameraRule = "subjects facing camera, front-facing, faces clearly visible";
+            const facingNote = _isCoupleCtx ? ", man facing toward woman, correct orientation, proper eye line, both faces visible" : `, ${cameraRule}`;
 
-          if (!_isEmotional) {
-            console.log(`[PROMPT_ARC] scene=${i + 1} no emotional arc detected — camera rule only`);
-            return `${p}${facingNote}`;
-          }
+            if (!_isEmotional) {
+              console.log(`[PROMPT_ARC] scene=${i + 1} no emotional arc detected — camera rule only`);
+              return `${p}${facingNote}`;
+            }
 
-          // Lighting
-          const lighting = isBeach
-            ? "golden hour lighting, warm backlighting, soft rim light on hair and shoulders, wet sand reflections, atmospheric ocean haze, warm sky gradient, cinematic anamorphic lens"
-            : "soft cinematic lighting, warm key light, gentle fill light, emotional mood lighting, shallow depth of field";
+            const lighting = isBeach
+              ? "golden hour lighting, warm backlighting, soft rim light on hair and shoulders, wet sand reflections, atmospheric ocean haze, warm sky gradient, cinematic anamorphic lens"
+              : "soft cinematic lighting, warm key light, gentle fill light, emotional mood lighting, shallow depth of field";
 
-          // Position-based emotional arc: 0=sad/opening, 0.5=transition/noticing, 1=comfort/resolution
-          const pos = _total > 1 ? i / (_total - 1) : 0;
-          let arcBeat: string;
-          if (pos <= 0.33) {
-            arcBeat = isSad
-              ? "woman walking alone, visible tear on cheek, head slightly down, quiet sadness and vulnerability, no smiling yet"
-              : "opening emotional beat, quiet introspective moment, subdued expression, no smiling yet";
-          } else if (pos <= 0.66) {
-            arcBeat = "man gently approaching from the side, turning to face her, opening arms, beginning to pull her close, transition moment";
-          } else {
-            arcBeat = isDance
-              ? "tender slow dance in shallow water, woman softening, gentle smile through remaining tears, intimate comfort and connection"
-              : "resolution moment, woman leaning into him, soft smile through tears, warmth and relief replacing sadness";
-          }
+            const pos = _total > 1 ? i / (_total - 1) : 0;
+            let arcBeat: string;
+            if (pos <= 0.33) {
+              arcBeat = isSad
+                ? "woman walking alone, visible tear on cheek, head slightly down, quiet sadness and vulnerability, no smiling yet"
+                : "opening emotional beat, quiet introspective moment, subdued expression, no smiling yet";
+            } else if (pos <= 0.66) {
+              arcBeat = "man gently approaching from the side, turning to face her, opening arms, beginning to pull her close, transition moment";
+            } else {
+              arcBeat = isDance
+                ? "tender slow dance in shallow water, woman softening, gentle smile through remaining tears, intimate comfort and connection"
+                : "resolution moment, woman leaning into him, soft smile through tears, warmth and relief replacing sadness";
+            }
 
-          console.log(`[PROMPT_ARC] scene=${i + 1}/${_total} pos=${pos.toFixed(2)} beach=${isBeach} arc="${arcBeat.substring(0, 60)}"`);
-          return `${p}, ${lighting}, ${arcBeat}${facingNote}`;
-        });
-        console.log(`[PROMPT_ARC] enhanced ${_total} scene(s) emotional=${_isEmotional} couple=${_isCoupleCtx}`);
+            console.log(`[PROMPT_ARC] scene=${i + 1}/${_total} pos=${pos.toFixed(2)} beach=${isBeach} arc="${arcBeat.substring(0, 60)}"`);
+            return `${p}, ${lighting}, ${arcBeat}${facingNote}`;
+          });
+          console.log(`[PROMPT_ARC] enhanced ${_total} scene(s) emotional=${_isEmotional} couple=${_isCoupleCtx}`);
+        } else {
+          console.log(`[PROMPT_ARC] SKIPPED for animated content — ${_total} scene(s) use CGI style prompts only`);
+        }
 
         // Per-scene negative prompts — suppress wrong tone + anatomy artifacts
         const _negBase =
@@ -760,6 +790,15 @@ export async function POST(req: Request) {
           const sadGuard = (_isEmotional && pos <= 0.33) ? "smiling, happy expression, teeth showing, joyful face, laughing" : "";
           return [_negBase, _negEmotional, sadGuard].filter(Boolean).join(", ");
         });
+
+        // Animated style: suppress photorealism + live-action with stronger terms
+        if (_isAnimated) {
+          const negAnim = "photorealistic, realistic humans, live action, real people, photo, photograph, 35mm film, documentary style, human actors, skin texture, pores, candid photography, stock photo, blurry, deformed, extra limbs, text, watermark, low quality, ugly, bad anatomy";
+          for (let i = 0; i < sceneNegativePrompts.length; i++) {
+            sceneNegativePrompts[i] = negAnim; // replace entirely — animated negative is its own set
+          }
+          console.log(`[ANIMATED_NEG] replaced all ${sceneNegativePrompts.length} scene neg prompts with animated-safe set`);
+        }
 
         // Extend with character-specific negative prompts
         if (charMemory?.neg_prompt?.trim()) {
@@ -797,14 +836,19 @@ export async function POST(req: Request) {
             console.log(`${label} sceneType=${sceneType} motion=${motionScore.toFixed(2)} slaMs=${clipBudget} prompt="${prompts[i].substring(0, 80)}"`);
             console.log(`[SCENE_ROUTER] scene=${i + 1} provider=${provider} sceneType=${sceneType} motion=${motionScore.toFixed(2)}`);
 
-            const isCouple = COUPLE_RE.test(goal ?? "") || COUPLE_RE.test(script ?? "") || COUPLE_RE.test(prompt);
+            const isCouple = !_isAnimated && (COUPLE_RE.test(goal ?? "") || COUPLE_RE.test(script ?? "") || COUPLE_RE.test(prompt));
             const clipCharRefUrl = charMemory ? (imageUrl ?? charMemory.ref_frame_url ?? undefined) : undefined;
             const clipCharSuffix = charMemory ? buildKlingCharacterSuffix(charMemory) : undefined;
+            // When animated: pass null imageUrl so Kling uses T2V driven purely by the style prefix.
+            // Passing a realistic character photo as I2V reference causes Kling to produce
+            // live-action humans instead of Disney/Pixar animation.
+            const klingImageUrl = _isAnimated ? null : (imageUrl ?? null);
             const url = await executeClip(
-              prompt, imageUrl ?? null, duration, provider,
+              prompt, klingImageUrl, duration, provider,
               sceneType, i, user.id, rawSeconds, sourceImages, clipReports,
               clipBudget, label, isCouple, sceneNegativePrompts[i],
-              clipCharRefUrl, clipCharSuffix,
+              _isAnimated ? undefined : clipCharRefUrl,
+              _isAnimated ? undefined : clipCharSuffix,
             );
 
             const elapsed = Date.now() - clipT0;
