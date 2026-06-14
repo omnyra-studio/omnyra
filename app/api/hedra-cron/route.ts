@@ -25,11 +25,53 @@ import {
   reconcileStageFromCost,
 } from "@/lib/avatar-queue";
 import { checkHedraGenerationStatus } from "@/lib/providers/hedra";
+import { generateKlingClip } from "@/lib/orchestrator/kling-worker";
+import { KLING_I2V_PRO } from "@/lib/video-models";
 import { loadCharacter, updateCharacterRefFrame } from "@/lib/character-registry";
 import { cachePrompt } from "@/lib/prompt-memory-cache";
 import type { SceneSpec } from "@/lib/avatar-scene-planner";
 
 export const maxDuration = 60;
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+async function checkHedraStatusWithRetry(
+  generationId: string,
+  maxRetries = 3,
+  pollIntervalMs = 6_000,
+) {
+  let lastErr: unknown;
+  for (let i = 1; i <= maxRetries; i++) {
+    try {
+      return await checkHedraGenerationStatus(generationId);
+    } catch (err) {
+      lastErr = err;
+      if (i < maxRetries) await new Promise(r => setTimeout(r, pollIntervalMs));
+    }
+  }
+  throw lastErr;
+}
+
+async function klingAvatarFallbackCron(
+  imageUrl: string,
+  prompt:   string,
+  log:      (msg: string) => void,
+): Promise<string> {
+  log(`[KLING_EMERGENCY_FALLBACK] submitting Kling i2v as Hedra replacement`);
+  const result = await generateKlingClip({
+    shotId:        "cron-fallback",
+    shotNumber:    1,
+    visualPrompt:  `Close-up talking head, direct sustained gaze to camera, natural movement, ${prompt.substring(0, 200)}`,
+    modelId:       KLING_I2V_PRO,
+    imageUrl,
+    durationSecs:  10,
+    aspectRatio:   "9:16",
+    speedMode:     "quality",
+    motionStrength: 0.45,
+  });
+  log(`[KLING_EMERGENCY_FALLBACK] done url=${result.video_url.substring(0, 60)}`);
+  return result.video_url;
+}
 
 // Per-job timeout budget — leave 10s for post-processing + response
 const JOB_TIMEOUT_MS = 40_000;
@@ -96,10 +138,7 @@ export async function GET(req: NextRequest) {
 
     let result: { status: string; videoUrl?: string; errorMessage?: string };
     try {
-      // Hard timeout on status check — prevents 522s from slow Hedra responses
-      const ac = new AbortController();
-      const timer = setTimeout(() => ac.abort(), JOB_TIMEOUT_MS);
-      result = await checkHedraGenerationStatus(genId).finally(() => clearTimeout(timer));
+      result = await checkHedraStatusWithRetry(genId, 3, 6_000);
     } catch (fetchErr) {
       const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
       const isTimeout = msg.includes("aborted") || msg.includes("timeout") || msg.includes("ETIMEDOUT");
@@ -203,8 +242,38 @@ export async function GET(req: NextRequest) {
       } else if (result.status === "error") {
         const errMsg = result.errorMessage ?? "Hedra generation failed";
         log(`[CRON_JOB] HEDRA_ERROR: ${errMsg}`);
-        await failJobFromCron(job.id, errMsg);
-        failed++;
+
+        // Emergency Kling fallback — only before retry threshold to avoid infinite loops
+        const lipsyncRetries = job.retry_count_per_stage?.lipsync ?? 0;
+        const avatarImageUrl = job.input.avatar_image_url ?? job.input.image_url ?? "";
+        if (lipsyncRetries < 2 && avatarImageUrl) {
+          try {
+            const klingUrl = await klingAvatarFallbackCron(avatarImageUrl, job.input.script ?? "", log);
+            if (reqHash) await markCostCharged(job.id, "lipsync", reqHash, klingUrl);
+            await reconcileStageFromCost(job.id, "lipsync", klingUrl);
+            const { completed: jobCompleted } = await completeJobFromCron(job.id, klingUrl, klingUrl);
+            log(`[KLING_EMERGENCY_FALLBACK] job completed via Kling won_race=${jobCompleted}`);
+            if (jobCompleted) {
+              await supabaseAdmin.from("renders").insert({
+                user_id:      job.user_id,
+                status:       "complete",
+                script:       job.input.script ?? null,
+                video_url:    klingUrl,
+                audio_url:    outputs.audio_url ?? null,
+                template:     "avatar",
+                completed_at: new Date().toISOString(),
+              });
+            }
+            completed++;
+          } catch (klingErr) {
+            log(`[KLING_EMERGENCY_FALLBACK] failed: ${(klingErr as Error).message} — failing job`);
+            await failJobFromCron(job.id, errMsg);
+            failed++;
+          }
+        } else {
+          await failJobFromCron(job.id, errMsg);
+          failed++;
+        }
       } else {
         // processing | queued | finalizing | unknown — retry on next cron tick
         log(`[CRON_JOB] HEDRA_PENDING status=${result.status}`);

@@ -58,7 +58,9 @@ import {
   animateRequestHash,
   hedraRequestHash,
 } from "@/lib/avatar-pipeline";
-import { submitHedraJob } from "@/lib/providers/hedra";
+import { submitHedraJob, checkHedraGenerationStatus } from "@/lib/providers/hedra";
+import { generateKlingClip } from "@/lib/orchestrator/kling-worker";
+import { KLING_I2V_PRO } from "@/lib/video-models";
 import { toSignedUrlForProvider } from "@/lib/avatar/asset-validator";
 import { planScenes, type SceneSpec, type CreatorContext } from "@/lib/avatar-scene-planner";
 import { loadCharacter, buildCharacterPromptSuffix } from "@/lib/character-registry";
@@ -87,6 +89,97 @@ function voiceSettingsForScene(energy: number, pacing: string) {
   const speed = pacing === "fast" ? baseSpeed + 0.06 :
                 pacing === "slow" ? baseSpeed - 0.06 : baseSpeed;
   return { stability, similarity_boost: 0.75, style, speed: Math.round(speed * 100) / 100 };
+}
+
+// ── Script adaptation: third-person narration → first-person avatar dialogue ──
+
+function adaptScriptForAvatar(rawScript: string): string {
+  let script = rawScript
+    .replace(/\b(?:She|He|They)\s+/gi, "I ")
+    .replace(/\b(?:her|his|their)\b/gi, "my")
+    .replace(/\b(?:she's|he's|they're)\b/gi, "I'm")
+    .replace(/\b(?:She|He|They)'re\b/gi, "I'm");
+  script = script.replace(/\. /g, ". ... ");
+  script = script.replace(/\? /g, "? ... ");
+  return script.trim();
+}
+
+// ── Hedra submit retry — exponential backoff, Kling fallback after exhaustion ──
+
+async function submitHedraWithRetry(
+  payload: Parameters<typeof submitHedraJob>[0],
+  onSubmit: Parameters<typeof submitHedraJob>[1],
+  log: (msg: string) => void,
+  maxRetries = 3,
+): Promise<string> {
+  let lastError: Error | null = null;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const genId = await submitHedraJob(payload, onSubmit);
+      if (attempt > 1) log(`[HEDRA_RETRY] submit succeeded on attempt ${attempt}`);
+      return genId;
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      log(`[HEDRA_RETRY] submit attempt ${attempt}/${maxRetries} failed: ${lastError.message}`);
+      if (attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, 3_000 * Math.pow(1.8, attempt - 1)));
+      }
+    }
+  }
+  throw lastError ?? new Error("Hedra submit retries exhausted");
+}
+
+async function klingAvatarFallback(params: {
+  imageUrl:    string;
+  prompt:      string;
+  durationSecs: number;
+}, log: (msg: string) => void): Promise<string> {
+  log(`[KLING_AVATAR_FALLBACK] generating Kling i2v as Hedra substitute duration=${params.durationSecs}s`);
+  const result = await generateKlingClip({
+    shotId:        "avatar-fallback",
+    shotNumber:    1,
+    visualPrompt:  `Close-up talking head, direct camera address, natural expression, ${params.prompt.substring(0, 200)}`,
+    modelId:       KLING_I2V_PRO,
+    imageUrl:      params.imageUrl,
+    durationSecs:  params.durationSecs > 10 ? 10 : 5,
+    aspectRatio:   "9:16",
+    speedMode:     "quality",
+    motionStrength: 0.45,
+  });
+  log(`[KLING_AVATAR_FALLBACK] done url=${result.video_url.substring(0, 60)}`);
+  return result.video_url;
+}
+
+// ── Library save helper ────────────────────────────────────────────────────────
+// Called at every successful avatar completion path so the video always appears
+// in My Videos even if the browser tab is closed before the client poll fires.
+async function saveAvatarRender(
+  userId:   string,
+  videoUrl: string,
+  script:   string | null | undefined,
+  log:      (msg: string) => void,
+): Promise<void> {
+  try {
+    const { error } = await supabaseAdmin
+      .from("renders")
+      .insert({
+        user_id:      userId,
+        status:       "complete",
+        video_url:    videoUrl,
+        script:       script ?? null,
+        template:     "avatar",
+        completed_at: new Date().toISOString(),
+      })
+      .select("id")
+      .single();
+    if (error) {
+      log(`[SAVE_RENDER:avatar] insert error code=${error.code} msg=${error.message}`);
+    } else {
+      log(`[SAVE_RENDER:avatar] saved to library user=${userId} url=${videoUrl.substring(0, 60)}`);
+    }
+  } catch (e) {
+    log(`[SAVE_RENDER:avatar] unexpected error: ${(e as Error).message}`);
+  }
 }
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -209,9 +302,11 @@ async function executeTtsStage(
   // Hedra generation time scales with audio length. Cap total words so the
   // combined audio stays under target seconds, regardless of input script length.
   // starter: 20 words ≈ 8s, creator: 28 words ≈ 11s, studio: 40 words ≈ 16s
-  const HEDRA_WORD_BUDGET: Record<string, number> = { starter: 22, creator: 70, studio: 85 };
+  // starter≈16s, creator≈30s, studio≈34s — aligned with hedraAudioCapSec in lipsync stage.
+  // Lightning mode overrides to 28 words (~11s) regardless of plan.
+  const HEDRA_WORD_BUDGET: Record<string, number> = { starter: 40, creator: 75, studio: 85 };
   const HEDRA_SCENE_CAP:   Record<string, number> = { starter: 1,  creator: 2,  studio: 3  };
-  const hedraWordBudget = HEDRA_WORD_BUDGET[job.input.plan ?? "starter"] ?? 20;
+  const hedraWordBudget = job.input.lightningMode ? 28 : (HEDRA_WORD_BUDGET[job.input.plan ?? "starter"] ?? 40);
   const hedraSceneCap   = job.input.lightningMode ? 1 : (HEDRA_SCENE_CAP[job.input.plan ?? "starter"] ?? 1);
   const hedraMaxScenes  = Math.min(effectiveMaxScenes, hedraSceneCap);
 
@@ -224,6 +319,8 @@ async function executeTtsStage(
   } else {
     log(`[AVATAR_CAP] no_cap words=${rawScriptWords.length} est_audio_sec=${estAudioSec}s budget=${hedraWordBudget}`);
   }
+  cappedScript = adaptScriptForAvatar(cappedScript);
+  log(`[AVATAR_ADAPT] script adapted to first-person dialogue chars=${cappedScript.length}`);
 
   // ── Load creator + character memory (Director Core context) ───────────────
   const [creatorProfile, characterForCtx] = await Promise.all([
@@ -527,7 +624,8 @@ async function executeLipsyncStage(
     const stitchedBuffer = readFileSync(outPath);
     if (stitchedBuffer.byteLength === 0) throw new Error("ffmpeg audio concat produced 0-byte output");
 
-    const hedraAudioCapSec = job.input.plan === "studio" ? 22 : job.input.plan === "creator" ? 16 : 10;
+    const hedraAudioCapSec = job.input.lightningMode ? 12 :
+      (job.input.plan === "studio" ? 34 : job.input.plan === "creator" ? 30 : 16);
     const overCap = audioDurationSec !== null && audioDurationSec > hedraAudioCapSec;
     log(`[HEDRA_AUDIO_DURATION] duration_sec=${audioDurationSec ?? "unknown"} cap_sec=${hedraAudioCapSec} over_cap=${overCap} source=ffmpeg_concat bytes=${stitchedBuffer.byteLength}${overCap ? " ⚠️ AUDIO_EXCEEDS_CAP — check truncation" : ""}`);
 
@@ -560,6 +658,7 @@ async function executeLipsyncStage(
     log("cost_firewall HIT hedra — reusing cached");
     await completeLedgerEntry(job.id, "lipsync", workerId, costCached);
     await completeJobWithLease(job.id, workerId, costCached, costCached);
+    void saveAvatarRender(job.user_id, costCached, job.input.script, log);
     log("pipeline COMPLETE (cost_firewall cache)");
     return;
   }
@@ -568,6 +667,7 @@ async function executeLipsyncStage(
   if (shouldSkip && ledgerCached) {
     log("ledger HIT hedra — reusing cached");
     await completeJobWithLease(job.id, workerId, ledgerCached, ledgerCached);
+    void saveAvatarRender(job.user_id, ledgerCached, job.input.script, log);
     log("pipeline COMPLETE (ledger cache)");
     return;
   }
@@ -621,64 +721,117 @@ async function executeLipsyncStage(
   log(`[HEDRA_START] image_len=${signedImageUrl.length} audio_len=${signedAudioUrl.length} avatar_source=${avatarImageSource}`);
   log(`[PIPELINE_ORDER] audio_source=${audioSource} segment_count=${allSegments.length} duration_sec=${audioDurationSec ?? "unknown"} audio_url=${combinedAudioUrl.substring(0, 80)}`);
 
-  // If this job already has a generation_id (from a previous submit that survived),
-  // skip re-submission. The cron will pick it up and complete it.
+  // ── Resolve or submit generation ID ──────────────────────────────────────
   const existingGenId = (job.stage_outputs as Record<string, string> | undefined)
     ?.hedra_generation_id;
+  let hedraGenId: string;
+
   if (existingGenId) {
-    log(`[HEDRA_ALREADY_SUBMITTED] generation_id=${existingGenId} — cron will complete`);
-    await releaseLeaseAfterSubmit(job.id, workerId);
-    void setPipelineStatus(job.id, "awaiting_hedra");
-    return;
+    log(`[HEDRA_ALREADY_SUBMITTED] generation_id=${existingGenId} — resuming inline poll`);
+    hedraGenId = existingGenId;
+  } else {
+    try {
+      hedraGenId = await submitHedraWithRetry(
+        {
+          image_url:    signedImageUrl,
+          audio_url:    signedAudioUrl,
+          resolution:   "720p",
+          aspect_ratio: "9:16",
+          duration_s:   audioDurationSec ?? undefined,
+          _jobId:       job.id,
+        },
+        async (genId: string) => {
+          await supabaseAdmin
+            .from("avatar_jobs")
+            .update({
+              stage_outputs: {
+                ...(job.stage_outputs ?? {}),
+                hedra_generation_id: genId,
+                hedra_req_hash:      reqHash,
+                hedra_submitted_at:  new Date().toISOString(),
+              },
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", job.id);
+          log(`[HEDRA_SUBMITTED] generation_id=${genId}`);
+        },
+        log,
+      );
+      log(`[HEDRA_SUBMITTED] generation_id=${hedraGenId} — starting inline poll (90s timeout)`);
+    } catch (err) {
+      const e    = err instanceof Error ? err : new Error(String(err));
+      const node = e as NodeJS.ErrnoException & { cause?: { code?: string; message?: string } };
+      log(`[HEDRA_SUBMIT_FAILED] ${e.message}`);
+      log(`[HEDRA_DEBUG] name=${e.name} code=${node.code ?? "none"} cause_code=${node.cause?.code ?? "none"} cause_msg=${node.cause?.message ?? "none"}`);
+
+      // Emergency Kling fallback — Hedra submit failed after all retries
+      try {
+        const klingUrl = await klingAvatarFallback({
+          imageUrl:    signedImageUrl,
+          prompt:      job.input.script ?? "",
+          durationSecs: audioDurationSec ?? 10,
+        }, log);
+        await markCostCharged(job.id, "lipsync", reqHash, klingUrl);
+        await completeLedgerEntry(job.id, "lipsync", workerId, klingUrl);
+        await completeJobWithLease(job.id, workerId, klingUrl, klingUrl);
+        void saveAvatarRender(job.user_id, klingUrl, job.input.script, log);
+        log(`[KLING_AVATAR_FALLBACK] pipeline COMPLETE via Kling`);
+        return;
+      } catch (klingErr) {
+        log(`[KLING_AVATAR_FALLBACK] also failed: ${(klingErr as Error).message}`);
+      }
+
+      await failLedgerEntry(job.id, "lipsync", workerId, e.message);
+      const { shouldRetry } = await recordStageFailure(job.id, workerId, "lipsync", e.message, job.retry_count_per_stage ?? {});
+      if (shouldRetry) await retrigger(origin, job.id, log);
+      return;
+    }
   }
 
-  // ── Fire-and-forget: submit to Hedra, persist ID, release lease, exit ─────
-  // The hedra-cron route polls every minute, downloads the result, and completes
-  // the job — this function returns immediately so Vercel never times out.
-  try {
-    const generationId = await submitHedraJob(
-      {
-        image_url:    signedImageUrl,
-        audio_url:    signedAudioUrl,
-        resolution:   "720p",
-        aspect_ratio: "9:16",
-        duration_s:   audioDurationSec ?? undefined,
-        _jobId:       job.id,
-      },
-      // Persist generation_id + req_hash for the cron to use on completion
-      async (genId: string) => {
-        await supabaseAdmin
-          .from("avatar_jobs")
-          .update({
-            stage_outputs: {
-              ...(job.stage_outputs ?? {}),
-              hedra_generation_id: genId,
-              hedra_req_hash:      reqHash,
-              hedra_submitted_at:  new Date().toISOString(),
-            },
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", job.id);
-        log(`[HEDRA_SUBMITTED] generation_id=${genId}`);
-      },
-    );
+  // ── Inline poll for 90s, then fall back to cron ──────────────────────────
+  void setPipelineStatus(job.id, "generating_avatar");
+  const pollMs    = 2_000;
+  const maxPollMs = 90_000;
+  const pollStart = Date.now();
+  let hedraVideoUrl: string | null = null;
 
-    log(`[HEDRA_SUBMITTED] generation_id=${generationId} — releasing lease, cron takes over`);
+  while (Date.now() - pollStart < maxPollMs) {
+    await new Promise(r => setTimeout(r, pollMs));
+    const elapsedS = Math.round((Date.now() - pollStart) / 1000);
+    let pollResult: Awaited<ReturnType<typeof checkHedraGenerationStatus>>;
+    try {
+      pollResult = await checkHedraGenerationStatus(hedraGenId);
+    } catch (e) {
+      log(`[HEDRA_POLL_ERROR] elapsed=${elapsedS}s check_threw: ${(e as Error).message}`);
+      break;
+    }
+    if (pollResult.status === "complete" && pollResult.videoUrl) {
+      hedraVideoUrl = pollResult.videoUrl;
+      log(`[HEDRA_POLL_SUCCESS] elapsed=${elapsedS}s videoUrl=${pollResult.videoUrl.substring(0, 60)}`);
+      break;
+    }
+    if (pollResult.status === "error") {
+      log(`[HEDRA_POLL_ERROR] elapsed=${elapsedS}s msg=${pollResult.errorMessage ?? "unknown"}`);
+      break;
+    }
+    if (elapsedS % 10 === 0 || elapsedS <= 4) {
+      log(`[HEDRA_POLL] elapsed=${elapsedS}s status=${pollResult.status ?? "pending"} id=${hedraGenId.substring(0, 12)}`);
+    }
+  }
 
-    // Release lock so cron can find this job
+  if (hedraVideoUrl) {
+    await markCostCharged(job.id, "lipsync", reqHash, hedraVideoUrl);
+    await completeLedgerEntry(job.id, "lipsync", workerId, hedraVideoUrl);
+    await completeJobWithLease(job.id, workerId, hedraVideoUrl, hedraVideoUrl);
+    void saveAvatarRender(job.user_id, hedraVideoUrl, job.input.script, log);
+    const audioDurStr = audioDurationSec != null ? audioDurationSec.toFixed(1) : "unknown";
+    log(`[AVATAR_DURATION] voice=${audioDurStr}s final=${audioDurStr}s elapsed=${Math.round((Date.now() - hedraT0) / 1000)}s`);
+    log(`[HEDRA_COMPLETE] pipeline COMPLETE inline elapsed_total=${Math.round((Date.now() - stageT0) / 1000)}s`);
+  } else {
+    // Cron fallback: release lease so the minute-cron can finish the job
     await releaseLeaseAfterSubmit(job.id, workerId);
     void setPipelineStatus(job.id, "awaiting_hedra");
-
-    log(`[HEDRA_HANDOFF] lease released, pipeline_status=awaiting_hedra, elapsed=${Date.now() - stageT0}ms`);
-  } catch (err) {
-    const e   = err instanceof Error ? err : new Error(String(err));
-    const node = e as NodeJS.ErrnoException & { cause?: { code?: string; message?: string } };
-    log(`[HEDRA_SUBMIT_FAILED] ${e.message}`);
-    log(`[HEDRA_DEBUG] name=${e.name} code=${node.code ?? "none"} cause_code=${node.cause?.code ?? "none"} cause_msg=${node.cause?.message ?? "none"}`);
-    await failLedgerEntry(job.id, "lipsync", workerId, e.message);
-    const { shouldRetry } = await recordStageFailure(job.id, workerId, "lipsync", e.message, job.retry_count_per_stage ?? {});
-    if (shouldRetry) await retrigger(origin, job.id, log);
-    return;
+    log(`[HEDRA_CRON_FALLBACK] poll exhausted after ${Math.round((Date.now() - pollStart) / 1000)}s — lease released, cron will complete`);
   }
 }
 

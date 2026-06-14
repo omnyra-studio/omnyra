@@ -182,6 +182,12 @@ export default function BrandPage() {
     linkedin_url: "",
     twitter_handle: "",
     website_url: "",
+    // Manual analytics
+    avg_views: "",
+    engagement_rate: "",
+    best_posting_time: "",
+    top_styles: "",
+    analytics_notes: "",
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving]   = useState(false);
@@ -217,6 +223,12 @@ export default function BrandPage() {
           linkedin_url:        p.linkedin_url        || "",
           twitter_handle:      p.twitter_handle      || "",
           website_url:         p.website_url         || "",
+          // Manual analytics
+          avg_views:          p.manual_analytics?.avg_views        || "",
+          engagement_rate:    p.manual_analytics?.engagement_rate  || "",
+          best_posting_time:  p.manual_analytics?.best_posting_time || "",
+          top_styles:         (p.manual_analytics?.top_styles || []).join(", "),
+          analytics_notes:    p.manual_analytics?.analytics_notes  || "",
         }));
       })
       .catch(() => {})
@@ -250,7 +262,17 @@ export default function BrandPage() {
         linkedin_url:        form.linkedin_url        || null,
         twitter_handle:      form.twitter_handle      || null,
         website_url:         form.website_url         || null,
+        manual_analytics: {
+          avg_views:         form.avg_views          || undefined,
+          engagement_rate:   form.engagement_rate    || undefined,
+          best_posting_time: form.best_posting_time  || undefined,
+          top_styles:        form.top_styles
+            ? form.top_styles.split(",").map(s => s.trim()).filter(Boolean)
+            : [],
+          analytics_notes:   form.analytics_notes    || undefined,
+        },
       });
+      console.log("[BRAND_UPDATED] manual_analytics saved", { avg_views: form.avg_views, engagement_rate: form.engagement_rate });
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
@@ -421,6 +443,67 @@ export default function BrandPage() {
               placeholder="e.g. Always end scripts with a question. Never use the word 'leverage'. Keep sentences under 15 words. Use metric units."
               style={{ ...inp, resize: "vertical", lineHeight: 1.6 }}
             />
+          </div>
+
+          {/* PERFORMANCE ANALYTICS */}
+          <div style={{ ...CARD, display: "flex", flexDirection: "column", gap: 14, padding: "1.25rem" }}>
+            <div style={{ fontSize: 10, color: "#E879F9", textTransform: "uppercase", letterSpacing: "0.2em", fontWeight: 700 }}>Performance Analytics</div>
+            <p style={{ fontSize: 12, color: "#BBA8C8", margin: 0, lineHeight: 1.5 }}>
+              Help Omnyra understand what&apos;s working — this data shapes your scripts and content strategy.
+            </p>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <Field label="Avg Views per Video" hint="optional">
+                <input
+                  value={form.avg_views}
+                  onChange={set("avg_views")}
+                  placeholder="e.g. 12000"
+                  style={inp}
+                  type="number"
+                  min="0"
+                />
+              </Field>
+              <Field label="Engagement Rate (%)" hint="optional">
+                <input
+                  value={form.engagement_rate}
+                  onChange={set("engagement_rate")}
+                  placeholder="e.g. 4.2"
+                  style={inp}
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                />
+              </Field>
+            </div>
+
+            <Field label="Best Posting Time" hint="optional">
+              <input
+                value={form.best_posting_time}
+                onChange={set("best_posting_time")}
+                placeholder="e.g. Weekdays 7–9 PM AEST"
+                style={inp}
+              />
+            </Field>
+
+            <Field label="Top Performing Styles" hint="comma-separated">
+              <input
+                value={form.top_styles}
+                onChange={set("top_styles")}
+                placeholder="e.g. Hook + Tutorial, Trending Sound, Day-in-the-life"
+                style={inp}
+              />
+            </Field>
+
+            <Field label="Analytics Notes" hint="optional">
+              <textarea
+                value={form.analytics_notes}
+                onChange={set("analytics_notes")}
+                rows={3}
+                placeholder="e.g. Videos over 45s consistently underperform. Hooks with questions get 2x retention."
+                style={{ ...inp, resize: "vertical", lineHeight: 1.6 }}
+              />
+            </Field>
           </div>
 
           {/* SOCIAL LINKS */}

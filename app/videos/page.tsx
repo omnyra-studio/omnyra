@@ -332,6 +332,7 @@ export default function MyVideosPage() {
   useEffect(() => {
     // Check if there's a saved create session
     try {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setHasSavedProject(!!sessionStorage.getItem("omnyra_create_state"));
     } catch { /* SSR guard */ }
   }, []);
@@ -372,6 +373,7 @@ export default function MyVideosPage() {
   }
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchVideos();
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);

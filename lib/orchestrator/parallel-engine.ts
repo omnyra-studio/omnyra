@@ -310,7 +310,7 @@ async function processAvatarShot(
 
 const PARALLEL_ANIM_PREFIX     = "In vibrant Disney Pixar 3D animated style, colorful cartoon characters with big expressive eyes, smooth CGI animation, stylized proportions, highly detailed 3D animated render, cinematic lighting, ";
 const PARALLEL_ANIM_NEG        = "photorealistic, realistic humans, live action, real people, photograph, photo, human skin texture, detailed pores, realistic faces, 35mm film, documentary style, human actors, candid photography, stock photo, blurry, deformed, extra limbs, text, watermark, low quality, ugly, bad anatomy";
-const CINEMATIC_QUALITY_PREFIX = "Highly detailed cinematic shot, accurate anatomy, correct lighting, no deformities, sharp focus, emotional expression, ";
+const CINEMATIC_QUALITY_PREFIX = "Highly detailed cinematic shot, accurate anatomy, correct lighting, no deformities, sharp focus, natural facial expression, ";
 
 async function processKlingShot(
   shot:          ShotRow,
@@ -472,15 +472,24 @@ export async function runParallelEngine(
 ): Promise<ParallelEngineResult> {
   const {
     planId, userId,
-    targetDurationSecs = 30,
     skipStitch = false,
     fullScript,
   } = input;
+
+  // ── Duration enforcement: cinematic/avatar always 25–30s, Studio sequences up to 60s ──
+  const requestedDuration = input.targetDurationSecs ?? 30;
+  const isSequence = (input.maxClips ?? 1) > 2;
+  const targetDurationSecs = isSequence
+    ? Math.min(Math.max(25, requestedDuration), 60)
+    : Math.min(Math.max(25, requestedDuration), 30);
+  if (targetDurationSecs !== requestedDuration) {
+    console.info(`[DURATION_CLAMP] requested=${requestedDuration}s → enforced=${targetDurationSecs}s isSequence=${isSequence}`);
+  }
   const voiceId = input.voiceId ?? "EXAVITQu4vr4xnSDxMaO";
 
   // Animation detection — niche="Animation" or any animated keyword in fullScript locks style
   const _animCtx  = `${fullScript ?? ""} ${input.niche ?? ""}`.toLowerCase();
-  const isAnimated = /\banimation\b/i.test(input.niche ?? "") ||
+  const isAnimated = /\b(animation|animated)\b/i.test(input.niche ?? "") ||
     /\b(disney|pixar|dreamworks|cartoon|animated|animation|3d animation|anime)\b/.test(_animCtx);
   if (isAnimated) console.info(`[STYLE_ENFORCED] animation=true niche="${input.niche ?? ""}" planId=${planId}`);
 
@@ -593,7 +602,7 @@ export async function runParallelEngine(
           provider: "elevenlabs",
         }),
         generateVoiceover(
-          { script: voiceScript, voiceId, targetDurationSecs: targetDurationSecs ?? 30, speedMode: 'cinematic', speed: speedMode === 'ultra-draft' ? 1.10 : 1.05 },
+          { script: voiceScript, voiceId, targetDurationSecs: targetDurationSecs ?? 30, speedMode: 'cinematic', speed: speedMode === 'ultra-draft' ? 1.15 : 1.05 },
           userId,
           planId,
         ).then(result => {
@@ -740,6 +749,9 @@ export async function runParallelEngine(
           planId,
           voiceoverUrl:      voiceoverResult?.audioUrl,
           speedMode,
+          // AV1 for non-draft renders — better quality at lower file sizes (~5–10 MB/30s)
+          // Silently ignored when libsvtav1 is not compiled into the ffmpeg binary
+          useAV1:            speedMode === 'balanced' || speedMode === 'quality',
         });
         assembledUrl = stitch.output_url;
         const finalDuration = voiceoverResult?.duration ?? stitch.duration_seconds;

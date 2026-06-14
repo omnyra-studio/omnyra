@@ -12,6 +12,7 @@
  * Auth: x-internal-secret header must match CRON_SECRET env var.
  */
 
+import Anthropic                 from "@anthropic-ai/sdk";
 import { supabaseAdmin }         from "@/lib/supabase/admin";
 import { generateKlingClip }     from "@/lib/orchestrator/kling-worker";
 import { generateVoiceover }     from "@/lib/orchestrator/elevenlabs-worker";
@@ -28,9 +29,39 @@ const DEFAULT_VOICE_ID = "EXAVITQu4vr4xnSDxMaO";
 // Animated/cartoon style — affects reference image prompts, Kling prompts, and negative prompts
 const ANIMATED_RE = /\b(animated|animation|cartoon|3d animated|disney|pixar|dreamworks|anime|cgi character|stylized character|princess peach|mario|luigi|bowser|zelda|kirby|pikachu|yoshi|wario|donkey kong|storybook character|muppet|puppet|fictional character|historical cartoon)\b/i;
 const ANIMATION_STYLE_PREFIX = "In vibrant Disney Pixar 3D animated style, colorful cartoon characters with big expressive eyes, smooth CGI animation, stylized proportions, highly detailed 3D animated render, cinematic lighting, ";
+const CINEMATIC_QUALITY_PREFIX = "Highly detailed cinematic shot, accurate anatomy, correct lighting, no deformities, sharp focus, natural facial expression, ";
+const ANIM_NEGATIVE_PROMPT = "photorealistic, realistic humans, live action, real people, photograph, photo, human skin texture, detailed pores, realistic faces, 35mm film, documentary style, human actors, candid photography, stock photo, blurry, deformed, extra limbs, text, watermark, low quality, ugly, bad anatomy, nsfw";
 
 function detectAnimatedStyle(text: string): boolean {
   return ANIMATED_RE.test(text);
+}
+
+// Expands a short brief/script to ~targetWords using Claude Haiku for fast, cheap expansion.
+// Used as a server-side safety net when the client sends a < 50-word script.
+// Falls back silently to the original if Claude is unavailable or times out.
+async function expandScriptForDuration(brief: string, targetWords = 80): Promise<string> {
+  const wordCount = brief.trim().split(/\s+/).filter(Boolean).length;
+  if (wordCount >= targetWords) return brief;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) { console.warn("[SCRIPT_EXPANDED] ANTHROPIC_API_KEY missing — skipping expansion"); return brief; }
+  try {
+    const client = new Anthropic({ apiKey });
+    const msg = await client.messages.create({
+      model:      "claude-haiku-4-5-20251001",
+      max_tokens: 350,
+      messages:   [{
+        role:    "user",
+        content: `Expand this video script to approximately ${targetWords} words for a 30-second narration. Keep the emotional tone, story arc, and key message perfectly intact. Return ONLY the expanded script — no labels, no explanation, no quotes.\n\nOriginal script: ${brief}`,
+      }],
+    });
+    const expanded = (msg.content[0] as { type: string; text: string }).text?.trim() ?? "";
+    const newCount = expanded.split(/\s+/).filter(Boolean).length;
+    console.log(`[SCRIPT_EXPANDED] original=${wordCount} → expanded=${newCount} target=${targetWords}`);
+    return expanded || brief;
+  } catch (e) {
+    console.warn("[SCRIPT_EXPANDED] expansion failed — using original:", (e as Error).message.substring(0, 80));
+    return brief;
+  }
 }
 
 function trimToWords(text: string, max: number): string {
@@ -110,11 +141,12 @@ export async function POST(req: Request) {
     const speedMode    = (input.speedMode as string | undefined) ?? (lightningMode ? "ultra-draft" : "draft");
     const isUltraDraft = speedMode === "ultra-draft";
 
-    // Lightning/ultra-draft: 2 scenes × 10s = 20s preview; Standard: 3 scenes × 10s = 30s
-    // Explicit maxClips from client caps scene count (never exceed 3 to stay under Vercel timeout)
+    // Lightning: 2 scenes × 5s = 10s clip bed; Normal: 3 scenes × 10s = 30s clip bed.
+    // Voiceover duration drives the final output length (clips loop via stream_loop if needed).
     const SCENE_COUNT   = Math.min((input.maxClips as number | undefined) ?? (isUltraDraft ? 2 : 3), 3);
-    const CLIP_DURATION = 10;
+    const CLIP_DURATION = isUltraDraft ? 5 : 10;  // 5s clips generate ~30s faster per clip
     const TARGET_SECS   = SCENE_COUNT * CLIP_DURATION;
+    const MIN_OUTPUT_SECS = isUltraDraft ? 20 : 26; // hard floor — final video never shorter than this
 
     // Model selection: ultra-draft uses v3 standard (shorter queue), all other modes use v3 pro
     const klingT2V = isUltraDraft ? KLING_T2V_MODEL : KLING_T2V_PRO;
@@ -156,11 +188,14 @@ export async function POST(req: Request) {
     }
     scenePrompts = scenePrompts.slice(0, SCENE_COUNT);
 
-    // Inject animation style prefix into every scene prompt when animated content detected.
-    // Always prepend unconditionally — ensures style lock even when individual prompts lack keywords.
+    // Inject style prefix into every scene prompt.
+    // Animated: Disney/Pixar 3D. Non-animated: cinematic quality guard.
     if (isAnimated) {
       scenePrompts = scenePrompts.map(p => ANIMATION_STYLE_PREFIX + p);
       console.log(`[STYLE_ENFORCED] animation=true niche="${niche}" prefix="${ANIMATION_STYLE_PREFIX.substring(0, 60)}" scenes=${scenePrompts.length}`);
+    } else {
+      scenePrompts = scenePrompts.map(p => CINEMATIC_QUALITY_PREFIX + p);
+      console.log(`[STYLE_ENFORCED] cinematic=true prefix="${CINEMATIC_QUALITY_PREFIX.substring(0, 60)}" scenes=${scenePrompts.length}`);
     }
 
     await setJobStatus(jobId, "running", 15);
@@ -218,78 +253,128 @@ export async function POST(req: Request) {
           negativePrompt:  refNegative,
           width:           768,
           height:          1344,
-          useQualityModel: false, // schnell (4 steps) — fast enough for reference anchoring
+          useQualityModel: false,
         });
         referenceImageUrl = refFrame.imageUrl;
         console.log(`[run-cinematic] [CHARACTER_LOCK] flux_ms=${Date.now()-fluxT0} url=${referenceImageUrl.substring(0, 80)}`);
       } catch (refErr) {
-        console.warn("[run-cinematic] reference image failed — falling back to T2V:", (refErr as Error).message);
+        console.warn("[run-cinematic] getimg failed — trying fal.ai flux/schnell fallback:", (refErr as Error).message);
+      }
+
+      // fal.ai flux/schnell fallback when getimg is unavailable or 401s
+      if (!referenceImageUrl) {
+        try {
+          const { fal: falClient } = await import("@fal-ai/client");
+          const FAL_CREDS = process.env.FAL_KEY ?? process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY;
+          if (!FAL_CREDS) throw new Error("No FAL credentials");
+          falClient.config({ credentials: FAL_CREDS });
+          console.log(`[run-cinematic] [GETIMG_MISSING] using fal.ai flux/schnell fallback`);
+          const falResult = await falClient.subscribe("fal-ai/flux/schnell", {
+            input: {
+              prompt:               refPrompt,
+              image_size:           "portrait_4_3" as const,
+              num_inference_steps:  4,
+              num_images:           1,
+            },
+          });
+          const images = (falResult as Record<string, unknown>).images as Array<{ url: string }> | undefined;
+          referenceImageUrl = images?.[0]?.url;
+          if (referenceImageUrl) {
+            console.log(`[run-cinematic] [FAL_FALLBACK] reference image ok ms=${Date.now()-fluxT0} url=${referenceImageUrl.substring(0, 80)}`);
+          }
+        } catch (falErr) {
+          console.warn("[run-cinematic] fal.ai fallback also failed — using T2V:", (falErr as Error).message);
+        }
       }
     } else {
       console.log(`[run-cinematic] [CHARACTER_LOCK] SKIPPED (lightning mode — pure T2V for speed)`);
     }
     const fluxMs = Date.now() - fluxT0;
 
-    // ── 4. Generate Kling clips in parallel (I2V if reference available) ──────
-    const klingT0 = Date.now();
-    console.log(`[run-cinematic] generating ${SCENE_COUNT} clips in parallel mode=${referenceImageUrl ? "i2v" : "t2v"}`);
+    // ── 4+5. PARALLEL: Kling clips + voiceover fire simultaneously ───────────────
+    const parallelT0 = Date.now();
+    console.log(`[run-cinematic] [PARALLEL_START] ${SCENE_COUNT} clips + voiceover firing simultaneously mode=${referenceImageUrl ? "i2v" : "t2v"} dur=${CLIP_DURATION}s each`);
     await setJobStatus(jobId, "generating_clips", 20);
 
-    const clipPromises = scenePrompts.map((prompt, i) =>
-      generateKlingClip({
-        shotId:        `${jobId}-${i}`,
-        shotNumber:    i + 1,
-        visualPrompt:  prompt,
-        modelId:       referenceImageUrl ? klingI2V : klingT2V,
-        imageUrl:      referenceImageUrl,
-        durationSecs:  CLIP_DURATION,
-        aspectRatio:   "9:16",
+    // Clip generator with I2V→T2V timeout fallback
+    const makeClip = async (prompt: string, i: number) => {
+      const clipT0 = Date.now();
+      const baseConfig = {
+        shotId:                `${jobId}-${i}`,
+        shotNumber:            i + 1,
+        visualPrompt:          prompt,
+        modelId:               referenceImageUrl ? klingI2V : klingT2V,
+        imageUrl:              referenceImageUrl,
+        durationSecs:          CLIP_DURATION,
+        aspectRatio:           "9:16" as const,
         brandSuffix,
         characterPromptSuffix: charSuffix,
         speedMode,
-        isStylized:    isAnimated,
-      }).catch(err => {
-        console.error(`[run-cinematic] clip ${i} failed:`, err.message);
+        isStylized:            isAnimated,
+        negativePrompt:        isAnimated ? ANIM_NEGATIVE_PROMPT : undefined,
+      };
+      try {
+        const r = await generateKlingClip(baseConfig);
+        console.log(`[KLING_CLIP_OK] clip=${i} ms=${Date.now()-clipT0} model=${r.model_used}`);
+        return r;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (referenceImageUrl) {
+          // I2V timed out or failed → retry as pure T2V (no reference, faster queue)
+          console.warn(`[LIGHTNING_KLING] I2V failed → T2V fallback clip=${i}: ${msg.slice(0, 80)}`);
+          try {
+            const r2 = await generateKlingClip({ ...baseConfig, modelId: klingT2V, imageUrl: undefined, shotId: `${jobId}-${i}-t2v` });
+            console.log(`[LIGHTNING_KLING] T2V fallback ok clip=${i} ms=${Date.now()-clipT0}`);
+            return r2;
+          } catch (err2) {
+            console.error(`[LIGHTNING_KLING] T2V fallback FAILED clip=${i}:`, (err2 as Error).message.slice(0, 80));
+          }
+        } else {
+          console.error(`[run-cinematic] clip=${i} failed (no fallback):`, msg.slice(0, 80));
+        }
         return null;
-      }),
-    );
+      }
+    };
 
-    const clipResults = await Promise.all(clipPromises);
-    const klingMs = Date.now() - klingT0;
-    const validClips  = clipResults.filter((c): c is NonNullable<typeof c> => c !== null);
+    // Full script voiceover — 'cinematic' mode bypasses word cap entirely.
+    // Server-side safety net: if the script is < 50 words (brief fallback from client),
+    // expand it to ~80 words so the voiceover fills the full 30s clip bed.
+    const voiceScriptRaw  = rawScript || goal;
+    const voiceWordRaw    = voiceScriptRaw.trim().split(/\s+/).filter(Boolean).length;
+    const voiceScript = (!isUltraDraft && voiceWordRaw < 50)
+      ? await expandScriptForDuration(voiceScriptRaw, 80)
+      : voiceScriptRaw;
+    const voiceWordCount = voiceScript.trim().split(/\s+/).filter(Boolean).length;
+    console.log(`[VOICEOVER_CINEMATIC] rawWords=${voiceWordRaw} finalWords=${voiceWordCount} targetSecs=${TARGET_SECS} voiceId=${voiceId} expanded=${voiceWordRaw < 50 && !isUltraDraft}`);
+
+    const [clipResults, voResult] = await Promise.all([
+      Promise.all(scenePrompts.map((p, i) => makeClip(p, i))),
+      voiceScript.length > 10
+        ? generateVoiceover(
+            { script: voiceScript, targetDurationSecs: TARGET_SECS, voiceId, speedMode: "cinematic", speed: isUltraDraft ? 1.15 : 1.05 },
+            userId,
+            jobId,
+          ).catch(e => {
+            console.warn("[run-cinematic] voiceover failed:", (e as Error).message);
+            return { audioUrl: undefined as string | undefined, duration: TARGET_SECS, scriptUsed: voiceScript };
+          })
+        : Promise.resolve({ audioUrl: undefined as string | undefined, duration: TARGET_SECS, scriptUsed: voiceScript }),
+    ]);
+
+    const parallelMs   = Date.now() - parallelT0;
+    const voiceoverUrl = voResult.audioUrl;
+    const voiceDuration = voResult.duration;
+    const validClips   = clipResults.filter((c): c is NonNullable<typeof c> => c !== null);
+
+    const expectedFinalDuration = Math.max(voiceDuration, MIN_OUTPUT_SECS);
+    console.log(`[PARALLEL_DONE] totalMs=${parallelMs} clips=${validClips.length}/${SCENE_COUNT} voice=${!!voiceoverUrl} voiceDuration=${voiceDuration.toFixed(1)}s`);
+    console.log(`[DURATION_ENFORCED] voice=${voiceDuration.toFixed(1)}s min=${MIN_OUTPUT_SECS}s final_target=${expectedFinalDuration.toFixed(1)}s clips=${validClips.length}×${CLIP_DURATION}s`);
 
     if (!validClips.length) {
       throw new Error("All clips failed to generate");
     }
 
     console.log(`[run-cinematic] [VIDEO_DURATION] sec=${validClips.length * CLIP_DURATION} clips=${validClips.length}`);
-    await setJobStatus(jobId, "generating_audio", 60);
-
-    // ── 5. Generate voiceover — use full script, no aggressive word cap ──────────
-    const voiceT0 = Date.now();
-    let voiceoverUrl: string | undefined;
-    let voiceDuration = TARGET_SECS;
-    // Use the FULL raw script — not the trimmed 75-word version.
-    // 'cinematic' mode bypasses the per-mode word cap in generateVoiceover.
-    const voiceScript = rawScript || goal;
-    const voiceWordCount = voiceScript.trim().split(/\s+/).filter(Boolean).length;
-    console.log(`[VOICEOVER_CINEMATIC] fullScriptWords=${voiceWordCount} targetSecs=${TARGET_SECS} voiceId=${voiceId}`);
-    if (voiceScript.length > 10) {
-      try {
-        const voResult = await generateVoiceover(
-          { script: voiceScript, targetDurationSecs: TARGET_SECS, voiceId, speedMode: "cinematic" },
-          userId,
-          jobId,
-        );
-        voiceoverUrl = voResult.audioUrl;
-        voiceDuration = voResult.duration;
-        console.log(`[VOICEOVER_CINEMATIC] finalDuration=${voiceDuration.toFixed(2)}s url=${voiceoverUrl?.slice(0, 60)}`);
-      } catch (voErr) {
-        console.warn("[run-cinematic] voiceover failed (continuing without audio):", (voErr as Error).message);
-      }
-    }
-    const voiceMs = Date.now() - voiceT0;
-
     await setJobStatus(jobId, "composing", 75);
 
     // ── 6. Stitch clips → final video ─────────────────────────────────────────
@@ -308,6 +393,7 @@ export async function POST(req: Request) {
         planId:            jobId,
         targetSecs:        TARGET_SECS,
         voiceDurationSecs: voiceDuration,
+        minDurationSecs:   MIN_OUTPUT_SECS,
         speedMode:         speedMode as "draft" | "balanced" | "quality" | "ultra-draft",
       });
       finalVideoUrl = stitchResult.output_url;
@@ -344,8 +430,8 @@ export async function POST(req: Request) {
     // ── 7. Commit credits + mark job complete ────────────────────────────────
     const totalMs = Date.now() - t0;
     console.log(
-      `[SPEED_BREAKDOWN] mode=${speedMode} | Flux=${fluxMs}ms | Kling=${klingMs}ms | Voice=${voiceMs}ms | Stitch=${stitchMs}ms | Total=${totalMs}ms` +
-      ` | clips=${validClips.length} i2v=${!!referenceImageUrl}`,
+      `[SPEED_BREAKDOWN] mode=${speedMode} | Flux=${fluxMs}ms | Parallel(clips+voice)=${parallelMs}ms | Stitch=${stitchMs}ms | Total=${totalMs}ms` +
+      ` | clips=${validClips.length} i2v=${!!referenceImageUrl} finalTarget=${expectedFinalDuration.toFixed(1)}s`,
     );
 
     await commitCredits(creditCost);
