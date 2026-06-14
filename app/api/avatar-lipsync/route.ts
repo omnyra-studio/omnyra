@@ -25,7 +25,7 @@ export const maxDuration = 300;
 
 // ── Lipsync result type ───────────────────────────────────────────────────────
 
-export interface LipsyncResult {
+interface LipsyncResult {
   video_url:          string | null;
   request_id:         string;
   status:             "success" | "fallback_used" | "failed";
@@ -40,7 +40,7 @@ export interface LipsyncResult {
 // Phase 1 routing: motion_complexity > 25 → Kling (not yet integrated; Hedra-only for now).
 // When Kling provider is available, route by model decision here.
 
-export async function generateLipsyncWithFallback(
+async function generateLipsyncWithFallback(
   imageUrl:    string,
   audioUrl:    string,
   description: string = "",

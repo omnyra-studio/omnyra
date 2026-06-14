@@ -287,18 +287,20 @@ export async function ingestPerformanceData(
     .from("performance_data")
     .upsert(
       {
-        project_id:           data.renderId,
-        platform:             data.platform,
-        post_url:             data.postUrl             ?? null,
-        views:                data.views,
-        likes:                data.likes               ?? 0,
-        comments:             data.comments            ?? 0,
-        shares:               data.shares              ?? 0,
-        saves:                data.saves               ?? 0,
-        retention_percentage: data.retentionPct        ?? null,
-        data_ingested_at:     new Date().toISOString(),
+        render_id:        data.renderId,
+        user_id:          userId,
+        platform:         data.platform,
+        post_url:         data.postUrl          ?? null,
+        views:            data.views,
+        likes:            data.likes             ?? 0,
+        comments:         data.comments          ?? 0,
+        shares:           data.shares            ?? 0,
+        saves:            data.saves             ?? 0,
+        retention_pct:    data.retentionPct      ?? null,
+        watch_time_seconds: data.watchTimeSeconds ?? null,
+        data_ingested_at: new Date().toISOString(),
       },
-      { onConflict: "project_id,platform" },
+      { onConflict: "render_id,platform" },
     );
 
   if (perfErr) {
@@ -377,7 +379,8 @@ export async function analyzeCreatorHistory(userId: string): Promise<CreatorHist
 
     supabaseAdmin
       .from("performance_data")
-      .select("project_id, platform, views, retention_percentage, shares, saves")
+      .select("render_id, platform, views, retention_pct, shares, saves")
+      .eq("user_id", userId)
       .order("data_ingested_at", { ascending: false })
       .limit(150),
   ]);
@@ -391,8 +394,8 @@ export async function analyzeCreatorHistory(userId: string): Promise<CreatorHist
   // Build a performance lookup by render ID
   const perfByRender = new Map<string, typeof perfRows[0]>();
   for (const p of perfRows) {
-    if (!perfByRender.has(p.project_id)) {
-      perfByRender.set(p.project_id, p);
+    if (!perfByRender.has(p.render_id)) {
+      perfByRender.set(p.render_id, p);
     }
   }
 
@@ -421,8 +424,8 @@ export async function analyzeCreatorHistory(userId: string): Promise<CreatorHist
     templateMap[t] ??= { count: 0, published: 0, retentionSum: 0, retentionN: 0, scriptWords: [] };
     templateMap[t].count++;
     if (r.was_published) templateMap[t].published++;
-    if (pf?.retention_percentage != null) {
-      templateMap[t].retentionSum += pf.retention_percentage as number;
+    if (pf?.retention_pct != null) {
+      templateMap[t].retentionSum += pf.retention_pct as number;
       templateMap[t].retentionN++;
     }
     const wc = r.script ? (r.script as string).trim().split(/\s+/).length : 0;
