@@ -72,7 +72,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
   const [step,           setStep]           = useState(1);
   const [prompt,         setPrompt]         = useState('');
   const [niche,          setNiche]          = useState('');
-  const [platform,       setPlatform]       = useState('');
+  const [platform,       setPlatform]       = useState('TikTok');
   const [targetAudience, setTargetAudience] = useState('');
   const [pastWins,       setPastWins]       = useState('');
   const [competitors,    setCompetitors]    = useState('');
@@ -397,24 +397,74 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
           {/* Niche + Platform row */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
-              <label style={labelStyle}>Niche / Industry</label>
-              <input
+              <label style={{ color: '#A89BAF', fontSize: '0.75rem', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'block', marginBottom: 8 }}>
+                Niche / Industry
+              </label>
+              <select
                 value={niche}
                 onChange={e => setNiche(e.target.value)}
-                placeholder="e.g. Fitness, Beauty, Finance"
                 disabled={isLoading}
-                style={{ ...inputStyle, opacity: isLoading ? 0.6 : 1 }}
-              />
+                style={{
+                  width: '100%', background: '#0D0020', border: '1px solid #2D1B4E',
+                  borderRadius: 10, padding: '12px 16px',
+                  color: niche ? '#F5EFE6' : '#6B21A8', fontSize: '0.9rem',
+                  fontFamily: 'inherit', cursor: isLoading ? 'not-allowed' : 'pointer',
+                  appearance: 'none' as const,
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236B21A8' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
+                  backgroundRepeat: 'no-repeat', backgroundPosition: 'right 14px center',
+                  opacity: isLoading ? 0.6 : 1, boxSizing: 'border-box' as const,
+                }}
+              >
+                <option value="" disabled>Select your niche...</option>
+                <option value="PSYCHOLOGY, KINDNESS, HONESTY">Psychology · Kindness · Honesty</option>
+                <option value="BEAUTY, SKINCARE, MAKEUP">Beauty · Skincare · Makeup</option>
+                <option value="FITNESS, WELLNESS, HEALTH">Fitness · Wellness · Health</option>
+                <option value="FOOD, RECIPES, COOKING">Food · Recipes · Cooking</option>
+                <option value="FASHION, STYLE, LIFESTYLE">Fashion · Style · Lifestyle</option>
+                <option value="BUSINESS, FINANCE, ENTREPRENEURSHIP">Business · Finance · Entrepreneurship</option>
+                <option value="TRAVEL, ADVENTURE, CULTURE">Travel · Adventure · Culture</option>
+                <option value="PARENTING, FAMILY, RELATIONSHIPS">Parenting · Family · Relationships</option>
+                <option value="EDUCATION, LEARNING, SELF IMPROVEMENT">Education · Learning · Self Improvement</option>
+                <option value="TECHNOLOGY, AI, GAMING">Technology · AI · Gaming</option>
+                <option value="PETS, ANIMALS">Pets · Animals</option>
+                <option value="REAL ESTATE, PROPERTY">Real Estate · Property</option>
+                <option value="TRADES, CONSTRUCTION, DIY">Trades · Construction · DIY</option>
+                <option value="CAFE, HOSPITALITY, FOOD BUSINESS">Cafe · Hospitality · Food Business</option>
+                <option value="HISTORY, TRUE STORIES, DOCUMENTARY">History · True Stories · Documentary</option>
+                <option value="MOTIVATION, MINDSET, PERSONAL GROWTH">Motivation · Mindset · Personal Growth</option>
+                <option value="COMEDY, ENTERTAINMENT, POP CULTURE">Comedy · Entertainment · Pop Culture</option>
+                <option value="LUXURY, LIFESTYLE, ASPIRATIONAL">Luxury · Lifestyle · Aspirational</option>
+                <option value="MEDICAL, HEALTH PROFESSIONAL">Medical · Health Professional</option>
+                <option value="OTHER">Other</option>
+              </select>
             </div>
             <div>
-              <label style={labelStyle}>Platform</label>
-              <input
+              <label style={{ color: '#A89BAF', fontSize: '0.75rem', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'block', marginBottom: 8 }}>
+                Target Platform
+              </label>
+              <select
                 value={platform}
                 onChange={e => setPlatform(e.target.value)}
-                placeholder="e.g. TikTok, Instagram, YouTube"
-                disabled={isLoading}
-                style={{ ...inputStyle, opacity: isLoading ? 0.6 : 1 }}
-              />
+                disabled={isLoading || toolId === 'tiktok-story'}
+                style={{
+                  width: '100%', background: '#0D0020', border: '1px solid #2D1B4E',
+                  borderRadius: 10, padding: '12px 16px',
+                  color: '#F5EFE6', fontSize: '0.9rem',
+                  fontFamily: 'inherit',
+                  cursor: (isLoading || toolId === 'tiktok-story') ? 'not-allowed' : 'pointer',
+                  appearance: 'none' as const,
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236B21A8' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
+                  backgroundRepeat: 'no-repeat', backgroundPosition: 'right 14px center',
+                  opacity: (isLoading || toolId === 'tiktok-story') ? 0.7 : 1,
+                  boxSizing: 'border-box' as const,
+                }}
+              >
+                <option value="TikTok">🎵 TikTok</option>
+                <option value="Instagram Reels">📸 Instagram Reels</option>
+                <option value="YouTube Shorts">▶️ YouTube Shorts</option>
+                <option value="Facebook Reels">👤 Facebook Reels</option>
+                <option value="Pinterest">📌 Pinterest</option>
+              </select>
             </div>
           </div>
 

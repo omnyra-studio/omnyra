@@ -104,6 +104,16 @@
   z-index: 0;
 }
 
+/* ── Select dropdown styles ── */
+select option {
+  background: #0D0020;
+  color: #F5EFE6;
+}
+select:focus {
+  outline: none;
+  border-color: #C084FC !important;
+}
+
 /* ── Textarea readability ── */
 .omnyra-textarea {
   color: #F5EFE6 !important;
