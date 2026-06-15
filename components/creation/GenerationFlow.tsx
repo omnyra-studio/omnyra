@@ -34,7 +34,6 @@ const VOICES = [
   { id: 'TxGEqnHWrfWFTfGW9XjX', name: 'Josh',   accent: 'American · Deep' },
 ];
 
-// Steps: 1=Prompt, 2=Script, 3=Scenes, 4=Voice
 const STEP_LABELS = ['Prompt', 'Script', 'Scenes', 'Voice'];
 
 export default function GenerationFlow({ toolId, toolName, modelOverride, scriptOnly }: Props) {
@@ -84,7 +83,6 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
     if (!prompt.trim()) return;
     setLoadingState('Analysing your scene…');
 
-    // Silent Ghost Test — enhance prompt
     let ghostEnhanced = prompt;
     try {
       const ghostRes  = await fetch('/api/ghost-test-score', {
@@ -95,26 +93,18 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
       ghostEnhanced   = ghostData.enhancedPrompt ?? prompt;
     } catch {}
 
-    // Generate brief/script versions
     setLoadingState('Writing your scripts…');
     try {
       const res  = await fetch('/api/generate-brief-sync', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body:   JSON.stringify({
-          goal:     ghostEnhanced,
-          toolId,
-          niche:    toolId,
-          lightningMode,
-        }),
+        body:   JSON.stringify({ goal: ghostEnhanced, toolId, niche: toolId, lightningMode }),
       });
       const data = await res.json();
       const versions = (data.versions ?? []) as VersionResult[];
       setScripts(versions);
       setSelectedScript(versions[0] ?? null);
       setStep(2);
-    } catch {
-      // fall through
-    }
+    } catch {}
     setLoadingState('');
   };
 
@@ -135,13 +125,10 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
       setConcepts(data.concepts ?? []);
       setSelectedConcept(null);
       setStep(3);
-    } catch {
-      // fall through
-    }
+    } catch {}
     setLoadingState('');
   };
 
-  // ── Step 3 → 4: start video in background while user picks voice ─────────────
   const handleConfirmAndStartVideo = () => {
     setStep(4);
     startVideoGeneration();
@@ -211,40 +198,45 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
     finally { setStitching(false); }
   };
 
-  const estTime  = modelOverride === 'hedra' ? '~2 min' : modelOverride === 'pika' ? '~90s' : '~4 min';
+  const estTime   = modelOverride === 'hedra' ? '~2 min' : modelOverride === 'pika' ? '~90s' : '~4 min';
   const isLoading = !!loadingState;
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <div style={{ maxWidth: 800, margin: '0 auto' }}>
 
       {/* ── Step indicator ────────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-2 mb-10 flex-wrap">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 40, flexWrap: 'wrap' }}>
         {STEP_LABELS.slice(0, totalSteps).map((label, i) => (
-          <div key={label} className="flex items-center gap-2">
-            <div
-              className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all"
-              style={{
-                background:  step === i + 1 ? '#C084FC' : step > i + 1 ? '#3B1F6A' : '#0D0020',
-                color:       step === i + 1 ? '#000' : step > i + 1 ? '#C084FC' : '#9370DB',
-                border:      step <= i + 1 ? '1px solid #4C1D95' : 'none',
-              }}
-            >
+          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{
+              width: 28, height: 28, borderRadius: '50%',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: 12, fontWeight: 700,
+              background:  step === i + 1 ? '#C084FC' : step > i + 1 ? '#3B1F6A' : '#0D0020',
+              color:       step === i + 1 ? '#000' : step > i + 1 ? '#C084FC' : '#9370DB',
+              border:      step <= i + 1 ? '1px solid #4C1D95' : 'none',
+            }}>
               {step > i + 1 ? '✓' : i + 1}
             </div>
-            <span className="text-xs font-medium" style={{ color: step === i + 1 ? '#E8DEFF' : step > i + 1 ? '#C084FC' : '#9370DB' }}>
+            <span style={{
+              fontSize: 12, fontWeight: 500,
+              color: step === i + 1 ? '#E8DEFF' : step > i + 1 ? '#C084FC' : '#9370DB',
+            }}>
               {label}
             </span>
-            {i < totalSteps - 1 && <div className="w-6 h-px mx-1" style={{ background: '#2D1B4E' }} />}
+            {i < totalSteps - 1 && (
+              <div style={{ width: 24, height: 1, background: '#2D1B4E', margin: '0 4px' }} />
+            )}
           </div>
         ))}
       </div>
 
       {/* ── STEP 1: Prompt ───────────────────────────────────────────────────── */}
       {step === 1 && (
-        <div className="space-y-5">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
           <div>
-            <h2 className="text-2xl font-bold mb-1" style={{ color: '#F5EFE6' }}>{toolName}</h2>
-            <p className="text-sm" style={{ color: '#B09FC0' }}>Understand emotion deeply. Show it visually.</p>
+            <h2 style={{ color: '#F5EFE6', fontWeight: 700, fontSize: '1.5rem', marginBottom: 6 }}>{toolName}</h2>
+            <p style={{ color: '#B09FC0', fontSize: '0.875rem' }}>Understand emotion deeply. Show it visually.</p>
           </div>
 
           <textarea
@@ -253,19 +245,18 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
             placeholder="Describe your scene or story..."
             rows={7}
             disabled={isLoading}
-            className="w-full rounded-2xl outline-none p-5 text-sm resize-y transition-colors disabled:opacity-60"
+            className="omnyra-textarea"
             style={{
-              background:  '#1A0A2E',
-              border:      '1px solid #4C1D95',
-              color:       '#F5EFE6',
-              fontFamily:  'inherit',
-              caretColor:  '#C084FC',
+              width: '100%', borderRadius: 16, padding: '20px',
+              fontSize: '0.875rem', resize: 'vertical',
+              border: '1px solid #4C1D95', outline: 'none',
+              fontFamily: 'inherit', caretColor: '#C084FC',
+              transition: 'border-color 0.2s', boxSizing: 'border-box',
+              opacity: isLoading ? 0.6 : 1,
             }}
             onFocus={e => { e.currentTarget.style.borderColor = '#C084FC'; }}
             onBlur={e => { e.currentTarget.style.borderColor = '#4C1D95'; }}
           />
-          {/* placeholder color override — Tailwind can't reach the pseudo-element with dynamic values */}
-          <style>{`textarea::placeholder { color: #7C3AED; }`}</style>
 
           {/* ⚡ Lightning Mode */}
           <div style={{
@@ -300,23 +291,24 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
           </div>
 
           {isLoading && (
-            <div className="rounded-xl px-4 py-3 flex items-center gap-3" style={{ background: '#1A0A2E', border: '1px solid #2D1B4E' }}>
-              <div className="w-4 h-4 rounded-full border-2 border-t-[#C084FC] border-[#2D1B4E] animate-spin" />
-              <span className="text-sm" style={{ color: '#B09FC0' }}>{loadingState}</span>
+            <div style={{ borderRadius: 12, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, background: '#1A0A2E', border: '1px solid #2D1B4E' }}>
+              <div style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid #2D1B4E', borderTopColor: '#C084FC', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+              <span style={{ color: '#B09FC0', fontSize: '0.875rem' }}>{loadingState}</span>
             </div>
           )}
 
           <button
             onClick={handleGenerateScript}
             disabled={!prompt.trim() || isLoading}
-            className="w-full py-4 rounded-2xl font-semibold text-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed"
             style={{
-              background:     'linear-gradient(105deg, #5A3400 0%, #9A7010 20%, #CFA42F 42%, #E8C84A 50%, #CFA42F 58%, #9A7010 80%, #5A3400 100%)',
+              width: '100%', padding: '16px', borderRadius: 16,
+              background: 'linear-gradient(105deg, #5A3400 0%, #9A7010 20%, #CFA42F 42%, #E8C84A 50%, #CFA42F 58%, #9A7010 80%, #5A3400 100%)',
               backgroundSize: '200% auto',
-              animation:      'metalShimmer 3s linear infinite',
-              color:          '#0D0010',
-              fontWeight:     700,
-              boxShadow:      '0 0 16px rgba(207,164,47,0.3)',
+              animation: 'metalShimmer 3s linear infinite',
+              color: '#0D0010', fontWeight: 700, fontSize: '0.875rem',
+              border: 'none', cursor: 'pointer',
+              boxShadow: '0 0 16px rgba(207,164,47,0.3)',
+              opacity: (!prompt.trim() || isLoading) ? 0.4 : 1,
             }}
           >
             {isLoading ? loadingState : 'Generate Script →'}
@@ -324,165 +316,250 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
         </div>
       )}
 
-      {/* ── STEP 2: Script versions ───────────────────────────────────────────── */}
+      {/* ── STEP 2: Script version tabs + viral analytics ─────────────────────── */}
       {step === 2 && (
-        <div className="space-y-5">
-          <div>
-            <h2 className="text-xl font-bold mb-1" style={{ color: '#F5EFE6' }}>Pick your script</h2>
-            <p className="text-sm" style={{ color: '#B09FC0' }}>Choose the version that fits your vision.</p>
-          </div>
+        <div style={{ maxWidth: 760, margin: '0 auto' }}>
 
-          <div className="space-y-3 max-h-[65vh] overflow-y-auto pr-1">
-            {scripts.map((v, i) => (
-              <div
-                key={i}
-                onClick={() => setSelectedScript(v)}
-                className="cursor-pointer rounded-2xl p-5 transition-all"
+          {/* Header */}
+          <h1 style={{
+            textAlign: 'center', color: '#F0A500', fontWeight: 800,
+            fontSize: 'clamp(1.4rem, 4vw, 2.2rem)', letterSpacing: '0.15em',
+            textTransform: 'uppercase', marginBottom: 16,
+          }}>
+            {toolName}
+          </h1>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 8 }}>
+            <p style={{ color: '#A89BAF', fontSize: '0.9rem', margin: 0 }}>
+              Brief for: <span style={{ color: '#C4B5D0' }}>{prompt.length > 60 ? prompt.slice(0, 60) + '…' : prompt}</span>
+            </p>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                onClick={() => setStep(1)}
                 style={{
-                  background:  selectedScript === v ? 'rgba(192,132,252,0.12)' : '#1A0A2E',
-                  border:      selectedScript === v ? '1.5px solid #C084FC' : '1px solid #2D1B4E',
-                  boxShadow:   selectedScript === v ? '0 0 16px rgba(192,132,252,0.2)' : 'none',
+                  background: 'transparent', border: '1px solid rgba(255,255,255,0.3)',
+                  color: '#F5EFE6', borderRadius: 999, padding: '6px 16px',
+                  fontSize: '0.85rem', cursor: 'pointer',
                 }}
               >
-                <div className="flex items-start justify-between gap-3 mb-2">
-                  <span className="text-sm font-semibold" style={{ color: '#E8DEFF' }}>{v.title || `Version ${i + 1}`}</span>
-                  <span
-                    className="text-xs font-bold px-2 py-0.5 rounded-full shrink-0"
-                    style={{
-                      background: v.viral_score >= 80 ? 'rgba(192,132,252,0.2)' : 'rgba(207,164,47,0.15)',
-                      color:      v.viral_score >= 80 ? '#C084FC' : '#CFA42F',
-                      border:     v.viral_score >= 80 ? '1px solid rgba(192,132,252,0.4)' : '1px solid rgba(207,164,47,0.3)',
-                    }}
-                  >
-                    {v.viral_score}/100
-                  </span>
-                </div>
-
-                <p className="text-xs font-medium mb-2" style={{ color: '#CFA42F' }}>
-                  "{v.hook}"
-                </p>
-
-                <p className="text-xs leading-relaxed" style={{ color: '#B09FC0' }}>
-                  {v.script}
-                </p>
-
-                {v.hook_strength && (
-                  <div className="flex items-center gap-3 mt-3 pt-3" style={{ borderTop: '1px solid #1A0A2E' }}>
-                    <span className="text-xs" style={{ color: '#6B4FA8' }}>Hook: <span style={{ color: '#9370DB' }}>{v.hook_strength}</span></span>
-                    <span className="text-xs" style={{ color: '#6B4FA8' }}>Best time: <span style={{ color: '#9370DB' }}>{v.best_post_time}</span></span>
-                    <span className="text-xs" style={{ color: '#6B4FA8' }}>Reach: <span style={{ color: '#9370DB' }}>{v.estimated_reach}</span></span>
-                  </div>
-                )}
-              </div>
-            ))}
+                Edit
+              </button>
+              <button
+                onClick={() => { setStep(1); setPrompt(''); setScripts([]); setSelectedScript(null); }}
+                style={{
+                  background: 'transparent', border: '1px solid rgba(255,255,255,0.3)',
+                  color: '#F5EFE6', borderRadius: 999, padding: '6px 16px',
+                  fontSize: '0.85rem', cursor: 'pointer',
+                }}
+              >
+                New Project
+              </button>
+            </div>
           </div>
 
+          {/* Version tabs */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 28 }}>
+            {scripts.map((v, i) => (
+              <button
+                key={i}
+                onClick={() => setSelectedScript(v)}
+                style={{
+                  background:  selectedScript === v ? 'rgba(240,165,0,0.1)' : 'rgba(255,255,255,0.05)',
+                  border:      selectedScript === v ? '1px solid #F0A500' : '1px solid rgba(255,255,255,0.15)',
+                  borderRadius: 999, padding: '10px 20px',
+                  color: '#F5EFE6', cursor: 'pointer', fontSize: '0.9rem',
+                  display: 'flex', alignItems: 'center', gap: 8,
+                }}
+              >
+                <span>Version</span>
+                <span style={{ color: '#F0A500', fontWeight: 700 }}>{v.viral_score}/100</span>
+              </button>
+            ))}
+            <button
+              onClick={handleGenerateScript}
+              style={{
+                background: 'transparent', border: 'none',
+                color: '#F0A500', fontSize: '0.9rem', cursor: 'pointer',
+                textDecoration: 'underline', padding: '10px 8px',
+              }}
+            >
+              Generate 5 more →
+            </button>
+          </div>
+
+          {/* Loading indicator */}
           {isLoading && (
-            <div className="rounded-xl px-4 py-3 flex items-center gap-3" style={{ background: '#1A0A2E', border: '1px solid #2D1B4E' }}>
-              <div className="w-4 h-4 rounded-full border-2 border-t-[#C084FC] border-[#2D1B4E] animate-spin" />
-              <span className="text-sm" style={{ color: '#B09FC0' }}>{loadingState}</span>
+            <div style={{ borderRadius: 12, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', marginBottom: 16 }}>
+              <div style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.1)', borderTopColor: '#F0A500', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+              <span style={{ color: '#A89BAF', fontSize: '0.875rem' }}>{loadingState}</span>
             </div>
           )}
 
-          <div className="flex gap-3">
-            <button
-              onClick={() => { setStep(1); setScripts([]); setSelectedScript(null); }}
-              className="flex-1 py-3 rounded-xl text-sm transition-colors"
-              style={{ background: 'transparent', border: '1px solid #2D1B4E', color: '#B09FC0' }}
-            >
-              ← Back
-            </button>
-            {scriptOnly ? (
-              <button
-                disabled={!selectedScript}
-                className="flex-1 py-3 rounded-xl font-semibold text-sm disabled:opacity-40"
-                style={{ background: 'linear-gradient(135deg, #C084FC, #E879F9)', color: '#fff' }}
-              >
-                Export Script ✓
-              </button>
-            ) : (
-              <button
-                onClick={handleGenerateScenes}
-                disabled={!selectedScript || isLoading}
-                className="flex-1 py-3 rounded-xl font-semibold text-sm disabled:opacity-40 disabled:cursor-not-allowed"
-                style={{
-                  background:     'linear-gradient(105deg, #5A3400 0%, #9A7010 20%, #CFA42F 42%, #E8C84A 50%, #CFA42F 58%, #9A7010 80%, #5A3400 100%)',
-                  backgroundSize: '200% auto',
-                  animation:      'metalShimmer 3s linear infinite',
-                  color:          '#0D0010',
-                  fontWeight:     700,
-                }}
-              >
-                {isLoading ? loadingState : 'Generate Scenes →'}
-              </button>
-            )}
-          </div>
+          {/* Selected version content */}
+          {selectedScript && (
+            <>
+              {/* Viral Analytics card */}
+              <div style={{
+                background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255,255,255,0.1)', borderRadius: 16,
+                padding: '28px 32px', marginBottom: 16,
+              }}>
+                <p style={{
+                  textAlign: 'center', color: '#F0A500', fontSize: '0.7rem',
+                  letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: 24,
+                }}>
+                  Viral Analytics
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, textAlign: 'center' }}>
+                  <div>
+                    <p style={{ color: '#6B7280', fontSize: '0.65rem', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8 }}>Viral Potential</p>
+                    <p style={{ color: '#F0A500', fontSize: '2.5rem', fontWeight: 800, lineHeight: 1, margin: 0 }}>{selectedScript.viral_score}</p>
+                    <p style={{ color: '#6B7280', fontSize: '0.75rem', margin: 0 }}>/ 100</p>
+                  </div>
+                  <div>
+                    <p style={{ color: '#6B7280', fontSize: '0.65rem', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8 }}>Hook Strength</p>
+                    <p style={{ color: '#4ADE80', fontSize: '1.2rem', fontWeight: 700, margin: 0 }}>{selectedScript.hook_strength || 'Strong'}</p>
+                  </div>
+                  <div>
+                    <p style={{ color: '#6B7280', fontSize: '0.65rem', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8 }}>Estimated Reach</p>
+                    <p style={{ color: '#C084FC', fontSize: '1rem', fontWeight: 600, margin: 0 }}>{selectedScript.estimated_reach || '10K-50K views'}</p>
+                  </div>
+                  <div>
+                    <p style={{ color: '#6B7280', fontSize: '0.65rem', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8 }}>Best Post Time</p>
+                    <p style={{ color: '#C084FC', fontSize: '1rem', fontWeight: 600, margin: 0 }}>{selectedScript.best_post_time || '7pm-9pm Tue-Thu'}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Script content card */}
+              <div style={{
+                background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(10px)',
+                border: '1px solid rgba(255,255,255,0.1)', borderRadius: 16,
+                padding: '28px 32px', marginBottom: 20,
+              }}>
+                {selectedScript.title && (
+                  <p style={{
+                    textAlign: 'center', color: '#F0A500', fontSize: '0.7rem',
+                    letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: 20,
+                  }}>
+                    {selectedScript.title}
+                  </p>
+                )}
+                <p style={{
+                  color: '#F0A500', fontSize: '1.25rem', fontWeight: 600,
+                  lineHeight: 1.6, marginBottom: 16,
+                }}>
+                  "{selectedScript.hook}"
+                </p>
+                {selectedScript.script && (
+                  <p style={{ color: '#C4B5D0', fontSize: '0.9rem', lineHeight: 1.7, margin: 0 }}>
+                    {selectedScript.script}
+                  </p>
+                )}
+              </div>
+
+              {/* CTA */}
+              {scriptOnly ? (
+                <button style={{
+                  width: '100%', padding: '18px',
+                  background: '#F0A500', color: '#0D0010',
+                  fontWeight: 700, fontSize: '1rem', letterSpacing: '0.05em',
+                  border: 'none', borderRadius: 14, cursor: 'pointer',
+                }}>
+                  ✓ Export Script
+                </button>
+              ) : (
+                <button
+                  onClick={handleGenerateScenes}
+                  disabled={isLoading}
+                  style={{
+                    width: '100%', padding: '18px',
+                    background: '#F0A500', color: '#0D0010',
+                    fontWeight: 700, fontSize: '1rem', letterSpacing: '0.05em',
+                    border: 'none', borderRadius: 14, cursor: isLoading ? 'not-allowed' : 'pointer',
+                    opacity: isLoading ? 0.6 : 1,
+                  }}
+                >
+                  {isLoading ? loadingState : '✓ Version Selected — Build Scenes →'}
+                </button>
+              )}
+            </>
+          )}
         </div>
       )}
 
       {/* ── STEP 3: Scene image cards (2×2 grid) ─────────────────────────────── */}
       {step === 3 && (
-        <div className="space-y-6">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
           <div>
-            <h2 className="text-xl font-bold mb-1" style={{ color: '#F5EFE6' }}>Choose your scene</h2>
-            <p className="text-sm" style={{ color: '#B09FC0' }}>Select one image to build your video from.</p>
+            <h2 style={{ color: '#F5EFE6', fontWeight: 700, fontSize: '1.25rem', marginBottom: 6 }}>Choose your scene</h2>
+            <p style={{ color: '#B09FC0', fontSize: '0.875rem' }}>Select one image to build your video from.</p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             {concepts.map((c, i) => (
               <div
                 key={i}
                 onClick={() => setSelectedConcept(c)}
-                className="relative cursor-pointer rounded-2xl overflow-hidden transition-all duration-200"
                 style={{
-                  aspectRatio: '9/16',
-                  outline:     selectedConcept === c ? '3px solid #C084FC' : '2px solid transparent',
-                  boxShadow:   selectedConcept === c ? '0 0 24px rgba(192,132,252,0.5)' : 'none',
-                  background:  '#0D0020',
+                  position: 'relative', cursor: 'pointer', borderRadius: 16,
+                  overflow: 'hidden', aspectRatio: '9/16',
+                  outline:    selectedConcept === c ? '3px solid #C084FC' : '2px solid transparent',
+                  boxShadow:  selectedConcept === c ? '0 0 24px rgba(192,132,252,0.5)' : 'none',
+                  background: '#0D0020',
                 }}
               >
                 {c.imageUrl ? (
-                  <img src={c.imageUrl} alt={c.title} className="absolute inset-0 w-full h-full object-cover" />
+                  <img src={c.imageUrl} alt={c.title} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
                 ) : (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="text-3xl animate-pulse opacity-30">🎬</div>
+                  <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ fontSize: '2rem', opacity: 0.3 }}>🎬</div>
                   </div>
                 )}
-
-                <div className="absolute inset-0" style={{ background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.2) 50%, transparent 100%)' }} />
-
-                <div className="absolute top-2 right-2 text-xs font-bold px-2 py-0.5 rounded-full"
-                  style={{ background: 'rgba(0,0,0,0.7)', color: '#C084FC', border: '1px solid rgba(192,132,252,0.4)' }}>
+                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.2) 50%, transparent 100%)' }} />
+                <div style={{
+                  position: 'absolute', top: 8, right: 8, fontSize: 11, fontWeight: 700,
+                  padding: '2px 8px', borderRadius: 999,
+                  background: 'rgba(0,0,0,0.7)', color: '#C084FC', border: '1px solid rgba(192,132,252,0.4)',
+                }}>
                   👻 {c.ghostScore}
                 </div>
-
                 {selectedConcept === c && (
-                  <div className="absolute top-2 left-2 w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold"
-                    style={{ background: '#C084FC', color: '#000' }}>
+                  <div style={{
+                    position: 'absolute', top: 8, left: 8, width: 24, height: 24,
+                    borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 12, fontWeight: 700, background: '#C084FC', color: '#000',
+                  }}>
                     ✓
                   </div>
                 )}
-
-                <div className="absolute bottom-0 left-0 right-0 p-3">
-                  <p className="text-xs font-semibold text-white leading-tight">{c.title}</p>
+                <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 12 }}>
+                  <p style={{ fontSize: 11, fontWeight: 600, color: '#fff', margin: 0, lineHeight: 1.4 }}>{c.title}</p>
                 </div>
               </div>
             ))}
           </div>
 
-          <div className="flex gap-3">
+          <div style={{ display: 'flex', gap: 12 }}>
             <button
               onClick={() => { setStep(2); setConcepts([]); setSelectedConcept(null); }}
-              className="flex-1 py-3 rounded-xl text-sm"
-              style={{ background: 'transparent', border: '1px solid #2D1B4E', color: '#B09FC0' }}
+              style={{
+                flex: 1, padding: '12px', borderRadius: 12, fontSize: '0.875rem',
+                background: 'transparent', border: '1px solid #2D1B4E', color: '#B09FC0', cursor: 'pointer',
+              }}
             >
               ← Back
             </button>
             <button
               onClick={() => { if (selectedConcept) handleConfirmAndStartVideo(); }}
               disabled={!selectedConcept}
-              className="flex-1 py-3 rounded-xl font-semibold text-sm disabled:opacity-40 disabled:cursor-not-allowed hover:brightness-110 transition-all"
-              style={{ background: 'linear-gradient(135deg, #C084FC, #E879F9)', color: '#fff' }}
+              style={{
+                flex: 1, padding: '12px', borderRadius: 12, fontSize: '0.875rem',
+                fontWeight: 700, background: 'linear-gradient(135deg, #C084FC, #E879F9)',
+                color: '#fff', border: 'none',
+                cursor: selectedConcept ? 'pointer' : 'not-allowed',
+                opacity: selectedConcept ? 1 : 0.4,
+              }}
             >
               Add Voice & Generate →
             </button>
@@ -492,75 +569,74 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
 
       {/* ── STEP 4: Voice + Final generation ─────────────────────────────────── */}
       {step === 4 && (
-        <div className="space-y-6">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
           {!videoUrl && (
-            <div className="rounded-2xl border p-4" style={{ background: '#1A0A2E', borderColor: '#2D1B4E' }}>
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs font-medium" style={{ color: '#B09FC0' }}>🎬 Video Rendering</span>
-                <span className="text-xs" style={{ color: '#C084FC' }}>{videoStatus}</span>
+            <div style={{ borderRadius: 16, border: '1px solid #2D1B4E', padding: 16, background: '#1A0A2E' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <span style={{ color: '#B09FC0', fontSize: '0.75rem', fontWeight: 500 }}>🎬 Video Rendering</span>
+                <span style={{ color: '#C084FC', fontSize: '0.75rem' }}>{videoStatus}</span>
               </div>
-              <div className="h-1.5 rounded-full overflow-hidden" style={{ background: '#0D0020' }}>
-                <div
-                  className="h-full rounded-full transition-all duration-1000"
-                  style={{ width: `${videoProgress}%`, background: 'linear-gradient(90deg, #C084FC, #E879F9)' }}
-                />
+              <div style={{ height: 6, borderRadius: 999, overflow: 'hidden', background: '#0D0020' }}>
+                <div style={{ height: '100%', borderRadius: 999, width: `${videoProgress}%`, background: 'linear-gradient(90deg, #C084FC, #E879F9)', transition: 'width 1s' }} />
               </div>
-              <p className="text-xs mt-2" style={{ color: '#6B4FA8' }}>Estimated: {estTime} — pick your voice while you wait</p>
+              <p style={{ color: '#6B4FA8', fontSize: '0.75rem', marginTop: 8, marginBottom: 0 }}>Estimated: {estTime} — pick your voice while you wait</p>
             </div>
           )}
 
           {videoUrl && (
-            <div className="rounded-2xl overflow-hidden">
-              <video src={videoUrl} controls className="w-full rounded-2xl" />
+            <div style={{ borderRadius: 16, overflow: 'hidden' }}>
+              <video src={videoUrl} controls style={{ width: '100%', borderRadius: 16 }} />
             </div>
           )}
 
-          {/* Selected script preview */}
           {selectedScript && (
-            <div className="rounded-xl border p-4" style={{ background: '#1A0A2E', borderColor: '#2D1B4E' }}>
-              <p className="text-xs font-semibold mb-1" style={{ color: '#CFA42F' }}>"{selectedScript.hook}"</p>
-              <p className="text-xs leading-relaxed" style={{ color: '#B09FC0' }}>{selectedScript.script}</p>
+            <div style={{ borderRadius: 12, border: '1px solid #2D1B4E', padding: 16, background: '#1A0A2E' }}>
+              <p style={{ color: '#F0A500', fontSize: '0.8rem', fontWeight: 600, marginBottom: 8 }}>"{selectedScript.hook}"</p>
+              <p style={{ color: '#B09FC0', fontSize: '0.8rem', lineHeight: 1.6, margin: 0 }}>{selectedScript.script}</p>
             </div>
           )}
 
           {/* Voice Library */}
-          <div className="rounded-2xl border p-5" style={{ background: '#1A0A2E', borderColor: '#2D1B4E' }}>
-            <h3 className="text-sm font-semibold mb-4" style={{ color: '#E8DEFF' }}>Choose your voice</h3>
-            <div className="grid grid-cols-2 gap-3">
+          <div style={{ borderRadius: 16, border: '1px solid #2D1B4E', padding: 20, background: '#1A0A2E' }}>
+            <h3 style={{ color: '#E8DEFF', fontSize: '0.875rem', fontWeight: 600, marginBottom: 16 }}>Choose your voice</h3>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               {VOICES.map(v => (
                 <button
                   key={v.id}
                   onClick={() => setSelectedVoice(v.id)}
-                  className="rounded-xl p-3 border text-left transition-all"
                   style={{
+                    borderRadius: 12, padding: 12, textAlign: 'left', cursor: 'pointer',
                     background:  selectedVoice === v.id ? 'rgba(192,132,252,0.1)' : '#0D0020',
-                    borderColor: selectedVoice === v.id ? '#C084FC' : '#1A0A2E',
+                    border:      `1px solid ${selectedVoice === v.id ? '#C084FC' : '#1A0A2E'}`,
                   }}
                 >
-                  <div className="flex items-center justify-between mb-0.5">
-                    <span className="text-sm font-medium" style={{ color: '#E8DEFF' }}>{v.name}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+                    <span style={{ color: '#E8DEFF', fontSize: '0.875rem', fontWeight: 500 }}>{v.name}</span>
                     <button
                       onClick={e => { e.stopPropagation(); toggleFavorite(v.id); }}
-                      className="text-sm leading-none"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.875rem', padding: 0 }}
                     >
                       {favorites.includes(v.id) ? '❤️' : '🤍'}
                     </button>
                   </div>
-                  <span className="text-xs" style={{ color: '#9370DB' }}>{v.accent}</span>
+                  <span style={{ color: '#9370DB', fontSize: '0.75rem' }}>{v.accent}</span>
                 </button>
               ))}
             </div>
           </div>
 
           {finalVideo ? (
-            <div className="space-y-4">
-              <video src={finalVideo} controls className="w-full rounded-2xl" />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <video src={finalVideo} controls style={{ width: '100%', borderRadius: 16 }} />
               <a
                 href={finalVideo}
                 download
-                className="block w-full py-3 rounded-xl text-center text-sm font-medium transition-colors"
-                style={{ border: '1px solid #2D1B4E', color: '#B09FC0' }}
+                style={{
+                  display: 'block', width: '100%', padding: '12px', borderRadius: 12,
+                  textAlign: 'center', fontSize: '0.875rem', fontWeight: 500, textDecoration: 'none',
+                  border: '1px solid #2D1B4E', color: '#B09FC0',
+                }}
               >
                 Download ↓
               </a>
@@ -569,14 +645,15 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
             <button
               onClick={generateFinal}
               disabled={stitching || (!videoUrl && videoStarted)}
-              className="w-full py-5 rounded-2xl font-semibold text-sm disabled:opacity-50 transition-all"
               style={{
-                background:     'linear-gradient(105deg, #5A3400 0%, #9A7010 20%, #CFA42F 42%, #E8C84A 50%, #CFA42F 58%, #9A7010 80%, #5A3400 100%)',
+                width: '100%', padding: '20px', borderRadius: 16,
+                background: 'linear-gradient(105deg, #5A3400 0%, #9A7010 20%, #CFA42F 42%, #E8C84A 50%, #CFA42F 58%, #9A7010 80%, #5A3400 100%)',
                 backgroundSize: '200% auto',
-                animation:      (!videoUrl && videoStarted) ? 'none' : 'metalShimmer 3s linear infinite',
-                color:          '#0D0010',
-                fontWeight:     700,
-                boxShadow:      '0 0 24px rgba(207,164,47,0.35)',
+                animation: (!videoUrl && videoStarted) ? 'none' : 'metalShimmer 3s linear infinite',
+                color: '#0D0010', fontWeight: 700, fontSize: '0.875rem',
+                border: 'none', cursor: (stitching || (!videoUrl && videoStarted)) ? 'not-allowed' : 'pointer',
+                boxShadow: '0 0 24px rgba(207,164,47,0.35)',
+                opacity: (stitching || (!videoUrl && videoStarted)) ? 0.5 : 1,
               }}
             >
               {stitching

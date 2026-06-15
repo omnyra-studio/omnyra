@@ -104,6 +104,16 @@
   z-index: 0;
 }
 
+/* ── Textarea readability ── */
+.omnyra-textarea {
+  color: #F5EFE6 !important;
+  background: #0D0020 !important;
+}
+.omnyra-textarea::placeholder {
+  color: #7C3AED !important;
+  opacity: 1 !important;
+}
+
 /* ── CSS Variables ── */
 
 :root {
