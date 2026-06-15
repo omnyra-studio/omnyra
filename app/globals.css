@@ -104,6 +104,21 @@
   z-index: 0;
 }
 
+/* ── Voice grid scrollbar ── */
+.voice-grid::-webkit-scrollbar {
+  width: 4px;
+}
+.voice-grid::-webkit-scrollbar-track {
+  background: transparent;
+}
+.voice-grid::-webkit-scrollbar-thumb {
+  background: rgba(212, 168, 67, 0.3);
+  border-radius: 2px;
+}
+.voice-grid::-webkit-scrollbar-thumb:hover {
+  background: rgba(212, 168, 67, 0.6);
+}
+
 /* ── Select dropdown styles ── */
 select option {
   background: #0D0020;

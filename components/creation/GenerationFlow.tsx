@@ -34,7 +34,7 @@ const VOICES = [
   { id: 'TX3LP5s5f2v4cY6p6z5G',  name: 'Josh',      accent: 'American',      style: 'Deep' },
   { id: 'pNInz6obpgDQGcFmaJgB',  name: 'Adam',      accent: 'American',      style: 'Narrative' },
   { id: 'yoZ06aMxZJJ28mfd3POQ',  name: 'Sam',       accent: 'American',      style: 'Raspy' },
-  { id: 'jBpfuIE2acCo8z3wKNLl',  name: 'Gigi',      accent: 'American',      style: 'Childlike' },
+  { id: 'jBpfuIE2acCo8z3wKNLl',  name: 'Gigi',      accent: 'American',      style: 'Upbeat' },
   { id: 'oWAxZDx7w5VEj9dCyTzz',  name: 'Grace',     accent: 'American',      style: 'Southern' },
   { id: 'z9fAnlkpzviPz146aGWa',  name: 'Giovanni',  accent: 'Italian',       style: 'Foreigner' },
   { id: 'Zlb1dXrM653N07WRdFW3',  name: 'Lily',      accent: 'British',       style: 'Warm' },
@@ -43,17 +43,21 @@ const VOICES = [
   { id: 'CYw3kZ02Hs0563khs1Fj',  name: 'Dave',      accent: 'British',       style: 'Conversational' },
   { id: 'IKne3meq5aSn9XLyUdCD',  name: 'Charlie',   accent: 'Australian',    style: 'Natural' },
   { id: 'XB0fDUnXU5powFXDhCwa',  name: 'Charlotte', accent: 'Swedish',       style: 'Seductive' },
-  { id: 'flq6f7yk4E4fJM5XTYuZ',  name: 'Mimi',      accent: 'Swedish',       style: 'Childlike' },
+  { id: 'flq6f7yk4E4fJM5XTYuZ',  name: 'Mimi',      accent: 'Swedish',       style: 'Playful' },
   { id: 'g5CIjZEefAph4nQFvHAz',  name: 'Ethan',     accent: 'American',      style: 'Whisper' },
   { id: 'onwK4e9ZLuTAKqWW03F9',  name: 'Daniel',    accent: 'British',       style: 'Authoritative' },
   { id: 'piTKgcLEGmPE4e6mEKli',  name: 'Nicole',    accent: 'American',      style: 'Whisper' },
   { id: 'ThT5KcBeYPX3keUQqHPh',  name: 'Dorothy',   accent: 'British',       style: 'Pleasant' },
-  { id: 'TxGEqnHWrfWFTfGW9XjX',  name: 'Josh',      accent: 'American',      style: 'Young' },
+  { id: 'TxGEqnHWrfWFTfGW9XjX',  name: 'Josh B',    accent: 'American',      style: 'Young' },
   { id: 'VR6AewLTigWG4xSOukaG',  name: 'Arnold',    accent: 'American',      style: 'Crisp' },
   { id: 'bVMeCyTHy58xNoL34h3p',  name: 'Jeremy',    accent: 'American',      style: 'Excited' },
   { id: 'SOYHLrjzK2X1ezoPC6cr',  name: 'Harry',     accent: 'American',      style: 'Anxious' },
   { id: 'GBv7mTt0atIp3Br8iCZy',  name: 'Thomas',    accent: 'American',      style: 'Calm' },
   { id: 'LcfcDJNUP1GQjkzn1xUU',  name: 'Emily',     accent: 'American',      style: 'Calm' },
+  { id: 'XrExE9yKIg1WjnnlVkGX',  name: 'Matilda',   accent: 'American',      style: 'Warm' },
+  { id: 'ErXwobaYiN019PkySvjV',  name: 'Antoni',    accent: 'American',      style: 'Well-Rounded' },
+  { id: 'MF3mGyEYCl7XYWbV9V6O',  name: 'Elli',      accent: 'American',      style: 'Emotional' },
+  { id: 'D38z5RcWu1voky8WS1ja',  name: 'Glinda',    accent: 'American',      style: 'Witch' },
 ];
 
 const STEP_LABELS = ['Brief', 'Script', 'Scenes', 'Voice'];
@@ -1080,31 +1084,31 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
           {/* Voice Library */}
           <div style={{ borderRadius: 16, border: '1px solid #2D1B4E', padding: 20, background: '#1A0A2E' }}>
             <h3 style={{ color: '#E8DEFF', fontSize: '0.875rem', fontWeight: 600, marginBottom: 16 }}>Choose your voice</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, maxHeight: 400, overflowY: 'auto', paddingRight: 4 }}>
+            <div className="voice-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, maxHeight: 420, overflowY: 'auto', paddingRight: 4 }}>
               {VOICES.map(v => (
-                <button
+                <div
                   key={v.id}
                   onClick={() => setSelectedVoice(v.id)}
                   style={{
                     borderRadius: 12, padding: 12, textAlign: 'left', cursor: 'pointer',
-                    background: selectedVoice === v.id ? 'rgba(192,132,252,0.1)' : '#0D0020',
-                    border: `1px solid ${selectedVoice === v.id ? '#C084FC' : '#2D1B4E'}`,
+                    background: selectedVoice === v.id ? 'rgba(212,168,67,0.1)' : '#0D0020',
+                    border: `1px solid ${selectedVoice === v.id ? '#D4A843' : '#2D1B4E'}`,
                   }}
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span style={{ color: '#E8DEFF', fontSize: '0.875rem', fontWeight: 500 }}>{v.name}</span>
+                    <span style={{ color: selectedVoice === v.id ? '#D4A843' : '#E8DEFF', fontSize: '0.875rem', fontWeight: 500 }}>{v.name}</span>
                     <button
                       onClick={e => { e.stopPropagation(); toggleFavorite(v.id); }}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.875rem', padding: 0 }}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', padding: 0, lineHeight: 1, color: favorites.includes(v.id) ? '#D4A843' : '#4A3060' }}
                     >
-                      {favorites.includes(v.id) ? '❤️' : '🤍'}
+                      {favorites.includes(v.id) ? '♥' : '♡'}
                     </button>
                   </div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                    <span style={{ color: '#9370DB', fontSize: '0.7rem', background: '#1A0A2E', borderRadius: 4, padding: '1px 6px' }}>{v.accent}</span>
+                    <span style={{ color: '#D4A843', fontSize: '0.7rem', background: 'rgba(212,168,67,0.08)', borderRadius: 4, padding: '1px 6px' }}>{v.accent}</span>
                     <span style={{ color: '#B09FC0', fontSize: '0.7rem', background: 'rgba(255,255,255,0.04)', border: '1px solid #2D1B4E', borderRadius: 4, padding: '1px 6px' }}>{v.style}</span>
                   </div>
-                </button>
+                </div>
               ))}
             </div>
           </div>
