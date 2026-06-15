@@ -46,6 +46,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
 
   const [scripts,         setScripts]         = useState<VersionResult[]>([]);
   const [selectedScript,  setSelectedScript]  = useState<VersionResult | null>(null);
+  const [scriptError,     setScriptError]     = useState('');
 
   const [concepts,        setConcepts]        = useState<Concept[]>([]);
   const [selectedConcept, setSelectedConcept] = useState<Concept | null>(null);
@@ -101,10 +102,18 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
       });
       const data = await res.json();
       const versions = (data.versions ?? []) as VersionResult[];
+      if (!res.ok || data.error || versions.length === 0) {
+        setScriptError(data.error ?? 'Script generation failed — check your API key or try again.');
+        setLoadingState('');
+        return;
+      }
+      setScriptError('');
       setScripts(versions);
-      setSelectedScript(versions[0] ?? null);
+      setSelectedScript(versions[0]);
       setStep(2);
-    } catch {}
+    } catch (e) {
+      setScriptError('Network error — please try again.');
+    }
     setLoadingState('');
   };
 
@@ -289,6 +298,12 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
               {lightningMode ? 'ON' : 'OFF — Max Quality'}
             </span>
           </div>
+
+          {scriptError && (
+            <div style={{ borderRadius: 12, padding: '12px 16px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#FCA5A5', fontSize: '0.875rem' }}>
+              {scriptError}
+            </div>
+          )}
 
           {isLoading && (
             <div style={{ borderRadius: 12, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, background: '#1A0A2E', border: '1px solid #2D1B4E' }}>
