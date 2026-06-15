@@ -163,7 +163,7 @@ Return JSON in this exact shape (fill every empty string):
       },
       body: JSON.stringify({
         model,
-        max_tokens: lightningMode ? 1500 : 3000,
+        max_tokens: lightningMode ? 2000 : 3000,
         system: systemPrompt,
         messages: [{ role: "user", content: userPrompt }],
       }),
@@ -207,7 +207,7 @@ Return JSON in this exact shape (fill every empty string):
           const retryRes = await fetch("https://api.anthropic.com/v1/messages", {
             method: "POST",
             headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
-            body: JSON.stringify({ model, max_tokens: lightningMode ? 1500 : 3000, system: systemPrompt, messages: [{ role: "user", content: diversityPrompt }] }),
+            body: JSON.stringify({ model, max_tokens: lightningMode ? 2000 : 3000, system: systemPrompt, messages: [{ role: "user", content: diversityPrompt }] }),
           });
           const retryData = await retryRes.json() as { content?: Array<{ type: string; text: string }> };
           const retryText = retryData.content?.[0]?.text ?? "";

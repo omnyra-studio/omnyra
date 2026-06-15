@@ -88,6 +88,10 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
   const [concepts,        setConcepts]        = useState<Concept[]>([]);
   const [selectedConcept, setSelectedConcept] = useState<Concept | null>(null);
   const [regenerating,    setRegenerating]    = useState(false);
+  const [visualStyle,     setVisualStyle]     = useState('Lifestyle');
+  const [aspectRatio,     setAspectRatio]     = useState('9:16');
+  const [quality,         setQuality]         = useState('fast');
+  const [imagesGenerated, setImagesGenerated] = useState(false);
 
   const [videoType,     setVideoType]     = useState<VideoType>('cinematic');
   const [videoUrl,      setVideoUrl]      = useState<string | null>(null);
@@ -123,25 +127,14 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
 
   const handleGenerateScript = async () => {
     if (!prompt.trim()) return;
-    setLoadingState('Analysing your scene…');
+    setLoadingState('Writing your scripts…');
     setScriptError('');
 
-    let ghostEnhanced = prompt;
-    try {
-      const ghostRes = await fetch('/api/ghost-test-score', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
-      });
-      const ghostData = await ghostRes.json();
-      ghostEnhanced = ghostData.enhancedPrompt ?? prompt;
-    } catch {}
-
-    setLoadingState('Writing your scripts…');
     try {
       const res = await fetch('/api/generate-brief-sync', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          goal: ghostEnhanced,
+          goal: prompt,
           toolId,
           niche: niche || toolId,
           platform,
@@ -179,33 +172,22 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
           prompt: `${selectedScript.hook}\n\n${selectedScript.script}`,
           toolId,
           lightningMode,
+          visualStyle,
+          aspectRatio,
+          quality,
         }),
       });
       const data = await res.json();
       setConcepts(data.concepts ?? []);
       setSelectedConcept(null);
-      setStep(3);
     } catch {}
     setLoadingState('');
   };
 
-  const handleRegenerateImages = async () => {
-    if (!selectedScript) return;
-    setRegenerating(true);
+  const handleRegenerateImages = () => {
+    setConcepts([]);
     setSelectedConcept(null);
-    try {
-      const res = await fetch('/api/generate-concepts', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: `${selectedScript.hook}\n\n${selectedScript.script}`,
-          toolId,
-          lightningMode,
-        }),
-      });
-      const data = await res.json();
-      setConcepts(data.concepts ?? []);
-    } catch {}
-    setRegenerating(false);
+    setImagesGenerated(false);
   };
 
   const startVideoGeneration = async () => {
@@ -780,7 +762,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
                 </button>
               ) : (
                 <button
-                  onClick={handleGenerateScenes}
+                  onClick={() => { setStep(3); setConcepts([]); setSelectedConcept(null); setImagesGenerated(false); }}
                   disabled={isLoading}
                   style={{
                     width: '100%', padding: '18px',
@@ -791,7 +773,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
                     opacity: isLoading ? 0.6 : 1,
                   }}
                 >
-                  {isLoading ? loadingState : '✓ Version Selected — Build Scenes →'}
+                  ✓ Version Selected — Build Scenes →
                 </button>
               )}
             </>
@@ -799,82 +781,210 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
         </div>
       )}
 
-      {/* ── STEP 3: Scene image cards (2×2 grid) ───────────────────────── */}
+      {/* ── STEP 3: Scene config + image grid ──────────────────────────── */}
       {step === 3 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
             <div>
-              <h2 style={{ color: '#F5EFE6', fontWeight: 700, fontSize: '1.25rem', marginBottom: 6 }}>Choose your scene</h2>
-              <p style={{ color: '#B09FC0', fontSize: '0.875rem' }}>Select one image to build your video from.</p>
+              <h2 style={{ color: '#F5EFE6', fontWeight: 700, fontSize: '1.25rem', marginBottom: 6 }}>Generate Visuals</h2>
+              <p style={{ color: '#B09FC0', fontSize: '0.875rem' }}>Configure your style, then generate scene images.</p>
             </div>
-            <button
-              onClick={handleRegenerateImages}
-              disabled={regenerating}
-              style={{
-                background: 'rgba(212,168,67,0.1)', border: '1px solid rgba(212,168,67,0.4)',
-                color: '#D4A843', borderRadius: 10, padding: '8px 16px',
-                fontSize: '0.825rem', fontWeight: 600,
-                cursor: regenerating ? 'not-allowed' : 'pointer',
-                display: 'flex', alignItems: 'center', gap: 6,
-                opacity: regenerating ? 0.6 : 1,
-              }}
-            >
-              {regenerating ? (
-                <>
-                  <div style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid rgba(212,168,67,0.3)', borderTopColor: '#D4A843', animation: 'spin 0.8s linear infinite' }} />
-                  Regenerating…
-                </>
-              ) : '↺ Regenerate Images'}
-            </button>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            {concepts.map((c, i) => (
-              <div
-                key={i}
-                onClick={() => setSelectedConcept(c)}
+            {imagesGenerated && (
+              <button
+                onClick={handleRegenerateImages}
                 style={{
-                  position: 'relative', cursor: 'pointer', borderRadius: 16,
-                  overflow: 'hidden', aspectRatio: '9/16',
-                  outline: selectedConcept === c ? '3px solid #C084FC' : '2px solid transparent',
-                  boxShadow: selectedConcept === c ? '0 0 24px rgba(192,132,252,0.5)' : 'none',
-                  background: '#0D0020',
+                  background: 'rgba(212,168,67,0.1)', border: '1px solid rgba(212,168,67,0.4)',
+                  color: '#D4A843', borderRadius: 10, padding: '8px 16px',
+                  fontSize: '0.825rem', fontWeight: 600, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', gap: 6,
                 }}
               >
-                {c.imageUrl ? (
-                  <img src={c.imageUrl} alt={c.title} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
-                ) : (
-                  <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <div style={{ fontSize: '2rem', opacity: 0.3 }}>🎬</div>
-                  </div>
-                )}
-                <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.2) 50%, transparent 100%)' }} />
-                <div style={{
-                  position: 'absolute', top: 8, right: 8, fontSize: 11, fontWeight: 700,
-                  padding: '2px 8px', borderRadius: 999,
-                  background: 'rgba(0,0,0,0.7)', color: '#C084FC', border: '1px solid rgba(192,132,252,0.4)',
-                }}>
-                  👻 {c.ghostScore}
-                </div>
-                {selectedConcept === c && (
-                  <div style={{
-                    position: 'absolute', top: 8, left: 8, width: 24, height: 24,
-                    borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: 12, fontWeight: 700, background: '#C084FC', color: '#000',
-                  }}>
-                    ✓
-                  </div>
-                )}
-                <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 12 }}>
-                  <p style={{ fontSize: 11, fontWeight: 600, color: '#fff', margin: 0, lineHeight: 1.4 }}>{c.title}</p>
+                ↺ Regenerate Images
+              </button>
+            )}
+          </div>
+
+          {/* Config panel — shown before images generated */}
+          {!imagesGenerated && (
+            <>
+              {/* Visual Style */}
+              <div>
+                <p style={{ color: '#A89BAF', fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>
+                  Visual Style
+                </p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {['Lifestyle', 'Product', 'Thumbnail', 'Avatar Scene', 'UGC'].map(s => (
+                    <button
+                      key={s}
+                      onClick={() => setVisualStyle(s)}
+                      style={{
+                        padding: '7px 16px', borderRadius: 999,
+                        border: visualStyle === s ? '1px solid #D4A843' : '1px solid rgba(255,255,255,0.15)',
+                        background: visualStyle === s ? 'rgba(212,168,67,0.15)' : 'rgba(255,255,255,0.05)',
+                        color: visualStyle === s ? '#D4A843' : '#A89BAF',
+                        fontSize: '0.85rem', cursor: 'pointer', transition: 'all 0.15s',
+                      }}
+                    >
+                      {s === 'Lifestyle' ? '✦ ' : ''}{s}
+                    </button>
+                  ))}
                 </div>
               </div>
-            ))}
-          </div>
+
+              {/* Aspect Ratio */}
+              <div>
+                <p style={{ color: '#A89BAF', fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>
+                  Aspect Ratio
+                </p>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {[
+                    { value: '9:16', label: '9:16 TikTok/Reels' },
+                    { value: '1:1',  label: '1:1 Square' },
+                    { value: '16:9', label: '16:9 YouTube' },
+                  ].map(r => (
+                    <button
+                      key={r.value}
+                      onClick={() => setAspectRatio(r.value)}
+                      style={{
+                        padding: '7px 16px', borderRadius: 999,
+                        border: aspectRatio === r.value ? '1px solid #D4A843' : '1px solid rgba(255,255,255,0.15)',
+                        background: aspectRatio === r.value ? 'rgba(212,168,67,0.15)' : 'rgba(255,255,255,0.05)',
+                        color: aspectRatio === r.value ? '#D4A843' : '#A89BAF',
+                        fontSize: '0.85rem', cursor: 'pointer', transition: 'all 0.15s',
+                      }}
+                    >
+                      {r.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Quality */}
+              <div>
+                <p style={{ color: '#A89BAF', fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>
+                  Quality
+                </p>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {[
+                    { value: 'fast',     label: '⚡ Fast Draft',   sub: '3 credits · Fast draft' },
+                    { value: 'standard', label: '✦ Standard',      sub: '8 credits · Better quality' },
+                    { value: 'premium',  label: '★ Premium',       sub: '20 credits · Best quality' },
+                  ].map(q => (
+                    <button
+                      key={q.value}
+                      onClick={() => setQuality(q.value)}
+                      style={{
+                        flex: 1, padding: '8px 12px', borderRadius: 10, textAlign: 'left',
+                        border: quality === q.value ? '1px solid #D4A843' : '1px solid rgba(255,255,255,0.15)',
+                        background: quality === q.value ? 'rgba(212,168,67,0.15)' : 'rgba(255,255,255,0.05)',
+                        color: quality === q.value ? '#D4A843' : '#A89BAF',
+                        fontSize: '0.8rem', cursor: 'pointer', transition: 'all 0.15s',
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, marginBottom: 2 }}>{q.label}</div>
+                      <div style={{ color: '#6B21A8', fontSize: '0.7rem' }}>{q.sub}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Upload own scene */}
+              <div
+                style={{
+                  border: '1px dashed rgba(255,255,255,0.15)', borderRadius: 12,
+                  padding: '20px', textAlign: 'center', cursor: 'pointer',
+                }}
+              >
+                <div style={{ fontSize: 24, marginBottom: 6 }}>📁</div>
+                <p style={{ color: '#A89BAF', fontSize: '0.85rem', margin: 0 }}>
+                  Upload your own scene or avatar photo
+                </p>
+                <p style={{ color: '#6B21A8', fontSize: '0.75rem', margin: '4px 0 0' }}>
+                  JPG, PNG, WebP · Max 10MB
+                </p>
+              </div>
+
+              {/* Generate button */}
+              {isLoading ? (
+                <div style={{ borderRadius: 12, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, background: '#1A0A2E', border: '1px solid #2D1B4E' }}>
+                  <div style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid #2D1B4E', borderTopColor: '#D4A843', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+                  <span style={{ color: '#B09FC0', fontSize: '0.875rem' }}>{loadingState}</span>
+                </div>
+              ) : (
+                <button
+                  onClick={async () => { await handleGenerateScenes(); setImagesGenerated(true); }}
+                  style={{
+                    width: '100%', padding: '16px',
+                    background: 'linear-gradient(105deg, #5A3400 0%, #9A7010 20%, #CFA42F 42%, #E8C84A 50%, #CFA42F 58%, #9A7010 80%, #5A3400 100%)',
+                    backgroundSize: '200% auto', animation: 'metalShimmer 3s linear infinite',
+                    color: '#0D0010', fontWeight: 700, fontSize: '1rem',
+                    border: 'none', borderRadius: 14, cursor: 'pointer', marginBottom: 4,
+                  }}
+                >
+                  ✦ Generate Scene Images →
+                </button>
+              )}
+            </>
+          )}
+
+          {/* Image grid — shown after generation */}
+          {imagesGenerated && (
+            <>
+              {isLoading && (
+                <div style={{ borderRadius: 12, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, background: '#1A0A2E', border: '1px solid #2D1B4E' }}>
+                  <div style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid #2D1B4E', borderTopColor: '#D4A843', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+                  <span style={{ color: '#B09FC0', fontSize: '0.875rem' }}>{loadingState}</span>
+                </div>
+              )}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                {concepts.map((c, i) => (
+                  <div
+                    key={i}
+                    onClick={() => setSelectedConcept(c)}
+                    style={{
+                      position: 'relative', cursor: 'pointer', borderRadius: 16,
+                      overflow: 'hidden', aspectRatio: aspectRatio === '16:9' ? '16/9' : aspectRatio === '1:1' ? '1/1' : '9/16',
+                      outline: selectedConcept === c ? '3px solid #C084FC' : '2px solid transparent',
+                      boxShadow: selectedConcept === c ? '0 0 24px rgba(192,132,252,0.5)' : 'none',
+                      background: '#0D0020',
+                    }}
+                  >
+                    {c.imageUrl ? (
+                      <img src={c.imageUrl} alt={c.title} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                    ) : (
+                      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <div style={{ fontSize: '2rem', opacity: 0.3 }}>🎬</div>
+                      </div>
+                    )}
+                    <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.2) 50%, transparent 100%)' }} />
+                    <div style={{
+                      position: 'absolute', top: 8, right: 8, fontSize: 11, fontWeight: 700,
+                      padding: '2px 8px', borderRadius: 999,
+                      background: 'rgba(0,0,0,0.7)', color: '#C084FC', border: '1px solid rgba(192,132,252,0.4)',
+                    }}>
+                      👻 {c.ghostScore}
+                    </div>
+                    {selectedConcept === c && (
+                      <div style={{
+                        position: 'absolute', top: 8, left: 8, width: 24, height: 24,
+                        borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 12, fontWeight: 700, background: '#C084FC', color: '#000',
+                      }}>
+                        ✓
+                      </div>
+                    )}
+                    <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 12 }}>
+                      <p style={{ fontSize: 11, fontWeight: 600, color: '#fff', margin: 0, lineHeight: 1.4 }}>{c.title}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
 
           <div style={{ display: 'flex', gap: 12 }}>
             <button
-              onClick={() => { setStep(2); setConcepts([]); setSelectedConcept(null); }}
+              onClick={() => { setStep(2); setConcepts([]); setSelectedConcept(null); setImagesGenerated(false); }}
               style={{
                 flex: 1, padding: '12px', borderRadius: 12, fontSize: '0.875rem',
                 background: 'transparent', border: '1px solid #2D1B4E', color: '#B09FC0', cursor: 'pointer',
@@ -882,19 +992,21 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
             >
               ← Back
             </button>
-            <button
-              onClick={() => { if (selectedConcept) { setStep(4); setVideoStarted(false); setVideoUrl(null); setFinalVideo(null); } }}
-              disabled={!selectedConcept}
-              style={{
-                flex: 1, padding: '12px', borderRadius: 12, fontSize: '0.875rem',
-                fontWeight: 700, background: 'linear-gradient(135deg, #C084FC, #E879F9)',
-                color: '#fff', border: 'none',
-                cursor: selectedConcept ? 'pointer' : 'not-allowed',
-                opacity: selectedConcept ? 1 : 0.4,
-              }}
-            >
-              Add Voice & Generate →
-            </button>
+            {imagesGenerated && (
+              <button
+                onClick={() => { if (selectedConcept) { setStep(4); setVideoStarted(false); setVideoUrl(null); setFinalVideo(null); } }}
+                disabled={!selectedConcept}
+                style={{
+                  flex: 1, padding: '12px', borderRadius: 12, fontSize: '0.875rem',
+                  fontWeight: 700, background: 'linear-gradient(135deg, #C084FC, #E879F9)',
+                  color: '#fff', border: 'none',
+                  cursor: selectedConcept ? 'pointer' : 'not-allowed',
+                  opacity: selectedConcept ? 1 : 0.4,
+                }}
+              >
+                Add Voice & Generate →
+              </button>
+            )}
           </div>
         </div>
       )}
