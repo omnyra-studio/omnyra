@@ -62,10 +62,10 @@ const VOICES = [
 
 const STEP_LABELS = ['Brief', 'Script', 'Scenes', 'Voice'];
 
-type VideoType = 'preview' | 'cinematic' | 'avatar';
+type VideoType = 'quick' | 'cinematic' | 'avatar';
 
 const VIDEO_TYPES: Array<{ id: VideoType; label: string; desc: string; duration: string; cr: number; badge: string }> = [
-  { id: 'preview',   label: 'Quick Preview',   desc: 'fal.ai fast gen',    duration: '10s',  cr: 10, badge: '⚡' },
+  { id: 'quick',     label: '10s Draft',       desc: 'fal.ai fast gen',    duration: '10s',  cr: 10, badge: '⚡' },
   { id: 'cinematic', label: 'Cinematic Scene',  desc: 'Kling Pro',          duration: '30s',  cr: 40, badge: '🎬' },
   { id: 'avatar',    label: 'Avatar Video',     desc: 'Hedra talking head', duration: '~30s', cr: 40, badge: '👤' },
 ];
@@ -308,7 +308,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
     finally { setStitching(false); }
   };
 
-  const estTime = videoType === 'avatar' ? '~2 min' : videoType === 'preview' ? '~60s' : '~4 min';
+  const estTime = videoType === 'avatar' ? '~2 min' : videoType === 'quick' ? '~60s' : '~4 min';
   const isLoading = !!loadingState;
 
   const inputStyle: React.CSSProperties = {
@@ -813,7 +813,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
             <>
               {/* Visual Style */}
               <div>
-                <p style={{ color: '#A89BAF', fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>
+                <p style={{ color: '#E8DEFF', fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10, fontWeight: 600 }}>
                   Visual Style
                 </p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
@@ -823,9 +823,9 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
                       onClick={() => setVisualStyle(s)}
                       style={{
                         padding: '7px 16px', borderRadius: 999,
-                        border: visualStyle === s ? '1px solid #D4A843' : '1px solid rgba(255,255,255,0.15)',
+                        border: visualStyle === s ? '1px solid #D4A843' : '1px solid rgba(255,255,255,0.25)',
                         background: visualStyle === s ? 'rgba(212,168,67,0.15)' : 'rgba(255,255,255,0.05)',
-                        color: visualStyle === s ? '#D4A843' : '#A89BAF',
+                        color: visualStyle === s ? '#D4A843' : '#BBA8C8',
                         fontSize: '0.85rem', cursor: 'pointer', transition: 'all 0.15s',
                       }}
                     >
@@ -837,7 +837,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
 
               {/* Aspect Ratio */}
               <div>
-                <p style={{ color: '#A89BAF', fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>
+                <p style={{ color: '#E8DEFF', fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10, fontWeight: 600 }}>
                   Aspect Ratio
                 </p>
                 <div style={{ display: 'flex', gap: 8 }}>
@@ -851,9 +851,9 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
                       onClick={() => setAspectRatio(r.value)}
                       style={{
                         padding: '7px 16px', borderRadius: 999,
-                        border: aspectRatio === r.value ? '1px solid #D4A843' : '1px solid rgba(255,255,255,0.15)',
+                        border: aspectRatio === r.value ? '1px solid #D4A843' : '1px solid rgba(255,255,255,0.25)',
                         background: aspectRatio === r.value ? 'rgba(212,168,67,0.15)' : 'rgba(255,255,255,0.05)',
-                        color: aspectRatio === r.value ? '#D4A843' : '#A89BAF',
+                        color: aspectRatio === r.value ? '#D4A843' : '#BBA8C8',
                         fontSize: '0.85rem', cursor: 'pointer', transition: 'all 0.15s',
                       }}
                     >
@@ -863,31 +863,37 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
                 </div>
               </div>
 
-              {/* Quality */}
-              <div>
-                <p style={{ color: '#A89BAF', fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 10 }}>
-                  Quality
+              {/* Generation Type */}
+              <div style={{ marginBottom: 4 }}>
+                <p style={{ color: '#E8DEFF', fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 12, fontWeight: 600 }}>
+                  Generation Type
                 </p>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  {[
-                    { value: 'fast',     label: '⚡ Fast Draft',   sub: '3 credits · Fast draft' },
-                    { value: 'standard', label: '✦ Standard',      sub: '8 credits · Better quality' },
-                    { value: 'premium',  label: '★ Premium',       sub: '20 credits · Best quality' },
-                  ].map(q => (
-                    <button
-                      key={q.value}
-                      onClick={() => setQuality(q.value)}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  {([
+                    { id: 'quick'     as VideoType, icon: '⚡', label: '10s Draft',       sub: 'fal.ai · Fast preview',  credits: '10 credits', tier: 'All tiers', fullWidth: false },
+                    { id: 'cinematic' as VideoType, icon: '🎬', label: 'Cinematic Scene',  sub: '30s · Kling Pro',         credits: '40 credits', tier: 'Creator+',  fullWidth: false },
+                    { id: 'avatar'    as VideoType, icon: '👤', label: 'Avatar Video',     sub: '30s · Hedra lip-sync',    credits: '40 credits', tier: 'Creator+',  fullWidth: true  },
+                  ]).map(type => (
+                    <div
+                      key={type.id}
+                      onClick={() => setVideoType(type.id)}
                       style={{
-                        flex: 1, padding: '8px 12px', borderRadius: 10, textAlign: 'left',
-                        border: quality === q.value ? '1px solid #D4A843' : '1px solid rgba(255,255,255,0.15)',
-                        background: quality === q.value ? 'rgba(212,168,67,0.15)' : 'rgba(255,255,255,0.05)',
-                        color: quality === q.value ? '#D4A843' : '#A89BAF',
-                        fontSize: '0.8rem', cursor: 'pointer', transition: 'all 0.15s',
+                        gridColumn: type.fullWidth ? 'span 2' : 'span 1',
+                        background: videoType === type.id ? 'rgba(212,168,67,0.12)' : 'rgba(255,255,255,0.05)',
+                        border: videoType === type.id ? '2px solid #D4A843' : '1px solid rgba(255,255,255,0.2)',
+                        borderRadius: 14, padding: '16px 18px', cursor: 'pointer', transition: 'all 0.2s',
                       }}
                     >
-                      <div style={{ fontWeight: 600, marginBottom: 2 }}>{q.label}</div>
-                      <div style={{ color: '#6B21A8', fontSize: '0.7rem' }}>{q.sub}</div>
-                    </button>
+                      <div style={{ fontSize: 22, marginBottom: 8 }}>{type.icon}</div>
+                      <div style={{ color: videoType === type.id ? '#D4A843' : '#E8DEFF', fontWeight: 700, fontSize: '0.95rem', marginBottom: 4 }}>
+                        {type.label}
+                      </div>
+                      <div style={{ color: '#BBA8C8', fontSize: '0.78rem', marginBottom: 4 }}>{type.sub}</div>
+                      <div style={{ color: '#D4A843', fontSize: '0.75rem', fontWeight: 600 }}>
+                        {type.credits}
+                        <span style={{ color: '#8B6FA8', marginLeft: 6, fontWeight: 400 }}>· {type.tier}</span>
+                      </div>
+                    </div>
                   ))}
                 </div>
               </div>
@@ -895,15 +901,15 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
               {/* Upload own scene */}
               <div
                 style={{
-                  border: '1px dashed rgba(255,255,255,0.15)', borderRadius: 12,
+                  border: '1px dashed rgba(255,255,255,0.25)', borderRadius: 12,
                   padding: '20px', textAlign: 'center', cursor: 'pointer',
                 }}
               >
                 <div style={{ fontSize: 24, marginBottom: 6 }}>📁</div>
-                <p style={{ color: '#A89BAF', fontSize: '0.85rem', margin: 0 }}>
+                <p style={{ color: '#BBA8C8', fontSize: '0.85rem', margin: 0 }}>
                   Upload your own scene or avatar photo
                 </p>
-                <p style={{ color: '#6B21A8', fontSize: '0.75rem', margin: '4px 0 0' }}>
+                <p style={{ color: '#8B6FA8', fontSize: '0.75rem', margin: '4px 0 0' }}>
                   JPG, PNG, WebP · Max 10MB
                 </p>
               </div>

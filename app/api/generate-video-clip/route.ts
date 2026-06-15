@@ -3,11 +3,13 @@ import { NextRequest } from 'next/server';
 export const maxDuration = 30;
 
 const MODEL_MAP: Record<string, string> = {
+  quick:     'fal-ai/kling-video/v3/standard/text-to-video',
   preview:   'fal-ai/kling-video/v3/standard/text-to-video',
   cinematic: 'fal-ai/kling-video/v3/pro/text-to-video',
 };
 
 const I2V_MAP: Record<string, string> = {
+  quick:     'fal-ai/kling-video/v3/standard/image-to-video',
   preview:   'fal-ai/kling-video/v3/standard/image-to-video',
   cinematic: 'fal-ai/kling-video/v3/pro/image-to-video',
 };
