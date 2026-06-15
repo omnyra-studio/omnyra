@@ -4,8 +4,59 @@ import { getBrandProfile, getBrandSystemPrompt } from "@/lib/brand";
 import { checkCache, saveCache, logUsageEvent } from "@/lib/cache";
 import { isScriptTooSimilar, storeScriptHistory } from "@/lib/memory/script-uniqueness";
 
+// ── Silent Ghost Test: rewrite prompt to physical-action-only language ────────
+async function ghostEnhance(apiKey: string, prompt: string): Promise<string> {
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({
+        model:      "claude-haiku-4-5-20251001",
+        max_tokens: 400,
+        system:
+          "You are the Ghost Test enforcer for Omnyra. Rewrite the user's prompt to describe ONLY " +
+          "observable physical actions, body language, micro-behaviours, object interactions, clothing, " +
+          "props, environment, lighting, and camera angles. " +
+          "Remove all emotion labels, internal states, and evaluative adjectives. " +
+          "Return ONLY the rewritten prompt as plain text — no JSON, no explanation.",
+        messages: [{ role: "user", content: `Rewrite to be Ghost Test compliant:\n\n${prompt}` }],
+      }),
+    });
+    const data = await res.json() as { content?: Array<{ type: string; text: string }> };
+    return data.content?.[0]?.text?.trim() || prompt;
+  } catch {
+    return prompt;
+  }
+}
+
+// ── Silent Emotional Intelligence: detect arc + emotions ───────────────────────
+interface EmotionData { arc: string; emotions: string[]; intensity: number }
+async function detectEmotion(apiKey: string, prompt: string): Promise<EmotionData> {
+  try {
+    const res = await fetch("https://api.anthropic.com/v1/messages", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+      body: JSON.stringify({
+        model:      "claude-haiku-4-5-20251001",
+        max_tokens: 150,
+        system:
+          "Detect the emotional arc of this content brief. " +
+          'Return ONLY valid JSON: {"arc":"string","emotions":["string"],"intensity":1-10} ' +
+          "Arc options: rising-tension, falling-tension, cathartic-release, melancholic-hope, " +
+          "triumphant, neutral, comedic, dramatic, heartfelt-journey.",
+        messages: [{ role: "user", content: `Detect emotional arc:\n\n${prompt}` }],
+      }),
+    });
+    const data = await res.json() as { content?: Array<{ type: string; text: string }> };
+    const raw = data.content?.[0]?.text ?? "";
+    const m = raw.match(/\{[\s\S]*\}/);
+    if (m) return JSON.parse(m[0]) as EmotionData;
+  } catch {}
+  return { arc: "neutral", emotions: [], intensity: 5 };
+}
+
 export async function POST(req: Request) {
-  const { goal, template, niche, targetAudience, platforms, isContinuation } = await req.json();
+  const { goal, template, niche, targetAudience, platforms, isContinuation, lightningMode } = await req.json();
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -40,11 +91,26 @@ export async function POST(req: Request) {
     }
   }
 
-  // Detect emotional/relational content so the prompt adds arc-specific guidance
-  const goalLower = (goal ?? "").toLowerCase();
+  // ── Silent pre-processing: Ghost Test + Emotional Intelligence in parallel ───
+  const [enhancedGoal, emotion] = await Promise.all([
+    ghostEnhance(apiKey, goal ?? ""),
+    detectEmotion(apiKey, goal ?? ""),
+  ]);
+
+  // EI arc injection for system prompt
+  const eiGuidance = emotion.arc !== "neutral"
+    ? `\n\nEMOTIONAL ARC DETECTED: ${emotion.arc}. Key emotions: ${emotion.emotions.join(", ") || "unspecified"}. ` +
+      `Intensity: ${emotion.intensity}/10. Translate these into observable physical actions only — ` +
+      `show the arc through body language, micro-expressions, environment, and camera movement.`
+    : "";
+
+  // Detect emotional/relational content for arc-specific guidance
+  const goalLower = (enhancedGoal ?? "").toLowerCase();
   const isEmotionalContent = /\b(sad|tear|cry|comfort|danc|beach|alone|silent|tender|hurt|pain|love|heartbreak|emot|vulnerab|broken|lonely|miss|griev|swaying|shore|relationship|couple|partner|together|silent|quiet)\b/.test(goalLower);
 
-  const systemPrompt = `You are an elite cinematic script writer for short-form emotional storytelling video.${brandContext ? `\n\n${brandContext}` : ""}
+  const model = lightningMode ? "claude-haiku-4-5-20251001" : "claude-sonnet-4-6";
+
+  const systemPrompt = `You are an elite cinematic script writer for short-form emotional storytelling video.${brandContext ? `\n\n${brandContext}` : ""}${eiGuidance}
 
 CORE RULES — apply to every script option:
 1. Every script must have a clear emotional arc. NOT just a flat happy moment. Show the JOURNEY: vulnerability/sadness → a turning point → comfort/resolution.
@@ -74,7 +140,7 @@ IMPORTANT — This brief contains emotional/relational content. Your 5 versions 
 
   const userPrompt = `Generate 5 content versions for the following brief.
 
-Goal: ${goal}
+Goal: ${enhancedGoal}
 Niche: ${niche || "general"}
 Audience: ${targetAudience || "general"}
 Platforms: ${Array.isArray(platforms) ? platforms.join(", ") : "TikTok"}
@@ -95,8 +161,8 @@ Return JSON in this exact shape (fill every empty string):
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 3000,
+        model,
+        max_tokens: lightningMode ? 1500 : 3000,
         system: systemPrompt,
         messages: [{ role: "user", content: userPrompt }],
       }),
@@ -140,7 +206,7 @@ Return JSON in this exact shape (fill every empty string):
           const retryRes = await fetch("https://api.anthropic.com/v1/messages", {
             method: "POST",
             headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
-            body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 3000, system: systemPrompt, messages: [{ role: "user", content: diversityPrompt }] }),
+            body: JSON.stringify({ model, max_tokens: lightningMode ? 1500 : 3000, system: systemPrompt, messages: [{ role: "user", content: diversityPrompt }] }),
           });
           const retryData = await retryRes.json() as { content?: Array<{ type: string; text: string }> };
           const retryText = retryData.content?.[0]?.text ?? "";
@@ -161,7 +227,7 @@ Return JSON in this exact shape (fill every empty string):
       const acceptedVersions = finalParsed.versions as Array<{ script?: string; viral_score?: number }>;
       const acceptedBest = acceptedVersions.reduce((a, b) => ((a.viral_score ?? 0) >= (b.viral_score ?? 0) ? a : b)).script ?? "";
       if (acceptedBest.length > 20) {
-        storeScriptHistory(acceptedBest, userId, { goal, niche }).catch(() => {});
+        storeScriptHistory(acceptedBest, userId, { goal: enhancedGoal, niche }).catch(() => {});
       }
     }
 

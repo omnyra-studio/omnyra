@@ -32,6 +32,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
   const [step,            setStep]            = useState(1);
   const [prompt,          setPrompt]          = useState('');
   const [enhancedPrompt,  setEnhancedPrompt]  = useState('');
+  const [lightningMode,   setLightningMode]   = useState(false);
   const [loadingState,    setLoadingState]    = useState('');
   const [concepts,        setConcepts]        = useState<Concept[]>([]);
   const [selectedConcept, setSelectedConcept] = useState<Concept | null>(null);
@@ -85,7 +86,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
     try {
       const res  = await fetch('/api/generate-concepts', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body:   JSON.stringify({ prompt: ghostEnhanced, toolId }),
+        body:   JSON.stringify({ prompt: ghostEnhanced, toolId, lightningMode }),
       });
       const data = await res.json();
       setConcepts(data.concepts ?? []);
@@ -214,6 +215,30 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
             onFocus={e => { e.currentTarget.style.borderColor = '#C084FC'; }}
             onBlur={e => { e.currentTarget.style.borderColor = '#2D1B4E'; }}
           />
+
+          {/* ⚡ Lightning Mode toggle */}
+          <button
+            type="button"
+            onClick={() => setLightningMode(v => !v)}
+            className="flex items-center gap-2 text-xs px-3 py-1.5 rounded-full transition-all"
+            style={{
+              background:  lightningMode ? 'rgba(207,164,47,0.15)' : 'transparent',
+              border:      lightningMode ? '1px solid rgba(207,164,47,0.5)' : '1px solid #2D1B4E',
+              color:       lightningMode ? '#CFA42F' : '#6B21A8',
+            }}
+          >
+            <span>⚡</span>
+            <span>Lightning Mode</span>
+            <span
+              className="w-7 h-4 rounded-full relative transition-colors"
+              style={{ background: lightningMode ? '#CFA42F' : '#1A0A2E', border: '1px solid #2D1B4E', display: 'inline-block' }}
+            >
+              <span
+                className="absolute top-0.5 w-2.5 h-2.5 rounded-full transition-all"
+                style={{ background: lightningMode ? '#0D0010' : '#3B1F6A', left: lightningMode ? '14px' : '2px' }}
+              />
+            </span>
+          </button>
 
           {isLoading && (
             <div className="rounded-xl px-4 py-3 flex items-center gap-3" style={{ background: '#1A0A2E', border: '1px solid #2D1B4E' }}>
