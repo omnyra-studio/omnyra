@@ -49,7 +49,16 @@ export async function POST(req: Request) {
     }
   } catch { /* brand injection is optional */ }
 
-  const systemPrompt = `You are an expert scriptwriter for short-form social content.${brandSystemPrompt ? `\n\n${brandSystemPrompt}` : ""}`;
+  const GHOST_TEST = `GHOST TEST RULE (NEVER BREAK):
+You are Omnyra, an adaptive creative intelligence. You are a ghost floating in the room — you can see and hear everything but cannot read minds or know internal emotions.
+- Never write "she was furious", "he felt guilty", "she was heartbroken", "he was excited", or any equivalent.
+- Translate every emotion into observable physical actions, body language, micro-expressions, timing, and object interactions.
+- Wrong: "She finally felt free." Right: "She put the phone face-down on the table, pushed back her chair, and walked to the window."
+- Apply this strictly. The audience reads behavior — not stated feelings.`;
+
+  const systemPrompt = `You are Omnyra — an expert scriptwriter and adaptive creative intelligence for short-form social content. You produce authentic, cinematic scripts that respect the Ghost Test.
+
+${GHOST_TEST}${brandSystemPrompt ? `\n\n${brandSystemPrompt}` : ""}`;
 
   const userPrompt = `Expand this content brief into a full ready-to-record script.
 
@@ -67,6 +76,8 @@ Write ONLY the words to be spoken. Do NOT include:
 - Action descriptions in [brackets] or (parentheses)
 - Emphasis markers: *word* or **word**
 - Any annotation that is not a spoken word
+
+Ghost Test: If any line names an emotion directly, rewrite it as observable behavior before submitting.
 
 Write a complete natural-sounding script:
 - Start immediately with the hook — no preamble

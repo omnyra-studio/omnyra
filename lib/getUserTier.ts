@@ -33,13 +33,13 @@ export const TIER_VIDEO_LIMITS: Record<UserTier, TierVideoConfig> = {
   free: {
     canGenerate: true,
     maxClips: 1,
-    clipLength: 15,
+    clipLength: 30,
     model: "fast",
     watermark: true,
     label: "Quick Preview",
-    description: "15s preview · watermarked",
-    video: "preview_15s_watermarked",
-    video_seconds: 15,
+    description: "30s preview · watermarked · 1/month",
+    video: "preview_30s_watermarked",
+    video_seconds: 30,
   },
   starter: {
     canGenerate: true,
@@ -47,9 +47,9 @@ export const TIER_VIDEO_LIMITS: Record<UserTier, TierVideoConfig> = {
     clipLength: 30,
     model: "fast",
     watermark: false,
-    label: "Quick Preview",
-    description: "30s preview · 1/month",
-    video: "preview_30s_no_watermark",
+    label: "Cinematic 30s",
+    description: "30s cinematic · 1/month",
+    video: "cinematic_30s_clean",
     video_seconds: 30,
   },
   creator: {
@@ -76,3 +76,18 @@ export const TIER_VIDEO_LIMITS: Record<UserTier, TierVideoConfig> = {
     video_count: 4,
   },
 };
+
+/**
+ * Clamps a video duration to the allowed range for a given tier.
+ * Cinematic/avatar always 25–30s. Studio sequences up to 60s.
+ * Never defaults to 10s or 15s for paid generation.
+ */
+export function clampVideoDuration(tier: UserTier, requested: number): number {
+  const config = TIER_VIDEO_LIMITS[tier];
+  if (config.video_seconds >= 60) {
+    // Studio: allow up to 60s but at least 25s
+    return Math.min(Math.max(25, requested), 60);
+  }
+  // All other tiers: clamp to 25–30s
+  return Math.min(Math.max(25, requested), 30);
+}

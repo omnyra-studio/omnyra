@@ -58,7 +58,7 @@ export async function generateSceneAudio(
           similarity_boost: input.similarityBoost ?? 0.75,
           style:           input.style           ?? 0.65,
           use_speaker_boost: true,
-          speed:           input.speed           ?? 1.05,
+          speed:           input.speed           ?? 1.10,
         },
       }),
     },
@@ -108,6 +108,7 @@ export interface VoiceoverInput {
   voiceId?:           string;
   targetDurationSecs: number;
   speedMode?:         string;  // controls word cap: ultra-draft=22w, draft=35w, balanced=75w, quality=85w
+  speed?:             number;  // ElevenLabs speed: 1.05 normal, 1.10 lightning
 }
 
 export interface VoiceoverResult {
@@ -180,34 +181,67 @@ function splitScriptIntoChunks(script: string, maxWords: number = CHUNK_SIZE): s
   return chunks;
 }
 
+// Ordered fallback voices — tried in sequence when primary voice is missing/invalid.
+// All are reliable ElevenLabs built-in voices with no access restrictions.
+const FALLBACK_VOICE_IDS = [
+  "EXAVITQu4vr4xnSDxMaO", // Bella  — rich, warm female
+  "9BWtsMINqrJLrRacOk9x", // Aria   — clear female
+  "21m00Tcm4TlvDq8ikWAM", // Rachel — calm female
+  "AZnzlk1XvdvUeBnXmlld", // Domi   — strong female
+  "pNInz6obpgDQGcFmaJgB", // Adam   — male fallback
+];
+
 async function callElevenLabs(
   text:   string,
   voice:  string,
   apiKey: string,
+  speed:  number = 1.05,
 ): Promise<ArrayBuffer> {
-  const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voice}/stream`, {
-    method:  "POST",
-    headers: {
-      "Accept":       "audio/mpeg",
-      "Content-Type": "application/json",
-      "xi-api-key":   apiKey,
-    },
-    body: JSON.stringify({
-      text,
-      model_id: EL_FLASH_V2_5,
-      voice_settings: { stability: 0.8, similarity_boost: 0.85, speed: 1.05 },
-    }),
-  });
+  // Build try-list: primary first, then fallbacks that aren't the primary
+  const voicesToTry = [voice, ...FALLBACK_VOICE_IDS.filter(v => v !== voice)];
+  let lastErr = "";
 
-  if (!res.ok) {
-    const errText = await res.text();
-    console.error("[ELEVENLABS ERROR]", res.status, errText);
-    throw new Error(`ElevenLabs chunk failed: ${res.status}`);
+  for (const voiceId of voicesToTry) {
+    const res = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`, {
+      method:  "POST",
+      headers: {
+        "Accept":       "audio/mpeg",
+        "Content-Type": "application/json",
+        "xi-api-key":   apiKey,
+      },
+      body: JSON.stringify({
+        text,
+        model_id: EL_FLASH_V2_5,
+        voice_settings: { stability: 0.8, similarity_boost: 0.85, speed },
+      }),
+    });
+
+    // 404/422 = voice not found or not accessible — try next
+    if (res.status === 404 || res.status === 422) {
+      const detail = await res.text().catch(() => "");
+      console.warn(`[ELEVENLABS_VOICE_MISS] voice=${voiceId} status=${res.status} — trying next fallback. ${detail.substring(0, 120)}`);
+      lastErr = `voice ${voiceId} not found (${res.status})`;
+      continue;
+    }
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => "");
+      console.error("[ELEVENLABS ERROR]", res.status, errText.substring(0, 200));
+      throw new Error(`ElevenLabs TTS failed: ${res.status}`);
+    }
+
+    const buf = await res.arrayBuffer();
+    if (buf.byteLength < 500) throw new Error("ElevenLabs returned empty audio chunk");
+
+    if (voiceId !== voice) {
+      console.warn(`[ELEVENLABS_FALLBACK] primary=${voice} → using fallback=${voiceId} bytes=${buf.byteLength}`);
+    } else {
+      console.info(`[ELEVENLABS_VOICE_OK] voice=${voiceId} bytes=${buf.byteLength}`);
+    }
+    return buf;
   }
 
-  const buf = await res.arrayBuffer();
-  if (buf.byteLength < 500) throw new Error("ElevenLabs returned empty audio chunk");
-  return buf;
+  throw new Error(`ElevenLabs: all voices failed. Last error: ${lastErr}`);
 }
 
 function makeSupabase() {
@@ -327,8 +361,9 @@ async function singleCallVoiceover(
   planId:      string,
   voiceT0:     number,
   targetSecs:  number,
+  speed:       number = 1.05,
 ): Promise<VoiceoverResult> {
-  const buf = await callElevenLabs(cleanScript, voiceId, apiKey);
+  const buf = await callElevenLabs(cleanScript, voiceId, apiKey, speed);
 
   const storagePath = `voiceovers/${userId}/plans/${planId}-full-${Date.now()}.mp3`;
   const audioUrl    = await uploadChunk(buf, storagePath);
@@ -386,10 +421,12 @@ export async function generateVoiceover(
 
   const voiceId = input.voiceId ?? DEFAULT_VO_VOICE_ID;
 
+  const voSpeed = input.speed ?? 1.05;
+
   // Short scripts: single API call — no chunking, no FFmpeg stitch, no gap artifacts
   if (wordCount <= SHORT_SCRIPT_WORDS) {
     console.info(`[VOICEOVER] ${wordCount} words ≤ ${SHORT_SCRIPT_WORDS} — sending FULL script as single call, no chunking`);
-    return singleCallVoiceover(cleanScript, voiceId, apiKey, userId, planId, voiceT0, input.targetDurationSecs);
+    return singleCallVoiceover(cleanScript, voiceId, apiKey, userId, planId, voiceT0, input.targetDurationSecs, voSpeed);
   }
 
   // Long scripts: chunk + stitch to avoid ElevenLabs silent truncation
@@ -400,7 +437,7 @@ export async function generateVoiceover(
   const chunkData: Array<{ url: string; buf: ArrayBuffer }> = [];
   for (let i = 0; i < chunks.length; i++) {
     console.info(`[ELEVENLABS] Chunk ${i + 1}/${chunks.length} - ${chunks[i].split(" ").length} words`);
-    const buf         = await callElevenLabs(chunks[i], voiceId, apiKey);
+    const buf         = await callElevenLabs(chunks[i], voiceId, apiKey, voSpeed);
     const storagePath = `voiceovers/${userId}/plans/${planId}-chunk${i}-${Date.now()}.mp3`;
     const url         = await uploadChunk(buf, storagePath);
     chunkData.push({ url, buf });

@@ -6,6 +6,7 @@ import GlobalNav from "@/components/GlobalNav";
 import { PHProvider } from "@/components/PostHogProvider";
 import { Suspense } from "react";
 import PostHogPageView from "@/components/PostHogPageView";
+import QueryProvider from "@/components/QueryProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -55,19 +56,21 @@ export default function RootLayout({ children }) {
     >
       <body suppressHydrationWarning className="min-h-full flex flex-col" style={{ backgroundColor: '#2D0A3E' }}>
         <script dangerouslySetInnerHTML={{__html: `if('serviceWorker'in navigator){navigator.serviceWorker.getRegistrations().then(function(r){for(let s of r)s.unregister();});}`}} />
-        <PHProvider>
-          <Suspense>
-            <PostHogPageView />
-          </Suspense>
-          <div style={{ position: 'fixed', inset: 0, zIndex: 0, width: '100vw', height: '100vh' }}>
-            <AnimatedBackground />
-          </div>
-          <div style={{ position: 'relative', zIndex: 1 }}>
-            <GlobalNav />
-            {children}
-          </div>
-          <PWARegister />
-        </PHProvider>
+        <QueryProvider>
+          <PHProvider>
+            <Suspense>
+              <PostHogPageView />
+            </Suspense>
+            <div style={{ position: 'fixed', inset: 0, zIndex: 0, width: '100vw', height: '100vh' }}>
+              <AnimatedBackground />
+            </div>
+            <div style={{ position: 'relative', zIndex: 1 }}>
+              <GlobalNav />
+              {children}
+            </div>
+            <PWARegister />
+          </PHProvider>
+        </QueryProvider>
       </body>
     </html>
   );

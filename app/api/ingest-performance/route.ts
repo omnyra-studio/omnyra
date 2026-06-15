@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { ApifyClient } from "apify-client";
+import Anthropic from "@anthropic-ai/sdk";
 
 // ── Apify actor IDs — configure via environment variables ──────────────────────
 const ACTOR_IDS = {
@@ -64,7 +65,7 @@ function detectPlatform(url: string): Platform | null {
 // ── Apify scraping ─────────────────────────────────────────────────────────────
 
 async function scrapePost(url: string, platform: Platform): Promise<ScrapedMetrics> {
-  const client = new ApifyClient({ token: process.env.APIFY_API_TOKEN });
+  const client = new ApifyClient({ token: process.env.APIFY_API_TOKEN ?? process.env.APIFY_TOKEN });
 
   const inputByPlatform: Record<Platform, Record<string, unknown>> = {
     tiktok: {
@@ -407,6 +408,89 @@ export async function POST(request: Request) {
     comparisonToPrediction = `Within expected range: actual ${Math.round(actualScore)} vs predicted ${Math.round(predictedScore)}. Δ${Math.round(delta!)} pts.`;
   }
 
+  // ── AI Audience Intelligence (Ghost Test — behavioral insights only) ─────────
+  let aiInsights: {
+    key_learnings: string[];
+    do_more_of: string[];
+    avoid_or_test: string[];
+    next_content_recommendations: string[];
+  } | null = null;
+
+  if (process.env.ANTHROPIC_API_KEY) {
+    try {
+      const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+      const insightMsg = await anthropic.messages.create({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 700,
+        system: `You are the Audience Intelligence Analyst for a short-form video creator. You analyse real performance data and return actionable insights.
+
+GHOST TEST RULE:
+Focus only on observable behavioral signals — what viewers DID (watched longer, replayed, shared, dropped off), not what they "felt" or "thought". Describe moments, pacing choices, structural beats, and physical actions that correlate with performance.
+- Wrong: "Audience loved the emotional moment." Right: "Retention spiked during the 8-second still shot where the character set the cup down without speaking."
+- Every insight must be specific and evidence-based. Avoid generic advice.
+
+Return ONLY valid JSON — no markdown, no backticks:
+{
+  "key_learnings": ["2-3 specific, evidence-based learnings from this video's data"],
+  "do_more_of": ["1-2 specific behaviors, pacing choices, or structural beats to repeat"],
+  "avoid_or_test": ["1-2 specific things to cut or A/B test differently next time"],
+  "next_content_recommendations": ["3 concrete, actionable recommendations for the next piece of content — each grounded in what the data showed"]
+}`,
+        messages: [{
+          role: "user",
+          content: `Performance Data:
+Platform: ${platform}
+Views: ${views.toLocaleString()}
+Likes: ${likes}
+Comments: ${comments}
+Shares: ${shares}
+Saves: ${saves}
+Actual Score: ${Math.round(actualScore)}/100
+Predicted Score: ${predictedScore != null ? `${Math.round(predictedScore)}/100` : "no prediction available"}
+Performance vs Prediction: ${comparisonToPrediction}
+${sentiment ? `Creator Sentiment: ${sentiment}` : ""}
+${qualitativeQuantitativeDivergence ? "FLAG: Quantitative and qualitative signals diverged — high views but negative creator sentiment, or low views but positive creator sentiment." : ""}
+${latestBrief?.recommended_angle ? `Brief Angle Used: "${latestBrief.recommended_angle}"` : "No brief angle available."}
+
+Based on this data, provide specific behavioral insights for next content.`,
+        }],
+      });
+
+      const raw = insightMsg.content[0].type === "text" ? insightMsg.content[0].text : "{}";
+      const start = raw.indexOf("{");
+      const end = raw.lastIndexOf("}");
+      if (start !== -1 && end !== -1) {
+        aiInsights = JSON.parse(raw.slice(start, end + 1)) as typeof aiInsights;
+
+        // Store AI insights in creator_memory (non-blocking)
+        void supabase.from("creator_memory").insert({
+          user_id: user.id,
+          memory_type: "audience_insights",
+          content: [
+            ...((aiInsights?.key_learnings ?? []).map(l => `Learning: ${l}`)),
+            ...((aiInsights?.do_more_of ?? []).map(l => `Do more: ${l}`)),
+            ...((aiInsights?.avoid_or_test ?? []).map(l => `Avoid/test: ${l}`)),
+          ].join(" | "),
+          metadata: {
+            project_id: projectId,
+            platform,
+            views,
+            actual_score: actualScore,
+            predicted_score: predictedScore,
+            ai_insights: aiInsights,
+            ghost_test_compliant: true,
+          },
+          source_project_id: projectId,
+        }).then(({ error }) => {
+          if (error) console.warn("[ingest-performance] ai_insights memory insert warning:", error.message);
+        });
+      }
+    } catch (insightErr) {
+      console.warn("[ingest-performance] AI insights generation failed (non-fatal):", insightErr instanceof Error ? insightErr.message : insightErr);
+    }
+  }
+
   // ── Response ─────────────────────────────────────────────────────────────────
   return NextResponse.json({
     success: true,
@@ -426,6 +510,7 @@ export async function POST(request: Request) {
       comparison_to_prediction: comparisonToPrediction,
       source,
       platform,
+      ai_insights: aiInsights,
     },
   });
 }

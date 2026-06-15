@@ -8,7 +8,7 @@
 
 import { routeModel }    from "@/lib/avatar/model-router";
 import { classifyScene } from "@/lib/avatar/scene-classifier";
-import { KLING_T2V_PRO, KLING_T2V_MODEL } from "@/lib/video-models";
+import { KLING_T2V_PRO, KLING_T2V_MODEL, KLING_I2V_PRO, KLING_I2V_MODEL } from "@/lib/video-models";
 import { isMultiCharacterScene } from "./multi-character-handler";
 
 // ultra-draft uses v3 standard (shorter queue, 5s clips are fast);
@@ -143,7 +143,65 @@ function isStylizedCharacter(t: string): boolean {
   return /\b(big bird|snuffleupagus|snuffy|muppet|puppet|sesame|cartoon|anime|pokemon|furry|creature|monster|dragon|fairy|elf|gnome|troll|goblin|unicorn|dinosaur|robot|alien|plush|stuffed animal|mascot|disney|pixar|dreamworks|animated character|3d animation|cgi character|princess peach|mario|luigi|bowser|zelda|kirby|pikachu|yoshi|wario|donkey kong|abraham lincoln|george washington|napoleon|historical cartoon|fictional character|storybook)\b/.test(t);
 }
 
-// Motion strength for Kling — higher = more dynamic motion.
+// ── getKlingRoute — lightweight routing helper for callers that don't need full ShotRoute ──
+// Returns model slug, i2v flag, motion strength, and duration cap based on mode + shot type.
+
+export interface KlingRoute {
+  klingModelId:    string;
+  useI2V:          boolean;
+  motionStrength:  number;
+  maxDurationSecs: number;
+  reason:          string;
+}
+
+export function getKlingRoute(options: {
+  speedMode:       string;
+  isAvatar?:       boolean;
+  isAnimated?:     boolean;
+  hasReferenceImage?: boolean;
+}): KlingRoute {
+  const { speedMode, isAvatar = false, isAnimated = false, hasReferenceImage = false } = options;
+
+  if (speedMode === 'ultra-draft') {
+    return {
+      klingModelId:    KLING_T2V_MODEL,
+      useI2V:          false,
+      motionStrength:  0.45,
+      maxDurationSecs: 5,
+      reason:          `routing:${speedMode}-standard`,
+    };
+  }
+
+  if (isAvatar) {
+    return {
+      klingModelId:    KLING_I2V_PRO,
+      useI2V:          true,
+      motionStrength:  0.45,
+      maxDurationSecs: 12,
+      reason:          `routing:avatar-i2v`,
+    };
+  }
+
+  if (isAnimated) {
+    return {
+      klingModelId:    KLING_I2V_MODEL,
+      useI2V:          hasReferenceImage,
+      motionStrength:  0.68,
+      maxDurationSecs: 10,
+      reason:          `routing:animated`,
+    };
+  }
+
+  return {
+    klingModelId:    KLING_T2V_PRO,
+    useI2V:          hasReferenceImage && speedMode !== 'draft',
+    motionStrength:  0.62,
+    maxDurationSecs: 10,
+    reason:          `routing:${speedMode}-cinematic`,
+  };
+}
+
+// ── Motion strength for Kling — higher = more dynamic motion.
 // Maps inversely to cfg_scale: strength 0.75 → cfg_scale 0.25 (free motion).
 // Stylized characters use moderate strength to avoid artifact spiral.
 function getMotionStrength(speedMode: string, combinedText: string, stylized = false): number {

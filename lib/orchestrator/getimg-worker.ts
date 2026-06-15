@@ -24,7 +24,7 @@ export interface GetImgResult {
 
 export async function generateGetImgFrame(input: GetImgInput): Promise<GetImgResult> {
   const apiKey = process.env.GETIMG_API_KEY;
-  if (!apiKey) throw new Error("[getimg] GETIMG_API_KEY not set");
+  if (!apiKey) throw new Error("[getimg] GETIMG_API_KEY not set — add it to Vercel env vars at dashboard.getimg.ai");
 
   const model   = input.useQualityModel ? "flux-dev" : "flux-schnell";
   const steps   = input.useQualityModel ? 28 : 4;
@@ -58,7 +58,14 @@ export async function generateGetImgFrame(input: GetImgInput): Promise<GetImgRes
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`[getimg] ${model} failed ${res.status}: ${text.slice(0, 200)}`);
+    const hint = res.status === 401
+      ? " — GETIMG_API_KEY is invalid or expired. Verify at dashboard.getimg.ai"
+      : res.status === 403
+      ? " — account lacks access to this model tier"
+      : res.status === 429
+      ? " — rate limited; reduce request frequency"
+      : "";
+    throw new Error(`[getimg] ${model} ${res.status}${hint}: ${text.slice(0, 200)}`);
   }
 
   const data = await res.json() as { url?: string; image?: string };

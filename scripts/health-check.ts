@@ -15,6 +15,7 @@
  */
 
 import { createClient } from "@supabase/supabase-js";
+import { Client as PgClient } from "pg";
 import * as fs           from "fs";
 import * as path         from "path";
 
@@ -128,20 +129,46 @@ async function checkSupabase(): Promise<CheckResult[]> {
     results.push(pass("table:renders+learning_cols", "was_published, was_edited, user_rating, template, completed_at all present"));
   }
 
-  // Credit RPCs (call with a null UUID — expected to fail gracefully, not 404)
-  const rpcs: Array<{ name: string; rpc: string; args: Record<string, unknown> }> = [
-    { name: "rpc:deduct_credits_atomic", rpc: "deduct_credits_atomic", args: { p_user_id: "00000000-0000-0000-0000-000000000000", p_amount: 0 } },
-    { name: "rpc:add_credits",           rpc: "add_credits",           args: { p_user_id: "00000000-0000-0000-0000-000000000000", p_amount: 0, p_reason: "health_check" } },
-  ];
-
-  for (const { name, rpc, args } of rpcs) {
-    const { error } = await db.rpc(rpc, args);
-    // A "permission denied" or "no rows" error is fine — it means the function EXISTS
-    // A "function … does not exist" error means migration hasn't run
-    if (error && error.message.includes("does not exist")) {
-      results.push(fail(name, `function not found — run credit RPC migration`));
-    } else {
-      results.push(pass(name, error ? `exists (returned: ${error.code})` : "exists"));
+  // Credit RPCs — check via direct pg connection so REVOKE FROM PUBLIC doesn't block us.
+  // add_credits is restricted to service_role only; PostgREST's introspector can't see it
+  // after REVOKE FROM PUBLIC even with the service_role JWT, so we query pg_proc directly.
+  const directUrl = process.env.DIRECT_URL ?? process.env.DATABASE_URL ?? "";
+  if (directUrl) {
+    const pg = new PgClient({ connectionString: directUrl, ssl: { rejectUnauthorized: false } });
+    try {
+      await pg.connect();
+      const required = ["deduct_credits_atomic", "add_credits", "reset_monthly_credits"];
+      const { rows } = await pg.query<{ proname: string }>(
+        `SELECT DISTINCT proname FROM pg_proc WHERE proname = ANY($1)`,
+        [required],
+      );
+      const found = new Set(rows.map(r => r.proname));
+      for (const fn of required) {
+        if (found.has(fn)) {
+          results.push(pass(`rpc:${fn}`, "exists in pg_proc"));
+        } else {
+          results.push(fail(`rpc:${fn}`, "function not found — run 20260614_billing_rls.sql"));
+        }
+      }
+    } catch (pgErr: unknown) {
+      const msg = pgErr instanceof Error ? pgErr.message : String(pgErr);
+      results.push(fail("rpc:pg_check", `direct pg connection failed: ${msg}`));
+    } finally {
+      await pg.end().catch(() => {});
+    }
+  } else {
+    // Fallback: try via PostgREST (will miss revoked-from-PUBLIC functions)
+    const rpcs: Array<{ name: string; rpc: string; args: Record<string, unknown> }> = [
+      { name: "rpc:deduct_credits_atomic", rpc: "deduct_credits_atomic", args: { p_user_id: "00000000-0000-0000-0000-000000000000", p_amount: 0 } },
+      { name: "rpc:add_credits",           rpc: "add_credits",           args: { p_user_id: "00000000-0000-0000-0000-000000000000", p_amount: 0, p_reason: "health_check" } },
+    ];
+    for (const { name, rpc, args } of rpcs) {
+      const { error } = await db.rpc(rpc, args);
+      if (error && error.message.includes("does not exist")) {
+        results.push(fail(name, "function not found — run credit RPC migration"));
+      } else {
+        results.push(pass(name, error ? `exists (returned: ${error.code})` : "exists"));
+      }
     }
   }
 

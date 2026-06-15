@@ -14,7 +14,8 @@
     "dependency-graph": "ts-node --project tsconfig.scripts.json scripts/dependency-graph.ts",
     "provider-registry-gate": "ts-node --project tsconfig.scripts.json scripts/provider-registry-gate.ts",
     "ast-gate": "ts-node --project tsconfig.scripts.json scripts/ast-gate/index.ts",
-    "test:pipeline": "ts-node --project tsconfig.scripts.json scripts/test-validate-pipeline.ts"
+    "test:pipeline": "ts-node --project tsconfig.scripts.json scripts/test-validate-pipeline.ts",
+    "health": "ts-node --project tsconfig.scripts.json scripts/health-check.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.96.0",
@@ -24,6 +25,7 @@
     "@supabase/auth-helpers-nextjs": "^0.15.0",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.105.4",
+    "@tanstack/react-query": "^5.101.0",
     "apify-client": "^2.23.3",
     "elevenlabs": "^1.59.0",
     "ffmpeg-static": "^5.3.0",
@@ -38,6 +40,7 @@
     "posthog-node": "^5.35.1",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "recharts": "^3.8.1",
     "resend": "^6.12.4",
     "stripe": "^22.1.1"
   },

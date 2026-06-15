@@ -22,7 +22,7 @@ import { loadBrandMemory }       from "@/lib/memory/brand-memory";
 import { loadCharacterMemory, buildKlingCharacterSuffix } from "@/lib/memory/character-memory";
 import { generateGetImgFrame }   from "@/lib/orchestrator/getimg-worker";
 
-export const maxDuration = 600;
+export const maxDuration = 300;
 
 const DEFAULT_VOICE_ID = "EXAVITQu4vr4xnSDxMaO";
 
@@ -135,8 +135,15 @@ export async function POST(req: Request) {
     const goal         = (input.goal    as string ?? "").trim();
     const niche        = (input.niche   as string ?? "").trim();
     const voiceId      = (input.voiceId as string ?? DEFAULT_VOICE_ID);
-    const characterId  = input.characterId as string | undefined;
-    const lightningMode = !!input.lightningMode;
+    const characterId    = input.characterId  as string | undefined;
+    const parentRenderId = input.parentRenderId as string | undefined;
+    const brandGuidelines  = (input.brandGuidelines as string | undefined)?.trim() ?? "";
+    const emotionalArc     = (input.emotionalArc   as string | undefined) ?? "rising-tension";
+    const microIntensity   = (input.microIntensity  as number | undefined) ?? 65;
+    const activeEmotions   = (input.activeEmotions  as string[] | undefined) ?? [];
+    if (brandGuidelines)  console.log(`[run-cinematic] brandGuidelines=${brandGuidelines.slice(0, 80)}`);
+    if (activeEmotions.length) console.log(`[run-cinematic] emotionalArc=${emotionalArc} emotions=${activeEmotions.join(",")} intensity=${microIntensity}`);
+    const lightningMode  = !!input.lightningMode;
     // Explicit speedMode from client wins; lightningMode is the backward-compat toggle
     const speedMode    = (input.speedMode as string | undefined) ?? (lightningMode ? "ultra-draft" : "draft");
     const isUltraDraft = speedMode === "ultra-draft";
@@ -198,6 +205,19 @@ export async function POST(req: Request) {
       console.log(`[STYLE_ENFORCED] cinematic=true prefix="${CINEMATIC_QUALITY_PREFIX.substring(0, 60)}" scenes=${scenePrompts.length}`);
     }
 
+    // Append emotional intelligence + brand context to each scene prompt when provided
+    if (brandGuidelines || activeEmotions.length) {
+      const intensityDesc = microIntensity > 70 ? "strong visible micro-expressions" : microIntensity > 40 ? "natural believable expressions" : "subtle restrained expressions";
+      const emotionSuffix = [
+        activeEmotions.length ? `emotional tone: ${activeEmotions.join(", ")}` : "",
+        `${intensityDesc}`,
+        emotionalArc !== "rising-tension" ? `arc: ${emotionalArc}` : "",
+        brandGuidelines ? `brand context: ${brandGuidelines.slice(0, 120)}` : "",
+      ].filter(Boolean).join(", ");
+      scenePrompts = scenePrompts.map(p => `${p}, ${emotionSuffix}`);
+      console.log(`[EI_INJECT] arc=${emotionalArc} intensity=${microIntensity} emotions=${activeEmotions.join(",")} suffix="${emotionSuffix.slice(0, 80)}"`);
+    }
+
     await setJobStatus(jobId, "running", 15);
 
     // ── 2. Load brand + character memory ─────────────────────────────────────
@@ -209,15 +229,22 @@ export async function POST(req: Request) {
     const brandSuffix = brandMemory?.klingStyleSuffix ?? "";
     const charSuffix  = charMemory ? buildKlingCharacterSuffix(charMemory) : "";
 
-    // ── 3. Generate ONE reference image for character consistency ─────────────
-    // Lightning mode skips Flux entirely (T2V is faster without reference anchoring).
-    // Standard mode uses Flux schnell (4 steps) for speed; quality uses Dev (28 steps).
+    // ── 3. Reference image for character consistency ──────────────────────────
+    // Priority order:
+    //   1. Stored character ref_frame_url (most consistent — same image every episode)
+    //   2. Fresh Flux/fal.ai generation (when no stored ref is available)
+    //   3. Skip entirely in lightning mode (T2V is faster without reference anchoring)
     await setJobStatus(jobId, "generating_clips", 15);
 
     const fluxT0 = Date.now();
     let referenceImageUrl: string | undefined;
 
-    if (!lightningMode) {
+    if (charMemory?.ref_frame_url) {
+      // Use stored character reference — guarantees visual consistency across "Continue Story" episodes.
+      // run-cinematic previously regenerated Flux on every call, causing face drift between episodes.
+      referenceImageUrl = charMemory.ref_frame_url;
+      console.log(`[CHARACTER_LOCK] stored_ref_frame char=${characterId} parent_render=${parentRenderId ?? "none"} url=${referenceImageUrl.substring(0, 80)}`);
+    } else if (!lightningMode) {
       const subjectHint = charSuffix ? charSuffix.split(",")[0].trim() : "";
 
       const refPrompt = isAnimated

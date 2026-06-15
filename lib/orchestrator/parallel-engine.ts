@@ -13,6 +13,8 @@
 // Hedra is called via submitHedraJob + checkHedraGenerationStatus (unchanged).
 
 import { supabaseAdmin }                from "@/lib/supabase/admin";
+// Check FAL credentials at engine startup so zero-clips error messages are accurate
+const FAL_CREDS = process.env.FAL_KEY ?? process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY ?? "";
 import { submitHedraJob, checkHedraGenerationStatus } from "@/lib/providers/hedra";
 import type { HedraInput }              from "@/lib/providers/hedra";
 import { generateKlingClip }            from "./kling-worker";
@@ -28,6 +30,8 @@ import { loadBrandMemory }              from "@/lib/memory/brand-memory";
 import { saveRenderToLibrary }          from "@/lib/renders/save-render";
 import { generateRecommendations }      from "@/lib/intelligence/recommendation-engine";
 import { KLING_T2V_PRO } from "@/lib/video-models";
+import { detectHistoricalEra, applyHistoricalContext } from "@/lib/prompt-enhancer";
+import { detectNiche, applyNicheContext, isFacelessContent, applyFacelessModifier } from "@/lib/niche-enhancer";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -330,6 +334,43 @@ async function processKlingShot(
   let effectiveBrandSuffix = brandSuffix;
   let refImage: string | undefined;
 
+  // Context injection — runs before any style prefix so details land inside
+  // both the animated and cinematic prompt paths.
+  // Historical takes priority; niche only applies when no era matched and
+  // content is not animated (realistic niche props clash with Disney/Pixar style).
+  // Ghost Test: all injected text is physical (clothing, props, architecture, lighting).
+  const historicalEra = detectHistoricalEra(visualPrompt);
+  if (historicalEra) {
+    const before = visualPrompt;
+    visualPrompt = applyHistoricalContext(visualPrompt, historicalEra);
+    if (visualPrompt !== before) {
+      console.info(
+        `[HIST_ENHANCE] shot=${shot.id} num=${shot.shot_number} ` +
+        `era="${historicalEra.eraLabel}" ` +
+        `added=${visualPrompt.length - before.length}chars`,
+      );
+    }
+  } else if (!isAnimated) {
+    const niche = detectNiche(visualPrompt);
+    if (niche) {
+      const before = visualPrompt;
+      visualPrompt = applyNicheContext(visualPrompt, niche);
+      if (visualPrompt !== before) {
+        console.info(
+          `[NICHE_ENHANCE] shot=${shot.id} num=${shot.shot_number} ` +
+          `niche="${niche.nicheLabel}" ` +
+          `added=${visualPrompt.length - before.length}chars`,
+        );
+      }
+    }
+    // Faceless modifier — composition flag independent of niche/era.
+    // Prepend before animation/cinematic prefix so it controls framing.
+    if (isFacelessContent(shot.visual_prompt)) {
+      visualPrompt = applyFacelessModifier(visualPrompt);
+      console.info(`[FACELESS] shot=${shot.id} num=${shot.shot_number} framing=hands-only`);
+    }
+  }
+
   if (isAnimated) {
     visualPrompt = `${PARALLEL_ANIM_PREFIX}${visualPrompt}`;
     effectiveCharSuffix = "";   // char ref suffix would anchor to live-action description
@@ -340,7 +381,32 @@ async function processKlingShot(
     visualPrompt = `${CINEMATIC_QUALITY_PREFIX}${visualPrompt}`;
     // Use character image as i2v reference when router flagged preferI2V
     refImage = (route.preferI2V && charImageUrl) ? charImageUrl : undefined;
-    if (refImage) console.info(`[KLING_I2V] shot=${shot.id} using char ref image for i2v mode`);
+    if (refImage) {
+      console.info(`[KLING_I2V] shot=${shot.id} using char ref image for i2v mode`);
+    } else if (route.preferI2V && !charImageUrl) {
+      // No character reference available — try GetImg to synthesize a reference frame so we
+      // can still run I2V. If image gen fails, fall through to T2V (refImage stays undefined).
+      const imgPrompt = [
+        visualPrompt,
+        effectiveCharSuffix || undefined,
+        "cinematic lighting, sharp focus, photorealistic, 9:16 portrait aspect ratio",
+      ].filter(Boolean).join(", ");
+      try {
+        const frame = await generateGetImgFrame({
+          prompt:          imgPrompt,
+          negativePrompt:  "extra limbs, bad anatomy, deformed, ugly, watermark, blurry, low quality",
+          width:           768,
+          height:          1344,
+          useQualityModel: false,
+        });
+        refImage = frame.imageUrl;
+        console.info(`[KLING_I2V_SYNTH] shot=${shot.id} getimg reference frame ready in ${frame.generationMs}ms — using I2V`);
+      } catch (imgErr) {
+        const imgMsg = imgErr instanceof Error ? imgErr.message : String(imgErr);
+        console.warn(`[KLING_I2V_SYNTH_FAIL] shot=${shot.id} getimg failed (${imgMsg.slice(0, 100)}) — falling back to T2V`);
+        // refImage stays undefined → kling-worker uses T2V model
+      }
+    }
   }
 
   const result = await generateKlingClip({
@@ -381,18 +447,26 @@ async function processRunwayShot(
   charSuffix:    string,
   brandSuffix:   string,
   correlationId: string,
-  charImageUrl:  string,           // required — Runway is always i2v
+  charImageUrl:  string | null,
 ): Promise<ClipResult> {
   const shotT0 = Date.now();
 
   // If route asks for a GetImg-generated source frame, generate one first.
-  // Otherwise use the character reference image directly.
-  let sourceImageUrl = charImageUrl;
+  // If GetImg fails (401 bad key, 429 rate limit, etc.), fall back to charImageUrl.
+  // If charImageUrl is also absent, fall back to pure Kling T2V with an enriched prompt
+  // so the shot is never silently dropped.
+  let sourceImageUrl: string | null = charImageUrl;
   if (route.sourceImageProvider === "getimg") {
+    const getimgPrompt = [
+      shot.visual_prompt,
+      charSuffix || undefined,
+      brandSuffix || undefined,
+      "cinematic lighting, sharp focus, photorealistic, 9:16 portrait aspect ratio",
+    ].filter(Boolean).join(", ");
     try {
       const frame = await generateGetImgFrame({
-        prompt:          `${shot.visual_prompt}${charSuffix ? ", " + charSuffix : ""}${brandSuffix ? ", " + brandSuffix : ""}`,
-        negativePrompt:  "extra limbs, bad anatomy, deformed, ugly, watermark",
+        prompt:          getimgPrompt,
+        negativePrompt:  "extra limbs, bad anatomy, deformed, ugly, watermark, blurry, low quality",
         width:           768,
         height:          1344,
         useQualityModel: false,
@@ -400,8 +474,16 @@ async function processRunwayShot(
       sourceImageUrl = frame.imageUrl;
       console.info(`[RUNWAY_GETIMG] shot=${shot.id} getimg frame in ${frame.generationMs}ms`);
     } catch (err) {
-      console.warn(`[RUNWAY_GETIMG] shot=${shot.id} getimg failed, falling back to char ref:`, err);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      console.warn(`[RUNWAY_GETIMG_FAIL] shot=${shot.id} getimg failed (${errMsg.slice(0, 120)}) — falling back to char ref or T2V`);
+      // sourceImageUrl remains charImageUrl (may be null)
     }
+  }
+
+  // If we still have no source image after GetImg attempt, Runway can't proceed —
+  // fall through to the T2V Kling fallback in the caller's catch block by throwing here.
+  if (!sourceImageUrl) {
+    throw new Error(`[processRunwayShot] shot=${shot.id}: no source image available (GetImg failed and no char ref) — will use Kling T2V fallback`);
   }
 
   const prompt = [shot.visual_prompt, charSuffix, brandSuffix].filter(Boolean).join(", ");
@@ -410,7 +492,7 @@ async function processRunwayShot(
     shotId:       shot.id,
     shotNumber:   shot.shot_number,
     prompt,
-    imageUrl:     sourceImageUrl,
+    imageUrl:     sourceImageUrl!, // non-null guaranteed by throw above
     durationSecs: shot.duration_seconds,
     aspectRatio:  "9:16",
   });
@@ -703,6 +785,19 @@ export async function runParallelEngine(
     ...runwayResults.filter((r): r is ClipResult => r !== null),
     ...multiCharResults.filter((r): r is ClipResult => r !== null),
   ].sort((a, b) => a.shotNumber - b.shotNumber);
+
+  // Guard: zero clips = provider failure, not a silent non-event.
+  // Emit failure event before throwing so the SSE stream surfaces it to the client.
+  if (allClips.length === 0) {
+    const providerHint = !FAL_CREDS
+      ? "FAL_KEY / FAL_API_KEY is not set in environment variables."
+      : `All ${failedShots.length} clip(s) returned errors. ` +
+        "Check FAL_KEY validity and account credit balance at fal.ai.";
+    const errMsg = `Video generation failed — no clips were produced. ${providerHint}`;
+    console.error(`[parallel-engine] ZERO_CLIPS planId=${planId} failedShots=${failedShots.length} hint="${providerHint}"`);
+    emitRaw("PARALLEL_ENGINE_FAILED", planId, { error: errMsg, failedShots });
+    throw new Error(errMsg);
+  }
 
   emitRaw("PROGRESS_UPDATE", planId, {
     stage: "stitching", progress: 88,

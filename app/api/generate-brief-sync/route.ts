@@ -2,9 +2,10 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { getBrandProfile, getBrandSystemPrompt } from "@/lib/brand";
 import { checkCache, saveCache, logUsageEvent } from "@/lib/cache";
+import { isScriptTooSimilar, storeScriptHistory } from "@/lib/memory/script-uniqueness";
 
 export async function POST(req: Request) {
-  const { goal, template, niche, targetAudience, platforms } = await req.json();
+  const { goal, template, niche, targetAudience, platforms, isContinuation } = await req.json();
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -126,12 +127,50 @@ Return JSON in this exact shape (fill every empty string):
       return Response.json({ error: "No versions returned" }, { status: 500 });
     }
 
+    // Semantic uniqueness check — skip for continuation/series mode
+    let finalParsed = parsed;
+    if (userId && !isContinuation) {
+      const versions = parsed.versions as Array<{ script?: string; viral_score?: number }>;
+      const bestScript = versions.reduce((a, b) => ((a.viral_score ?? 0) >= (b.viral_score ?? 0) ? a : b)).script ?? "";
+      if (bestScript.length > 20) {
+        const { tooSimilar, maxSimilarity } = await isScriptTooSimilar(bestScript, userId);
+        if (tooSimilar) {
+          console.info(`[SCRIPT_UNIQUENESS] maxSim=${maxSimilarity.toFixed(3)} — regenerating with diversity instruction`);
+          const diversityPrompt = `${userPrompt}\n\nCRITICAL DIVERSITY REQUIREMENT: Your previous scripts were too similar to each other (similarity ${(maxSimilarity * 100).toFixed(0)}%). You MUST generate 5 completely different scripts this time. Use entirely different metaphors, structures, emotional entry points, and narrative styles. Do NOT reuse phrases or sentence patterns from previous outputs.`;
+          const retryRes = await fetch("https://api.anthropic.com/v1/messages", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
+            body: JSON.stringify({ model: "claude-sonnet-4-6", max_tokens: 3000, system: systemPrompt, messages: [{ role: "user", content: diversityPrompt }] }),
+          });
+          const retryData = await retryRes.json() as { content?: Array<{ type: string; text: string }> };
+          const retryText = retryData.content?.[0]?.text ?? "";
+          const rs = retryText.indexOf("{"), re = retryText.lastIndexOf("}");
+          if (rs !== -1 && re !== -1) {
+            const retryParsed = JSON.parse(retryText.slice(rs, re + 1)) as { versions?: unknown[] };
+            if (retryParsed.versions?.length) {
+              finalParsed = retryParsed;
+              console.info("[SCRIPT_UNIQUENESS] retry succeeded — using diverse versions");
+            }
+          }
+        } else {
+          console.info(`[SCRIPT_UNIQUENESS] maxSim=${maxSimilarity.toFixed(3)} — unique enough, accepting`);
+        }
+      }
+
+      // Store best script in history (non-blocking)
+      const acceptedVersions = finalParsed.versions as Array<{ script?: string; viral_score?: number }>;
+      const acceptedBest = acceptedVersions.reduce((a, b) => ((a.viral_score ?? 0) >= (b.viral_score ?? 0) ? a : b)).script ?? "";
+      if (acceptedBest.length > 20) {
+        storeScriptHistory(acceptedBest, userId, { goal, niche }).catch(() => {});
+      }
+    }
+
     if (userId) {
-      saveCache(userId, "generate-brief-sync", cacheInput, JSON.stringify(parsed));
+      saveCache(userId, "generate-brief-sync", cacheInput, JSON.stringify(finalParsed));
       logUsageEvent(userId, "generate-brief-sync", "generate", 2, { niche });
     }
 
-    return Response.json(parsed);
+    return Response.json(finalParsed);
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
     console.error("generate-brief-sync error:", message);
