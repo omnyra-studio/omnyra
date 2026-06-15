@@ -8,7 +8,8 @@ const nextConfig = {
       { protocol: 'https', hostname: 'fal.media' },
       { protocol: 'https', hostname: '**.klingai.com' },
       { protocol: 'https', hostname: 'oaidalleapiprodscus.blob.core.windows.net' },
-      { protocol: 'https', hostname: '**.elevenlabs.io' }
+      { protocol: 'https', hostname: '**.elevenlabs.io' },
+      { protocol: 'https', hostname: 'randomuser.me' }
     ]
   },
   serverExternalPackages: ['fluent-ffmpeg', '@ffmpeg-installer/ffmpeg'],
