@@ -56,7 +56,8 @@ async function detectEmotion(apiKey: string, prompt: string): Promise<EmotionDat
 }
 
 export async function POST(req: Request) {
-  const { goal, template, niche, targetAudience, platforms, isContinuation, lightningMode } = await req.json();
+  const { goal, template, niche, targetAudience, platforms, platform, pastWins, competitors, uniqueAngle, isContinuation, lightningMode } = await req.json();
+  const platformStr = Array.isArray(platforms) ? platforms.join(", ") : (platform ?? "TikTok");
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
@@ -143,7 +144,7 @@ IMPORTANT — This brief contains emotional/relational content. Your 5 versions 
 Goal: ${enhancedGoal}
 Niche: ${niche || "general"}
 Audience: ${targetAudience || "general"}
-Platforms: ${Array.isArray(platforms) ? platforms.join(", ") : "TikTok"}
+Platform: ${platformStr}${pastWins ? `\nPast Wins: ${pastWins}` : ""}${competitors ? `\nCompetitors: ${competitors}` : ""}${uniqueAngle ? `\nUnique Angle: ${uniqueAngle}` : ""}
 ${emotionalArcGuidance}
 
 Each script must be 80–110 words with a full emotional arc and strong cinematic direction.

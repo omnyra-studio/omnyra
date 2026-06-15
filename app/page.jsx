@@ -17,7 +17,6 @@ export default function Landing() {
             <a href="#how-it-works" className="hover:text-[#E879F9] transition-colors duration-300">How It Works</a>
             <a href="#features" className="hover:text-[#E879F9] transition-colors duration-300">Features</a>
             <Link href="/pricing" className="hover:text-[#E879F9] transition-colors duration-300">Pricing</Link>
-            <Link href="/tools" className="hover:text-[#E879F9] transition-colors duration-300">Tools</Link>
           </div>
           <Link
             href="#pricing"

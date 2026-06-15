@@ -28,39 +28,81 @@ interface Props {
 }
 
 const VOICES = [
-  { id: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel', accent: 'American · Warm' },
-  { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Bella',  accent: 'American · Soft' },
-  { id: 'AZnzlk1XvdvUeBnXmlld', name: 'Domi',   accent: 'American · Bold' },
-  { id: 'TxGEqnHWrfWFTfGW9XjX', name: 'Josh',   accent: 'American · Deep' },
+  { id: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel',    accent: 'American',      style: 'Warm' },
+  { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Bella',     accent: 'American',      style: 'Soft' },
+  { id: 'AZnzlk1XvdvUeBnXmlld', name: 'Domi',      accent: 'American',      style: 'Bold' },
+  { id: 'TX3LP5s5f2v4cY6p6z5G',  name: 'Josh',      accent: 'American',      style: 'Deep' },
+  { id: 'pNInz6obpgDQGcFmaJgB',  name: 'Adam',      accent: 'American',      style: 'Narrative' },
+  { id: 'yoZ06aMxZJJ28mfd3POQ',  name: 'Sam',       accent: 'American',      style: 'Raspy' },
+  { id: 'jBpfuIE2acCo8z3wKNLl',  name: 'Gigi',      accent: 'American',      style: 'Childlike' },
+  { id: 'oWAxZDx7w5VEj9dCyTzz',  name: 'Grace',     accent: 'American',      style: 'Southern' },
+  { id: 'z9fAnlkpzviPz146aGWa',  name: 'Giovanni',  accent: 'Italian',       style: 'Foreigner' },
+  { id: 'Zlb1dXrM653N07WRdFW3',  name: 'Lily',      accent: 'British',       style: 'Warm' },
+  { id: 'nPczCjzI2devNBz1zQrb',  name: 'Brian',     accent: 'American',      style: 'Deep' },
+  { id: 'N2lVS1w4EtoT3dr4eOWO',  name: 'Callum',    accent: 'Transatlantic', style: 'Intense' },
+  { id: 'CYw3kZ02Hs0563khs1Fj',  name: 'Dave',      accent: 'British',       style: 'Conversational' },
+  { id: 'IKne3meq5aSn9XLyUdCD',  name: 'Charlie',   accent: 'Australian',    style: 'Natural' },
+  { id: 'XB0fDUnXU5powFXDhCwa',  name: 'Charlotte', accent: 'Swedish',       style: 'Seductive' },
+  { id: 'flq6f7yk4E4fJM5XTYuZ',  name: 'Mimi',      accent: 'Swedish',       style: 'Childlike' },
+  { id: 'g5CIjZEefAph4nQFvHAz',  name: 'Ethan',     accent: 'American',      style: 'Whisper' },
+  { id: 'onwK4e9ZLuTAKqWW03F9',  name: 'Daniel',    accent: 'British',       style: 'Authoritative' },
+  { id: 'piTKgcLEGmPE4e6mEKli',  name: 'Nicole',    accent: 'American',      style: 'Whisper' },
+  { id: 'ThT5KcBeYPX3keUQqHPh',  name: 'Dorothy',   accent: 'British',       style: 'Pleasant' },
+  { id: 'TxGEqnHWrfWFTfGW9XjX',  name: 'Josh',      accent: 'American',      style: 'Young' },
+  { id: 'VR6AewLTigWG4xSOukaG',  name: 'Arnold',    accent: 'American',      style: 'Crisp' },
+  { id: 'bVMeCyTHy58xNoL34h3p',  name: 'Jeremy',    accent: 'American',      style: 'Excited' },
+  { id: 'SOYHLrjzK2X1ezoPC6cr',  name: 'Harry',     accent: 'American',      style: 'Anxious' },
+  { id: 'GBv7mTt0atIp3Br8iCZy',  name: 'Thomas',    accent: 'American',      style: 'Calm' },
+  { id: 'LcfcDJNUP1GQjkzn1xUU',  name: 'Emily',     accent: 'American',      style: 'Calm' },
 ];
 
-const STEP_LABELS = ['Prompt', 'Script', 'Scenes', 'Voice'];
+const STEP_LABELS = ['Brief', 'Script', 'Scenes', 'Voice'];
+
+type VideoType = 'preview' | 'cinematic' | 'avatar';
+
+const VIDEO_TYPES: Array<{ id: VideoType; label: string; desc: string; duration: string; cr: number; badge: string }> = [
+  { id: 'preview',   label: 'Quick Preview',   desc: 'fal.ai fast gen',    duration: '10s',  cr: 10, badge: '⚡' },
+  { id: 'cinematic', label: 'Cinematic Scene',  desc: 'Kling Pro',          duration: '30s',  cr: 40, badge: '🎬' },
+  { id: 'avatar',    label: 'Avatar Video',     desc: 'Hedra talking head', duration: '~30s', cr: 40, badge: '👤' },
+];
 
 export default function GenerationFlow({ toolId, toolName, modelOverride, scriptOnly }: Props) {
   const totalSteps = scriptOnly ? 2 : 4;
 
-  const [step,            setStep]            = useState(1);
-  const [prompt,          setPrompt]          = useState('');
-  const [lightningMode,   setLightningMode]   = useState(false);
-  const [loadingState,    setLoadingState]    = useState('');
+  const [step,           setStep]           = useState(1);
+  const [prompt,         setPrompt]         = useState('');
+  const [niche,          setNiche]          = useState('');
+  const [platform,       setPlatform]       = useState('');
+  const [targetAudience, setTargetAudience] = useState('');
+  const [pastWins,       setPastWins]       = useState('');
+  const [competitors,    setCompetitors]    = useState('');
+  const [uniqueAngle,    setUniqueAngle]    = useState('');
+  const [mediaFile,      setMediaFile]      = useState<File | null>(null);
+  const [lightningMode,  setLightningMode]  = useState(false);
+  const [loadingState,   setLoadingState]   = useState('');
 
-  const [scripts,         setScripts]         = useState<VersionResult[]>([]);
-  const [selectedScript,  setSelectedScript]  = useState<VersionResult | null>(null);
-  const [scriptError,     setScriptError]     = useState('');
+  const [scripts,        setScripts]        = useState<VersionResult[]>([]);
+  const [selectedScript, setSelectedScript] = useState<VersionResult | null>(null);
+  const [scriptError,    setScriptError]    = useState('');
 
   const [concepts,        setConcepts]        = useState<Concept[]>([]);
   const [selectedConcept, setSelectedConcept] = useState<Concept | null>(null);
+  const [regenerating,    setRegenerating]    = useState(false);
 
-  const [videoUrl,        setVideoUrl]        = useState<string | null>(null);
-  const [videoStatus,     setVideoStatus]     = useState('');
-  const [videoProgress,   setVideoProgress]   = useState(0);
-  const [videoStarted,    setVideoStarted]    = useState(false);
-  const [selectedVoice,   setSelectedVoice]   = useState(VOICES[0].id);
-  const [favorites,       setFavorites]       = useState<string[]>([]);
-  const [stitching,       setStitching]       = useState(false);
-  const [finalVideo,      setFinalVideo]      = useState<string | null>(null);
+  const [videoType,     setVideoType]     = useState<VideoType>('cinematic');
+  const [videoUrl,      setVideoUrl]      = useState<string | null>(null);
+  const [videoStatus,   setVideoStatus]   = useState('');
+  const [videoProgress, setVideoProgress] = useState(0);
+  const [videoStarted,  setVideoStarted]  = useState(false);
+  const [videoJobId,    setVideoJobId]    = useState<string | null>(null);
+  const [videoModel,    setVideoModel]    = useState<string | null>(null);
+  const [selectedVoice, setSelectedVoice] = useState(VOICES[0].id);
+  const [favorites,     setFavorites]     = useState<string[]>([]);
+  const [stitching,     setStitching]     = useState(false);
+  const [finalVideo,    setFinalVideo]    = useState<string | null>(null);
 
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollRef     = useRef<ReturnType<typeof setInterval> | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     try {
@@ -79,26 +121,36 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
     });
   };
 
-  // ── Step 1 → 2: silent Ghost Test, then generate brief/script ───────────────
   const handleGenerateScript = async () => {
     if (!prompt.trim()) return;
     setLoadingState('Analysing your scene…');
+    setScriptError('');
 
     let ghostEnhanced = prompt;
     try {
-      const ghostRes  = await fetch('/api/ghost-test-score', {
+      const ghostRes = await fetch('/api/ghost-test-score', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body:   JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt }),
       });
       const ghostData = await ghostRes.json();
-      ghostEnhanced   = ghostData.enhancedPrompt ?? prompt;
+      ghostEnhanced = ghostData.enhancedPrompt ?? prompt;
     } catch {}
 
     setLoadingState('Writing your scripts…');
     try {
-      const res  = await fetch('/api/generate-brief-sync', {
+      const res = await fetch('/api/generate-brief-sync', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body:   JSON.stringify({ goal: ghostEnhanced, toolId, niche: toolId, lightningMode }),
+        body: JSON.stringify({
+          goal: ghostEnhanced,
+          toolId,
+          niche: niche || toolId,
+          platform,
+          targetAudience,
+          pastWins,
+          competitors,
+          uniqueAngle,
+          lightningMode,
+        }),
       });
       const data = await res.json();
       const versions = (data.versions ?? []) as VersionResult[];
@@ -111,20 +163,19 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
       setScripts(versions);
       setSelectedScript(versions[0]);
       setStep(2);
-    } catch (e) {
+    } catch {
       setScriptError('Network error — please try again.');
     }
     setLoadingState('');
   };
 
-  // ── Step 2 → 3: generate scene images from selected script ──────────────────
   const handleGenerateScenes = async () => {
     if (!selectedScript) return;
     setLoadingState('Generating your scenes…');
     try {
-      const res  = await fetch('/api/generate-concepts', {
+      const res = await fetch('/api/generate-concepts', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body:   JSON.stringify({
+        body: JSON.stringify({
           prompt: `${selectedScript.hook}\n\n${selectedScript.script}`,
           toolId,
           lightningMode,
@@ -138,9 +189,23 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
     setLoadingState('');
   };
 
-  const handleConfirmAndStartVideo = () => {
-    setStep(4);
-    startVideoGeneration();
+  const handleRegenerateImages = async () => {
+    if (!selectedScript) return;
+    setRegenerating(true);
+    setSelectedConcept(null);
+    try {
+      const res = await fetch('/api/generate-concepts', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: `${selectedScript.hook}\n\n${selectedScript.script}`,
+          toolId,
+          lightningMode,
+        }),
+      });
+      const data = await res.json();
+      setConcepts(data.concepts ?? []);
+    } catch {}
+    setRegenerating(false);
   };
 
   const startVideoGeneration = async () => {
@@ -148,37 +213,87 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
     setVideoStarted(true);
     setVideoStatus('Queued');
     setVideoProgress(5);
+    setVideoUrl(null);
+    setFinalVideo(null);
+
     try {
-      const res  = await fetch('/api/generate-video', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body:   JSON.stringify({
-          prompt:        selectedConcept.description,
-          selectedModel: modelOverride ?? 'kling',
-          toolId,
-        }),
-      });
-      const data = await res.json();
-      if (data.videoUrl) {
-        setVideoUrl(data.videoUrl);
-        setVideoStatus('Ready');
-        setVideoProgress(100);
-      } else if (data.jobId) {
-        startPolling(data.jobId);
+      if (videoType === 'avatar') {
+        const res = await fetch('/api/generate-video', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: selectedConcept.description,
+            selectedModel: modelOverride ?? 'hedra',
+            toolId,
+          }),
+        });
+        const data = await res.json();
+        if (data.videoUrl) {
+          setVideoUrl(data.videoUrl);
+          setVideoStatus('Ready');
+          setVideoProgress(100);
+        } else if (data.jobId) {
+          startHedraPolling(data.jobId);
+        }
+      } else {
+        const res = await fetch('/api/generate-video-clip', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: selectedConcept.description,
+            imageUrl: selectedConcept.imageUrl,
+            model: videoType,
+          }),
+        });
+        const data = await res.json();
+        if (data.error) {
+          setVideoStatus('Error — ' + data.error);
+          setVideoStarted(false);
+          return;
+        }
+        if (data.jobId) {
+          setVideoJobId(data.jobId);
+          setVideoModel(data.model);
+          startFalPolling(data.jobId, data.model);
+        }
       }
     } catch {
       setVideoStatus('Error — tap Generate to retry');
+      setVideoStarted(false);
     }
   };
 
-  const startPolling = (jobId: string) => {
-    const statuses = ['Queued', 'Processing', 'Rendering', 'Almost done…'];
+  const startFalPolling = (jobId: string, model: string) => {
+    const labels = ['Queued', 'Processing', 'Rendering', 'Almost done…'];
     let tick = 0;
     pollRef.current = setInterval(async () => {
       tick++;
-      setVideoStatus(statuses[Math.min(tick, statuses.length - 1)]);
+      setVideoStatus(labels[Math.min(tick, labels.length - 1)]);
+      setVideoProgress(Math.min(10 + tick * 15, 90));
+      try {
+        const res = await fetch(`/api/fal-poll?jobId=${jobId}&model=${encodeURIComponent(model)}`);
+        const data = await res.json();
+        if (data.status === 'complete' && data.videoUrl) {
+          clearInterval(pollRef.current!);
+          setVideoUrl(data.videoUrl);
+          setVideoStatus('Ready');
+          setVideoProgress(100);
+        } else if (data.status === 'failed') {
+          clearInterval(pollRef.current!);
+          setVideoStatus('Failed — please retry');
+          setVideoStarted(false);
+        }
+      } catch {}
+    }, 5000);
+  };
+
+  const startHedraPolling = (jobId: string) => {
+    const labels = ['Queued', 'Processing', 'Rendering', 'Almost done…'];
+    let tick = 0;
+    pollRef.current = setInterval(async () => {
+      tick++;
+      setVideoStatus(labels[Math.min(tick, labels.length - 1)]);
       setVideoProgress(Math.min(10 + tick * 18, 90));
       try {
-        const res  = await fetch(`/api/video-status?jobId=${jobId}`);
+        const res = await fetch(`/api/video-status?jobId=${jobId}`);
         const data = await res.json();
         if (data.status === 'complete' && data.videoUrl) {
           clearInterval(pollRef.current!);
@@ -193,12 +308,12 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
   const generateFinal = async () => {
     setStitching(true);
     try {
-      const res  = await fetch('/api/merge-video-audio', {
+      const res = await fetch('/api/merge-video-audio', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body:   JSON.stringify({
-          videoUrl,
+        body: JSON.stringify({
+          video_url: videoUrl,
           voiceId: selectedVoice,
-          script:  selectedScript?.script ?? selectedConcept?.description,
+          script: selectedScript?.script ?? selectedConcept?.description,
         }),
       });
       const data = await res.json();
@@ -207,13 +322,24 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
     finally { setStitching(false); }
   };
 
-  const estTime   = modelOverride === 'hedra' ? '~2 min' : modelOverride === 'pika' ? '~90s' : '~4 min';
+  const estTime = videoType === 'avatar' ? '~2 min' : videoType === 'preview' ? '~60s' : '~4 min';
   const isLoading = !!loadingState;
+
+  const inputStyle: React.CSSProperties = {
+    width: '100%', borderRadius: 12, padding: '12px 16px',
+    fontSize: '0.875rem',
+    background: '#0D0020', color: '#F5EFE6',
+    border: '1px solid #4C1D95', outline: 'none',
+    fontFamily: 'inherit', boxSizing: 'border-box',
+  };
+  const labelStyle: React.CSSProperties = {
+    color: '#B09FC0', fontSize: '0.8rem', fontWeight: 500, marginBottom: 6, display: 'block',
+  };
 
   return (
     <div style={{ maxWidth: 800, margin: '0 auto' }}>
 
-      {/* ── Step indicator ────────────────────────────────────────────────────── */}
+      {/* ── Step indicator ─────────────────────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 40, flexWrap: 'wrap' }}>
         {STEP_LABELS.slice(0, totalSteps).map((label, i) => (
           <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -221,9 +347,9 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
               width: 28, height: 28, borderRadius: '50%',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 12, fontWeight: 700,
-              background:  step === i + 1 ? '#C084FC' : step > i + 1 ? '#3B1F6A' : '#0D0020',
-              color:       step === i + 1 ? '#000' : step > i + 1 ? '#C084FC' : '#9370DB',
-              border:      step <= i + 1 ? '1px solid #4C1D95' : 'none',
+              background: step === i + 1 ? '#C084FC' : step > i + 1 ? '#3B1F6A' : '#0D0020',
+              color: step === i + 1 ? '#000' : step > i + 1 ? '#C084FC' : '#9370DB',
+              border: step <= i + 1 ? '1px solid #4C1D95' : 'none',
             }}>
               {step > i + 1 ? '✓' : i + 1}
             </div>
@@ -240,7 +366,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
         ))}
       </div>
 
-      {/* ── STEP 1: Prompt ───────────────────────────────────────────────────── */}
+      {/* ── STEP 1: Brief Form ──────────────────────────────────────────── */}
       {step === 1 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
           <div>
@@ -248,26 +374,146 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
             <p style={{ color: '#B09FC0', fontSize: '0.875rem' }}>Understand emotion deeply. Show it visually.</p>
           </div>
 
-          <textarea
-            value={prompt}
-            onChange={e => setPrompt(e.target.value)}
-            placeholder="Describe your scene or story..."
-            rows={7}
-            disabled={isLoading}
-            className="omnyra-textarea"
-            style={{
-              width: '100%', borderRadius: 16, padding: '20px',
-              fontSize: '0.875rem', resize: 'vertical',
-              border: '1px solid #4C1D95', outline: 'none',
-              fontFamily: 'inherit', caretColor: '#C084FC',
-              transition: 'border-color 0.2s', boxSizing: 'border-box',
-              opacity: isLoading ? 0.6 : 1,
-            }}
-            onFocus={e => { e.currentTarget.style.borderColor = '#C084FC'; }}
-            onBlur={e => { e.currentTarget.style.borderColor = '#4C1D95'; }}
-          />
+          {/* Main goal */}
+          <div>
+            <label style={labelStyle}>What&apos;s your video about? *</label>
+            <textarea
+              value={prompt}
+              onChange={e => setPrompt(e.target.value)}
+              placeholder="Describe your scene or story..."
+              rows={5}
+              disabled={isLoading}
+              className="omnyra-textarea"
+              style={{
+                width: '100%', borderRadius: 16, padding: '16px',
+                fontSize: '0.875rem', resize: 'vertical',
+                border: '1px solid #4C1D95', outline: 'none',
+                fontFamily: 'inherit', caretColor: '#C084FC',
+                boxSizing: 'border-box', opacity: isLoading ? 0.6 : 1,
+              }}
+            />
+          </div>
 
-          {/* ⚡ Lightning Mode */}
+          {/* Niche + Platform row */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              <label style={labelStyle}>Niche / Industry</label>
+              <input
+                value={niche}
+                onChange={e => setNiche(e.target.value)}
+                placeholder="e.g. Fitness, Beauty, Finance"
+                disabled={isLoading}
+                style={{ ...inputStyle, opacity: isLoading ? 0.6 : 1 }}
+              />
+            </div>
+            <div>
+              <label style={labelStyle}>Platform</label>
+              <input
+                value={platform}
+                onChange={e => setPlatform(e.target.value)}
+                placeholder="e.g. TikTok, Instagram, YouTube"
+                disabled={isLoading}
+                style={{ ...inputStyle, opacity: isLoading ? 0.6 : 1 }}
+              />
+            </div>
+          </div>
+
+          {/* Target Audience */}
+          <div>
+            <label style={labelStyle}>Target Audience</label>
+            <input
+              value={targetAudience}
+              onChange={e => setTargetAudience(e.target.value)}
+              placeholder="e.g. Women 25–35 interested in wellness"
+              disabled={isLoading}
+              style={{ ...inputStyle, opacity: isLoading ? 0.6 : 1 }}
+            />
+          </div>
+
+          {/* Past Wins */}
+          <div>
+            <label style={labelStyle}>Past Wins (optional)</label>
+            <textarea
+              value={pastWins}
+              onChange={e => setPastWins(e.target.value)}
+              placeholder="What content has worked well for you before?"
+              rows={2}
+              disabled={isLoading}
+              className="omnyra-textarea"
+              style={{
+                width: '100%', borderRadius: 12, padding: '12px 16px',
+                fontSize: '0.875rem', resize: 'vertical',
+                border: '1px solid #4C1D95', outline: 'none',
+                fontFamily: 'inherit', boxSizing: 'border-box',
+                opacity: isLoading ? 0.6 : 1,
+              }}
+            />
+          </div>
+
+          {/* Competitors */}
+          <div>
+            <label style={labelStyle}>Competitors (optional)</label>
+            <input
+              value={competitors}
+              onChange={e => setCompetitors(e.target.value)}
+              placeholder="e.g. Brand A, Creator B"
+              disabled={isLoading}
+              style={{ ...inputStyle, opacity: isLoading ? 0.6 : 1 }}
+            />
+          </div>
+
+          {/* Unique Angle */}
+          <div>
+            <label style={labelStyle}>Your Unique Angle (optional)</label>
+            <textarea
+              value={uniqueAngle}
+              onChange={e => setUniqueAngle(e.target.value)}
+              placeholder="What makes your brand or story different?"
+              rows={2}
+              disabled={isLoading}
+              className="omnyra-textarea"
+              style={{
+                width: '100%', borderRadius: 12, padding: '12px 16px',
+                fontSize: '0.875rem', resize: 'vertical',
+                border: '1px solid #4C1D95', outline: 'none',
+                fontFamily: 'inherit', boxSizing: 'border-box',
+                opacity: isLoading ? 0.6 : 1,
+              }}
+            />
+          </div>
+
+          {/* Media Upload */}
+          <div>
+            <label style={labelStyle}>Reference Media (optional)</label>
+            <div
+              onClick={() => !isLoading && fileInputRef.current?.click()}
+              style={{
+                borderRadius: 12, border: '2px dashed rgba(212,168,67,0.3)',
+                padding: '20px', textAlign: 'center',
+                cursor: isLoading ? 'not-allowed' : 'pointer',
+                background: 'rgba(212,168,67,0.04)',
+                opacity: isLoading ? 0.6 : 1,
+              }}
+            >
+              {mediaFile ? (
+                <span style={{ color: '#D4A843', fontSize: '0.875rem' }}>📎 {mediaFile.name}</span>
+              ) : (
+                <>
+                  <p style={{ color: '#D4A843', fontSize: '0.875rem', margin: 0 }}>Click to upload</p>
+                  <p style={{ color: '#7C3AED', fontSize: '0.75rem', margin: '4px 0 0' }}>Image or video reference</p>
+                </>
+              )}
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,video/*"
+              style={{ display: 'none' }}
+              onChange={e => setMediaFile(e.target.files?.[0] ?? null)}
+            />
+          </div>
+
+          {/* Lightning Mode */}
           <div style={{
             display: 'flex', alignItems: 'center', gap: 10,
             background: 'rgba(192,132,252,0.08)',
@@ -331,13 +577,12 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
         </div>
       )}
 
-      {/* ── STEP 2: Script version tabs + viral analytics ─────────────────────── */}
+      {/* ── STEP 2: Script version tabs + viral analytics ───────────────── */}
       {step === 2 && (
         <div style={{ maxWidth: 760, margin: '0 auto' }}>
 
-          {/* Header */}
           <h1 style={{
-            textAlign: 'center', color: '#F0A500', fontWeight: 800,
+            textAlign: 'center', color: '#D4A843', fontWeight: 800,
             fontSize: 'clamp(1.4rem, 4vw, 2.2rem)', letterSpacing: '0.15em',
             textTransform: 'uppercase', marginBottom: 16,
           }}>
@@ -379,22 +624,22 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
                 key={i}
                 onClick={() => setSelectedScript(v)}
                 style={{
-                  background:  selectedScript === v ? 'rgba(240,165,0,0.1)' : 'rgba(255,255,255,0.05)',
-                  border:      selectedScript === v ? '1px solid #F0A500' : '1px solid rgba(255,255,255,0.15)',
+                  background: selectedScript === v ? 'rgba(212,168,67,0.1)' : 'rgba(255,255,255,0.05)',
+                  border: selectedScript === v ? '1px solid #D4A843' : '1px solid rgba(255,255,255,0.15)',
                   borderRadius: 999, padding: '10px 20px',
                   color: '#F5EFE6', cursor: 'pointer', fontSize: '0.9rem',
                   display: 'flex', alignItems: 'center', gap: 8,
                 }}
               >
                 <span>Version</span>
-                <span style={{ color: '#F0A500', fontWeight: 700 }}>{v.viral_score}/100</span>
+                <span style={{ color: '#D4A843', fontWeight: 700 }}>{v.viral_score}/100</span>
               </button>
             ))}
             <button
               onClick={handleGenerateScript}
               style={{
                 background: 'transparent', border: 'none',
-                color: '#F0A500', fontSize: '0.9rem', cursor: 'pointer',
+                color: '#D4A843', fontSize: '0.9rem', cursor: 'pointer',
                 textDecoration: 'underline', padding: '10px 8px',
               }}
             >
@@ -402,15 +647,13 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
             </button>
           </div>
 
-          {/* Loading indicator */}
           {isLoading && (
             <div style={{ borderRadius: 12, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', marginBottom: 16 }}>
-              <div style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.1)', borderTopColor: '#F0A500', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
+              <div style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.1)', borderTopColor: '#D4A843', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
               <span style={{ color: '#A89BAF', fontSize: '0.875rem' }}>{loadingState}</span>
             </div>
           )}
 
-          {/* Selected version content */}
           {selectedScript && (
             <>
               {/* Viral Analytics card */}
@@ -420,7 +663,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
                 padding: '28px 32px', marginBottom: 16,
               }}>
                 <p style={{
-                  textAlign: 'center', color: '#F0A500', fontSize: '0.7rem',
+                  textAlign: 'center', color: '#D4A843', fontSize: '0.7rem',
                   letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: 24,
                 }}>
                   Viral Analytics
@@ -428,7 +671,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 16, textAlign: 'center' }}>
                   <div>
                     <p style={{ color: '#6B7280', fontSize: '0.65rem', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8 }}>Viral Potential</p>
-                    <p style={{ color: '#F0A500', fontSize: '2.5rem', fontWeight: 800, lineHeight: 1, margin: 0 }}>{selectedScript.viral_score}</p>
+                    <p style={{ color: '#D4A843', fontSize: '2.5rem', fontWeight: 800, lineHeight: 1, margin: 0 }}>{selectedScript.viral_score}</p>
                     <p style={{ color: '#6B7280', fontSize: '0.75rem', margin: 0 }}>/ 100</p>
                   </div>
                   <div>
@@ -454,17 +697,14 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
               }}>
                 {selectedScript.title && (
                   <p style={{
-                    textAlign: 'center', color: '#F0A500', fontSize: '0.7rem',
+                    textAlign: 'center', color: '#D4A843', fontSize: '0.7rem',
                     letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: 20,
                   }}>
                     {selectedScript.title}
                   </p>
                 )}
-                <p style={{
-                  color: '#F0A500', fontSize: '1.25rem', fontWeight: 600,
-                  lineHeight: 1.6, marginBottom: 16,
-                }}>
-                  "{selectedScript.hook}"
+                <p style={{ color: '#D4A843', fontSize: '1.25rem', fontWeight: 600, lineHeight: 1.6, marginBottom: 16 }}>
+                  &quot;{selectedScript.hook}&quot;
                 </p>
                 {selectedScript.script && (
                   <p style={{ color: '#C4B5D0', fontSize: '0.9rem', lineHeight: 1.7, margin: 0 }}>
@@ -473,11 +713,10 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
                 )}
               </div>
 
-              {/* CTA */}
               {scriptOnly ? (
                 <button style={{
                   width: '100%', padding: '18px',
-                  background: '#F0A500', color: '#0D0010',
+                  background: '#D4A843', color: '#0D0010',
                   fontWeight: 700, fontSize: '1rem', letterSpacing: '0.05em',
                   border: 'none', borderRadius: 14, cursor: 'pointer',
                 }}>
@@ -489,9 +728,10 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
                   disabled={isLoading}
                   style={{
                     width: '100%', padding: '18px',
-                    background: '#F0A500', color: '#0D0010',
+                    background: '#D4A843', color: '#0D0010',
                     fontWeight: 700, fontSize: '1rem', letterSpacing: '0.05em',
-                    border: 'none', borderRadius: 14, cursor: isLoading ? 'not-allowed' : 'pointer',
+                    border: 'none', borderRadius: 14,
+                    cursor: isLoading ? 'not-allowed' : 'pointer',
                     opacity: isLoading ? 0.6 : 1,
                   }}
                 >
@@ -503,12 +743,33 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
         </div>
       )}
 
-      {/* ── STEP 3: Scene image cards (2×2 grid) ─────────────────────────────── */}
+      {/* ── STEP 3: Scene image cards (2×2 grid) ───────────────────────── */}
       {step === 3 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
-          <div>
-            <h2 style={{ color: '#F5EFE6', fontWeight: 700, fontSize: '1.25rem', marginBottom: 6 }}>Choose your scene</h2>
-            <p style={{ color: '#B09FC0', fontSize: '0.875rem' }}>Select one image to build your video from.</p>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+            <div>
+              <h2 style={{ color: '#F5EFE6', fontWeight: 700, fontSize: '1.25rem', marginBottom: 6 }}>Choose your scene</h2>
+              <p style={{ color: '#B09FC0', fontSize: '0.875rem' }}>Select one image to build your video from.</p>
+            </div>
+            <button
+              onClick={handleRegenerateImages}
+              disabled={regenerating}
+              style={{
+                background: 'rgba(212,168,67,0.1)', border: '1px solid rgba(212,168,67,0.4)',
+                color: '#D4A843', borderRadius: 10, padding: '8px 16px',
+                fontSize: '0.825rem', fontWeight: 600,
+                cursor: regenerating ? 'not-allowed' : 'pointer',
+                display: 'flex', alignItems: 'center', gap: 6,
+                opacity: regenerating ? 0.6 : 1,
+              }}
+            >
+              {regenerating ? (
+                <>
+                  <div style={{ width: 12, height: 12, borderRadius: '50%', border: '2px solid rgba(212,168,67,0.3)', borderTopColor: '#D4A843', animation: 'spin 0.8s linear infinite' }} />
+                  Regenerating…
+                </>
+              ) : '↺ Regenerate Images'}
+            </button>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -519,8 +780,8 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
                 style={{
                   position: 'relative', cursor: 'pointer', borderRadius: 16,
                   overflow: 'hidden', aspectRatio: '9/16',
-                  outline:    selectedConcept === c ? '3px solid #C084FC' : '2px solid transparent',
-                  boxShadow:  selectedConcept === c ? '0 0 24px rgba(192,132,252,0.5)' : 'none',
+                  outline: selectedConcept === c ? '3px solid #C084FC' : '2px solid transparent',
+                  boxShadow: selectedConcept === c ? '0 0 24px rgba(192,132,252,0.5)' : 'none',
                   background: '#0D0020',
                 }}
               >
@@ -566,7 +827,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
               ← Back
             </button>
             <button
-              onClick={() => { if (selectedConcept) handleConfirmAndStartVideo(); }}
+              onClick={() => { if (selectedConcept) { setStep(4); setVideoStarted(false); setVideoUrl(null); setFinalVideo(null); } }}
               disabled={!selectedConcept}
               style={{
                 flex: 1, padding: '12px', borderRadius: 12, fontSize: '0.875rem',
@@ -582,11 +843,12 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
         </div>
       )}
 
-      {/* ── STEP 4: Voice + Final generation ─────────────────────────────────── */}
+      {/* ── STEP 4: Video Type + Voice + Final generation ───────────────── */}
       {step === 4 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
 
-          {!videoUrl && (
+          {/* Video progress bar */}
+          {videoStarted && !videoUrl && (
             <div style={{ borderRadius: 16, border: '1px solid #2D1B4E', padding: 16, background: '#1A0A2E' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                 <span style={{ color: '#B09FC0', fontSize: '0.75rem', fontWeight: 500 }}>🎬 Video Rendering</span>
@@ -599,15 +861,50 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
             </div>
           )}
 
+          {/* Video player */}
           {videoUrl && (
             <div style={{ borderRadius: 16, overflow: 'hidden' }}>
               <video src={videoUrl} controls style={{ width: '100%', borderRadius: 16 }} />
             </div>
           )}
 
+          {/* Video Type cards — shown before video starts */}
+          {!videoStarted && (
+            <div>
+              <h3 style={{ color: '#E8DEFF', fontSize: '0.875rem', fontWeight: 600, marginBottom: 12 }}>Choose video type</h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+                {VIDEO_TYPES.map(vt => (
+                  <button
+                    key={vt.id}
+                    onClick={() => setVideoType(vt.id)}
+                    style={{
+                      borderRadius: 14, padding: '16px 12px',
+                      background: videoType === vt.id ? 'rgba(212,168,67,0.1)' : '#0D0020',
+                      border: `1px solid ${videoType === vt.id ? '#D4A843' : '#2D1B4E'}`,
+                      cursor: 'pointer', textAlign: 'left',
+                      boxShadow: videoType === vt.id ? '0 0 12px rgba(212,168,67,0.2)' : 'none',
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    <div style={{ fontSize: '1.5rem', marginBottom: 8 }}>{vt.badge}</div>
+                    <p style={{ color: '#F5EFE6', fontSize: '0.875rem', fontWeight: 600, margin: '0 0 4px' }}>{vt.label}</p>
+                    <p style={{ color: '#9370DB', fontSize: '0.75rem', margin: '0 0 8px' }}>{vt.desc}</p>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <span style={{ color: '#B09FC0', fontSize: '0.7rem', background: '#1A0A2E', borderRadius: 6, padding: '2px 8px' }}>{vt.duration}</span>
+                      <span style={{ color: '#D4A843', fontSize: '0.7rem', background: 'rgba(212,168,67,0.08)', borderRadius: 6, padding: '2px 8px' }}>{vt.cr}cr</span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Script preview */}
           {selectedScript && (
             <div style={{ borderRadius: 12, border: '1px solid #2D1B4E', padding: 16, background: '#1A0A2E' }}>
-              <p style={{ color: '#F0A500', fontSize: '0.8rem', fontWeight: 600, marginBottom: 8 }}>"{selectedScript.hook}"</p>
+              <p style={{ color: '#D4A843', fontSize: '0.8rem', fontWeight: 600, marginBottom: 8 }}>
+                &quot;{selectedScript.hook}&quot;
+              </p>
               <p style={{ color: '#B09FC0', fontSize: '0.8rem', lineHeight: 1.6, margin: 0 }}>{selectedScript.script}</p>
             </div>
           )}
@@ -615,18 +912,18 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
           {/* Voice Library */}
           <div style={{ borderRadius: 16, border: '1px solid #2D1B4E', padding: 20, background: '#1A0A2E' }}>
             <h3 style={{ color: '#E8DEFF', fontSize: '0.875rem', fontWeight: 600, marginBottom: 16 }}>Choose your voice</h3>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, maxHeight: 400, overflowY: 'auto', paddingRight: 4 }}>
               {VOICES.map(v => (
                 <button
                   key={v.id}
                   onClick={() => setSelectedVoice(v.id)}
                   style={{
                     borderRadius: 12, padding: 12, textAlign: 'left', cursor: 'pointer',
-                    background:  selectedVoice === v.id ? 'rgba(192,132,252,0.1)' : '#0D0020',
-                    border:      `1px solid ${selectedVoice === v.id ? '#C084FC' : '#1A0A2E'}`,
+                    background: selectedVoice === v.id ? 'rgba(192,132,252,0.1)' : '#0D0020',
+                    border: `1px solid ${selectedVoice === v.id ? '#C084FC' : '#2D1B4E'}`,
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
                     <span style={{ color: '#E8DEFF', fontSize: '0.875rem', fontWeight: 500 }}>{v.name}</span>
                     <button
                       onClick={e => { e.stopPropagation(); toggleFavorite(v.id); }}
@@ -635,12 +932,16 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
                       {favorites.includes(v.id) ? '❤️' : '🤍'}
                     </button>
                   </div>
-                  <span style={{ color: '#9370DB', fontSize: '0.75rem' }}>{v.accent}</span>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    <span style={{ color: '#9370DB', fontSize: '0.7rem', background: '#1A0A2E', borderRadius: 4, padding: '1px 6px' }}>{v.accent}</span>
+                    <span style={{ color: '#B09FC0', fontSize: '0.7rem', background: 'rgba(255,255,255,0.04)', border: '1px solid #2D1B4E', borderRadius: 4, padding: '1px 6px' }}>{v.style}</span>
+                  </div>
                 </button>
               ))}
             </div>
           </div>
 
+          {/* Final Video / buttons */}
           {finalVideo ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <video src={finalVideo} controls style={{ width: '100%', borderRadius: 16 }} />
@@ -656,26 +957,52 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
                 Download ↓
               </a>
             </div>
-          ) : (
+          ) : videoUrl ? (
             <button
               onClick={generateFinal}
-              disabled={stitching || (!videoUrl && videoStarted)}
+              disabled={stitching}
               style={{
                 width: '100%', padding: '20px', borderRadius: 16,
                 background: 'linear-gradient(105deg, #5A3400 0%, #9A7010 20%, #CFA42F 42%, #E8C84A 50%, #CFA42F 58%, #9A7010 80%, #5A3400 100%)',
                 backgroundSize: '200% auto',
-                animation: (!videoUrl && videoStarted) ? 'none' : 'metalShimmer 3s linear infinite',
+                animation: stitching ? 'none' : 'metalShimmer 3s linear infinite',
                 color: '#0D0010', fontWeight: 700, fontSize: '0.875rem',
-                border: 'none', cursor: (stitching || (!videoUrl && videoStarted)) ? 'not-allowed' : 'pointer',
+                border: 'none', cursor: stitching ? 'not-allowed' : 'pointer',
                 boxShadow: '0 0 24px rgba(207,164,47,0.35)',
-                opacity: (stitching || (!videoUrl && videoStarted)) ? 0.5 : 1,
+                opacity: stitching ? 0.5 : 1,
               }}
             >
-              {stitching
-                ? 'Stitching…'
-                : (!videoUrl && videoStarted)
-                  ? `Waiting for video… ${videoStatus}`
-                  : 'Generate Final Video ✨'}
+              {stitching ? 'Stitching…' : 'Generate Final Video ✨'}
+            </button>
+          ) : videoStarted ? (
+            <button
+              disabled
+              style={{
+                width: '100%', padding: '20px', borderRadius: 16,
+                background: 'linear-gradient(105deg, #5A3400 0%, #9A7010 20%, #CFA42F 42%, #E8C84A 50%, #CFA42F 58%, #9A7010 80%, #5A3400 100%)',
+                backgroundSize: '200% auto',
+                color: '#0D0010', fontWeight: 700, fontSize: '0.875rem',
+                border: 'none', cursor: 'not-allowed',
+                boxShadow: '0 0 24px rgba(207,164,47,0.35)',
+                opacity: 0.5,
+              }}
+            >
+              Rendering… {videoStatus}
+            </button>
+          ) : (
+            <button
+              onClick={startVideoGeneration}
+              style={{
+                width: '100%', padding: '20px', borderRadius: 16,
+                background: 'linear-gradient(105deg, #5A3400 0%, #9A7010 20%, #CFA42F 42%, #E8C84A 50%, #CFA42F 58%, #9A7010 80%, #5A3400 100%)',
+                backgroundSize: '200% auto',
+                animation: 'metalShimmer 3s linear infinite',
+                color: '#0D0010', fontWeight: 700, fontSize: '0.875rem',
+                border: 'none', cursor: 'pointer',
+                boxShadow: '0 0 24px rgba(207,164,47,0.35)',
+              }}
+            >
+              Generate Video →
             </button>
           )}
         </div>
