@@ -77,6 +77,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
   const [quality,         setQuality]         = useState('fast');
   const [imagesGenerated, setImagesGenerated] = useState(false);
   const [imagePrompt,    setImagePrompt]    = useState('');
+  const [showImagePrompt, setShowImagePrompt] = useState(false);
 
   const [videoType,     setVideoType]     = useState<VideoType>('cinematic');
   const [videoUrl,      setVideoUrl]      = useState<string | null>(null);
@@ -162,6 +163,37 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
     }
     prevConcept.current = selectedConcept;
   }, [selectedConcept]);
+
+  // Auto-populate imagePrompt with a visual scene brief when script is selected
+  useEffect(() => {
+    if (!selectedScript) return;
+    const rawScript = editedScript || selectedScript.script || '';
+    const hook = selectedScript.hook || '';
+
+    // Extract [SCENE: ...] stage directions as visual cues
+    const sceneMatches = rawScript.match(/\[SCENE:[^\]]+\]/gi) ?? [];
+    const sceneLines = sceneMatches
+      .map(s => s.replace(/^\[SCENE:\s*/i, '').replace(/\]$/, '').trim())
+      .filter(Boolean);
+
+    // Identify setting/era from first scene or hook
+    const settingHint = sceneLines[0] || hook;
+
+    // Build a visual brief — character + camera + lighting, NOT the script dialogue
+    let brief = '';
+    if (sceneLines.length > 0) {
+      brief = sceneLines.map((s, i) => {
+        const angle = i === 0 ? 'Wide establishing shot' : i === sceneLines.length - 1 ? 'Close-up detail shot' : 'Medium shot';
+        return `Scene ${i + 1}: ${s}. ${angle}, cinematic lighting, sharp focus.`;
+      }).join('\n\n');
+    } else {
+      // No scene directions — build from hook + setting keywords
+      brief = `Visual brief for: ${settingHint}\n\nScene 1: Establish the setting — wide shot, natural ambient light, real environment.\nScene 2: Mid shot showing subject in action, authentic movement, warm cinematic colour grade.\nScene 3: Close detail — key prop, expression, or texture that carries emotional weight.\nScene 4: Resolution beat — pull back slightly, subject at peace or in motion, golden hour.`;
+    }
+
+    setImagePrompt(brief);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedScript?.script]);
 
   // Auto-scroll to final video when it's ready + save to My Videos (client-side backup)
   useEffect(() => {
@@ -1253,24 +1285,35 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
                   <p style={{ color: '#8B6FA8', fontSize: '0.75rem', margin: '4px 0 0' }}>JPG, PNG, WebP · Max 10MB</p>
                 </div>
 
-                {/* Editable Image Prompt */}
+                {/* Editable Image Prompt — collapsed by default */}
                 <div>
-                  <p style={{ color: '#E8DEFF', fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8, fontWeight: 600 }}>
-                    Image Generation Prompt
-                  </p>
-                  <textarea
-                    value={imagePrompt}
-                    onChange={e => setImagePrompt(e.target.value)}
-                    placeholder="Your script will appear here — edit to guide the AI image generation..."
-                    rows={4}
+                  <button
+                    onClick={() => setShowImagePrompt(v => !v)}
                     style={{
-                      width: '100%', boxSizing: 'border-box',
-                      background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(212,168,67,0.3)',
-                      borderRadius: 10, padding: '12px 14px',
-                      color: '#E8DEFF', fontSize: '0.85rem', lineHeight: 1.6,
-                      resize: 'vertical', fontFamily: 'inherit', outline: 'none',
+                      background: 'none', border: '1px solid rgba(212,168,67,0.25)',
+                      borderRadius: 8, padding: '5px 12px',
+                      color: '#8B6FA8', fontSize: '0.72rem', letterSpacing: '0.06em',
+                      cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
                     }}
-                  />
+                  >
+                    <span style={{ fontSize: '0.65rem', opacity: 0.8 }}>{showImagePrompt ? '▲' : '▼'}</span>
+                    {showImagePrompt ? 'Hide scene brief' : 'Edit scene brief'}
+                  </button>
+                  {showImagePrompt && (
+                    <textarea
+                      value={imagePrompt}
+                      onChange={e => setImagePrompt(e.target.value)}
+                      placeholder="Visual scene brief — describe camera angles, lighting, character and setting for each scene..."
+                      rows={6}
+                      style={{
+                        width: '100%', boxSizing: 'border-box', marginTop: 8,
+                        background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(212,168,67,0.3)',
+                        borderRadius: 10, padding: '12px 14px',
+                        color: '#E8DEFF', fontSize: '0.82rem', lineHeight: 1.6,
+                        resize: 'vertical', fontFamily: 'inherit', outline: 'none',
+                      }}
+                    />
+                  )}
                 </div>
 
                 {/* Generate scenes button */}

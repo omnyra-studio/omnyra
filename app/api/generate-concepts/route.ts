@@ -106,7 +106,7 @@ export async function POST(req: Request) {
       messages: [
         {
           role:    'user',
-          content: `Niche/Tool: ${toolId}\nScript:\n${prompt}\n\nExtract 4 scene moments that visually represent distinct beats of this script. Match the era, setting, and tone of the script exactly.`,
+          content: `Niche/Tool: ${toolId}\nVisual Brief / Scene Directions:\n${prompt}\n\nExtract 4 scene moments as FLUX image generation prompts. If the input already contains camera angles, character descriptions, lighting and setting — use those directly and enrich them. If it is raw script dialogue, extract the physical visual beats. Always output concrete, photographic descriptions: character appearance, exact location, time of day, lighting quality, camera framing, props. Match era and setting exactly.`,
         },
       ],
     });
