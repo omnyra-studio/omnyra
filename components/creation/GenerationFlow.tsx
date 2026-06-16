@@ -381,36 +381,36 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
     try {
       const scriptText = (editedScript || selectedScript?.script) ?? selectedConcept?.description ?? '';
 
-      // Get Supabase session for Bearer auth (required by /api/voice)
+      // Step 1: ElevenLabs TTS via /api/voice (Bearer auth)
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
       const authHeader = session?.access_token
         ? { 'Authorization': `Bearer ${session.access_token}` }
         : {} as Record<string, string>;
 
-      // Step 1: ElevenLabs TTS → audio bytes
       const ttsRes = await fetch('/api/voice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader },
         body: JSON.stringify({ voiceId: selectedVoice, text: scriptText }),
       });
       if (!ttsRes.ok) throw new Error(`TTS failed: ${ttsRes.status}`);
-
       const audioBuf = await ttsRes.arrayBuffer();
-      const bytes = new Uint8Array(audioBuf);
-      const chunks: string[] = [];
-      for (let i = 0; i < bytes.length; i += 8192) {
-        chunks.push(String.fromCharCode(...bytes.subarray(i, i + 8192)));
-      }
-      const audioBase64 = btoa(chunks.join(''));
 
-      // Step 2: Merge video + audio via ffmpeg
-      const mergeRes = await fetch('/api/merge-video-audio', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ video_url: videoUrl, audio_base64: audioBase64 }),
+      // Step 2: Upload audio to Supabase → get a public URL
+      const audioForm = new FormData();
+      audioForm.append('audio', new Blob([audioBuf], { type: 'audio/mpeg' }), 'voice.mp3');
+      const uploadRes = await fetch('/api/upload/voice', { method: 'POST', body: audioForm });
+      if (!uploadRes.ok) throw new Error(`Voice upload failed: ${uploadRes.status}`);
+      const { url: voiceoverUrl } = await uploadRes.json();
+
+      // Step 3: Compose — Railway FFmpeg stitches video + voiceover
+      const composeRes = await fetch('/api/compose-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ videoUrl, voiceoverUrl }),
       });
-      const data = await mergeRes.json();
-      setFinalVideo(data.merged_url ?? data.outputUrl ?? videoUrl);
+      const composeData = await composeRes.json();
+      setFinalVideo(composeData.video_url ?? videoUrl);
     } catch { setFinalVideo(videoUrl); }
     finally { setStitching(false); }
   };
