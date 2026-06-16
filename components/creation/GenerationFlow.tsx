@@ -290,14 +290,15 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
       const data = await res.json();
       setConcepts(data.concepts ?? []);
       setSelectedConcept(null);
+      setImagesGenerated(true);
     } catch {}
     setLoadingState('');
   };
 
-  const handleRegenerateImages = () => {
+  const handleRegenerateImages = async () => {
     setConcepts([]);
     setSelectedConcept(null);
-    setImagesGenerated(false);
+    await handleGenerateScenes();
   };
 
   const startVideoGeneration = async () => {
