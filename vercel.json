@@ -10,6 +10,7 @@
     "app/api/generate-video-kling/route.ts": { "maxDuration": 300 },
     "app/api/generate-video-fal/route.ts": { "maxDuration": 300 },
     "app/api/merge-video-audio/route.ts": { "maxDuration": 300 },
+    "app/api/compose-video/route.ts": { "maxDuration": 300 },
     "app/api/generate-avatar/route.ts": { "maxDuration": 300 },
     "app/api/check-video/route.ts": { "maxDuration": 60 },
     "app/api/check-kling/route.ts": { "maxDuration": 60 },
@@ -19,6 +20,7 @@
     "app/api/voices/route.js": { "maxDuration": 30 }
   },
   "crons": [
+    { "path": "/api/hedra-cron",            "schedule": "* * * * *"  },
     { "path": "/api/avatar-worker/recover", "schedule": "0 0 * * *" },
     { "path": "/api/cron/scrape-trends",    "schedule": "0 6 * * *" }
   ]
