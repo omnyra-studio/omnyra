@@ -174,7 +174,6 @@ Return ONLY valid JSON. No markdown. No backticks. No explanation. Exactly this 
         .from("briefs")
         .insert({
           project_id: projectId ?? null,
-          goal,
           template: template ?? "ugc-ad",
           niche: niche ?? null,
           situation_analysis: briefData.situation_analysis,

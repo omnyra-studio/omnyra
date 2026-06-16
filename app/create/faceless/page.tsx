@@ -13,7 +13,7 @@ export default function FacelessPage() {
         >
           ← Create
         </Link>
-        <GenerationFlow toolId="faceless" toolName="Faceless Content" modelOverride="fal" />
+        <GenerationFlow toolId="faceless" toolName="Faceless Video" modelOverride="kling" />
       </div>
     </div>
   );
