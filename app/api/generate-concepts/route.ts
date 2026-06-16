@@ -49,22 +49,26 @@ export async function POST(req: Request) {
   }
 
   try {
-    // Step 1: Claude generates 4 Ghost Test–compliant scene concepts
+    // Step 1: Claude extracts 4 specific physical beats from the script
     const msg = await anthropic.messages.create({
       model:      'claude-haiku-4-5-20251001',
-      max_tokens: 800,
+      max_tokens: 900,
       system:
         'You are a Ghost Test enforcer for Omnyra, an AI video generation studio. ' +
-        'Generate exactly 4 distinct scene concepts as a JSON array. ' +
-        'Each concept MUST describe ONLY observable physical actions, body language, ' +
-        'micro-behaviours, object interactions, clothing, props, lighting, environment, and camera angles. ' +
+        'Given a script, extract exactly 4 SPECIFIC PHYSICAL MOMENTS and generate one image concept per moment. ' +
+        'Each concept MUST be anchored to a specific line or beat from the script. ' +
+        'Describe ONLY observable physical actions, body language, micro-behaviours, ' +
+        'object interactions, clothing, props, lighting, environment, and camera angles. ' +
         'ZERO emotion labels. ZERO internal states. ZERO evaluative adjectives. ' +
-        'Each description must be vivid enough to generate a compelling image. ' +
+        'For emotional scripts translate feelings into body language: ' +
+        '"jaw unclenching", "shoulders curving inward", "hand pressed flat to sternum", ' +
+        '"tear tracking down cheekbone", "fragile upward curve of lip corners", ' +
+        '"fingertips whitening around fabric", "chest rising on held breath". ' +
         'Return ONLY valid JSON: [{"title":"short evocative title","description":"2-3 sentence physical-action-only scene description","ghostScore":70-100}]',
       messages: [
         {
           role:    'user',
-          content: `Tool: ${toolId}\nPrompt: ${prompt}\n\nGenerate 4 Ghost Test–compliant scene concepts for image generation.`,
+          content: `Niche: ${toolId}\nScript:\n${prompt}\n\nExtract 4 specific physical moments from this script and generate Ghost Test–compliant scene descriptions for image generation. Each scene must match a distinct beat from the script.`,
         },
       ],
     });
