@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { cleanEnv } from '@/lib/supabase/admin';
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const anthropic = new Anthropic({ apiKey: cleanEnv(process.env.ANTHROPIC_API_KEY) });
 
 async function generateConceptImage(
   description: string,

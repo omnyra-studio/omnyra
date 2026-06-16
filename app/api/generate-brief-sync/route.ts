@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { getBrandProfile, getBrandSystemPrompt } from "@/lib/brand";
 import { checkCache, saveCache, logUsageEvent } from "@/lib/cache";
 import { isScriptTooSimilar, storeScriptHistory } from "@/lib/memory/script-uniqueness";
+import { cleanEnv } from "@/lib/supabase/admin";
 
 // ── Silent Ghost Test: rewrite prompt to physical-action-only language ────────
 async function ghostEnhance(apiKey: string, prompt: string): Promise<string> {
@@ -59,7 +60,7 @@ export async function POST(req: Request) {
   const { goal, template, niche, targetAudience, platforms, platform, pastWins, competitors, uniqueAngle, isContinuation, lightningMode } = await req.json();
   const platformStr = Array.isArray(platforms) ? platforms.join(", ") : (platform ?? "TikTok");
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = cleanEnv(process.env.ANTHROPIC_API_KEY);
   if (!apiKey) {
     return Response.json({ error: "Anthropic API key missing" }, { status: 500 });
   }
@@ -70,8 +71,8 @@ export async function POST(req: Request) {
   try {
     const cookieStore = await cookies();
     const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL),
+      cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
       { cookies: { getAll: () => cookieStore.getAll(), setAll: () => {} } },
     );
     const { data: { user } } = await supabase.auth.getUser();

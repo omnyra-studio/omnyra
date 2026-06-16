@@ -128,9 +128,13 @@ async function extractLastFrame(videoUrl: string, userId: string, clipIndex: num
     fs.writeFileSync(videoPath, videoBuffer);
     console.log(`${label} wrote ${videoBuffer.byteLength} bytes to ${videoPath}`);
 
+    // -sseof is an INPUT option — must come before the input file on the command line.
+    // fluent-ffmpeg's .inputOptions() places flags before -i, so this is correct.
     await new Promise<void>((resolve, reject) => {
-      ffmpeg(videoPath)
-        .outputOptions(["-sseof", "-1", "-update", "1", "-q:v", "2"])
+      ffmpeg()
+        .inputOptions(["-sseof", "-1"])
+        .input(videoPath)
+        .outputOptions(["-frames:v", "1", "-q:v", "2", "-update", "1"])
         .output(framePath)
         .on("end", () => resolve())
         .on("error", (err: Error) => reject(err))
