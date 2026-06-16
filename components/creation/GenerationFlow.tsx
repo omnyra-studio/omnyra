@@ -96,6 +96,12 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
   const [voiceDropOpen,   setVoiceDropOpen]   = useState(false);
   const [previewingVoice, setPreviewingVoice] = useState<string | null>(null);
 
+  // Separate voice generation state
+  const [voiceAudioBase64, setVoiceAudioBase64] = useState<string | null>(null);
+  const [voiceGenerating,  setVoiceGenerating]  = useState(false);
+  const [voiceReady,       setVoiceReady]       = useState(false);
+  const [combining,        setCombining]        = useState(false);
+
   const pollRef           = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInputRef      = useRef<HTMLInputElement>(null);
   const audioRef          = useRef<HTMLAudioElement | null>(null);
@@ -449,6 +455,83 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
     }, 5000);
   };
 
+  // ── Step A: Generate voice only ────────────────────────────────────────────
+  const generateVoice = async () => {
+    const scriptText = (editedScript || selectedScript?.script) ?? selectedConcept?.description ?? '';
+    const voiceToUse = selectedVoice || (voices.length > 0 ? voices[0].voice_id : '');
+    if (!voiceToUse || !scriptText) return;
+    setVoiceGenerating(true);
+    setVoiceReady(false);
+    setVoiceAudioBase64(null);
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const authHeader = session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {} as Record<string, string>;
+
+      const ttsRes = await fetch('/api/voice', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader },
+        body: JSON.stringify({ voiceId: voiceToUse, text: scriptText }),
+      });
+      if (!ttsRes.ok) { console.warn('[generateVoice] TTS status:', ttsRes.status); return; }
+      const buf = await ttsRes.arrayBuffer();
+      const bytes = new Uint8Array(buf);
+      let binary = '';
+      const chunkSize = 8192;
+      for (let i = 0; i < bytes.length; i += chunkSize) binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+      setVoiceAudioBase64(btoa(binary));
+      setVoiceReady(true);
+    } catch (e) { console.warn('[generateVoice] threw:', e); }
+    finally { setVoiceGenerating(false); }
+  };
+
+  // ── Step B: Stitch clips + merge voice → final video ───────────────────────
+  const combineVideoVoice = async () => {
+    setCombining(true);
+    try {
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const authHeader = session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {} as Record<string, string>;
+
+      // Stitch clips
+      let stitchedUrl: string | null = null;
+      if (clipUrls.length > 0) {
+        try {
+          const composeRes = await fetch('/api/compose-video', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ clipUrls, clipDuration: 10 }),
+          });
+          if (composeRes.ok) {
+            const d = await composeRes.json();
+            stitchedUrl = d.video_url ?? null;
+          } else { console.warn('[combineVideoVoice] compose status:', composeRes.status); }
+        } catch (e) { console.warn('[combineVideoVoice] compose threw:', e); }
+      } else {
+        stitchedUrl = videoUrl;
+      }
+
+      const baseUrl = stitchedUrl ?? videoUrl ?? clipUrls[0] ?? null;
+      if (!baseUrl) return;
+
+      // Merge voiceover if ready
+      if (voiceAudioBase64) {
+        try {
+          const mergeRes = await fetch('/api/merge-video-audio', {
+            method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader },
+            body: JSON.stringify({ video_url: baseUrl, audio_base64: voiceAudioBase64 }),
+          });
+          if (mergeRes.ok) {
+            const d = await mergeRes.json();
+            if (d.video_url) { setFinalVideo(d.video_url); return; }
+          } else { console.warn('[combineVideoVoice] merge status:', mergeRes.status); }
+        } catch (e) { console.warn('[combineVideoVoice] merge threw:', e); }
+      }
+      setFinalVideo(baseUrl);
+    } catch (e) { console.error('[combineVideoVoice] outer catch:', e); }
+    finally { setCombining(false); }
+  };
+
+  // ── Legacy generateFinal kept for compatibility (avatar mode uses it) ────────
   const generateFinal = async () => {
     setStitching(true);
     try {
@@ -1276,256 +1359,235 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
         </>
       )}
 
-      {/* ── SECTION 4: Voice + Video ───────────────────────────────────── */}
+      {/* ── SECTION 4: Generate Video ─────────────────────────────────── */}
       {selectedConcept && !scriptOnly && (
         <>
           <GoldDivider />
-          <div ref={voiceSectionRef} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+          <div ref={voiceSectionRef} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
             <div>
-              <h2 style={{ color: '#F5EFE6', fontWeight: 700, fontSize: '1.25rem', marginBottom: 6 }}>Voice &amp; Video</h2>
-              <p style={{ color: '#B09FC0', fontSize: '0.875rem' }}>Choose a voice and generate your final video.</p>
+              <h2 style={{ color: '#F5EFE6', fontWeight: 700, fontSize: '1.25rem', marginBottom: 4 }}>Generate Video</h2>
+              <p style={{ color: '#B09FC0', fontSize: '0.875rem', margin: 0 }}>Choose your video type, generate, then add a voice.</p>
             </div>
 
-            {/* Video progress bar */}
-            {videoStarted && clipUrls.length === 0 && !videoUrl && (
-              <div style={{ borderRadius: 16, border: '1px solid #2D1B4E', padding: 16, background: '#1A0A2E' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                  <span style={{ color: '#B09FC0', fontSize: '0.75rem', fontWeight: 500 }}>🎬 Generating Scenes</span>
-                  <span style={{ color: '#C084FC', fontSize: '0.75rem' }}>{videoStatus}</span>
+            {/* ── 1. Video Type Selector (only before generation starts) ── */}
+            {!videoStarted && !finalVideo && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+                {VIDEO_TYPES.map(vt => (
+                  <button
+                    key={vt.id}
+                    onClick={() => setVideoType(vt.id)}
+                    style={{
+                      borderRadius: 14, padding: '14px 10px', textAlign: 'left',
+                      background: videoType === vt.id ? 'rgba(212,168,67,0.1)' : '#0D0020',
+                      border: `1px solid ${videoType === vt.id ? '#D4A843' : '#2D1B4E'}`,
+                      cursor: 'pointer', transition: 'all 0.15s',
+                      boxShadow: videoType === vt.id ? '0 0 12px rgba(212,168,67,0.2)' : 'none',
+                    }}
+                  >
+                    <div style={{ fontSize: '1.3rem', marginBottom: 6 }}>{vt.badge}</div>
+                    <p style={{ color: '#F5EFE6', fontSize: '0.8rem', fontWeight: 700, margin: '0 0 3px' }}>{vt.label}</p>
+                    <p style={{ color: '#9370DB', fontSize: '0.7rem', margin: '0 0 6px' }}>{vt.desc}</p>
+                    <span style={{ color: '#D4A843', fontSize: '0.68rem', background: 'rgba(212,168,67,0.08)', borderRadius: 6, padding: '2px 7px' }}>{vt.cr}cr</span>
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* ── 2. Generate Video button ── */}
+            {!videoStarted && !finalVideo && (
+              <button
+                onClick={startVideoGeneration}
+                style={{
+                  width: '100%', padding: '20px', borderRadius: 16, border: 'none', cursor: 'pointer',
+                  background: 'linear-gradient(105deg,#5A3400,#9A7010 20%,#CFA42F 42%,#E8C84A 50%,#CFA42F 58%,#9A7010 80%,#5A3400)',
+                  backgroundSize: '200% auto', animation: 'metalShimmer 3s linear infinite',
+                  color: '#0D0010', fontWeight: 800, fontSize: '1rem', letterSpacing: '0.04em',
+                  boxShadow: '0 0 24px rgba(207,164,47,0.35)',
+                }}
+              >
+                Generate Video →
+              </button>
+            )}
+
+            {/* ── 3. Video rendering progress ── */}
+            {videoStarted && !finalVideo && (clipUrls.length === 0 && !videoUrl) && (
+              <div style={{ borderRadius: 16, border: '1px solid #2D1B4E', padding: 18, background: '#1A0A2E' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                  <span style={{ color: '#C084FC', fontSize: '0.8rem', fontWeight: 600 }}>🎬 Cinematic video rendering…</span>
+                  <span style={{ color: '#6B4FA8', fontSize: '0.75rem' }}>{videoStatus || 'Processing'}</span>
                 </div>
-                <div style={{ height: 6, borderRadius: 999, overflow: 'hidden', background: '#0D0020' }}>
-                  <div style={{ height: '100%', borderRadius: 999, width: `${videoProgress}%`, background: 'linear-gradient(90deg, #C084FC, #E879F9)', transition: 'width 1s' }} />
+                <div style={{ height: 6, borderRadius: 999, background: '#0D0020', overflow: 'hidden', marginBottom: 10 }}>
+                  <div style={{ height: '100%', borderRadius: 999, width: `${videoProgress}%`, background: 'linear-gradient(90deg,#C084FC,#E879F9)', transition: 'width 1s' }} />
                 </div>
-                <p style={{ color: '#6B4FA8', fontSize: '0.75rem', marginTop: 8, marginBottom: 0 }}>
-                  3 × 10s clips generating in parallel — pick your voice while you wait
-                </p>
-              </div>
-            )}
-
-            {/* Clips ready indicator */}
-            {clipUrls.length > 0 && !finalVideo && (
-              <div style={{ borderRadius: 12, border: '1px solid rgba(212,168,67,0.3)', padding: '12px 16px', background: 'rgba(212,168,67,0.06)', display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 16 }}>✓</span>
-                <span style={{ color: '#D4A843', fontSize: '0.875rem', fontWeight: 600 }}>
-                  {clipUrls.length} scene{clipUrls.length > 1 ? 's' : ''} ready — Railway will stitch into {clipUrls.length * 10}s video
-                </span>
-              </div>
-            )}
-
-            {/* Avatar single-clip preview */}
-            {videoUrl && (
-              <div style={{ borderRadius: 16, overflow: 'hidden' }}>
-                <video src={videoUrl} controls style={{ width: '100%', borderRadius: 16 }} />
-              </div>
-            )}
-
-            {/* Video Type cards */}
-            {!videoStarted && (
-              <div>
-                <h3 style={{ color: '#E8DEFF', fontSize: '0.875rem', fontWeight: 600, marginBottom: 12 }}>Choose video type</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-                  {VIDEO_TYPES.map(vt => (
-                    <button
-                      key={vt.id}
-                      onClick={() => setVideoType(vt.id)}
-                      style={{
-                        borderRadius: 14, padding: '16px 12px',
-                        background: videoType === vt.id ? 'rgba(212,168,67,0.1)' : '#0D0020',
-                        border: `1px solid ${videoType === vt.id ? '#D4A843' : '#2D1B4E'}`,
-                        cursor: 'pointer', textAlign: 'left',
-                        boxShadow: videoType === vt.id ? '0 0 12px rgba(212,168,67,0.2)' : 'none',
-                        transition: 'all 0.15s',
-                      }}
-                    >
-                      <div style={{ fontSize: '1.5rem', marginBottom: 8 }}>{vt.badge}</div>
-                      <p style={{ color: '#F5EFE6', fontSize: '0.875rem', fontWeight: 600, margin: '0 0 4px' }}>{vt.label}</p>
-                      <p style={{ color: '#9370DB', fontSize: '0.75rem', margin: '0 0 8px' }}>{vt.desc}</p>
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        <span style={{ color: '#B09FC0', fontSize: '0.7rem', background: '#1A0A2E', borderRadius: 6, padding: '2px 8px' }}>{vt.duration}</span>
-                        <span style={{ color: '#D4A843', fontSize: '0.7rem', background: 'rgba(212,168,67,0.08)', borderRadius: 6, padding: '2px 8px' }}>{vt.cr}cr</span>
-                      </div>
-                    </button>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: '#4A3060' }}>
+                  {['Script','Images','Clips','Voice','Stitch'].map((s, i) => (
+                    <span key={s} style={{ color: videoProgress > i * 20 ? '#C084FC' : '#4A3060' }}>{s}</span>
                   ))}
                 </div>
-              </div>
-            )}
-
-            {/* Script preview */}
-            {selectedScript && (
-              <div style={{ borderRadius: 12, border: '1px solid #2D1B4E', padding: 16, background: '#1A0A2E' }}>
-                <p style={{ color: '#D4A843', fontSize: '0.8rem', fontWeight: 600, marginBottom: 8 }}>
-                  &quot;{selectedScript.hook}&quot;
-                </p>
-                <p style={{ color: '#B09FC0', fontSize: '0.8rem', lineHeight: 1.6, margin: 0 }}>
-                  {editedScript || selectedScript.script}
+                <p style={{ color: '#4A3060', fontSize: '0.72rem', margin: '10px 0 0', textAlign: 'right' }}>
+                  Cinematic AI — ~2–3 minutes &nbsp;
+                  <a href="/my-videos" style={{ color: '#D4A843', textDecoration: 'none' }}>My Videos →</a>
                 </p>
               </div>
             )}
 
-            {/* Voice selector */}
-            <div style={{ borderRadius: 16, border: '1px solid #2D1B4E', padding: 20, background: '#1A0A2E' }}>
-              <h3 style={{ color: '#E8DEFF', fontSize: '0.875rem', fontWeight: 600, marginBottom: 16 }}>
-                Choose your voice
-                {voices.length > 0 && <span style={{ color: '#6B4FA8', fontWeight: 400, fontSize: '0.75rem', marginLeft: 8 }}>{voices.length} voices available</span>}
-              </h3>
+            {/* ── 4. Video preview (clips ready, before combine) ── */}
+            {!finalVideo && (clipUrls.length > 0 || videoUrl) && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <video
+                  src={clipUrls[0] ?? videoUrl ?? ''}
+                  controls playsInline muted
+                  style={{ width: '100%', borderRadius: 14, background: '#000', maxHeight: 500 }}
+                />
+                <div style={{ borderRadius: 10, padding: '10px 14px', background: 'rgba(212,168,67,0.07)', border: '1px solid rgba(212,168,67,0.2)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: '#D4A843', fontSize: 14 }}>✓</span>
+                  <span style={{ color: '#D4A843', fontSize: '0.8rem', fontWeight: 600 }}>
+                    {clipUrls.length > 1 ? `${clipUrls.length} scenes ready` : 'Scene ready'} — add a voice below to create your final video
+                  </span>
+                </div>
+              </div>
+            )}
 
-              <div style={{ position: 'relative' }} ref={voiceDropRef}>
-                {/* Selected voice display */}
-                <div
-                  onClick={() => !voicesLoading && setVoiceDropOpen(v => !v)}
-                  style={{
-                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                    background: '#0D0020', border: `1px solid ${voiceDropOpen ? '#D4A843' : '#2D1B4E'}`,
-                    borderRadius: 12, padding: '12px 16px', cursor: voicesLoading ? 'wait' : 'pointer',
-                    transition: 'border-color 0.15s',
-                  }}
-                >
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    {voicesLoading ? (
-                      <span style={{ color: '#6B4FA8', fontSize: '0.875rem' }}>Loading voices from ElevenLabs…</span>
-                    ) : voices.length === 0 ? (
-                      <span style={{ color: '#6B4FA8', fontSize: '0.875rem' }}>No voices available — check ElevenLabs API key</span>
-                    ) : (() => {
-                      const v = voices.find(v => v.voice_id === selectedVoice);
-                      return v ? (
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <span style={{ color: '#E8DEFF', fontWeight: 600, fontSize: '0.9rem' }}>{v.name}</span>
-                          {v.labels?.accent && <span style={{ color: '#6B4FA8', fontSize: '0.75rem' }}>{v.labels.accent}</span>}
-                          {v.labels?.description && <span style={{ color: '#4A3060', fontSize: '0.72rem' }}>· {v.labels.description}</span>}
-                          {favorites.includes(v.voice_id) && <span style={{ color: '#D4A843', fontSize: '0.8rem' }}>♥</span>}
-                        </div>
-                      ) : <span style={{ color: '#6B4FA8', fontSize: '0.875rem' }}>Select a voice…</span>;
-                    })()}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-                    {(() => {
-                      const v = voices.find(v => v.voice_id === selectedVoice);
-                      return v?.preview_url ? (
-                        <button
-                          onClick={e => playPreview(v.preview_url, v.voice_id, e)}
-                          style={{
-                            background: previewingVoice === v.voice_id ? 'rgba(212,168,67,0.25)' : 'rgba(212,168,67,0.08)',
-                            border: '1px solid rgba(212,168,67,0.4)', borderRadius: 8,
-                            color: '#D4A843', fontSize: '0.78rem', padding: '5px 12px', cursor: 'pointer', whiteSpace: 'nowrap',
-                          }}
-                        >
-                          {previewingVoice === v.voice_id ? '■ Stop' : '▶ Preview'}
-                        </button>
-                      ) : null;
-                    })()}
-                    <span style={{ color: '#4A3060', fontSize: '0.7rem' }}>{voiceDropOpen ? '▲' : '▼'}</span>
-                  </div>
+            {/* ── 5. Voice section — only shown after video starts generating ── */}
+            {videoStarted && !finalVideo && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14, borderRadius: 16, border: '1px solid #2D1B4E', padding: 20, background: '#1A0A2E' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <h3 style={{ color: '#E8DEFF', fontWeight: 700, fontSize: '0.95rem', margin: 0 }}>Choose Voice</h3>
+                  {voices.length > 0 && <span style={{ color: '#4A3060', fontSize: '0.72rem' }}>{voices.length} voices</span>}
                 </div>
 
-                {/* Dropdown */}
-                {voiceDropOpen && !voicesLoading && (
-                  <div style={{
-                    position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 50,
-                    background: '#0A0018', border: '1px solid #2D1B4E', borderRadius: 12,
-                    overflow: 'hidden', boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
-                  }}>
-                    {/* Search */}
-                    <div style={{ padding: '10px 14px', borderBottom: '1px solid #1A0A2E', display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ color: '#4A3060', fontSize: '0.8rem' }}>🔍</span>
-                      <input
-                        type="text"
-                        value={voiceSearch}
-                        onChange={e => setVoiceSearch(e.target.value)}
-                        placeholder="Search by name, accent, or style…"
-                        autoFocus
-                        style={{
-                          flex: 1, background: 'transparent', border: 'none', outline: 'none',
-                          color: '#E8DEFF', fontSize: '0.875rem', fontFamily: 'inherit',
-                        }}
-                      />
-                      {voiceSearch && (
-                        <button onClick={() => setVoiceSearch('')} style={{ background: 'none', border: 'none', color: '#4A3060', cursor: 'pointer', fontSize: '0.8rem' }}>✕</button>
-                      )}
+                {/* Voice dropdown */}
+                <div style={{ position: 'relative' }} ref={voiceDropRef}>
+                  <div
+                    onClick={() => !voicesLoading && setVoiceDropOpen(v => !v)}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      background: '#0D0020', border: `1px solid ${voiceDropOpen ? '#D4A843' : '#2D1B4E'}`,
+                      borderRadius: 12, padding: '12px 16px', cursor: 'pointer', transition: 'border-color 0.15s',
+                    }}
+                  >
+                    <div style={{ flex: 1 }}>
+                      {voicesLoading ? (
+                        <span style={{ color: '#6B4FA8', fontSize: '0.875rem' }}>Loading voices…</span>
+                      ) : (() => {
+                        const v = voices.find(v => v.voice_id === selectedVoice);
+                        return v ? (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <span style={{ color: '#E8DEFF', fontWeight: 600 }}>{v.name}</span>
+                            {v.labels?.accent && <span style={{ color: '#6B4FA8', fontSize: '0.75rem' }}>{v.labels.accent}</span>}
+                            {v.labels?.description && <span style={{ color: '#4A3060', fontSize: '0.72rem' }}>· {v.labels.description}</span>}
+                          </div>
+                        ) : <span style={{ color: '#6B4FA8', fontSize: '0.875rem' }}>Select a voice…</span>;
+                      })()}
                     </div>
-                    {/* List */}
-                    <div className="voice-grid" style={{ maxHeight: 300, overflowY: 'auto' }}>
-                      {voices
-                        .filter(v => {
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {(() => {
+                        const v = voices.find(v => v.voice_id === selectedVoice);
+                        return v?.preview_url ? (
+                          <button
+                            onClick={e => playPreview(v.preview_url, v.voice_id, e)}
+                            style={{ background: 'rgba(212,168,67,0.08)', border: '1px solid rgba(212,168,67,0.4)', borderRadius: 8, color: '#D4A843', fontSize: '0.75rem', padding: '4px 12px', cursor: 'pointer' }}
+                          >
+                            {previewingVoice === v.voice_id ? '■ Stop' : '▶ Preview'}
+                          </button>
+                        ) : null;
+                      })()}
+                      <span style={{ color: '#4A3060', fontSize: '0.7rem' }}>{voiceDropOpen ? '▲' : '▼'}</span>
+                    </div>
+                  </div>
+
+                  {voiceDropOpen && !voicesLoading && (
+                    <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 50, background: '#0A0018', border: '1px solid #2D1B4E', borderRadius: 12, overflow: 'hidden', boxShadow: '0 12px 40px rgba(0,0,0,0.6)' }}>
+                      <div style={{ padding: '10px 14px', borderBottom: '1px solid #1A0A2E', display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <input type="text" value={voiceSearch} onChange={e => setVoiceSearch(e.target.value)} placeholder="Search voices…" autoFocus
+                          style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', color: '#E8DEFF', fontSize: '0.875rem', fontFamily: 'inherit' }} />
+                        {voiceSearch && <button onClick={() => setVoiceSearch('')} style={{ background: 'none', border: 'none', color: '#4A3060', cursor: 'pointer' }}>✕</button>}
+                      </div>
+                      <div style={{ maxHeight: 280, overflowY: 'auto' }}>
+                        {voices.filter(v => {
                           if (!voiceSearch) return true;
                           const q = voiceSearch.toLowerCase();
-                          return v.name.toLowerCase().includes(q)
-                            || (v.labels?.accent ?? '').toLowerCase().includes(q)
-                            || (v.labels?.description ?? '').toLowerCase().includes(q)
-                            || (v.labels?.use_case ?? '').toLowerCase().includes(q)
-                            || (v.labels?.gender ?? '').toLowerCase().includes(q);
-                        })
-                        .map(v => (
-                          <div
-                            key={v.voice_id}
-                            onClick={() => { setSelectedVoice(v.voice_id); setVoiceDropOpen(false); setVoiceSearch(''); }}
-                            style={{
-                              display: 'flex', alignItems: 'center', padding: '10px 14px',
-                              cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.03)',
-                              background: selectedVoice === v.voice_id ? 'rgba(212,168,67,0.08)' : 'transparent',
-                              transition: 'background 0.1s',
-                            }}
-                          >
-                            <div style={{ flex: 1, minWidth: 0 }}>
+                          return v.name.toLowerCase().includes(q) || (v.labels?.accent ?? '').toLowerCase().includes(q) || (v.labels?.description ?? '').toLowerCase().includes(q);
+                        }).map(v => (
+                          <div key={v.voice_id} onClick={() => { setSelectedVoice(v.voice_id); setVoiceDropOpen(false); setVoiceSearch(''); setVoiceReady(false); setVoiceAudioBase64(null); }}
+                            style={{ display: 'flex', alignItems: 'center', padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.03)', background: selectedVoice === v.voice_id ? 'rgba(212,168,67,0.08)' : 'transparent' }}>
+                            <div style={{ flex: 1 }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <span style={{ color: selectedVoice === v.voice_id ? '#D4A843' : '#E8DEFF', fontSize: '0.875rem', fontWeight: 500 }}>
-                                  {v.name}
-                                </span>
+                                <span style={{ color: selectedVoice === v.voice_id ? '#D4A843' : '#E8DEFF', fontSize: '0.875rem', fontWeight: 500 }}>{v.name}</span>
                                 {favorites.includes(v.voice_id) && <span style={{ color: '#D4A843', fontSize: '0.75rem' }}>♥</span>}
                               </div>
-                              <div style={{ display: 'flex', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
-                                {v.labels?.accent && (
-                                  <span style={{ color: '#D4A843', fontSize: '0.68rem', background: 'rgba(212,168,67,0.08)', borderRadius: 4, padding: '1px 5px' }}>
-                                    {v.labels.accent}
-                                  </span>
-                                )}
-                                {v.labels?.description && (
-                                  <span style={{ color: '#8B6FA8', fontSize: '0.68rem', background: 'rgba(255,255,255,0.04)', borderRadius: 4, padding: '1px 5px' }}>
-                                    {v.labels.description}
-                                  </span>
-                                )}
-                                {v.labels?.use_case && (
-                                  <span style={{ color: '#5A3A7A', fontSize: '0.68rem' }}>
-                                    {v.labels.use_case}
-                                  </span>
-                                )}
+                              <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
+                                {v.labels?.accent && <span style={{ color: '#D4A843', fontSize: '0.68rem', background: 'rgba(212,168,67,0.08)', borderRadius: 4, padding: '1px 5px' }}>{v.labels.accent}</span>}
+                                {v.labels?.description && <span style={{ color: '#8B6FA8', fontSize: '0.68rem', background: 'rgba(255,255,255,0.04)', borderRadius: 4, padding: '1px 5px' }}>{v.labels.description}</span>}
                               </div>
                             </div>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                            <div style={{ display: 'flex', gap: 8 }}>
                               {v.preview_url && (
-                                <button
-                                  onClick={e => playPreview(v.preview_url, v.voice_id, e)}
-                                  style={{
-                                    background: previewingVoice === v.voice_id ? 'rgba(212,168,67,0.2)' : 'rgba(255,255,255,0.04)',
-                                    border: `1px solid ${previewingVoice === v.voice_id ? '#D4A843' : 'rgba(255,255,255,0.1)'}`,
-                                    borderRadius: 6, color: previewingVoice === v.voice_id ? '#D4A843' : '#6B4FA8',
-                                    fontSize: '0.7rem', padding: '3px 8px', cursor: 'pointer', whiteSpace: 'nowrap',
-                                  }}
-                                >
+                                <button onClick={e => playPreview(v.preview_url, v.voice_id, e)}
+                                  style={{ background: previewingVoice === v.voice_id ? 'rgba(212,168,67,0.2)' : 'rgba(255,255,255,0.04)', border: `1px solid ${previewingVoice === v.voice_id ? '#D4A843' : 'rgba(255,255,255,0.1)'}`, borderRadius: 6, color: previewingVoice === v.voice_id ? '#D4A843' : '#6B4FA8', fontSize: '0.7rem', padding: '3px 8px', cursor: 'pointer' }}>
                                   {previewingVoice === v.voice_id ? '■' : '▶'}
                                 </button>
                               )}
-                              <button
-                                onClick={e => { e.stopPropagation(); toggleFavorite(v.voice_id); }}
-                                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.9rem', padding: 0, lineHeight: 1, color: favorites.includes(v.voice_id) ? '#D4A843' : '#2D1B4E' }}
-                              >
+                              <button onClick={e => { e.stopPropagation(); toggleFavorite(v.voice_id); }}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.9rem', padding: 0, color: favorites.includes(v.voice_id) ? '#D4A843' : '#2D1B4E' }}>
                                 {favorites.includes(v.voice_id) ? '♥' : '♡'}
                               </button>
                             </div>
                           </div>
                         ))}
-                      {voices.filter(v => !voiceSearch || v.name.toLowerCase().includes(voiceSearch.toLowerCase()) || (v.labels?.accent ?? '').toLowerCase().includes(voiceSearch.toLowerCase())).length === 0 && (
-                        <div style={{ padding: 20, color: '#4A3060', fontSize: '0.875rem', textAlign: 'center' }}>
-                          No voices match &quot;{voiceSearch}&quot;
-                        </div>
-                      )}
+                      </div>
                     </div>
+                  )}
+                </div>
+
+                {/* Generate Voice button */}
+                {!voiceReady ? (
+                  <button
+                    onClick={generateVoice}
+                    disabled={voiceGenerating || !selectedVoice}
+                    style={{
+                      width: '100%', padding: '16px', borderRadius: 12, border: 'none',
+                      background: voiceGenerating || !selectedVoice ? '#1A0A2E' : 'linear-gradient(135deg,#3B1A6B,#6B2FA0)',
+                      color: voiceGenerating || !selectedVoice ? '#4A3060' : '#E8DEFF',
+                      fontWeight: 700, fontSize: '0.9rem', cursor: voiceGenerating || !selectedVoice ? 'not-allowed' : 'pointer',
+                      border: '1px solid #2D1B4E', transition: 'all 0.15s',
+                    }}
+                  >
+                    {voiceGenerating ? '⏳ Generating voice…' : '🎙 Generate Voice →'}
+                  </button>
+                ) : (
+                  <div style={{ borderRadius: 10, padding: '10px 14px', background: 'rgba(192,132,252,0.08)', border: '1px solid rgba(192,132,252,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <span style={{ color: '#C084FC', fontWeight: 600, fontSize: '0.875rem' }}>✓ Voice ready</span>
+                    <button onClick={() => { setVoiceReady(false); setVoiceAudioBase64(null); }}
+                      style={{ background: 'none', border: 'none', color: '#6B4FA8', fontSize: '0.75rem', cursor: 'pointer' }}>
+                      Change
+                    </button>
                   </div>
                 )}
-              </div>
-            </div>
 
-            {/* Final Video / Generate buttons */}
+                {/* Combine button — shown when clips/video AND voice are both ready */}
+                {(clipUrls.length > 0 || videoUrl) && voiceReady && (
+                  <button
+                    onClick={combineVideoVoice}
+                    disabled={combining}
+                    style={{
+                      width: '100%', padding: '20px', borderRadius: 16, border: 'none',
+                      background: combining ? 'rgba(212,168,67,0.3)' : 'linear-gradient(135deg,#D4A843 0%,#F0C855 50%,#C8922A 100%)',
+                      color: '#0D0010', fontWeight: 800, fontSize: '1rem', letterSpacing: '0.04em',
+                      cursor: combining ? 'not-allowed' : 'pointer',
+                      boxShadow: combining ? 'none' : '0 4px 24px rgba(212,168,67,0.45)',
+                      animation: combining ? 'none' : 'metalShimmer 3s linear infinite',
+                      backgroundSize: '200% auto',
+                    }}
+                  >
+                    {combining ? '⏳ Combining…' : '✦ Combine Video + Voice →'}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* ── 6. Final combined video ── */}
             {finalVideo ? (
               <div ref={finalVideoRef} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 {/* Success banner */}
