@@ -103,6 +103,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
   const scriptsSectionRef = useRef<HTMLDivElement>(null);
   const visualsSectionRef = useRef<HTMLDivElement>(null);
   const voiceSectionRef   = useRef<HTMLDivElement>(null);
+  const finalVideoRef     = useRef<HTMLDivElement>(null);
   const prevScriptsLen    = useRef(0);
   const prevConcept       = useRef<Concept | null>(null);
 
@@ -155,6 +156,23 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
     }
     prevConcept.current = selectedConcept;
   }, [selectedConcept]);
+
+  // Auto-scroll to final video when it's ready + save to My Videos (client-side backup)
+  useEffect(() => {
+    if (!finalVideo) return;
+    setTimeout(() => finalVideoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200);
+    // Fire-and-forget save to My Videos library (server already does this in compose-video,
+    // but we do it here too as a client-side safety net in case the server path was skipped)
+    (async () => {
+      try {
+        await fetch('/api/save-render', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ video_url: finalVideo, template: toolId }),
+        });
+      } catch { /* non-fatal */ }
+    })();
+  }, [finalVideo]);
 
   const toggleFavorite = (id: string) => {
     setFavorites(prev => {
@@ -1505,19 +1523,63 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
 
             {/* Final Video / Generate buttons */}
             {finalVideo ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                <video src={finalVideo} controls style={{ width: '100%', borderRadius: 16 }} />
+              <div ref={finalVideoRef} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                {/* Success banner */}
+                <div style={{
+                  borderRadius: 12, padding: '12px 16px',
+                  background: 'rgba(212,168,67,0.08)', border: '1px solid rgba(212,168,67,0.35)',
+                  display: 'flex', alignItems: 'center', gap: 10,
+                }}>
+                  <span style={{ fontSize: 18 }}>✓</span>
+                  <div>
+                    <p style={{ color: '#D4A843', fontWeight: 700, fontSize: '0.9rem', margin: 0 }}>Your video is ready!</p>
+                    <p style={{ color: '#8B6FA8', fontSize: '0.75rem', margin: '2px 0 0' }}>Saved to My Videos automatically</p>
+                  </div>
+                </div>
+
+                {/* Video player */}
+                <video
+                  src={finalVideo}
+                  controls
+                  autoPlay
+                  playsInline
+                  style={{ width: '100%', borderRadius: 16, background: '#000', maxHeight: 600 }}
+                />
+
+                {/* Gold download button */}
                 <a
                   href={finalVideo}
-                  download
+                  download={`omnyra-${toolId}-${Date.now()}.mp4`}
                   style={{
-                    display: 'block', width: '100%', padding: '12px', borderRadius: 12,
-                    textAlign: 'center', fontSize: '0.875rem', fontWeight: 500, textDecoration: 'none',
-                    border: '1px solid #2D1B4E', color: '#B09FC0',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+                    width: '100%', padding: '18px', borderRadius: 14, textDecoration: 'none',
+                    background: 'linear-gradient(135deg, #D4A843 0%, #F0C855 50%, #C8922A 100%)',
+                    color: '#0D0010', fontWeight: 800, fontSize: '1rem', letterSpacing: '0.04em',
+                    boxShadow: '0 4px 24px rgba(212,168,67,0.4)',
                   }}
                 >
-                  Download ↓
+                  ⬇ Download Video
                 </a>
+
+                {/* Create another */}
+                <button
+                  onClick={() => {
+                    setFinalVideo(null);
+                    setClipUrls([]);
+                    setVideoUrl(null);
+                    setVideoStarted(false);
+                    setVideoStatus('');
+                    setVideoProgress(0);
+                    setStitching(false);
+                  }}
+                  style={{
+                    width: '100%', padding: '14px', borderRadius: 12,
+                    background: 'transparent', border: '1px solid #2D1B4E',
+                    color: '#8B6FA8', fontSize: '0.875rem', cursor: 'pointer',
+                  }}
+                >
+                  ↺ Generate Another Video
+                </button>
               </div>
             ) : (clipUrls.length > 0 || videoUrl) ? (
               <button
