@@ -613,6 +613,7 @@ export async function POST(req: Request) {
   let goal: string | undefined;
   let characterId: string | undefined;
   let niche: string | undefined;
+  let isQuickMode = false;
   try {
     const body = await req.json() as {
       prompts?: string[];
@@ -623,6 +624,7 @@ export async function POST(req: Request) {
       goal?: string;
       characterId?: string;
       niche?: string;
+      videoType?: 'quick' | 'cinematic' | 'avatar';
     };
     prompts      = body.prompts ?? [];
     imageUrl     = body.imageUrl;
@@ -632,6 +634,7 @@ export async function POST(req: Request) {
     goal         = body.goal;
     characterId  = body.characterId;
     niche        = body.niche;
+    isQuickMode = body.videoType === 'quick';
     console.log(`[BRIEF_CONTEXT] goal="${(goal ?? "").substring(0, 120)}" characterId=${characterId ?? "none"} niche=${niche ?? "none"}`)
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
@@ -776,6 +779,15 @@ export async function POST(req: Request) {
           console.warn(`[SLA_ESCALATION] estimatedGen=${estimatedGenMs}ms genBudget=${genBudgetMs}ms — Kling reduced to ${klingCount}`);
         }
 
+        // Quick mode: force all clips to smart_motion for ~30s total generation
+        if (isQuickMode) {
+          for (let i = 0; i < finalProviders.length; i++) {
+            finalProviders[i] = "smart_motion";
+          }
+          klingCount = 0;
+          smCount = finalProviders.length;
+          console.log(`[QUICK_MODE] forcing all ${smCount} clips to smart_motion for speed`);
+        }
         console.log(`[SCENE_ROUTER] scenes=${prompts.length} kling=${klingCount} smart_motion=${smCount} maxPremium=${maxPremium} estimatedGen=${estimatedGenMs}ms`);
         console.log(`[PROVIDER_USAGE] { klingScenes: ${klingCount}, smartMotionScenes: ${smCount} }`);
 
@@ -929,25 +941,22 @@ export async function POST(req: Request) {
         const sourceImages: Array<string | null> = new Array(prompts.length).fill(null);
         const clipReports: string[] = [];
 
-        // ── Sequential clip generation with last-frame chaining ───────────────
-        // Clip N+1 uses the last frame of Clip N as I2V input for true visual
-        // continuity — same character, same scene, motion flows across cuts.
-        console.log(`[TIMING] CLIP_GENERATION start clips=${prompts.length} mode=sequential_chained`);
+        // ── Parallel clip generation ───────────────────────────────────────────
+        // All clips fire simultaneously — cuts wall time from 3× to 1× clip latency.
+        // For animated style, no source image is needed. For live-action, all clips
+        // use the same base imageUrl (no sequential last-frame chaining).
+        console.log(`[TIMING] CLIP_GENERATION start clips=${prompts.length} mode=parallel`);
         const genT0 = Date.now();
         const genDeadlineAt = routeT0 + SLA_TOTAL_MS - SLA_POST_MS;
 
         const extractedUrls: Array<string | null> = new Array(prompts.length).fill(null);
         const slaFallbackIndices: number[] = [];
 
-        // chainedImageUrl starts as the caller's imageUrl; updated to last frame after each clip
-        let chainedImageUrl: string | null = _isAnimated ? null : (imageUrl ?? null);
-        // chainedSource tracks whether the current chainedImageUrl is a real extracted last frame
-        // or just the original/fallback image — "yes" in logs only means real last-frame chaining succeeded
-        let chainedSource: "initial" | "last_frame" | "none" = chainedImageUrl ? "initial" : "none";
+        const baseImageUrl: string | null = _isAnimated ? null : (imageUrl ?? null);
         const charCharRefUrl = charMemory ? (imageUrl ?? charMemory.ref_frame_url ?? undefined) : undefined;
         const charSuffix     = charMemory ? buildKlingCharacterSuffix(charMemory) : undefined;
 
-        for (let i = 0; i < enforcedPrompts.length; i++) {
+        await Promise.all(enforcedPrompts.map(async (prompt, i) => {
           const clipT0      = Date.now();
           const provider    = finalProviders[i] as ProviderTier;
           const sceneType   = resolvedSceneTypes[i];
@@ -955,14 +964,14 @@ export async function POST(req: Request) {
           const label       = `[clip ${i + 1}/${prompts.length}][${provider}]`;
           const clipBudget  = genDeadlineAt - clipT0;
 
-          console.log(`${label} sceneType=${sceneType} motion=${motionScore.toFixed(2)} slaMs=${clipBudget} chainedImg=${chainedSource} prompt="${prompts[i].substring(0, 80)}"`);
+          console.log(`${label} sceneType=${sceneType} motion=${motionScore.toFixed(2)} slaMs=${clipBudget} prompt="${prompts[i].substring(0, 80)}"`);
           console.log(`[SCENE_ROUTER] scene=${i + 1} provider=${provider} sceneType=${sceneType} motion=${motionScore.toFixed(2)}`);
 
-          const isCouple = !_isAnimated && (COUPLE_RE.test(goal ?? "") || COUPLE_RE.test(script ?? "") || COUPLE_RE.test(enforcedPrompts[i]));
+          const isCouple = !_isAnimated && (COUPLE_RE.test(goal ?? "") || COUPLE_RE.test(script ?? "") || COUPLE_RE.test(prompt));
 
           try {
             const url = await executeClip(
-              enforcedPrompts[i], chainedImageUrl, duration, provider,
+              prompt, baseImageUrl, duration, provider,
               sceneType, i, user.id, rawSeconds, sourceImages, clipReports,
               clipBudget, label, isCouple, sceneNegativePrompts[i],
               _isAnimated ? undefined : charCharRefUrl,
@@ -972,19 +981,6 @@ export async function POST(req: Request) {
             const elapsed = Date.now() - clipT0;
             console.log(`${label} DONE elapsed=${elapsed}ms url=${url.substring(0, 60)}`);
             extractedUrls[i] = url;
-
-            // Extract last frame of this clip to seed the next clip (skip for last clip)
-            if (i < enforcedPrompts.length - 1 && !_isAnimated) {
-              console.log(`[CHAIN] extracting last frame of clip ${i + 1} to seed clip ${i + 2}`);
-              const lastFrameUrl = await extractLastFrame(url, user.id, i);
-              if (lastFrameUrl) {
-                chainedImageUrl = lastFrameUrl;
-                chainedSource = "last_frame";
-                console.log(`[CHAIN] clip ${i + 2} will use last frame of clip ${i + 1} as I2V seed (chainedImg=last_frame)`);
-              } else {
-                console.warn(`[CHAIN] last-frame extraction FAILED for clip ${i + 1} — clip ${i + 2} reuses previous image (chainedImg=${chainedSource})`);
-              }
-            }
           } catch (err) {
             const reason = err instanceof Error ? err.message : String(err);
             if (reason === "skipped_due_to_latency" || reason === "SCENE_BUDGET_EXCEEDED") {
@@ -994,7 +990,7 @@ export async function POST(req: Request) {
               console.error(`[cinematic-sequence] clip ${i + 1} failed:`, reason);
             }
           }
-        }
+        }));
 
         const genElapsed = Date.now() - genT0;
         console.log(`[TIMING] CLIP_GENERATION complete ${genElapsed}ms`);

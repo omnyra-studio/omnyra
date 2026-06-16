@@ -303,6 +303,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
             imageUrl:    selectedConcept.imageUrl || null,
             clipDuration: 10,
             goal:        selectedConcept.description,
+            videoType,
           }),
         });
         const data = await res.json();
@@ -423,43 +424,64 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
     try {
       const scriptText = (editedScript || selectedScript?.script) ?? selectedConcept?.description ?? '';
 
-      // Step 1: ElevenLabs TTS → raw audio bytes
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
       const authHeader = session?.access_token
         ? { 'Authorization': `Bearer ${session.access_token}` }
         : {} as Record<string, string>;
 
+      // Step 1: Stitch clips → get stitched video URL (NO voiceover yet)
+      let stitchedUrl: string | null = null;
+      if (clipUrls.length > 0) {
+        const composeRes = await fetch('/api/compose-video', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ clipUrls, clipDuration: 10 }),
+        });
+        const composeData = await composeRes.json();
+        stitchedUrl = composeData.video_url ?? null;
+      } else {
+        stitchedUrl = videoUrl;
+      }
+
+      if (!stitchedUrl) {
+        setFinalVideo(videoUrl ?? clipUrls[0] ?? null);
+        return;
+      }
+
+      // Step 2: ElevenLabs TTS → raw audio bytes
       const ttsRes = await fetch('/api/voice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader },
         body: JSON.stringify({ voiceId: selectedVoice, text: scriptText }),
       });
-      if (!ttsRes.ok) throw new Error(`TTS failed: ${ttsRes.status}`);
+      if (!ttsRes.ok) {
+        // Voiceover failed — return stitched video without audio
+        setFinalVideo(stitchedUrl);
+        return;
+      }
       const audioBuf = await ttsRes.arrayBuffer();
 
-      // Step 2: Upload audio to Supabase → public URL
-      const audioForm = new FormData();
-      audioForm.append('audio', new Blob([audioBuf], { type: 'audio/mpeg' }), 'voice.mp3');
-      const uploadRes = await fetch('/api/upload/voice', { method: 'POST', body: audioForm });
-      if (!uploadRes.ok) throw new Error(`Voice upload failed: ${uploadRes.status}`);
-      const { url: voiceoverUrl } = await uploadRes.json();
-
-      // Step 3: Railway stitches 3 × 10s clips → 30s video + voiceover
-      // Avatar path: single videoUrl already has lipsync baked in — just add voiceover
-      const composeBody = clipUrls.length > 0
-        ? { clipUrls, voiceoverUrl, clipDuration: 10 }
-        : { videoUrl, voiceoverUrl };
-
-      const composeRes = await fetch('/api/compose-video', {
+      // Step 3: Merge voiceover onto stitched video (voiceover goes LAST)
+      const mergeRes = await fetch('/api/merge-video-audio', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(composeBody),
+        headers: { 'Content-Type': 'application/json', ...authHeader },
+        body: JSON.stringify({
+          video_url:    stitchedUrl,
+          audio_base64: Buffer.from(audioBuf).toString('base64'),
+        }),
       });
-      const composeData = await composeRes.json();
-      setFinalVideo(composeData.video_url ?? videoUrl);
-    } catch { setFinalVideo(videoUrl ?? clipUrls[0] ?? null); }
-    finally { setStitching(false); }
+      if (!mergeRes.ok) {
+        setFinalVideo(stitchedUrl);
+        return;
+      }
+      const mergeData = await mergeRes.json();
+      setFinalVideo(mergeData.video_url ?? stitchedUrl);
+    } catch {
+      setFinalVideo(videoUrl ?? clipUrls[0] ?? null);
+    } finally {
+      setStitching(false);
+    }
   };
 
   const estTime = videoType === 'avatar' ? '~2 min' : videoType === 'quick' ? '~60s' : '~4 min';
