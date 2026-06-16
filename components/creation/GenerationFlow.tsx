@@ -1591,11 +1591,12 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
                     onClick={generateVoice}
                     disabled={voiceGenerating || !selectedVoice}
                     style={{
-                      width: '100%', padding: '16px', borderRadius: 12, border: 'none',
+                      width: '100%', padding: '16px', borderRadius: 12,
+                      border: '1px solid #2D1B4E',
                       background: voiceGenerating || !selectedVoice ? '#1A0A2E' : 'linear-gradient(135deg,#3B1A6B,#6B2FA0)',
                       color: voiceGenerating || !selectedVoice ? '#4A3060' : '#E8DEFF',
                       fontWeight: 700, fontSize: '0.9rem', cursor: voiceGenerating || !selectedVoice ? 'not-allowed' : 'pointer',
-                      border: '1px solid #2D1B4E', transition: 'all 0.15s',
+                      transition: 'all 0.15s',
                     }}
                   >
                     {voiceGenerating ? '⏳ Generating voice…' : '🎙 Generate Voice →'}
