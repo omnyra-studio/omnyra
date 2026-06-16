@@ -460,77 +460,81 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
         ? { 'Authorization': `Bearer ${session.access_token}` }
         : {} as Record<string, string>;
 
-      // Step 1: Stitch clips → get stitched video URL (NO voiceover yet)
-      let stitchedUrl: string | null = null;
-      if (clipUrls.length > 0) {
-        const composeRes = await fetch('/api/compose-video', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ clipUrls, clipDuration: 10 }),
-        });
-        const composeData = await composeRes.json();
-        stitchedUrl = composeData.video_url ?? null;
-      } else {
-        stitchedUrl = videoUrl;
-      }
+      // ── Step 1: TTS voiceover (run in parallel with stitching) ──────────────
+      // Generate audio first so it's ready by the time stitching finishes.
+      // Voiceover uses the auto-selected first voice if none explicitly chosen.
+      const toBase64 = (buf: ArrayBuffer): string => {
+        const bytes = new Uint8Array(buf);
+        let binary = '';
+        const chunkSize = 8192;
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+        }
+        return btoa(binary);
+      };
 
-      if (!stitchedUrl) {
-        setFinalVideo(videoUrl ?? clipUrls[0] ?? null);
-        return;
-      }
-
-      // Step 2: ElevenLabs TTS → raw audio bytes
-      // Only attempt voiceover if a voice has been selected
-      if (selectedVoice && scriptText) {
-        let audioBase64: string | null = null;
+      const ttsPromise: Promise<string | null> = (async () => {
+        const voiceToUse = selectedVoice || (voices.length > 0 ? voices[0].voice_id : '');
+        if (!voiceToUse || !scriptText) return null;
         try {
           const ttsRes = await fetch('/api/voice', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', ...authHeader },
-            body: JSON.stringify({ voiceId: selectedVoice, text: scriptText }),
+            body: JSON.stringify({ voiceId: voiceToUse, text: scriptText }),
           });
-          if (ttsRes.ok) {
-            const audioBuf = await ttsRes.arrayBuffer();
-            // Browser-safe ArrayBuffer → base64 (no Node Buffer)
-            const bytes = new Uint8Array(audioBuf);
-            let binary = '';
-            const chunkSize = 8192;
-            for (let i = 0; i < bytes.length; i += chunkSize) {
-              binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
-            }
-            audioBase64 = btoa(binary);
-          } else {
-            console.warn('[generateFinal] TTS failed status:', ttsRes.status);
-          }
-        } catch (ttsErr) {
-          console.warn('[generateFinal] TTS threw:', ttsErr);
-        }
+          if (!ttsRes.ok) { console.warn('[generateFinal] TTS status:', ttsRes.status); return null; }
+          return toBase64(await ttsRes.arrayBuffer());
+        } catch (e) { console.warn('[generateFinal] TTS threw:', e); return null; }
+      })();
 
-        // Step 3: Merge voiceover onto stitched video (voiceover goes LAST)
-        if (audioBase64) {
-          try {
-            const mergeRes = await fetch('/api/merge-video-audio', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', ...authHeader },
-              body: JSON.stringify({ video_url: stitchedUrl, audio_base64: audioBase64 }),
-            });
-            if (mergeRes.ok) {
-              const mergeData = await mergeRes.json();
-              if (mergeData.video_url) {
-                setFinalVideo(mergeData.video_url);
-                return;
-              }
-            } else {
-              console.warn('[generateFinal] merge-video-audio failed status:', mergeRes.status);
-            }
-          } catch (mergeErr) {
-            console.warn('[generateFinal] merge threw:', mergeErr);
+      // ── Step 2: Stitch clips → get full-length video URL ─────────────────────
+      let stitchedUrl: string | null = null;
+      if (clipUrls.length > 0) {
+        try {
+          const composeRes = await fetch('/api/compose-video', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ clipUrls, clipDuration: 10 }),
+          });
+          if (composeRes.ok) {
+            const composeData = await composeRes.json();
+            stitchedUrl = composeData.video_url ?? null;
+            if (!stitchedUrl) console.warn('[generateFinal] compose-video ok but no video_url:', composeData);
+          } else {
+            const errBody = await composeRes.text();
+            console.warn('[generateFinal] compose-video failed', composeRes.status, errBody.substring(0, 200));
           }
-        }
+        } catch (e) { console.warn('[generateFinal] compose-video threw:', e); }
+      } else {
+        stitchedUrl = videoUrl;
       }
-      // Voiceover was skipped or failed — use stitched video without audio
-      setFinalVideo(stitchedUrl);
-    } catch {
+
+      // Fallback: if compose failed, use best available clip (still add voiceover below)
+      const baseVideoUrl = stitchedUrl ?? videoUrl ?? clipUrls[0] ?? null;
+      if (!baseVideoUrl) { setFinalVideo(null); return; }
+
+      // ── Step 3: Merge voiceover onto video (wait for both) ───────────────────
+      const audioBase64 = await ttsPromise;
+      if (audioBase64) {
+        try {
+          const mergeRes = await fetch('/api/merge-video-audio', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...authHeader },
+            body: JSON.stringify({ video_url: baseVideoUrl, audio_base64: audioBase64 }),
+          });
+          if (mergeRes.ok) {
+            const mergeData = await mergeRes.json();
+            if (mergeData.video_url) { setFinalVideo(mergeData.video_url); return; }
+          } else {
+            console.warn('[generateFinal] merge status:', mergeRes.status, await mergeRes.text().catch(() => ''));
+          }
+        } catch (e) { console.warn('[generateFinal] merge threw:', e); }
+      }
+
+      // Voiceover failed or not available — return best video we have
+      setFinalVideo(baseVideoUrl);
+    } catch (e) {
+      console.error('[generateFinal] outer catch:', e);
       setFinalVideo(videoUrl ?? clipUrls[0] ?? null);
     } finally {
       setStitching(false);

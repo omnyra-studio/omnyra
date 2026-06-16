@@ -447,17 +447,45 @@ export async function POST(request: Request) {
         writeFileSync(concatListPath, concatContent);
         console.log(`[PHASE4:local] concat list (${clipPaths.length} entries):\n${concatContent}`);
 
-        await new Promise<void>((resolve, reject) => {
+        // Re-encode with libx264 rather than -c copy: Kling clips can have differing
+        // timestamps / GOP structures that make stream-copy concat produce broken output.
+        // ultrafast preset keeps stitching fast (~5s for 3×10s clips on Vercel).
+        const concatAndEncode = () => new Promise<void>((resolve, reject) => {
           ffmpeg()
             .input(concatListPath)
             .inputOptions(["-f", "concat", "-safe", "0"])
-            .outputOptions(["-c", "copy"])
+            .outputOptions([
+              "-c:v", "libx264",
+              "-preset", "ultrafast",
+              "-crf", "23",
+              "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2",  // libx264 requires even dimensions
+              "-c:a", "aac",
+              "-ar", "44100",
+              "-movflags", "+faststart",
+            ])
             .output(stitchedPath)
             .on("stderr", (line: string) => console.log("[PHASE4:local:ffmpeg:stderr]", line))
             .on("end", () => resolve())
             .on("error", (err: Error) => reject(new Error(`FFmpeg concat failed: ${err.message}`)))
             .run();
         });
+
+        // Fallback: if re-encode fails, try stream-copy (rare but keeps us alive)
+        try {
+          await concatAndEncode();
+        } catch (encErr) {
+          console.warn("[PHASE4:local] re-encode failed, retrying with -c copy:", (encErr as Error).message);
+          await new Promise<void>((resolve, reject) => {
+            ffmpeg()
+              .input(concatListPath)
+              .inputOptions(["-f", "concat", "-safe", "0"])
+              .outputOptions(["-c", "copy"])
+              .output(stitchedPath)
+              .on("end", () => resolve())
+              .on("error", (err: Error) => reject(new Error(`FFmpeg concat (copy fallback) failed: ${err.message}`)))
+              .run();
+          });
+        }
 
         if (!existsSync(stitchedPath)) {
           throw new Error("FFmpeg concat completed but produced no output file");
