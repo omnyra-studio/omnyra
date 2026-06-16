@@ -6,21 +6,25 @@ const anthropic = new Anthropic({ apiKey: cleanEnv(process.env.ANTHROPIC_API_KEY
 async function generateConceptImage(
   description: string,
   falKey: string,
-  stylePrompt: string,
+  stylePrefix: string,
   ratioPrompt: string,
+  negativeStyle: string,
   imageSize: { width: number; height: number },
   inferenceSteps: number,
 ): Promise<string> {
+  // Style prefix leads the prompt so FLUX weights it highest
+  const fullPrompt = `${stylePrefix}, ${description}, ${ratioPrompt}, natural dramatic lighting, sharp focus, high detail, cinematic color grade`;
   try {
     const res = await fetch('https://fal.run/fal-ai/flux/schnell', {
       method:  'POST',
       headers: { Authorization: `Key ${falKey}`, 'Content-Type': 'application/json' },
       body:    JSON.stringify({
-        prompt:                 `${description}, ${stylePrompt}, ${ratioPrompt}, natural dramatic lighting, sharp focus, high detail`,
-        num_images:             1,
-        image_size:             imageSize,
-        num_inference_steps:    inferenceSteps,
-        enable_safety_checker:  true,
+        prompt:                fullPrompt,
+        negative_prompt:       negativeStyle,
+        num_images:            1,
+        image_size:            imageSize,
+        num_inference_steps:   inferenceSteps,
+        enable_safety_checker: true,
       }),
     });
     if (!res.ok) {
@@ -49,27 +53,60 @@ export async function POST(req: Request) {
     return Response.json({ error: 'Image generation not configured' }, { status: 503 });
   }
 
+  // Style context passed to Claude so descriptions match the visual register
+  const styleContext =
+    visualStyle === 'Avatar Scene' ? 'talking-head portrait: subject faces camera directly, studio or clean background, upper-body framing only' :
+    visualStyle === 'UGC'          ? 'UGC / user-generated style: handheld candid feel, everyday real-world environment, authentic imperfect framing' :
+    visualStyle === 'Product'      ? 'product-focused: object or product is hero, clean studio or lifestyle context background, commercial photography' :
+    visualStyle === 'Thumbnail'    ? 'YouTube thumbnail style: bold foreground subject with high-contrast background, dramatic expression, eye-catching framing' :
+                                     'cinematic lifestyle: wide or medium environmental shot, subject shown in their real-world setting doing something, NOT a portrait or headshot';
+
+  // FLUX prompt prefix — leads the prompt for highest model weight
+  const stylePrefix =
+    visualStyle === 'Avatar Scene' ? 'professional talking head portrait, studio lighting, direct eye contact, clean background' :
+    visualStyle === 'UGC'          ? 'authentic UGC style, handheld camera, real environment, candid moment, natural lighting' :
+    visualStyle === 'Product'      ? 'commercial product photography, clean background, sharp product detail, studio quality' :
+    visualStyle === 'Thumbnail'    ? 'YouTube thumbnail, high contrast, bold composition, dramatic expression, eye-catching colors' :
+                                     'cinematic lifestyle photography, environmental wide shot, golden hour, person in real setting, NOT a portrait';
+
+  // Negative prompt to prevent wrong style bleeding
+  const negativeStyle =
+    visualStyle === 'Lifestyle' ? 'portrait, headshot, talking head, studio background, direct camera stare, mugshot' :
+    visualStyle === 'UGC'       ? 'studio lighting, professional photography, clean background' :
+                                  '';
+
+  const ratioPrompt =
+    aspectRatio === '1:1'  ? 'square 1:1 composition' :
+    aspectRatio === '16:9' ? 'horizontal 16:9 widescreen composition' :
+                             'vertical 9:16 portrait composition, TikTok/Reels format';
+
+  const imageSize =
+    aspectRatio === '1:1'  ? { width: 1080, height: 1080 } :
+    aspectRatio === '16:9' ? { width: 1920, height: 1080 } :
+                             { width: 1080, height: 1920 };
+
+  const inferenceSteps = quality === 'premium' ? 20 : quality === 'standard' ? 12 : 8;
+
   try {
-    // Step 1: Claude extracts 4 specific physical beats from the script
+    // Step 1: Claude extracts 4 physical scene beats, guided by visual style
     const msg = await anthropic.messages.create({
-      model:      'claude-haiku-4-5-20251001',
-      max_tokens: 900,
+      model:      'claude-haiku-4-5',
+      max_tokens: 1000,
       system:
-        'You are a Ghost Test enforcer for Omnyra, an AI video generation studio. ' +
-        'Given a script, extract exactly 4 SPECIFIC PHYSICAL MOMENTS and generate one image concept per moment. ' +
-        'Each concept MUST be anchored to a specific line or beat from the script. ' +
-        'Describe ONLY observable physical actions, body language, micro-behaviours, ' +
-        'object interactions, clothing, props, lighting, environment, and camera angles. ' +
-        'ZERO emotion labels. ZERO internal states. ZERO evaluative adjectives. ' +
-        'For emotional scripts translate feelings into body language: ' +
-        '"jaw unclenching", "shoulders curving inward", "hand pressed flat to sternum", ' +
-        '"tear tracking down cheekbone", "fragile upward curve of lip corners", ' +
-        '"fingertips whitening around fabric", "chest rising on held breath". ' +
-        'Return ONLY valid JSON: [{"title":"short evocative title","description":"2-3 sentence physical-action-only scene description","ghostScore":70-100}]',
+        `You are a scene director for Omnyra, an AI video studio. ` +
+        `Visual style for this shoot: ${styleContext}. ` +
+        `Given a script, extract exactly 4 DISTINCT PHYSICAL SCENE MOMENTS — one per major beat. ` +
+        `CRITICAL RULES: ` +
+        `1. Each scene MUST reflect the ERA, SETTING, and ENVIRONMENT implied by the script (e.g. if the script is set in the 1990s, describe 1990s clothing, props, environments). ` +
+        `2. Scene descriptions must match the VISUAL STYLE above — if Lifestyle, describe the environment and activity, NOT a portrait. ` +
+        `3. Include: specific location/setting, time of day, lighting, clothing details, props, and physical action. ` +
+        `4. ZERO emotion labels — translate feelings into body language and micro-actions only. ` +
+        `5. Each description is a FLUX image generation prompt — be concrete, visual, and specific. ` +
+        `Return ONLY valid JSON array: [{"title":"short scene title","description":"2-3 sentence physical scene for image generation","ghostScore":70-100}]`,
       messages: [
         {
           role:    'user',
-          content: `Niche: ${toolId}\nScript:\n${prompt}\n\nExtract 4 specific physical moments from this script and generate Ghost Test–compliant scene descriptions for image generation. Each scene must match a distinct beat from the script.`,
+          content: `Niche/Tool: ${toolId}\nScript:\n${prompt}\n\nExtract 4 scene moments that visually represent distinct beats of this script. Match the era, setting, and tone of the script exactly.`,
         },
       ],
     });
@@ -77,42 +114,23 @@ export async function POST(req: Request) {
     const raw = msg.content[0].type === 'text' ? msg.content[0].text : '';
     const jsonMatch = raw.match(/\[[\s\S]*\]/);
     if (!jsonMatch) {
+      console.error('[generate-concepts] Claude returned no JSON:', raw.substring(0, 200));
       return Response.json({ concepts: [] });
     }
 
     const textConcepts = JSON.parse(jsonMatch[0]) as Array<{ title: string; description: string; ghostScore: number }>;
     const four = textConcepts.slice(0, 4);
 
-    // Style + ratio modifiers
-    const stylePrompt =
-      visualStyle === 'Avatar Scene' ? 'talking head portrait, direct camera, professional studio lighting' :
-      visualStyle === 'UGC'          ? 'authentic user generated content style, handheld camera feel, natural lighting' :
-      visualStyle === 'Product'      ? 'clean product photography, studio background, commercial quality' :
-      visualStyle === 'Thumbnail'    ? 'high contrast, bold composition, thumbnail optimised, eye-catching' :
-                                       'cinematic lifestyle photography, golden hour, authentic emotion';
-
-    const ratioPrompt =
-      aspectRatio === '1:1'  ? 'square 1:1 composition' :
-      aspectRatio === '16:9' ? 'horizontal 16:9 widescreen composition' :
-                               'vertical 9:16 composition, portrait orientation, TikTok format';
-
-    const imageSize =
-      aspectRatio === '1:1'  ? { width: 1080, height: 1080 } :
-      aspectRatio === '16:9' ? { width: 1920, height: 1080 } :
-                               { width: 1080, height: 1920 };
-
-    const inferenceSteps = quality === 'premium' ? 20 : quality === 'standard' ? 12 : 8;
-
-    // Step 2: Generate images in parallel for all 4 concepts
+    // Step 2: Generate images in parallel
     const imageUrls = await Promise.all(
-      four.map(c => generateConceptImage(c.description, falKey, stylePrompt, ratioPrompt, imageSize, inferenceSteps))
+      four.map(c => generateConceptImage(c.description, falKey, stylePrefix, ratioPrompt, negativeStyle, imageSize, inferenceSteps))
     );
 
     const concepts = four.map((c, i) => ({
-      title:      c.title,
-      description:c.description,
-      ghostScore: c.ghostScore,
-      imageUrl:   imageUrls[i] ?? '',
+      title:       c.title,
+      description: c.description,
+      ghostScore:  c.ghostScore,
+      imageUrl:    imageUrls[i] ?? '',
     }));
 
     return Response.json({ concepts });
