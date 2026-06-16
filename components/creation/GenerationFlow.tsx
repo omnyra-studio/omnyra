@@ -679,13 +679,17 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
             ))}
             <button
               onClick={handleGenerateScript}
+              disabled={isLoading}
               style={{
-                background: 'transparent', border: 'none',
-                color: '#D4A843', fontSize: '0.9rem', cursor: 'pointer',
-                textDecoration: 'underline', padding: '10px 8px',
+                background: 'transparent',
+                border: '1px solid rgba(212,168,67,0.4)',
+                color: isLoading ? '#8B6FA8' : '#D4A843',
+                borderRadius: 10, padding: '8px 18px',
+                fontSize: '0.85rem', cursor: isLoading ? 'default' : 'pointer',
+                marginLeft: 4,
               }}
             >
-              Generate 5 more →
+              {isLoading ? 'Regenerating…' : '↺ Regenerate Scripts'}
             </button>
           </div>
 

@@ -1,7 +1,6 @@
 'use client';
 
 import Link from 'next/link';
-import Navbar from '@/components/Navbar';
 import AnimatedBackground from '@/components/AnimatedBackground';
 
 const TOOLS = [
@@ -18,7 +17,6 @@ const TOOLS = [
 export default function ToolsPage() {
   return (
     <>
-      <Navbar />
       <AnimatedBackground />
       <div className="min-h-screen text-white relative z-10 pt-20" style={{ background: '#0A0010' }}>
         <div className="max-w-5xl mx-auto px-6 py-12">

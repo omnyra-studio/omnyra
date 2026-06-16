@@ -129,6 +129,13 @@ select:focus {
   border-color: #C084FC !important;
 }
 
+/* ── Input / textarea / select placeholder ── */
+input::placeholder,
+textarea::placeholder {
+  color: #5A3A7A !important;
+  opacity: 1 !important;
+}
+
 /* ── Textarea readability ── */
 .omnyra-textarea {
   color: #F5EFE6 !important;
