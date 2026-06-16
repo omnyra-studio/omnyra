@@ -283,13 +283,25 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
         }
       } else {
         // Cinematic / Quick: 3 × 10s clips via generate-cinematic-sequence
-        // Sequential last-frame chaining: Clip 2 uses last frame of Clip 1 as I2V seed,
-        // Clip 3 uses last frame of Clip 2 — one continuous 30s scene.
-        const base = selectedConcept.description;
+        // Prompts are ACTION-driven from the script, not just camera angles.
+        const sceneDesc = selectedConcept.description;
+        const scriptFull = (editedScript || selectedScript?.script || '').trim();
+        const hook = selectedScript?.hook || '';
+
+        // Split script into 3 timed beats so each clip depicts the actual action
+        const sentences = scriptFull.split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 2);
+        const n = sentences.length;
+        const beat1 = sentences.slice(0, Math.ceil(n / 3)).join(' ') || hook;
+        const beat2 = sentences.slice(Math.ceil(n / 3), Math.ceil(2 * n / 3)).join(' ') || beat1;
+        const beat3 = sentences.slice(Math.ceil(2 * n / 3)).join(' ') || beat2;
+
+        // Clip 1: opening action from hook/beat1 — wide shot to establish scene
+        // Clip 2: mid action from beat2 — medium shot showing movement
+        // Clip 3: closing action from beat3 — close detail or resolution
         const cameraVariations = [
-          `${base}, wide establishing shot, slow push forward`,
-          `${base}, medium shot, subtle rack focus, natural motion, same scene continuation`,
-          `${base}, close detail shot, gentle camera drift, cinematic, same scene continuation`,
+          `${sceneDesc}. ${beat1}. Opening scene, subjects actively doing the described action, wide shot, natural authentic movement, camera slowly pushing in`,
+          `${sceneDesc}. ${beat2}. Mid scene action continues, subjects clearly performing the action, medium shot, genuine motion not posed, fluid natural movement`,
+          `${sceneDesc}. ${beat3}. Closing beat, action resolving or completing, close detail shot showing the key prop or expression, camera gently pulling back`,
         ];
 
         setVideoStatus('Generating cinematic sequence…');
@@ -450,33 +462,56 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
       }
 
       // Step 2: ElevenLabs TTS → raw audio bytes
-      const ttsRes = await fetch('/api/voice', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeader },
-        body: JSON.stringify({ voiceId: selectedVoice, text: scriptText }),
-      });
-      if (!ttsRes.ok) {
-        // Voiceover failed — return stitched video without audio
-        setFinalVideo(stitchedUrl);
-        return;
-      }
-      const audioBuf = await ttsRes.arrayBuffer();
+      // Only attempt voiceover if a voice has been selected
+      if (selectedVoice && scriptText) {
+        let audioBase64: string | null = null;
+        try {
+          const ttsRes = await fetch('/api/voice', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...authHeader },
+            body: JSON.stringify({ voiceId: selectedVoice, text: scriptText }),
+          });
+          if (ttsRes.ok) {
+            const audioBuf = await ttsRes.arrayBuffer();
+            // Browser-safe ArrayBuffer → base64 (no Node Buffer)
+            const bytes = new Uint8Array(audioBuf);
+            let binary = '';
+            const chunkSize = 8192;
+            for (let i = 0; i < bytes.length; i += chunkSize) {
+              binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+            }
+            audioBase64 = btoa(binary);
+          } else {
+            console.warn('[generateFinal] TTS failed status:', ttsRes.status);
+          }
+        } catch (ttsErr) {
+          console.warn('[generateFinal] TTS threw:', ttsErr);
+        }
 
-      // Step 3: Merge voiceover onto stitched video (voiceover goes LAST)
-      const mergeRes = await fetch('/api/merge-video-audio', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...authHeader },
-        body: JSON.stringify({
-          video_url:    stitchedUrl,
-          audio_base64: Buffer.from(audioBuf).toString('base64'),
-        }),
-      });
-      if (!mergeRes.ok) {
-        setFinalVideo(stitchedUrl);
-        return;
+        // Step 3: Merge voiceover onto stitched video (voiceover goes LAST)
+        if (audioBase64) {
+          try {
+            const mergeRes = await fetch('/api/merge-video-audio', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', ...authHeader },
+              body: JSON.stringify({ video_url: stitchedUrl, audio_base64: audioBase64 }),
+            });
+            if (mergeRes.ok) {
+              const mergeData = await mergeRes.json();
+              if (mergeData.video_url) {
+                setFinalVideo(mergeData.video_url);
+                return;
+              }
+            } else {
+              console.warn('[generateFinal] merge-video-audio failed status:', mergeRes.status);
+            }
+          } catch (mergeErr) {
+            console.warn('[generateFinal] merge threw:', mergeErr);
+          }
+        }
       }
-      const mergeData = await mergeRes.json();
-      setFinalVideo(mergeData.video_url ?? stitchedUrl);
+      // Voiceover was skipped or failed — use stitched video without audio
+      setFinalVideo(stitchedUrl);
     } catch {
       setFinalVideo(videoUrl ?? clipUrls[0] ?? null);
     } finally {

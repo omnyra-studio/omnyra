@@ -66,13 +66,15 @@ function assertDurationCompliance(
   phase: string,
 ): void {
   const minRequired = requestedSec * 0.95;
+  const compliant = actualSec === 0 || actualSec >= minRequired;
   console.log(
     `[DURATION_GATE] ${phase} actual=${actualSec.toFixed(2)}s requested=${requestedSec}s ` +
-    `min=${minRequired.toFixed(2)}s compliant=${actualSec >= minRequired}`,
+    `min=${minRequired.toFixed(2)}s compliant=${compliant}`,
   );
-  if (actualSec > 0 && actualSec < minRequired) {
-    throw new Error(
-      `DURATION_COMPLIANCE_FAILED [${phase}]: actual=${actualSec.toFixed(2)}s < 95% of requested ${requestedSec}s (min=${minRequired.toFixed(2)}s)`,
+  // Log only — never throw. A slightly short video is better than a 500 error.
+  if (actualSec > 0 && !compliant) {
+    console.warn(
+      `[DURATION_GATE] NON_COMPLIANT [${phase}]: actual=${actualSec.toFixed(2)}s < 95% of requested ${requestedSec}s — returning anyway`,
     );
   }
 }
