@@ -79,10 +79,10 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
 
   const [videoType,     setVideoType]     = useState<VideoType>('cinematic');
   const [videoUrl,      setVideoUrl]      = useState<string | null>(null);
+  const [clipUrls,      setClipUrls]      = useState<string[]>([]);
   const [videoStatus,   setVideoStatus]   = useState('');
   const [videoProgress, setVideoProgress] = useState(0);
   const [videoStarted,  setVideoStarted]  = useState(false);
-  const [videoJobId,    setVideoJobId]    = useState<string | null>(null);
   const [videoModel,    setVideoModel]    = useState<string | null>(null);
   const [selectedVoice, setSelectedVoice] = useState('');
   const [favorites,     setFavorites]     = useState<string[]>([]);
@@ -250,10 +250,12 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
     setVideoStatus('Queued');
     setVideoProgress(5);
     setVideoUrl(null);
+    setClipUrls([]);
     setFinalVideo(null);
 
     try {
       if (videoType === 'avatar') {
+        // Avatar: single clip → Hedra lipsync
         const scriptText = editedScript || selectedScript?.script || selectedConcept.description;
         const res = await fetch('/api/generate-avatar', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -280,62 +282,89 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
           setVideoStarted(false);
         }
       } else {
-        const res = await fetch('/api/generate-video-clip', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt:   selectedConcept.description,
-            imageUrl: selectedConcept.imageUrl,
-            model:    videoType,
-          }),
-        });
-        const data = await res.json();
-        if (data.error) {
-          setVideoStatus('Error — ' + data.error);
-          setVideoStarted(false);
-          return;
-        }
-        if (data.jobId) {
-          setVideoJobId(data.jobId);
-          setVideoModel(data.model);
-          startFalPolling(data.jobId, data.model);
-        } else {
-          setVideoStatus('Error — Failed to queue video job');
-          setVideoStarted(false);
-        }
+        // Cinematic / Quick: 3 × 10s clips in parallel → Railway stitches into 30s
+        // Use all available concepts (up to 3), selected concept goes first
+        const scenesToRender = [
+          selectedConcept,
+          ...concepts.filter(c => c !== selectedConcept),
+        ].slice(0, 3);
+
+        setVideoStatus(`Generating ${scenesToRender.length} scenes…`);
+
+        const jobs = await Promise.all(
+          scenesToRender.map(async (concept) => {
+            const res = await fetch('/api/generate-video-clip', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                prompt:   concept.description,
+                imageUrl: concept.imageUrl,
+                model:    videoType,
+              }),
+            });
+            const data = await res.json();
+            if (data.error || !data.jobId) throw new Error(data.error ?? 'Queue failed');
+            return { jobId: data.jobId, model: data.model as string };
+          })
+        );
+
+        setVideoModel(jobs[0].model);
+        startMultiClipPolling(jobs);
       }
-    } catch {
-      setVideoStatus('Error — tap Generate to retry');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Generation failed';
+      setVideoStatus('Error — ' + msg);
       setVideoStarted(false);
     }
   };
 
-  const startFalPolling = (jobId: string, model: string) => {
-    const labels = ['Queued', 'Processing', 'Rendering', 'Almost done…'];
+  const startMultiClipPolling = (jobs: { jobId: string; model: string }[]) => {
+    const labels = ['Generating scenes…', 'Rendering clips…', 'Almost done…'];
     let tick = 0;
+    const resolved = new Map<string, string>(); // jobId → videoUrl
+
     pollRef.current = setInterval(async () => {
       tick++;
-      if (tick > 24) {
+      if (tick > 36) {
         clearInterval(pollRef.current!);
         setVideoStatus('Timed out — please retry');
         setVideoStarted(false);
         return;
       }
-      setVideoStatus(labels[Math.min(tick, labels.length - 1)]);
-      setVideoProgress(Math.min(10 + tick * 15, 90));
-      try {
-        const res = await fetch(`/api/fal-poll?jobId=${jobId}&model=${encodeURIComponent(model)}`);
-        const data = await res.json();
-        if (data.status === 'complete' && data.videoUrl) {
-          clearInterval(pollRef.current!);
-          setVideoUrl(data.videoUrl);
-          setVideoStatus('Ready');
-          setVideoProgress(100);
-        } else if (data.status === 'failed') {
-          clearInterval(pollRef.current!);
-          setVideoStatus('Failed — please retry');
-          setVideoStarted(false);
-        }
-      } catch {}
+      setVideoStatus(labels[Math.min(tick - 1, labels.length - 1)]);
+
+      // Poll any unresolved jobs
+      await Promise.all(
+        jobs
+          .filter(j => !resolved.has(j.jobId))
+          .map(async ({ jobId, model }) => {
+            try {
+              const res = await fetch(`/api/fal-poll?jobId=${jobId}&model=${encodeURIComponent(model)}`);
+              const data = await res.json();
+              if (data.status === 'complete' && data.videoUrl) resolved.set(jobId, data.videoUrl);
+              else if (data.status === 'failed') resolved.set(jobId, '');
+            } catch {}
+          })
+      );
+
+      const done   = resolved.size;
+      const total  = jobs.length;
+      const failed = [...resolved.values()].filter(u => !u).length;
+      setVideoProgress(Math.round((done / total) * 80));
+      setVideoStatus(`${done}/${total} scenes ready${failed ? ` (${failed} failed)` : ''}…`);
+
+      if (done < total) return;
+
+      // All jobs settled
+      clearInterval(pollRef.current!);
+      const urls = jobs.map(j => resolved.get(j.jobId) ?? '').filter(Boolean);
+      if (!urls.length) {
+        setVideoStatus('All clips failed — please retry');
+        setVideoStarted(false);
+        return;
+      }
+      setClipUrls(urls);
+      setVideoProgress(100);
+      setVideoStatus('Ready');
     }, 5000);
   };
 
@@ -381,7 +410,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
     try {
       const scriptText = (editedScript || selectedScript?.script) ?? selectedConcept?.description ?? '';
 
-      // Step 1: ElevenLabs TTS via /api/voice (Bearer auth)
+      // Step 1: ElevenLabs TTS → raw audio bytes
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
       const authHeader = session?.access_token
@@ -396,22 +425,27 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
       if (!ttsRes.ok) throw new Error(`TTS failed: ${ttsRes.status}`);
       const audioBuf = await ttsRes.arrayBuffer();
 
-      // Step 2: Upload audio to Supabase → get a public URL
+      // Step 2: Upload audio to Supabase → public URL
       const audioForm = new FormData();
       audioForm.append('audio', new Blob([audioBuf], { type: 'audio/mpeg' }), 'voice.mp3');
       const uploadRes = await fetch('/api/upload/voice', { method: 'POST', body: audioForm });
       if (!uploadRes.ok) throw new Error(`Voice upload failed: ${uploadRes.status}`);
       const { url: voiceoverUrl } = await uploadRes.json();
 
-      // Step 3: Compose — Railway FFmpeg stitches video + voiceover
+      // Step 3: Railway stitches 3 × 10s clips → 30s video + voiceover
+      // Avatar path: single videoUrl already has lipsync baked in — just add voiceover
+      const composeBody = clipUrls.length > 0
+        ? { clipUrls, voiceoverUrl, clipDuration: 10 }
+        : { videoUrl, voiceoverUrl };
+
       const composeRes = await fetch('/api/compose-video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ videoUrl, voiceoverUrl }),
+        body: JSON.stringify(composeBody),
       });
       const composeData = await composeRes.json();
       setFinalVideo(composeData.video_url ?? videoUrl);
-    } catch { setFinalVideo(videoUrl); }
+    } catch { setFinalVideo(videoUrl ?? clipUrls[0] ?? null); }
     finally { setStitching(false); }
   };
 
@@ -1091,20 +1125,32 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
             </div>
 
             {/* Video progress bar */}
-            {videoStarted && !videoUrl && (
+            {videoStarted && clipUrls.length === 0 && !videoUrl && (
               <div style={{ borderRadius: 16, border: '1px solid #2D1B4E', padding: 16, background: '#1A0A2E' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-                  <span style={{ color: '#B09FC0', fontSize: '0.75rem', fontWeight: 500 }}>🎬 Video Rendering</span>
+                  <span style={{ color: '#B09FC0', fontSize: '0.75rem', fontWeight: 500 }}>🎬 Generating Scenes</span>
                   <span style={{ color: '#C084FC', fontSize: '0.75rem' }}>{videoStatus}</span>
                 </div>
                 <div style={{ height: 6, borderRadius: 999, overflow: 'hidden', background: '#0D0020' }}>
                   <div style={{ height: '100%', borderRadius: 999, width: `${videoProgress}%`, background: 'linear-gradient(90deg, #C084FC, #E879F9)', transition: 'width 1s' }} />
                 </div>
-                <p style={{ color: '#6B4FA8', fontSize: '0.75rem', marginTop: 8, marginBottom: 0 }}>Estimated: {estTime} — pick your voice while you wait</p>
+                <p style={{ color: '#6B4FA8', fontSize: '0.75rem', marginTop: 8, marginBottom: 0 }}>
+                  3 × 10s clips generating in parallel — pick your voice while you wait
+                </p>
               </div>
             )}
 
-            {/* Video player */}
+            {/* Clips ready indicator */}
+            {clipUrls.length > 0 && !finalVideo && (
+              <div style={{ borderRadius: 12, border: '1px solid rgba(212,168,67,0.3)', padding: '12px 16px', background: 'rgba(212,168,67,0.06)', display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 16 }}>✓</span>
+                <span style={{ color: '#D4A843', fontSize: '0.875rem', fontWeight: 600 }}>
+                  {clipUrls.length} scene{clipUrls.length > 1 ? 's' : ''} ready — Railway will stitch into {clipUrls.length * 10}s video
+                </span>
+              </div>
+            )}
+
+            {/* Avatar single-clip preview */}
             {videoUrl && (
               <div style={{ borderRadius: 16, overflow: 'hidden' }}>
                 <video src={videoUrl} controls style={{ width: '100%', borderRadius: 16 }} />
@@ -1332,7 +1378,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
                   Download ↓
                 </a>
               </div>
-            ) : videoUrl ? (
+            ) : (clipUrls.length > 0 || videoUrl) ? (
               <button
                 onClick={generateFinal}
                 disabled={stitching}
@@ -1347,7 +1393,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
                   opacity: stitching ? 0.5 : 1,
                 }}
               >
-                {stitching ? 'Stitching…' : 'Generate Final Video ✨'}
+                {stitching ? 'Stitching with Railway…' : 'Generate Final Video ✨'}
               </button>
             ) : videoStarted ? (
               <button
