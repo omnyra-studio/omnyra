@@ -3,6 +3,7 @@
   "buildCommand": "next build",
   "installCommand": "npm install",
   "functions": {
+    "app/api/generate-cinematic-sequence/route.ts": { "maxDuration": 300, "includeFiles": "node_modules/ffmpeg-static/**" },
     "app/api/avatar-worker/route.ts": { "maxDuration": 300 },
     "app/api/hedra-cron/route.ts": { "maxDuration": 60 },
     "app/api/generate-video-sequence/route.ts": { "maxDuration": 300 },

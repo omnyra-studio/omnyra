@@ -26,20 +26,37 @@ export default function SigninPage() {
     setLoading(true);
     setError("");
     try {
-      // Clear any stale tokens first
-      Object.keys(localStorage).forEach(k => {
-        if (k.startsWith("sb-")) localStorage.removeItem(k);
-      });
       const { data, error } = await supabase.auth.signInWithPassword({
         email: email.trim().toLowerCase(),
         password,
       });
-      if (error) throw error;
-      if (data.session) {
-        posthog.identify(data.session.user.id, { email: data.session.user.email });
-        posthog.capture('user_signed_in', { email: data.session.user.email });
-        router.push("/dashboard");
+
+      if (error) {
+        // Surface a clear message for the most common issues
+        if (error.message?.toLowerCase().includes("email not confirmed")) {
+          throw new Error("Please confirm your email before signing in. Check your inbox for a confirmation link.");
+        }
+        if (error.message?.toLowerCase().includes("invalid login credentials")) {
+          throw new Error("Incorrect email or password. Please try again.");
+        }
+        throw error;
       }
+
+      // Resolve session — signInWithPassword always returns it on success,
+      // but fall back to getSession() in case of edge-case timing issues.
+      let session = data.session;
+      if (!session) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        session = sessionData?.session ?? null;
+      }
+
+      if (!session) {
+        throw new Error("Sign in succeeded but no session was created. Please try again or contact support.");
+      }
+
+      posthog.identify(session.user.id, { email: session.user.email });
+      posthog.capture('user_signed_in', { email: session.user.email });
+      router.replace("/dashboard");
     } catch (err) {
       setError(err.message || "Sign in failed");
     } finally {

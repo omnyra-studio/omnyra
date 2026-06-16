@@ -7,8 +7,9 @@ import { supabaseAdmin } from "@/lib/supabase/admin";
 import * as fs from "fs";
 import * as os from "os";
 import * as path from "path";
+import { execSync } from "child_process";
 import ffmpeg from "fluent-ffmpeg";
-import ffmpegPath from "ffmpeg-static";
+import ffmpegStatic from "ffmpeg-static";
 import {
   loadCharacterMemory,
   buildKlingCharacterSuffix,
@@ -79,7 +80,38 @@ async function uploadSmartMotionClip(
 
 // ── Last-frame extraction for clip chaining ───────────────────────────────────
 
-if (ffmpegPath) ffmpeg.setFfmpegPath(ffmpegPath);
+// Resolve ffmpeg binary — mirrors clip-stitcher.ts pattern:
+// Vercel's node_modules FS is read-only; copying to /tmp and chmod 755 is the
+// only reliable way to get an executable binary in a serverless environment.
+function resolveFfmpegBinary(): string | null {
+  const tmp = "/tmp/ffmpeg_omnyra_cinematic";
+  if (ffmpegStatic && process.platform === "linux") {
+    try {
+      if (!fs.existsSync(tmp)) {
+        fs.copyFileSync(ffmpegStatic, tmp);
+        execSync(`chmod 755 "${tmp}"`);
+      }
+      execSync(`"${tmp}" -version 2>&1`, { timeout: 4000, encoding: "utf8" });
+      console.info("[cinematic-seq] ffmpeg resolved via /tmp copy:", tmp);
+      return tmp;
+    } catch (e1) {
+      console.warn("[cinematic-seq] /tmp copy failed:", (e1 as Error).message.substring(0, 80));
+    }
+  }
+  if (ffmpegStatic) {
+    try {
+      execSync(`"${ffmpegStatic}" -version 2>&1`, { timeout: 4000, encoding: "utf8" });
+      console.info("[cinematic-seq] ffmpeg resolved via ffmpeg-static directly:", ffmpegStatic.substring(0, 60));
+      return ffmpegStatic;
+    } catch (e2) {
+      console.warn("[cinematic-seq] ffmpeg-static not executable:", (e2 as Error).message.substring(0, 80));
+    }
+  }
+  console.error("[cinematic-seq] CRITICAL: no executable ffmpeg — last-frame chaining will fail");
+  return null;
+}
+const _ffmpegBinary = resolveFfmpegBinary();
+if (_ffmpegBinary) ffmpeg.setFfmpegPath(_ffmpegBinary);
 
 async function extractLastFrame(videoUrl: string, userId: string, clipIndex: number): Promise<string | null> {
   const label = `[LAST_FRAME clip=${clipIndex + 1}]`;
@@ -819,14 +851,25 @@ export async function POST(req: Request) {
             let arcBeat: string;
             if (pos <= 0.33) {
               arcBeat = isSad
-                ? "woman walking alone, visible tear on cheek, head slightly down, quiet sadness and vulnerability, no smiling yet"
-                : "opening emotional beat, quiet introspective moment, subdued expression, no smiling yet";
+                ? "visible tear on cheek, head slightly down, quiet sadness and vulnerability, no smiling yet"
+                : "opening beat, character settling into scene, subdued expression, quiet introspective moment";
             } else if (pos <= 0.66) {
-              arcBeat = "man gently approaching from the side, turning to face her, opening arms, beginning to pull her close, transition moment";
+              // Only introduce a second person / relationship beat when the brief explicitly has a couple.
+              // Injecting "man approaching" for a solo scene creates a completely fabricated narrative.
+              arcBeat = _isCoupleCtx
+                ? "man gently approaching from the side, turning to face her, opening arms, beginning to pull her close, transition moment"
+                : isSad
+                  ? "posture shifting slightly, jaw unclenching, eyes lifting, quiet internal change, still alone in the same setting"
+                  : "middle beat, subtle posture adjustment, gaze moving across scene, micro-expression shift, same setting";
             } else {
-              arcBeat = isDance
-                ? "tender slow dance in shallow water, woman softening, gentle smile through remaining tears, intimate comfort and connection"
-                : "resolution moment, woman leaning into him, soft smile through tears, warmth and relief replacing sadness";
+              // Resolution beat — again, lean-in / dance only fires for couple context
+              arcBeat = _isCoupleCtx
+                ? (isDance
+                    ? "tender slow dance in shallow water, woman softening, gentle smile through remaining tears, intimate comfort and connection"
+                    : "resolution moment, woman leaning into him, soft smile through tears, warmth and relief replacing sadness")
+                : isSad
+                  ? "quiet resolution, shoulders releasing tension, faint upward curve of lip corners, still alone, internal stillness returning"
+                  : "closing beat, expression softening, settled into the scene, moment of quiet stillness, same setting unchanged";
             }
 
             console.log(`[PROMPT_ARC] scene=${i + 1}/${_total} pos=${pos.toFixed(2)} beach=${isBeach} arc="${arcBeat.substring(0, 60)}"`);
@@ -894,6 +937,9 @@ export async function POST(req: Request) {
 
         // chainedImageUrl starts as the caller's imageUrl; updated to last frame after each clip
         let chainedImageUrl: string | null = _isAnimated ? null : (imageUrl ?? null);
+        // chainedSource tracks whether the current chainedImageUrl is a real extracted last frame
+        // or just the original/fallback image — "yes" in logs only means real last-frame chaining succeeded
+        let chainedSource: "initial" | "last_frame" | "none" = chainedImageUrl ? "initial" : "none";
         const charCharRefUrl = charMemory ? (imageUrl ?? charMemory.ref_frame_url ?? undefined) : undefined;
         const charSuffix     = charMemory ? buildKlingCharacterSuffix(charMemory) : undefined;
 
@@ -905,7 +951,7 @@ export async function POST(req: Request) {
           const label       = `[clip ${i + 1}/${prompts.length}][${provider}]`;
           const clipBudget  = genDeadlineAt - clipT0;
 
-          console.log(`${label} sceneType=${sceneType} motion=${motionScore.toFixed(2)} slaMs=${clipBudget} chainedImg=${chainedImageUrl ? "yes" : "none"} prompt="${prompts[i].substring(0, 80)}"`);
+          console.log(`${label} sceneType=${sceneType} motion=${motionScore.toFixed(2)} slaMs=${clipBudget} chainedImg=${chainedSource} prompt="${prompts[i].substring(0, 80)}"`);
           console.log(`[SCENE_ROUTER] scene=${i + 1} provider=${provider} sceneType=${sceneType} motion=${motionScore.toFixed(2)}`);
 
           const isCouple = !_isAnimated && (COUPLE_RE.test(goal ?? "") || COUPLE_RE.test(script ?? "") || COUPLE_RE.test(enforcedPrompts[i]));
@@ -929,9 +975,10 @@ export async function POST(req: Request) {
               const lastFrameUrl = await extractLastFrame(url, user.id, i);
               if (lastFrameUrl) {
                 chainedImageUrl = lastFrameUrl;
-                console.log(`[CHAIN] clip ${i + 2} will use last frame of clip ${i + 1} as I2V seed`);
+                chainedSource = "last_frame";
+                console.log(`[CHAIN] clip ${i + 2} will use last frame of clip ${i + 1} as I2V seed (chainedImg=last_frame)`);
               } else {
-                console.warn(`[CHAIN] last-frame extraction failed for clip ${i + 1} — clip ${i + 2} reuses previous imageUrl`);
+                console.warn(`[CHAIN] last-frame extraction FAILED for clip ${i + 1} — clip ${i + 2} reuses previous image (chainedImg=${chainedSource})`);
               }
             }
           } catch (err) {

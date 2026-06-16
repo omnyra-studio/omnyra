@@ -252,7 +252,25 @@ export default function DashboardHome() {
     (async () => {
       try {
         const supabase = createClient();
-        const { data: { session } } = await supabase.auth.getSession();
+
+        // getSession() reads from local storage/cookies.
+        // On first load after sign-in the session may not yet be visible
+        // in a fresh client instance — fall back to getUser() which
+        // validates the session server-side via the cookie.
+        let session = null;
+        const { data: sessionData } = await supabase.auth.getSession();
+        session = sessionData?.session ?? null;
+
+        if (!session) {
+          // Retry once via getUser() (makes a network call — more reliable)
+          const { data: { user: freshUser } } = await supabase.auth.getUser();
+          if (freshUser) {
+            // getUser succeeded — rebuild a minimal session object to continue
+            const { data: retrySession } = await supabase.auth.getSession();
+            session = retrySession?.session ?? null;
+          }
+        }
+
         if (!session) {
           router.replace("/signin");
           return;

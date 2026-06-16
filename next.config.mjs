@@ -12,11 +12,19 @@ const nextConfig = {
       { protocol: 'https', hostname: 'randomuser.me' }
     ]
   },
-  serverExternalPackages: ['fluent-ffmpeg', '@ffmpeg-installer/ffmpeg'],
+  serverExternalPackages: ['fluent-ffmpeg', 'ffmpeg-static', '@ffmpeg-installer/ffmpeg'],
   experimental: {
     serverActions: {
       bodySizeLimit: '10mb'
-    }
+    },
+    // Explicitly include ffmpeg-static binary so Vercel's output-file tracer doesn't drop it.
+    // Without this the tracer misses the binary (it can't detect it statically) → ENOENT at runtime.
+    outputFileTracingIncludes: {
+      '/api/generate-cinematic-sequence': ['./node_modules/ffmpeg-static/**'],
+      '/api/avatar-worker':               ['./node_modules/ffmpeg-static/**'],
+      '/api/merge-video-audio':           ['./node_modules/ffmpeg-static/**'],
+      '/api/compose-video':               ['./node_modules/ffmpeg-static/**'],
+    },
   },
 
   // ── Security headers ────────────────────────────────────────────────────────
