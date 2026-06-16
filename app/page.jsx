@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { ArrowRight } from 'lucide-react';
-import Navbar from '@/components/Navbar';
 import AnimatedBackground from '@/components/AnimatedBackground';
 
 const TOOLS = [
@@ -54,7 +53,6 @@ export default function HomePage() {
   return (
     <div className="relative min-h-screen overflow-hidden" style={{ background: '#1A0E1C' }}>
       <AnimatedBackground />
-      <Navbar />
 
       <div className="relative z-10 max-w-5xl mx-auto px-6 py-16">
         <div className="text-center mb-14">

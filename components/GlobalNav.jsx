@@ -5,7 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { usePostHog } from "posthog-js/react";
 
-const HIDE_ROUTES = ["/", "/signin", "/signup", "/welcome"];
+const HIDE_ROUTES = ["/signin", "/signup", "/welcome"];
 
 function deriveFirstName(email) {
   if (!email) return "Account";

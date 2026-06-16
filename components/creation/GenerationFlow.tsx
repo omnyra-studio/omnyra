@@ -383,7 +383,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
           {/* Niche + Platform row */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
-              <label style={{ color: '#A89BAF', fontSize: '0.75rem', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'block', marginBottom: 8 }}>
+              <label style={{ color: '#C4B5D0', fontSize: '0.75rem', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'block', marginBottom: 8 }}>
                 Niche / Industry
               </label>
               <select
@@ -393,10 +393,10 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
                 style={{
                   width: '100%', background: '#0D0020', border: '1px solid #2D1B4E',
                   borderRadius: 10, padding: '12px 16px',
-                  color: niche ? '#F5EFE6' : '#6B21A8', fontSize: '0.9rem',
+                  color: niche ? '#F5EFE6' : '#9B72CF', fontSize: '0.9rem',
                   fontFamily: 'inherit', cursor: isLoading ? 'not-allowed' : 'pointer',
                   appearance: 'none' as const,
-                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236B21A8' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%239B72CF' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
                   backgroundRepeat: 'no-repeat', backgroundPosition: 'right 14px center',
                   opacity: isLoading ? 0.6 : 1, boxSizing: 'border-box' as const,
                 }}
@@ -431,7 +431,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
               </select>
             </div>
             <div>
-              <label style={{ color: '#A89BAF', fontSize: '0.75rem', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'block', marginBottom: 8 }}>
+              <label style={{ color: '#C4B5D0', fontSize: '0.75rem', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'block', marginBottom: 8 }}>
                 Target Platform
               </label>
               <select
@@ -445,7 +445,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
                   fontFamily: 'inherit',
                   cursor: (isLoading || toolId === 'tiktok-story') ? 'not-allowed' : 'pointer',
                   appearance: 'none' as const,
-                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%236B21A8' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
+                  backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%239B72CF' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
                   backgroundRepeat: 'no-repeat', backgroundPosition: 'right 14px center',
                   opacity: (isLoading || toolId === 'tiktok-story') ? 0.7 : 1,
                   boxSizing: 'border-box' as const,
@@ -632,7 +632,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
           </h1>
 
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 28, flexWrap: 'wrap', gap: 8 }}>
-            <p style={{ color: '#A89BAF', fontSize: '0.9rem', margin: 0 }}>
+            <p style={{ color: '#C4B5D0', fontSize: '0.9rem', margin: 0 }}>
               Brief for: <span style={{ color: '#C4B5D0' }}>{prompt.length > 60 ? prompt.slice(0, 60) + '…' : prompt}</span>
             </p>
             <div style={{ display: 'flex', gap: 8 }}>
@@ -694,9 +694,9 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
           </div>
 
           {isLoading && (
-            <div style={{ borderRadius: 12, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', marginBottom: 16 }}>
+            <div style={{ borderRadius: 12, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.2)', marginBottom: 16 }}>
               <div style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.1)', borderTopColor: '#D4A843', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
-              <span style={{ color: '#A89BAF', fontSize: '0.875rem' }}>{loadingState}</span>
+              <span style={{ color: '#C4B5D0', fontSize: '0.875rem' }}>{loadingState}</span>
             </div>
           )}
 
@@ -705,7 +705,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
               {/* Viral Analytics card */}
               <div style={{
                 background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(10px)',
-                border: '1px solid rgba(255,255,255,0.1)', borderRadius: 16,
+                border: '1px solid rgba(255,255,255,0.2)', borderRadius: 16,
                 padding: '28px 32px', marginBottom: 16,
               }}>
                 <p style={{
@@ -738,7 +738,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
               {/* Script content card */}
               <div style={{
                 background: 'rgba(255,255,255,0.05)', backdropFilter: 'blur(10px)',
-                border: '1px solid rgba(255,255,255,0.1)', borderRadius: 16,
+                border: '1px solid rgba(255,255,255,0.2)', borderRadius: 16,
                 padding: '28px 32px', marginBottom: 20,
               }}>
                 {selectedScript.title && (
@@ -892,7 +892,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
                       <div style={{ color: videoType === type.id ? '#D4A843' : '#E8DEFF', fontWeight: 700, fontSize: '0.95rem', marginBottom: 4 }}>
                         {type.label}
                       </div>
-                      <div style={{ color: '#BBA8C8', fontSize: '0.78rem', marginBottom: 4 }}>{type.sub}</div>
+                      <div style={{ color: '#D4C5E2', fontSize: '0.78rem', marginBottom: 4 }}>{type.sub}</div>
                       <div style={{ color: '#D4A843', fontSize: '0.75rem', fontWeight: 600 }}>
                         {type.credits}
                         <span style={{ color: '#8B6FA8', marginLeft: 6, fontWeight: 400 }}>· {type.tier}</span>
@@ -910,7 +910,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
                 }}
               >
                 <div style={{ fontSize: 24, marginBottom: 6 }}>📁</div>
-                <p style={{ color: '#BBA8C8', fontSize: '0.85rem', margin: 0 }}>
+                <p style={{ color: '#D4C5E2', fontSize: '0.85rem', margin: 0 }}>
                   Upload your own scene or avatar photo
                 </p>
                 <p style={{ color: '#8B6FA8', fontSize: '0.75rem', margin: '4px 0 0' }}>

@@ -202,7 +202,6 @@ Return JSON in this exact shape (fill every empty string):
       if (bestScript.length > 20) {
         const { tooSimilar, maxSimilarity } = await isScriptTooSimilar(bestScript, userId);
         if (tooSimilar) {
-          console.info(`[SCRIPT_UNIQUENESS] maxSim=${maxSimilarity.toFixed(3)} — regenerating with diversity instruction`);
           const diversityPrompt = `${userPrompt}\n\nCRITICAL DIVERSITY REQUIREMENT: Your previous scripts were too similar to each other (similarity ${(maxSimilarity * 100).toFixed(0)}%). You MUST generate 5 completely different scripts this time. Use entirely different metaphors, structures, emotional entry points, and narrative styles. Do NOT reuse phrases or sentence patterns from previous outputs.`;
           const retryRes = await fetch("https://api.anthropic.com/v1/messages", {
             method: "POST",
@@ -216,11 +215,8 @@ Return JSON in this exact shape (fill every empty string):
             const retryParsed = JSON.parse(retryText.slice(rs, re + 1)) as { versions?: unknown[] };
             if (retryParsed.versions?.length) {
               finalParsed = retryParsed;
-              console.info("[SCRIPT_UNIQUENESS] retry succeeded — using diverse versions");
             }
           }
-        } else {
-          console.info(`[SCRIPT_UNIQUENESS] maxSim=${maxSimilarity.toFixed(3)} — unique enough, accepting`);
         }
       }
 
