@@ -76,6 +76,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
   const [aspectRatio,     setAspectRatio]     = useState('9:16');
   const [quality,         setQuality]         = useState('fast');
   const [imagesGenerated, setImagesGenerated] = useState(false);
+  const [imagePrompt,    setImagePrompt]    = useState('');
 
   const [videoType,     setVideoType]     = useState<VideoType>('cinematic');
   const [videoUrl,      setVideoUrl]      = useState<string | null>(null);
@@ -218,12 +219,11 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
   const handleGenerateScenes = async () => {
     if (!selectedScript) return;
     setLoadingState('Generating your scenes…');
-    const scriptText = editedScript || selectedScript.script;
     try {
       const res = await fetch('/api/generate-concepts', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          prompt: `${selectedScript.hook}\n\n${scriptText}`,
+          prompt: imagePrompt || `${selectedScript.hook}\n\n${editedScript || selectedScript.script}`,
           toolId,
           lightningMode,
           visualStyle,
@@ -965,9 +965,25 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
                     ✓ Export Script
                   </button>
                 ) : (
-                  <p style={{ color: '#6B4FA8', fontSize: '0.82rem', textAlign: 'center', margin: 0 }}>
-                    ↓ Configure visuals below
-                  </p>
+                  <button
+                    onClick={() => {
+                      const scriptText = editedScript || selectedScript!.script;
+                      const combined = `${selectedScript!.hook}\n\n${scriptText}`;
+                      setImagePrompt(combined);
+                      setTimeout(() => {
+                        visualsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                      }, 100);
+                    }}
+                    style={{
+                      width: '100%', padding: '16px',
+                      background: 'linear-gradient(135deg, #D4A843 0%, #F0C855 50%, #C8922A 100%)',
+                      color: '#0D0010', fontWeight: 800, fontSize: '1rem',
+                      letterSpacing: '0.04em', border: 'none', borderRadius: 14,
+                      cursor: 'pointer', boxShadow: '0 4px 20px rgba(212,168,67,0.35)',
+                    }}
+                  >
+                    ✓ Choose This Script →
+                  </button>
                 )}
               </>
             )}
@@ -1095,6 +1111,26 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
                   <div style={{ fontSize: 24, marginBottom: 6 }}>📁</div>
                   <p style={{ color: '#D4C5E2', fontSize: '0.85rem', margin: 0 }}>Upload your own scene or avatar photo</p>
                   <p style={{ color: '#8B6FA8', fontSize: '0.75rem', margin: '4px 0 0' }}>JPG, PNG, WebP · Max 10MB</p>
+                </div>
+
+                {/* Editable Image Prompt */}
+                <div>
+                  <p style={{ color: '#E8DEFF', fontSize: '0.7rem', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8, fontWeight: 600 }}>
+                    Image Generation Prompt
+                  </p>
+                  <textarea
+                    value={imagePrompt}
+                    onChange={e => setImagePrompt(e.target.value)}
+                    placeholder="Your script will appear here — edit to guide the AI image generation..."
+                    rows={4}
+                    style={{
+                      width: '100%', boxSizing: 'border-box',
+                      background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(212,168,67,0.3)',
+                      borderRadius: 10, padding: '12px 14px',
+                      color: '#E8DEFF', fontSize: '0.85rem', lineHeight: 1.6,
+                      resize: 'vertical', fontFamily: 'inherit', outline: 'none',
+                    }}
+                  />
                 </div>
 
                 {/* Generate scenes button */}
