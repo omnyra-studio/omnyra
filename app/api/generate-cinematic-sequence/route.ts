@@ -4,6 +4,11 @@ import { fal } from "@fal-ai/client";
 import { KLING_I2V_MODEL, KLING_T2V_MODEL, extractVideoUrl } from "@/lib/video-models";
 import { generateSmartMotionClip, pickEffect } from "@/lib/smart-motion";
 import { supabaseAdmin } from "@/lib/supabase/admin";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
+import ffmpeg from "fluent-ffmpeg";
+import ffmpegPath from "ffmpeg-static";
 import {
   loadCharacterMemory,
   buildKlingCharacterSuffix,
@@ -70,6 +75,57 @@ async function uploadSmartMotionClip(
   if (error) throw new Error(`smart-motion upload: ${error.message}`);
   const { data: { publicUrl } } = supabaseAdmin.storage.from("renders").getPublicUrl(path);
   return publicUrl;
+}
+
+// ── Last-frame extraction for clip chaining ───────────────────────────────────
+
+if (ffmpegPath) ffmpeg.setFfmpegPath(ffmpegPath);
+
+async function extractLastFrame(videoUrl: string, userId: string, clipIndex: number): Promise<string | null> {
+  const label = `[LAST_FRAME clip=${clipIndex + 1}]`;
+  try {
+    console.log(`${label} downloading video from ${videoUrl.substring(0, 80)}`);
+    const videoRes = await fetch(videoUrl);
+    if (!videoRes.ok) { console.warn(`${label} fetch failed status=${videoRes.status}`); return null; }
+    const videoBuffer = Buffer.from(await videoRes.arrayBuffer());
+
+    const tmpDir    = os.tmpdir();
+    const videoPath = path.join(tmpDir, `omnyra-clip${clipIndex}-${Date.now()}.mp4`);
+    const framePath = path.join(tmpDir, `omnyra-frame${clipIndex}-${Date.now()}.jpg`);
+
+    fs.writeFileSync(videoPath, videoBuffer);
+    console.log(`${label} wrote ${videoBuffer.byteLength} bytes to ${videoPath}`);
+
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg(videoPath)
+        .outputOptions(["-sseof", "-1", "-update", "1", "-q:v", "2"])
+        .output(framePath)
+        .on("end", () => resolve())
+        .on("error", (err: Error) => reject(err))
+        .run();
+    });
+
+    if (!fs.existsSync(framePath)) { console.warn(`${label} ffmpeg produced no frame`); return null; }
+    const frameBuffer = fs.readFileSync(framePath);
+    console.log(`${label} extracted frame ${frameBuffer.byteLength} bytes`);
+
+    // Clean up temp files
+    try { fs.unlinkSync(videoPath); fs.unlinkSync(framePath); } catch { /* ignore */ }
+
+    // Upload frame to Supabase
+    const uploadPath = `${userId}/last-frames/${Date.now()}-clip${clipIndex}.jpg`;
+    const { error: upErr } = await supabaseAdmin.storage
+      .from("renders")
+      .upload(uploadPath, frameBuffer, { contentType: "image/jpeg", upsert: true });
+    if (upErr) { console.warn(`${label} supabase upload failed: ${upErr.message}`); return null; }
+
+    const { data: { publicUrl } } = supabaseAdmin.storage.from("renders").getPublicUrl(uploadPath);
+    console.log(`${label} frame uploaded url=${publicUrl.substring(0, 80)}`);
+    return publicUrl;
+  } catch (err) {
+    console.warn(`${label} failed (non-fatal):`, err instanceof Error ? err.message : err);
+    return null;
+  }
 }
 
 // ── Image generation for smart_motion without a source image ─────────────────
@@ -826,66 +882,71 @@ export async function POST(req: Request) {
         const sourceImages: Array<string | null> = new Array(prompts.length).fill(null);
         const clipReports: string[] = [];
 
-        // ── Parallel clip generation (SLA-aware) ──────────────────────────────
-        console.log(`[TIMING] CLIP_GENERATION start clips=${prompts.length}`);
+        // ── Sequential clip generation with last-frame chaining ───────────────
+        // Clip N+1 uses the last frame of Clip N as I2V input for true visual
+        // continuity — same character, same scene, motion flows across cuts.
+        console.log(`[TIMING] CLIP_GENERATION start clips=${prompts.length} mode=sequential_chained`);
         const genT0 = Date.now();
         const genDeadlineAt = routeT0 + SLA_TOTAL_MS - SLA_POST_MS;
 
-        const results = await Promise.allSettled(
-          enforcedPrompts.map(async (prompt, i) => {
-            const clipT0      = Date.now();
-            const provider    = finalProviders[i] as ProviderTier;
-            const sceneType   = resolvedSceneTypes[i];
-            const motionScore = resolvedMotionScores[i];
-            const label       = `[clip ${i + 1}/${prompts.length}][${provider}]`;
-            const clipBudget  = genDeadlineAt - clipT0;
+        const extractedUrls: Array<string | null> = new Array(prompts.length).fill(null);
+        const slaFallbackIndices: number[] = [];
 
-            console.log(`${label} sceneType=${sceneType} motion=${motionScore.toFixed(2)} slaMs=${clipBudget} prompt="${prompts[i].substring(0, 80)}"`);
-            console.log(`[SCENE_ROUTER] scene=${i + 1} provider=${provider} sceneType=${sceneType} motion=${motionScore.toFixed(2)}`);
+        // chainedImageUrl starts as the caller's imageUrl; updated to last frame after each clip
+        let chainedImageUrl: string | null = _isAnimated ? null : (imageUrl ?? null);
+        const charCharRefUrl = charMemory ? (imageUrl ?? charMemory.ref_frame_url ?? undefined) : undefined;
+        const charSuffix     = charMemory ? buildKlingCharacterSuffix(charMemory) : undefined;
 
-            const isCouple = !_isAnimated && (COUPLE_RE.test(goal ?? "") || COUPLE_RE.test(script ?? "") || COUPLE_RE.test(prompt));
-            const clipCharRefUrl = charMemory ? (imageUrl ?? charMemory.ref_frame_url ?? undefined) : undefined;
-            const clipCharSuffix = charMemory ? buildKlingCharacterSuffix(charMemory) : undefined;
-            // When animated: pass null imageUrl so Kling uses T2V driven purely by the style prefix.
-            // Passing a realistic character photo as I2V reference causes Kling to produce
-            // live-action humans instead of Disney/Pixar animation.
-            const klingImageUrl = _isAnimated ? null : (imageUrl ?? null);
+        for (let i = 0; i < enforcedPrompts.length; i++) {
+          const clipT0      = Date.now();
+          const provider    = finalProviders[i] as ProviderTier;
+          const sceneType   = resolvedSceneTypes[i];
+          const motionScore = resolvedMotionScores[i];
+          const label       = `[clip ${i + 1}/${prompts.length}][${provider}]`;
+          const clipBudget  = genDeadlineAt - clipT0;
+
+          console.log(`${label} sceneType=${sceneType} motion=${motionScore.toFixed(2)} slaMs=${clipBudget} chainedImg=${chainedImageUrl ? "yes" : "none"} prompt="${prompts[i].substring(0, 80)}"`);
+          console.log(`[SCENE_ROUTER] scene=${i + 1} provider=${provider} sceneType=${sceneType} motion=${motionScore.toFixed(2)}`);
+
+          const isCouple = !_isAnimated && (COUPLE_RE.test(goal ?? "") || COUPLE_RE.test(script ?? "") || COUPLE_RE.test(enforcedPrompts[i]));
+
+          try {
             const url = await executeClip(
-              prompt, klingImageUrl, duration, provider,
+              enforcedPrompts[i], chainedImageUrl, duration, provider,
               sceneType, i, user.id, rawSeconds, sourceImages, clipReports,
               clipBudget, label, isCouple, sceneNegativePrompts[i],
-              _isAnimated ? undefined : clipCharRefUrl,
-              _isAnimated ? undefined : clipCharSuffix,
+              _isAnimated ? undefined : charCharRefUrl,
+              _isAnimated ? undefined : charSuffix,
             );
 
             const elapsed = Date.now() - clipT0;
             console.log(`${label} DONE elapsed=${elapsed}ms url=${url.substring(0, 60)}`);
-            return url;
-          }),
-        );
+            extractedUrls[i] = url;
+
+            // Extract last frame of this clip to seed the next clip (skip for last clip)
+            if (i < enforcedPrompts.length - 1 && !_isAnimated) {
+              console.log(`[CHAIN] extracting last frame of clip ${i + 1} to seed clip ${i + 2}`);
+              const lastFrameUrl = await extractLastFrame(url, user.id, i);
+              if (lastFrameUrl) {
+                chainedImageUrl = lastFrameUrl;
+                console.log(`[CHAIN] clip ${i + 2} will use last frame of clip ${i + 1} as I2V seed`);
+              } else {
+                console.warn(`[CHAIN] last-frame extraction failed for clip ${i + 1} — clip ${i + 2} reuses previous imageUrl`);
+              }
+            }
+          } catch (err) {
+            const reason = err instanceof Error ? err.message : String(err);
+            if (reason === "skipped_due_to_latency" || reason === "SCENE_BUDGET_EXCEEDED") {
+              console.warn(`[SLA] scene ${i + 1} ${reason} — queued for smart_motion fallback`);
+              slaFallbackIndices.push(i);
+            } else {
+              console.error(`[cinematic-sequence] clip ${i + 1} failed:`, reason);
+            }
+          }
+        }
 
         const genElapsed = Date.now() - genT0;
         console.log(`[TIMING] CLIP_GENERATION complete ${genElapsed}ms`);
-
-        // ── Pass 1: collect successes + queue SLA-timeout failures ────────────
-        const extractedUrls: Array<string | null> = results.map((r, ri) => {
-          if (r.status === "fulfilled") return r.value;
-          const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
-          if (reason === "skipped_due_to_latency" || reason === "SCENE_BUDGET_EXCEEDED") {
-            console.warn(`[SLA] scene ${ri + 1} ${reason} — queued for smart_motion fallback`);
-          } else {
-            console.error("[cinematic-sequence] settled rejection:", reason);
-          }
-          return null;
-        });
-
-        const slaFallbackIndices = results
-          .map((r, i) => {
-            if (r.status !== "rejected") return null;
-            const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
-            return (reason === "skipped_due_to_latency" || reason === "SCENE_BUDGET_EXCEEDED") ? i : null;
-          })
-          .filter((v): v is number => v !== null);
 
         // ── Pass 2: smart_motion fallback for SLA-timed-out scenes ────────────
         if (slaFallbackIndices.length > 0) {

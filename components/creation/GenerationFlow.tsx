@@ -282,37 +282,46 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
           setVideoStarted(false);
         }
       } else {
-        // Cinematic / Quick: 3 × 10s clips → Railway stitches into 30s
-        // ALL 3 clips use the SAME selected concept — same character, same scene,
-        // same environment — so they stitch into one continuous flowing video.
-        // Camera angle variations create visual progression without breaking continuity.
+        // Cinematic / Quick: 3 × 10s clips via generate-cinematic-sequence
+        // Sequential last-frame chaining: Clip 2 uses last frame of Clip 1 as I2V seed,
+        // Clip 3 uses last frame of Clip 2 — one continuous 30s scene.
         const base = selectedConcept.description;
         const cameraVariations = [
           `${base}, wide establishing shot, slow push forward`,
-          `${base}, medium shot, subtle rack focus, natural motion`,
-          `${base}, close detail shot, gentle camera drift, cinematic`,
+          `${base}, medium shot, subtle rack focus, natural motion, same scene continuation`,
+          `${base}, close detail shot, gentle camera drift, cinematic, same scene continuation`,
         ];
 
-        setVideoStatus('Generating 3 scenes…');
+        setVideoStatus('Generating cinematic sequence…');
+        setVideoProgress(10);
 
-        const jobs = await Promise.all(
-          cameraVariations.map(async (prompt) => {
-            const res = await fetch('/api/generate-video-clip', {
-              method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                prompt,
-                imageUrl: selectedConcept.imageUrl,
-                model:    videoType,
-              }),
-            });
-            const data = await res.json();
-            if (data.error || !data.jobId) throw new Error(data.error ?? 'Queue failed');
-            return { jobId: data.jobId, model: data.model as string };
-          })
-        );
+        const res = await fetch('/api/generate-cinematic-sequence', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompts:     cameraVariations,
+            imageUrl:    selectedConcept.imageUrl || null,
+            clipDuration: 10,
+            goal:        selectedConcept.description,
+          }),
+        });
+        const data = await res.json();
 
-        setVideoModel(jobs[0].model);
-        startMultiClipPolling(jobs);
+        if (!res.ok || data.error) {
+          setVideoStatus('Error — ' + (data.error ?? `HTTP ${res.status}`));
+          setVideoStarted(false);
+          return;
+        }
+
+        const urls: string[] = data.clip_urls ?? (data.stitched_url ? [data.stitched_url] : []);
+        if (urls.length > 0) {
+          setClipUrls(urls);
+          setVideoStatus('Scenes ready');
+          setVideoProgress(100);
+        } else {
+          setVideoStatus('Error — No clips returned');
+          setVideoStarted(false);
+        }
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Generation failed';
