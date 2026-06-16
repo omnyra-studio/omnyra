@@ -314,6 +314,12 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
     let tick = 0;
     pollRef.current = setInterval(async () => {
       tick++;
+      if (tick > 24) {
+        clearInterval(pollRef.current!);
+        setVideoStatus('Timed out — please retry');
+        setVideoStarted(false);
+        return;
+      }
       setVideoStatus(labels[Math.min(tick, labels.length - 1)]);
       setVideoProgress(Math.min(10 + tick * 15, 90));
       try {
@@ -338,6 +344,12 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
     let tick = 0;
     pollRef.current = setInterval(async () => {
       tick++;
+      if (tick > 36) {
+        clearInterval(pollRef.current!);
+        setVideoStatus('Timed out — please retry');
+        setVideoStarted(false);
+        return;
+      }
       setVideoStatus(labels[Math.min(tick, labels.length - 1)]);
       setVideoProgress(Math.min(10 + tick * 18, 90));
       try {

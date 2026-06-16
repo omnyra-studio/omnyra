@@ -45,7 +45,7 @@ export async function POST(request) {
   if (!text?.trim()) return Response.json({ error: 'No text provided' }, { status: 400 })
 
   // ── Credits check ─────────────────────────────────────────────────────────────
-  const creditAction = text.length > 500 ? 'voice_1min' : 'voice_30s'
+  const creditAction = text.length > 500 ? 'voice_60s' : 'voice_30s'
   const balCheck = await checkBalance(user.id, creditAction)
   if (!balCheck.ok) {
     return Response.json({ error: 'Insufficient credits', balance: balCheck.balance }, { status: 402 })

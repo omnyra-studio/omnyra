@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
 
   const input: Record<string, unknown> = {
     prompt: cinemaPrompt,
-    duration: '10',
+    duration: 10,
     aspect_ratio: '9:16',
   };
   if (hasImage) input.image_url = imageUrl;

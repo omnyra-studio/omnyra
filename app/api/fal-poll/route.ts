@@ -26,6 +26,7 @@ export async function GET(req: NextRequest) {
     if (!resultRes.ok) return Response.json({ status: 'error' }, { status: 500 });
     const result = await resultRes.json();
     const videoUrl = extractVideoUrl(result);
+    if (!videoUrl) return Response.json({ status: 'failed', error: 'No video URL in response' });
     return Response.json({ status: 'complete', videoUrl });
   }
 
