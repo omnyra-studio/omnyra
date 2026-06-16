@@ -282,22 +282,26 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
           setVideoStarted(false);
         }
       } else {
-        // Cinematic / Quick: 3 × 10s clips in parallel → Railway stitches into 30s
-        // Use all available concepts (up to 3), selected concept goes first
-        const scenesToRender = [
-          selectedConcept,
-          ...concepts.filter(c => c !== selectedConcept),
-        ].slice(0, 3);
+        // Cinematic / Quick: 3 × 10s clips → Railway stitches into 30s
+        // ALL 3 clips use the SAME selected concept — same character, same scene,
+        // same environment — so they stitch into one continuous flowing video.
+        // Camera angle variations create visual progression without breaking continuity.
+        const base = selectedConcept.description;
+        const cameraVariations = [
+          `${base}, wide establishing shot, slow push forward`,
+          `${base}, medium shot, subtle rack focus, natural motion`,
+          `${base}, close detail shot, gentle camera drift, cinematic`,
+        ];
 
-        setVideoStatus(`Generating ${scenesToRender.length} scenes…`);
+        setVideoStatus('Generating 3 scenes…');
 
         const jobs = await Promise.all(
-          scenesToRender.map(async (concept) => {
+          cameraVariations.map(async (prompt) => {
             const res = await fetch('/api/generate-video-clip', {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                prompt:   concept.description,
-                imageUrl: concept.imageUrl,
+                prompt,
+                imageUrl: selectedConcept.imageUrl,
                 model:    videoType,
               }),
             });
