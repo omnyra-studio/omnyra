@@ -51,8 +51,8 @@ export async function POST(req: Request) {
   try {
     // Step 1: Claude generates 4 Ghost Test–compliant scene concepts
     const msg = await anthropic.messages.create({
-      model:      'claude-sonnet-4-6',
-      max_tokens: 1024,
+      model:      'claude-haiku-4-5-20251001',
+      max_tokens: 800,
       system:
         'You are a Ghost Test enforcer for Omnyra, an AI video generation studio. ' +
         'Generate exactly 4 distinct scene concepts as a JSON array. ' +

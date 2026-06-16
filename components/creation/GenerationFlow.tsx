@@ -27,38 +27,12 @@ interface Props {
   scriptOnly?: boolean;
 }
 
-const VOICES = [
-  { id: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel',    accent: 'American',      style: 'Warm' },
-  { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Bella',     accent: 'American',      style: 'Soft' },
-  { id: 'AZnzlk1XvdvUeBnXmlld', name: 'Domi',      accent: 'American',      style: 'Bold' },
-  { id: 'TX3LP5s5f2v4cY6p6z5G',  name: 'Josh',      accent: 'American',      style: 'Deep' },
-  { id: 'pNInz6obpgDQGcFmaJgB',  name: 'Adam',      accent: 'American',      style: 'Narrative' },
-  { id: 'yoZ06aMxZJJ28mfd3POQ',  name: 'Sam',       accent: 'American',      style: 'Raspy' },
-  { id: 'jBpfuIE2acCo8z3wKNLl',  name: 'Gigi',      accent: 'American',      style: 'Upbeat' },
-  { id: 'oWAxZDx7w5VEj9dCyTzz',  name: 'Grace',     accent: 'American',      style: 'Southern' },
-  { id: 'z9fAnlkpzviPz146aGWa',  name: 'Giovanni',  accent: 'Italian',       style: 'Foreigner' },
-  { id: 'Zlb1dXrM653N07WRdFW3',  name: 'Lily',      accent: 'British',       style: 'Warm' },
-  { id: 'nPczCjzI2devNBz1zQrb',  name: 'Brian',     accent: 'American',      style: 'Deep' },
-  { id: 'N2lVS1w4EtoT3dr4eOWO',  name: 'Callum',    accent: 'Transatlantic', style: 'Intense' },
-  { id: 'CYw3kZ02Hs0563khs1Fj',  name: 'Dave',      accent: 'British',       style: 'Conversational' },
-  { id: 'IKne3meq5aSn9XLyUdCD',  name: 'Charlie',   accent: 'Australian',    style: 'Natural' },
-  { id: 'XB0fDUnXU5powFXDhCwa',  name: 'Charlotte', accent: 'Swedish',       style: 'Seductive' },
-  { id: 'flq6f7yk4E4fJM5XTYuZ',  name: 'Mimi',      accent: 'Swedish',       style: 'Playful' },
-  { id: 'g5CIjZEefAph4nQFvHAz',  name: 'Ethan',     accent: 'American',      style: 'Whisper' },
-  { id: 'onwK4e9ZLuTAKqWW03F9',  name: 'Daniel',    accent: 'British',       style: 'Authoritative' },
-  { id: 'piTKgcLEGmPE4e6mEKli',  name: 'Nicole',    accent: 'American',      style: 'Whisper' },
-  { id: 'ThT5KcBeYPX3keUQqHPh',  name: 'Dorothy',   accent: 'British',       style: 'Pleasant' },
-  { id: 'TxGEqnHWrfWFTfGW9XjX',  name: 'Josh B',    accent: 'American',      style: 'Young' },
-  { id: 'VR6AewLTigWG4xSOukaG',  name: 'Arnold',    accent: 'American',      style: 'Crisp' },
-  { id: 'bVMeCyTHy58xNoL34h3p',  name: 'Jeremy',    accent: 'American',      style: 'Excited' },
-  { id: 'SOYHLrjzK2X1ezoPC6cr',  name: 'Harry',     accent: 'American',      style: 'Anxious' },
-  { id: 'GBv7mTt0atIp3Br8iCZy',  name: 'Thomas',    accent: 'American',      style: 'Calm' },
-  { id: 'LcfcDJNUP1GQjkzn1xUU',  name: 'Emily',     accent: 'American',      style: 'Calm' },
-  { id: 'XrExE9yKIg1WjnnlVkGX',  name: 'Matilda',   accent: 'American',      style: 'Warm' },
-  { id: 'ErXwobaYiN019PkySvjV',  name: 'Antoni',    accent: 'American',      style: 'Well-Rounded' },
-  { id: 'MF3mGyEYCl7XYWbV9V6O',  name: 'Elli',      accent: 'American',      style: 'Emotional' },
-  { id: 'D38z5RcWu1voky8WS1ja',  name: 'Glinda',    accent: 'American',      style: 'Witch' },
-];
+interface ElevenLabsVoice {
+  voice_id: string;
+  name: string;
+  preview_url: string;
+  labels?: { accent?: string; description?: string; use_case?: string; gender?: string; age?: string; };
+}
 
 type VideoType = 'quick' | 'cinematic' | 'avatar';
 
@@ -109,13 +83,21 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
   const [videoStarted,  setVideoStarted]  = useState(false);
   const [videoJobId,    setVideoJobId]    = useState<string | null>(null);
   const [videoModel,    setVideoModel]    = useState<string | null>(null);
-  const [selectedVoice, setSelectedVoice] = useState(VOICES[0].id);
+  const [selectedVoice, setSelectedVoice] = useState('');
   const [favorites,     setFavorites]     = useState<string[]>([]);
   const [stitching,     setStitching]     = useState(false);
   const [finalVideo,    setFinalVideo]    = useState<string | null>(null);
 
-  const pollRef         = useRef<ReturnType<typeof setInterval> | null>(null);
-  const fileInputRef    = useRef<HTMLInputElement>(null);
+  const [voices,          setVoices]          = useState<ElevenLabsVoice[]>([]);
+  const [voicesLoading,   setVoicesLoading]   = useState(false);
+  const [voiceSearch,     setVoiceSearch]     = useState('');
+  const [voiceDropOpen,   setVoiceDropOpen]   = useState(false);
+  const [previewingVoice, setPreviewingVoice] = useState<string | null>(null);
+
+  const pollRef           = useRef<ReturnType<typeof setInterval> | null>(null);
+  const fileInputRef      = useRef<HTMLInputElement>(null);
+  const audioRef          = useRef<HTMLAudioElement | null>(null);
+  const voiceDropRef      = useRef<HTMLDivElement>(null);
   const scriptsSectionRef = useRef<HTMLDivElement>(null);
   const visualsSectionRef = useRef<HTMLDivElement>(null);
   const voiceSectionRef   = useRef<HTMLDivElement>(null);
@@ -129,7 +111,34 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
     } catch {}
   }, []);
 
-  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+  useEffect(() => {
+    setVoicesLoading(true);
+    fetch('/api/voices')
+      .then(r => r.json())
+      .then(d => {
+        const vs = (d.voices ?? []) as ElevenLabsVoice[];
+        setVoices(vs);
+        if (vs.length > 0 && !selectedVoice) setSelectedVoice(vs[0].voice_id);
+      })
+      .catch(() => {})
+      .finally(() => setVoicesLoading(false));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (voiceDropRef.current && !voiceDropRef.current.contains(e.target as Node)) {
+        setVoiceDropOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  useEffect(() => () => {
+    if (pollRef.current) clearInterval(pollRef.current);
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; }
+  }, []);
 
   useEffect(() => {
     if (scripts.length > 0 && prevScriptsLen.current === 0) {
@@ -151,6 +160,20 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
       try { localStorage.setItem('omnyra_voice_favorites', JSON.stringify(next)); } catch {}
       return next;
     });
+  };
+
+  const playPreview = (url: string, voiceId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+      if (previewingVoice === voiceId) { setPreviewingVoice(null); return; }
+    }
+    const audio = new Audio(url);
+    audioRef.current = audio;
+    setPreviewingVoice(voiceId);
+    audio.play().catch(() => {});
+    audio.onended = () => { setPreviewingVoice(null); audioRef.current = null; };
   };
 
   const handleGenerateScript = async () => {
@@ -320,16 +343,30 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
   const generateFinal = async () => {
     setStitching(true);
     try {
-      const res = await fetch('/api/merge-video-audio', {
+      const scriptText = (editedScript || selectedScript?.script) ?? selectedConcept?.description ?? '';
+
+      // Step 1: ElevenLabs TTS → audio bytes
+      const ttsRes = await fetch('/api/voice', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          video_url: videoUrl,
-          voiceId: selectedVoice,
-          script: (editedScript || selectedScript?.script) ?? selectedConcept?.description,
-        }),
+        body: JSON.stringify({ voiceId: selectedVoice, text: scriptText }),
       });
-      const data = await res.json();
-      setFinalVideo(data.outputUrl ?? videoUrl);
+      if (!ttsRes.ok) throw new Error(`TTS failed: ${ttsRes.status}`);
+
+      const audioBuf = await ttsRes.arrayBuffer();
+      const bytes = new Uint8Array(audioBuf);
+      const chunks: string[] = [];
+      for (let i = 0; i < bytes.length; i += 8192) {
+        chunks.push(String.fromCharCode(...bytes.subarray(i, i + 8192)));
+      }
+      const audioBase64 = btoa(chunks.join(''));
+
+      // Step 2: Merge video + audio via ffmpeg
+      const mergeRes = await fetch('/api/merge-video-audio', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ video_url: videoUrl, audio_base64: audioBase64 }),
+      });
+      const data = await mergeRes.json();
+      setFinalVideo(data.merged_url ?? data.outputUrl ?? videoUrl);
     } catch { setFinalVideo(videoUrl); }
     finally { setStitching(false); }
   };
@@ -1073,35 +1110,165 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
               </div>
             )}
 
-            {/* Voice Library */}
+            {/* Voice selector */}
             <div style={{ borderRadius: 16, border: '1px solid #2D1B4E', padding: 20, background: '#1A0A2E' }}>
-              <h3 style={{ color: '#E8DEFF', fontSize: '0.875rem', fontWeight: 600, marginBottom: 16 }}>Choose your voice</h3>
-              <div className="voice-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, maxHeight: 420, overflowY: 'auto', paddingRight: 4 }}>
-                {VOICES.map(v => (
-                  <div
-                    key={v.id}
-                    onClick={() => setSelectedVoice(v.id)}
-                    style={{
-                      borderRadius: 12, padding: 12, textAlign: 'left', cursor: 'pointer',
-                      background: selectedVoice === v.id ? 'rgba(212,168,67,0.1)' : '#0D0020',
-                      border: `1px solid ${selectedVoice === v.id ? '#D4A843' : '#2D1B4E'}`,
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <span style={{ color: selectedVoice === v.id ? '#D4A843' : '#E8DEFF', fontSize: '0.875rem', fontWeight: 500 }}>{v.name}</span>
-                      <button
-                        onClick={e => { e.stopPropagation(); toggleFavorite(v.id); }}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', padding: 0, lineHeight: 1, color: favorites.includes(v.id) ? '#D4A843' : '#4A3060' }}
-                      >
-                        {favorites.includes(v.id) ? '♥' : '♡'}
-                      </button>
+              <h3 style={{ color: '#E8DEFF', fontSize: '0.875rem', fontWeight: 600, marginBottom: 16 }}>
+                Choose your voice
+                {voices.length > 0 && <span style={{ color: '#6B4FA8', fontWeight: 400, fontSize: '0.75rem', marginLeft: 8 }}>{voices.length} voices available</span>}
+              </h3>
+
+              <div style={{ position: 'relative' }} ref={voiceDropRef}>
+                {/* Selected voice display */}
+                <div
+                  onClick={() => !voicesLoading && setVoiceDropOpen(v => !v)}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    background: '#0D0020', border: `1px solid ${voiceDropOpen ? '#D4A843' : '#2D1B4E'}`,
+                    borderRadius: 12, padding: '12px 16px', cursor: voicesLoading ? 'wait' : 'pointer',
+                    transition: 'border-color 0.15s',
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    {voicesLoading ? (
+                      <span style={{ color: '#6B4FA8', fontSize: '0.875rem' }}>Loading voices from ElevenLabs…</span>
+                    ) : voices.length === 0 ? (
+                      <span style={{ color: '#6B4FA8', fontSize: '0.875rem' }}>No voices available — check ElevenLabs API key</span>
+                    ) : (() => {
+                      const v = voices.find(v => v.voice_id === selectedVoice);
+                      return v ? (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <span style={{ color: '#E8DEFF', fontWeight: 600, fontSize: '0.9rem' }}>{v.name}</span>
+                          {v.labels?.accent && <span style={{ color: '#6B4FA8', fontSize: '0.75rem' }}>{v.labels.accent}</span>}
+                          {v.labels?.description && <span style={{ color: '#4A3060', fontSize: '0.72rem' }}>· {v.labels.description}</span>}
+                          {favorites.includes(v.voice_id) && <span style={{ color: '#D4A843', fontSize: '0.8rem' }}>♥</span>}
+                        </div>
+                      ) : <span style={{ color: '#6B4FA8', fontSize: '0.875rem' }}>Select a voice…</span>;
+                    })()}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                    {(() => {
+                      const v = voices.find(v => v.voice_id === selectedVoice);
+                      return v?.preview_url ? (
+                        <button
+                          onClick={e => playPreview(v.preview_url, v.voice_id, e)}
+                          style={{
+                            background: previewingVoice === v.voice_id ? 'rgba(212,168,67,0.25)' : 'rgba(212,168,67,0.08)',
+                            border: '1px solid rgba(212,168,67,0.4)', borderRadius: 8,
+                            color: '#D4A843', fontSize: '0.78rem', padding: '5px 12px', cursor: 'pointer', whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {previewingVoice === v.voice_id ? '■ Stop' : '▶ Preview'}
+                        </button>
+                      ) : null;
+                    })()}
+                    <span style={{ color: '#4A3060', fontSize: '0.7rem' }}>{voiceDropOpen ? '▲' : '▼'}</span>
+                  </div>
+                </div>
+
+                {/* Dropdown */}
+                {voiceDropOpen && !voicesLoading && (
+                  <div style={{
+                    position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 50,
+                    background: '#0A0018', border: '1px solid #2D1B4E', borderRadius: 12,
+                    overflow: 'hidden', boxShadow: '0 12px 40px rgba(0,0,0,0.6)',
+                  }}>
+                    {/* Search */}
+                    <div style={{ padding: '10px 14px', borderBottom: '1px solid #1A0A2E', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ color: '#4A3060', fontSize: '0.8rem' }}>🔍</span>
+                      <input
+                        type="text"
+                        value={voiceSearch}
+                        onChange={e => setVoiceSearch(e.target.value)}
+                        placeholder="Search by name, accent, or style…"
+                        autoFocus
+                        style={{
+                          flex: 1, background: 'transparent', border: 'none', outline: 'none',
+                          color: '#E8DEFF', fontSize: '0.875rem', fontFamily: 'inherit',
+                        }}
+                      />
+                      {voiceSearch && (
+                        <button onClick={() => setVoiceSearch('')} style={{ background: 'none', border: 'none', color: '#4A3060', cursor: 'pointer', fontSize: '0.8rem' }}>✕</button>
+                      )}
                     </div>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      <span style={{ color: '#D4A843', fontSize: '0.7rem', background: 'rgba(212,168,67,0.08)', borderRadius: 4, padding: '1px 6px' }}>{v.accent}</span>
-                      <span style={{ color: '#B09FC0', fontSize: '0.7rem', background: 'rgba(255,255,255,0.04)', border: '1px solid #2D1B4E', borderRadius: 4, padding: '1px 6px' }}>{v.style}</span>
+                    {/* List */}
+                    <div className="voice-grid" style={{ maxHeight: 300, overflowY: 'auto' }}>
+                      {voices
+                        .filter(v => {
+                          if (!voiceSearch) return true;
+                          const q = voiceSearch.toLowerCase();
+                          return v.name.toLowerCase().includes(q)
+                            || (v.labels?.accent ?? '').toLowerCase().includes(q)
+                            || (v.labels?.description ?? '').toLowerCase().includes(q)
+                            || (v.labels?.use_case ?? '').toLowerCase().includes(q)
+                            || (v.labels?.gender ?? '').toLowerCase().includes(q);
+                        })
+                        .map(v => (
+                          <div
+                            key={v.voice_id}
+                            onClick={() => { setSelectedVoice(v.voice_id); setVoiceDropOpen(false); setVoiceSearch(''); }}
+                            style={{
+                              display: 'flex', alignItems: 'center', padding: '10px 14px',
+                              cursor: 'pointer', borderBottom: '1px solid rgba(255,255,255,0.03)',
+                              background: selectedVoice === v.voice_id ? 'rgba(212,168,67,0.08)' : 'transparent',
+                              transition: 'background 0.1s',
+                            }}
+                          >
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ color: selectedVoice === v.voice_id ? '#D4A843' : '#E8DEFF', fontSize: '0.875rem', fontWeight: 500 }}>
+                                  {v.name}
+                                </span>
+                                {favorites.includes(v.voice_id) && <span style={{ color: '#D4A843', fontSize: '0.75rem' }}>♥</span>}
+                              </div>
+                              <div style={{ display: 'flex', gap: 6, marginTop: 2, flexWrap: 'wrap' }}>
+                                {v.labels?.accent && (
+                                  <span style={{ color: '#D4A843', fontSize: '0.68rem', background: 'rgba(212,168,67,0.08)', borderRadius: 4, padding: '1px 5px' }}>
+                                    {v.labels.accent}
+                                  </span>
+                                )}
+                                {v.labels?.description && (
+                                  <span style={{ color: '#8B6FA8', fontSize: '0.68rem', background: 'rgba(255,255,255,0.04)', borderRadius: 4, padding: '1px 5px' }}>
+                                    {v.labels.description}
+                                  </span>
+                                )}
+                                {v.labels?.use_case && (
+                                  <span style={{ color: '#5A3A7A', fontSize: '0.68rem' }}>
+                                    {v.labels.use_case}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                              {v.preview_url && (
+                                <button
+                                  onClick={e => playPreview(v.preview_url, v.voice_id, e)}
+                                  style={{
+                                    background: previewingVoice === v.voice_id ? 'rgba(212,168,67,0.2)' : 'rgba(255,255,255,0.04)',
+                                    border: `1px solid ${previewingVoice === v.voice_id ? '#D4A843' : 'rgba(255,255,255,0.1)'}`,
+                                    borderRadius: 6, color: previewingVoice === v.voice_id ? '#D4A843' : '#6B4FA8',
+                                    fontSize: '0.7rem', padding: '3px 8px', cursor: 'pointer', whiteSpace: 'nowrap',
+                                  }}
+                                >
+                                  {previewingVoice === v.voice_id ? '■' : '▶'}
+                                </button>
+                              )}
+                              <button
+                                onClick={e => { e.stopPropagation(); toggleFavorite(v.voice_id); }}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.9rem', padding: 0, lineHeight: 1, color: favorites.includes(v.voice_id) ? '#D4A843' : '#2D1B4E' }}
+                              >
+                                {favorites.includes(v.voice_id) ? '♥' : '♡'}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      {voices.filter(v => !voiceSearch || v.name.toLowerCase().includes(voiceSearch.toLowerCase()) || (v.labels?.accent ?? '').toLowerCase().includes(voiceSearch.toLowerCase())).length === 0 && (
+                        <div style={{ padding: 20, color: '#4A3060', fontSize: '0.875rem', textAlign: 'center' }}>
+                          No voices match &quot;{voiceSearch}&quot;
+                        </div>
+                      )}
                     </div>
                   </div>
-                ))}
+                )}
               </div>
             </div>
 
