@@ -254,29 +254,38 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
 
     try {
       if (videoType === 'avatar') {
-        const res = await fetch('/api/generate-video', {
+        const scriptText = editedScript || selectedScript?.script || selectedConcept.description;
+        const res = await fetch('/api/generate-avatar', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            prompt: selectedConcept.description,
-            selectedModel: modelOverride ?? 'hedra',
-            toolId,
+            script:           scriptText,
+            voice_id:         selectedVoice,
+            background_image: selectedConcept.imageUrl,
           }),
         });
         const data = await res.json();
-        if (data.videoUrl) {
-          setVideoUrl(data.videoUrl);
+        if (!res.ok) {
+          setVideoStatus('Error — ' + (data.error ?? `HTTP ${res.status}`));
+          setVideoStarted(false);
+          return;
+        }
+        if (data.status === 'completed' && (data.animated_video_url ?? data.result_url)) {
+          setVideoUrl(data.animated_video_url ?? data.result_url);
           setVideoStatus('Ready');
           setVideoProgress(100);
         } else if (data.jobId) {
           startHedraPolling(data.jobId);
+        } else {
+          setVideoStatus('Error — Failed to queue avatar job');
+          setVideoStarted(false);
         }
       } else {
         const res = await fetch('/api/generate-video-clip', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            prompt: selectedConcept.description,
+            prompt:   selectedConcept.description,
             imageUrl: selectedConcept.imageUrl,
-            model: videoType,
+            model:    videoType,
           }),
         });
         const data = await res.json();
@@ -289,6 +298,9 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
           setVideoJobId(data.jobId);
           setVideoModel(data.model);
           startFalPolling(data.jobId, data.model);
+        } else {
+          setVideoStatus('Error — Failed to queue video job');
+          setVideoStarted(false);
         }
       }
     } catch {
@@ -329,13 +341,24 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
       setVideoStatus(labels[Math.min(tick, labels.length - 1)]);
       setVideoProgress(Math.min(10 + tick * 18, 90));
       try {
-        const res = await fetch(`/api/video-status?jobId=${jobId}`);
+        const res = await fetch(`/api/job-status?id=${jobId}`);
+        if (!res.ok) return;
         const data = await res.json();
-        if (data.status === 'complete' && data.videoUrl) {
+        if (data.status === 'completed') {
           clearInterval(pollRef.current!);
-          setVideoUrl(data.videoUrl);
-          setVideoStatus('Ready');
-          setVideoProgress(100);
+          const url = data.animated_video_url ?? data.result_url;
+          if (url) {
+            setVideoUrl(url);
+            setVideoStatus('Ready');
+            setVideoProgress(100);
+          } else {
+            setVideoStatus('Error — Completed but no video URL');
+            setVideoStarted(false);
+          }
+        } else if (data.status === 'failed') {
+          clearInterval(pollRef.current!);
+          setVideoStatus('Failed — ' + (data.error ?? 'Avatar generation failed'));
+          setVideoStarted(false);
         }
       } catch {}
     }, 5000);

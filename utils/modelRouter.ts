@@ -6,12 +6,11 @@ export type ModelRoute = {
 
 export async function routeToModel(params: {
   selectedModel?: string;
-  isAvatarHeavy?: boolean;
   campaignMode?:  boolean;
 }): Promise<ModelRoute> {
-  const { selectedModel, isAvatarHeavy = false, campaignMode = false } = params;
+  const { selectedModel, campaignMode = false } = params;
 
-  if (selectedModel === 'hedra' || isAvatarHeavy) {
+  if (selectedModel === 'hedra') {
     return { model: 'hedra',        provider: 'hedra',   bestFor: 'Avatar / Talking Head' };
   }
 

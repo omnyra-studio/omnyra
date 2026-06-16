@@ -96,7 +96,7 @@ export async function POST(req: Request) {
       aspectRatio === '16:9' ? { width: 1920, height: 1080 } :
                                { width: 1080, height: 1920 };
 
-    const inferenceSteps = quality === 'premium' ? 12 : quality === 'standard' ? 8 : 4;
+    const inferenceSteps = quality === 'premium' ? 20 : quality === 'standard' ? 12 : 8;
 
     // Step 2: Generate images in parallel for all 4 concepts
     const imageUrls = await Promise.all(

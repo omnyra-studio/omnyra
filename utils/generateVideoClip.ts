@@ -18,11 +18,7 @@ export async function generateVideoClip({
   microIntensity?:  number;
   activeEmotions?:  string[];
 }) {
-  const modelRoute = await routeToModel({
-    selectedModel,
-    isAvatarHeavy: prompt.toLowerCase().includes('talking') || prompt.toLowerCase().includes('avatar'),
-    campaignMode,
-  });
+  const modelRoute = await routeToModel({ selectedModel, campaignMode });
 
   console.log(`[generateVideoClip] Routing to ${modelRoute.provider}`);
 
