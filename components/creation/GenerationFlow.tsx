@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { createClient } from '@/lib/supabase/client';
 
 interface VersionResult {
   title: string;
@@ -345,9 +346,17 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
     try {
       const scriptText = (editedScript || selectedScript?.script) ?? selectedConcept?.description ?? '';
 
+      // Get Supabase session for Bearer auth (required by /api/voice)
+      const supabase = createClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const authHeader = session?.access_token
+        ? { 'Authorization': `Bearer ${session.access_token}` }
+        : {} as Record<string, string>;
+
       // Step 1: ElevenLabs TTS → audio bytes
       const ttsRes = await fetch('/api/voice', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader },
         body: JSON.stringify({ voiceId: selectedVoice, text: scriptText }),
       });
       if (!ttsRes.ok) throw new Error(`TTS failed: ${ttsRes.status}`);
