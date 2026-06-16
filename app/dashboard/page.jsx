@@ -30,6 +30,7 @@ const OUTCOMES = [
     emoji: "🎬",
     title: "Viral UGC Ad",
     desc: "Hook-driven ads that stop the scroll. Fast + premium.",
+    href: "/create/viral-ugc",
   },
   {
     id: "storytime",
@@ -37,6 +38,7 @@ const OUTCOMES = [
     emoji: "📱",
     title: "TikTok Storytime",
     desc: "Narrative arc. Tension. Payoff. Built to retain.",
+    href: "/create/tiktok-story",
   },
   {
     id: "influencer",
@@ -44,6 +46,7 @@ const OUTCOMES = [
     emoji: "👤",
     title: "AI Influencer Clip",
     desc: "Your AI persona. Any scene. Any vibe. No limits.",
+    href: "/create/ai-influencer",
   },
   {
     id: "product-launch",
@@ -51,6 +54,7 @@ const OUTCOMES = [
     emoji: "🛍️",
     title: "Product Launch Reel",
     desc: "Turn any product into cinematic social content.",
+    href: "/create/product-launch",
   },
   {
     id: "faceless",
@@ -58,6 +62,7 @@ const OUTCOMES = [
     emoji: "😶",
     title: "Faceless Content",
     desc: "Voice + visuals. No face. No limits. Just results.",
+    href: "/create/faceless",
   },
   {
     id: "voice-studio",
