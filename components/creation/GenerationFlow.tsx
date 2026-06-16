@@ -477,19 +477,46 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
   };
 
   return (
-    <div style={{ maxWidth: 800, margin: '0 auto' }}>
+    <div style={{ maxWidth: 672, margin: '0 auto' }}>
+
+      {/* ── Page title (gold gradient) ─────────────────────────────────── */}
+      <div style={{ textAlign: 'center', marginBottom: 28 }}>
+        <div style={{
+          fontSize: '1.5rem', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase',
+          background: 'linear-gradient(105deg,#CFA42F,#F7D96B,#CFA42F)',
+          WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
+          marginBottom: 8,
+        }}>
+          {toolName}
+        </div>
+      </div>
 
       {/* ── SECTION 1: Brief Form ──────────────────────────────────────── */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-        <div>
-          <h2 style={{ color: '#F5EFE6', fontWeight: 700, fontSize: '1.5rem', marginBottom: 6 }}>{toolName}</h2>
-          <p style={{ color: '#B09FC0', fontSize: '0.875rem' }}>Understand emotion deeply. Show it visually.</p>
-        </div>
+      <div className="glass-card" style={{ borderRadius: 24, padding: 'clamp(24px, 5vw, 40px)', marginBottom: 8 }}>
+        {/* "New Project" section tag */}
+        <span style={{
+          display: 'block', color: '#E879F9', fontSize: 11, fontWeight: 700,
+          letterSpacing: '0.2em', textTransform: 'uppercase', marginBottom: 16, textAlign: 'center',
+        }}>
+          New Project
+        </span>
+        <h1 style={{
+          fontWeight: 700, fontSize: 'clamp(1.6rem, 4vw, 2.1rem)', color: '#C084FC',
+          margin: '0 0 12px', lineHeight: 1.2, textAlign: 'center',
+        }}>
+          What should Omnyra create?
+        </h1>
+        <p style={{ color: '#BBA8C8', fontSize: 14, lineHeight: 1.65, margin: '0 0 30px', textAlign: 'center' }}>
+          Describe your goal. Omnyra analyzes trends, audience patterns, and your creative
+          history to build strategy versions with hooks, viral scores, and predictions.
+        </p>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
         {/* Main goal */}
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-            <label style={{ ...labelStyle, marginBottom: 0 }}>What&apos;s your video about? *</label>
+            <label style={{ ...labelStyle, marginBottom: 0 }}>What do you want to create? *</label>
             {scripts.length > 0 && (
               <span style={{ color: '#6B4FA8', fontSize: '0.72rem' }}>Edit &amp; click ↺ Regenerate to get new scripts</span>
             )}
@@ -497,16 +524,17 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
           <textarea
             value={prompt}
             onChange={e => setPrompt(e.target.value)}
-            placeholder="Describe your scene or story..."
-            rows={5}
+            placeholder="e.g. A viral skincare ad for a new moisturizer launch targeting women 25–34..."
+            rows={3}
             disabled={isLoading}
             className="omnyra-textarea"
             style={{
               width: '100%', borderRadius: 16, padding: '16px',
               fontSize: '0.875rem', resize: 'vertical',
-              border: '1px solid #4C1D95', outline: 'none',
+              border: '1px solid rgba(204,171,175,0.25)', outline: 'none',
               fontFamily: 'inherit', caretColor: '#C084FC',
               boxSizing: 'border-box', opacity: isLoading ? 0.6 : 1,
+              background: '#0D0010', color: '#C084FC',
             }}
           />
         </div>
@@ -719,35 +747,42 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
         </div>
 
         {scriptError && (
-          <div style={{ borderRadius: 12, padding: '12px 16px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#FCA5A5', fontSize: '0.875rem' }}>
-            {scriptError}
+          <div style={{ borderRadius: 12, padding: '12px 16px', background: 'rgba(196,122,90,0.08)', border: '1px solid rgba(196,122,90,0.35)', color: '#CCABAF', fontSize: 13 }}>
+            ⚠ {scriptError}
           </div>
         )}
 
         {isLoading && (
-          <div style={{ borderRadius: 12, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, background: '#1A0A2E', border: '1px solid #2D1B4E' }}>
-            <div style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid #2D1B4E', borderTopColor: '#C084FC', animation: 'spin 0.8s linear infinite', flexShrink: 0 }} />
-            <span style={{ color: '#B09FC0', fontSize: '0.875rem' }}>{loadingState}</span>
-          </div>
+          <>
+            {/* Gold progress bar */}
+            <div style={{ width: '100%', height: 3, background: 'rgba(255,255,255,0.1)', borderRadius: 2, marginBottom: 8 }}>
+              <div style={{ width: '60%', height: '100%', background: 'linear-gradient(90deg, #C9A84C, #FFD700)', borderRadius: 2, animation: 'progressPulse 1.5s ease-in-out infinite' }} />
+            </div>
+            <p style={{ textAlign: 'center', fontSize: 13, color: '#F0C040', margin: '0 0 8px' }}>
+              {loadingState}
+            </p>
+          </>
         )}
 
         <button
           onClick={handleGenerateScript}
           disabled={!prompt.trim() || isLoading}
+          className={!isLoading && prompt.trim() ? 'gold-btn' : undefined}
           style={{
-            width: '100%', padding: '16px', borderRadius: 16,
-            background: 'linear-gradient(105deg, #5A3400 0%, #9A7010 20%, #CFA42F 42%, #E8C84A 50%, #CFA42F 58%, #9A7010 80%, #5A3400 100%)',
-            backgroundSize: '200% auto',
-            animation: 'metalShimmer 3s linear infinite',
-            color: '#0D0010', fontWeight: 700, fontSize: '0.875rem',
-            border: 'none', cursor: 'pointer',
-            boxShadow: '0 0 16px rgba(207,164,47,0.3)',
-            opacity: (!prompt.trim() || isLoading) ? 0.4 : 1,
+            width: '100%', marginTop: 8, padding: '16px 24px', borderRadius: 9999,
+            border: 'none', fontSize: 16, fontWeight: 600, fontFamily: 'inherit',
+            cursor: !prompt.trim() || isLoading ? 'not-allowed' : 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
+            ...(!prompt.trim() || isLoading ? { background: 'rgba(255,255,255,0.06)', color: '#8A7D92' } : {}),
           }}
         >
-          {isLoading ? loadingState : scripts.length > 0 ? '↺ Regenerate Scripts' : 'Generate Script →'}
+          {isLoading
+            ? <><span style={{ width: 7, height: 7, borderRadius: '50%', background: '#D4A843', display: 'inline-block', animation: 'pulseSoft 1.1s ease-in-out infinite' }} /> Building scripts…</>
+            : scripts.length > 0 ? '↺ Regenerate Scripts' : 'Generate Strategy Versions →'}
         </button>
-      </div>
+
+        </div>{/* end flex column */}
+      </div>{/* end glass-card */}
 
       {/* ── SECTION 2: Scripts ─────────────────────────────────────────── */}
       {scripts.length > 0 && (

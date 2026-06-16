@@ -376,6 +376,12 @@ h1, h2, h3, h4 { color: #FFFFFF; }
   50% { box-shadow: 0 0 40px rgba(212, 175, 55, 0.4); }
 }
 
+@keyframes progressPulse {
+  0%   { width: 15%; }
+  50%  { width: 75%; }
+  100% { width: 15%; }
+}
+
 @keyframes float {
   0%, 100% { transform: translateY(0px); }
   50% { transform: translateY(-12px); }
