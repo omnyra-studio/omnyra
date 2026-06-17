@@ -20,8 +20,6 @@
     "app/api/voices/route.js": { "maxDuration": 30 }
   },
   "crons": [
-    { "path": "/api/hedra-cron",            "schedule": "* * * * *"  },
-    { "path": "/api/avatar-worker/recover", "schedule": "0 0 * * *" },
-    { "path": "/api/cron/scrape-trends",    "schedule": "0 6 * * *" }
+    { "path": "/api/cron/scrape-trends", "schedule": "0 6 * * *" }
   ]
 }
