@@ -121,6 +121,16 @@ async function submitHedraWithRetry(
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
       log(`[HEDRA_RETRY] submit attempt ${attempt}/${maxRetries} failed: ${lastError.message}`);
+      // Moderation rejections are deterministic — retrying with the same image always fails.
+      // Break immediately so the caller can surface a clear error to the user.
+      const isModeration = lastError.message.includes("moderation_error")
+        || lastError.message.includes("moderation rules")
+        || lastError.message.includes("yes_female_nudity")
+        || lastError.message.includes("general_nsfw");
+      if (isModeration) {
+        log(`[HEDRA_RETRY] moderation rejection is non-retriable — stopping retry loop`);
+        break;
+      }
       if (attempt < maxRetries) {
         await new Promise(r => setTimeout(r, 3_000 * Math.pow(1.8, attempt - 1)));
       }
@@ -781,7 +791,18 @@ async function executeLipsyncStage(
       log(`[HEDRA_SUBMIT_FAILED] ${e.message}`);
       log(`[HEDRA_DEBUG] name=${e.name} code=${node.code ?? "none"} cause_code=${node.cause?.code ?? "none"} cause_msg=${node.cause?.message ?? "none"}`);
 
-      // Emergency Kling fallback — Hedra submit failed after all retries
+      // Detect Hedra content moderation rejection — do NOT fallback to Kling with same flagged image
+      const isModerationError = e.message.includes('moderation_error') || e.message.includes('moderation rules') || e.message.includes('yes_female_nudity') || e.message.includes('general_nsfw');
+      if (isModerationError) {
+        const userMsg = 'The selected image was flagged by our avatar AI content filter. Please go back and select a different scene image, or upload your own photo.';
+        log(`[MODERATION_BLOCK] Hedra rejected image — skipping Kling fallback, failing with user-friendly message`);
+        await failLedgerEntry(job.id, "lipsync", workerId, userMsg);
+        const { shouldRetry } = await recordStageFailure(job.id, workerId, "lipsync", userMsg, job.retry_count_per_stage ?? {});
+        if (shouldRetry) await retrigger(origin, job.id, log);
+        return;
+      }
+
+      // Emergency Kling fallback — Hedra submit failed after all retries (non-moderation error)
       try {
         const klingUrl = await klingAvatarFallback({
           imageUrl:    signedImageUrl,
