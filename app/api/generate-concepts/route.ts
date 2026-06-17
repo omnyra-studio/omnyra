@@ -70,8 +70,8 @@ export async function POST(req: Request) {
                                      'cinematic lifestyle photography, environmental wide shot, golden hour, person in real setting, NOT a portrait';
 
   // Negative prompt to prevent wrong style bleeding
-  // Base negative — always block NSFW/nudity to avoid Hedra moderation failures
-  const baseNegative = 'nudity, bare skin, revealing clothing, swimwear, bikini, lingerie, topless, nsfw, adult content, sexual';
+  // Base negative — block explicit content only; swimwear/bikini allowed (Hedra rejects those at their end regardless)
+  const baseNegative = 'nudity, topless, lingerie, explicit sexual content, nsfw';
   const negativeStyle =
     visualStyle === 'Lifestyle' ? `${baseNegative}, portrait, headshot, talking head, studio background, direct camera stare, mugshot` :
     visualStyle === 'UGC'       ? `${baseNegative}, studio lighting, professional photography, clean background` :
