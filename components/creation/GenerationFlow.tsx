@@ -456,7 +456,9 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
     let tick = 0;
     pollRef.current = setInterval(async () => {
       tick++;
-      if (tick > 36) {
+      // Hedra can take 5–10 min for longer videos; inline worker only covers 90s,
+      // then the cron completes it — give the frontend 10 min before timing out.
+      if (tick > 120) {
         clearInterval(pollRef.current!);
         setVideoStatus('Timed out — please retry');
         setVideoStarted(false);
@@ -524,42 +526,71 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
     try {
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
-      const authHeader = session?.access_token ? { 'Authorization': `Bearer ${session.access_token}` } : {} as Record<string, string>;
+      const authHeader: Record<string, string> = session?.access_token
+        ? { 'Authorization': `Bearer ${session.access_token}` }
+        : {};
+      const jsonHeaders = { 'Content-Type': 'application/json', ...authHeader };
 
-      // Stitch clips
+      // ── 1. Stitch clips (auth required by compose-video) ──────────────────
       let stitchedUrl: string | null = null;
       if (clipUrls.length > 0) {
         try {
           const composeRes = await fetch('/api/compose-video', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            method: 'POST',
+            headers: jsonHeaders,
             body: JSON.stringify({ clipUrls, clipDuration: 10 }),
           });
           if (composeRes.ok) {
             const d = await composeRes.json();
             stitchedUrl = d.video_url ?? null;
-          } else { console.warn('[combineVideoVoice] compose status:', composeRes.status); }
+            console.log('[combineVideoVoice] stitched:', stitchedUrl?.substring(0, 80));
+          } else {
+            const errText = await composeRes.text().catch(() => '');
+            console.warn('[combineVideoVoice] compose failed', composeRes.status, errText.substring(0, 200));
+          }
         } catch (e) { console.warn('[combineVideoVoice] compose threw:', e); }
       } else {
         stitchedUrl = videoUrl;
       }
 
       const baseUrl = stitchedUrl ?? videoUrl ?? clipUrls[0] ?? null;
-      if (!baseUrl) return;
+      if (!baseUrl) { console.error('[combineVideoVoice] no base video URL'); return; }
 
-      // Merge voiceover if ready
+      // ── 2. Merge voiceover ─────────────────────────────────────────────────
+      let finalUrl = baseUrl;
       if (voiceAudioBase64) {
         try {
           const mergeRes = await fetch('/api/merge-video-audio', {
-            method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader },
+            method: 'POST',
+            headers: jsonHeaders,
             body: JSON.stringify({ video_url: baseUrl, audio_base64: voiceAudioBase64 }),
           });
           if (mergeRes.ok) {
             const d = await mergeRes.json();
-            if (d.video_url) { setFinalVideo(d.video_url); return; }
-          } else { console.warn('[combineVideoVoice] merge status:', mergeRes.status); }
+            if (d.video_url) {
+              finalUrl = d.video_url;
+              console.log('[combineVideoVoice] merged:', finalUrl.substring(0, 80));
+            } else {
+              console.warn('[combineVideoVoice] merge ok but no video_url in response');
+            }
+          } else {
+            const errText = await mergeRes.text().catch(() => '');
+            console.warn('[combineVideoVoice] merge failed', mergeRes.status, errText.substring(0, 200));
+          }
         } catch (e) { console.warn('[combineVideoVoice] merge threw:', e); }
       }
-      setFinalVideo(baseUrl);
+
+      // ── 3. Save to My Videos (cookie auth — no header needed) ─────────────
+      try {
+        const scriptText = (editedScript || selectedScript?.script) ?? selectedConcept?.description ?? '';
+        await fetch('/api/save-render', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ video_url: finalUrl, script: scriptText, template: videoType }),
+        });
+      } catch (e) { console.warn('[combineVideoVoice] save-render threw:', e); }
+
+      setFinalVideo(finalUrl);
     } catch (e) { console.error('[combineVideoVoice] outer catch:', e); }
     finally { setCombining(false); }
   };
