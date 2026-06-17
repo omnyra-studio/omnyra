@@ -8,11 +8,12 @@ import { fal }                    from "@fal-ai/client";
 import { KLING_T2V_PRO, KLING_T2V_MODEL, KLING_I2V_PRO, KLING_I2V_MODEL, extractVideoUrl } from "@/lib/video-models";
 import { VISUAL_LOCK_CONSTRAINTS } from "@/lib/avatar/model-router";
 import type { CharacterReference } from "@/lib/memory/types";
+import { isDirectKlingAvailable, generateKlingDirect } from "@/lib/providers/kling-direct";
 
 // fal SDK reads FAL_KEY; project env may use FAL_API_KEY or FALAI_API_KEY — configure once at module load
 const FAL_CREDS = process.env.FAL_KEY ?? process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY;
 if (FAL_CREDS) fal.config({ credentials: FAL_CREDS });
-else console.warn("[kling-worker] WARNING: FAL_KEY / FAL_API_KEY / FALAI_API_KEY not set — all Kling calls will fail");
+else console.warn("[kling-worker] WARNING: FAL_KEY / FAL_API_KEY / FALAI_API_KEY not set — fal.ai fallback will fail");
 
 export interface KlingWorkerInput {
   shotId:        string;
@@ -180,11 +181,37 @@ export async function generateKlingClip(input: KlingWorkerInput): Promise<KlingW
   };
   if (isI2V) falInput.image_url = resolvedImageUrl;
 
-  // Standard model for auth/permission fallback — same mode (i2v/t2v) as requested
-  const fallbackModelId = isI2V ? KLING_I2V_MODEL : KLING_T2V_MODEL;
+  // ── DIRECT KLING (preferred — no fal.ai markup) ───────────────────────────
+  if (isDirectKlingAvailable()) {
+    console.info(`[kling-worker] using DIRECT Kling API (bypassing fal.ai) shot=${input.shotId}`);
+    try {
+      const direct = await generateKlingDirect(
+        {
+          falModelId:      modelId,
+          prompt,
+          negative_prompt,
+          duration,
+          aspect_ratio:    aspectRatio,
+          cfg_scale:       cfgScale,
+          image_url:       resolvedImageUrl,
+        },
+        timeoutMs,
+        `shot=${input.shotId}`,
+      );
+      const generation_ms = Date.now() - startMs;
+      console.info(`[KLING_DIRECT_OK] shot=${input.shotId} model=${direct.model_used} duration=${duration}s ms=${generation_ms}`);
+      return { shotId: input.shotId, shotNumber: input.shotNumber, video_url: direct.video_url, duration_seconds: Number(duration), model_used: direct.model_used, generation_ms };
+    } catch (directErr) {
+      const e = directErr instanceof Error ? directErr : new Error(String(directErr));
+      console.warn(`[KLING_DIRECT_FAIL] shot=${input.shotId} direct API failed: ${e.message.slice(0, 200)} — falling back to fal.ai`);
+      // Fall through to fal.ai below
+    }
+  }
 
-  // Attempt 1: requested model (usually Pro)
+  // ── FAL.AI FALLBACK (when direct unavailable or failed) ───────────────────
+  const fallbackModelId = isI2V ? KLING_I2V_MODEL : KLING_T2V_MODEL;
   let usedModelId = modelId;
+
   try {
     const result = await withTimeout(
       fal.subscribe(modelId, { input: falInput }),
@@ -194,13 +221,12 @@ export async function generateKlingClip(input: KlingWorkerInput): Promise<KlingW
     const video_url = extractVideoUrl(result);
     if (!video_url) throw new Error(`no video URL in response for shot=${input.shotId}`);
     const generation_ms = Date.now() - startMs;
-    console.info(`[KLING_TIMING] shot=${input.shotId} model=${usedModelId} duration=${duration}s ms=${generation_ms} attempt=1`);
+    console.info(`[KLING_FAL_OK] shot=${input.shotId} model=${usedModelId} duration=${duration}s ms=${generation_ms} attempt=1`);
     return { shotId: input.shotId, shotNumber: input.shotNumber, video_url, duration_seconds: Number(duration), model_used: usedModelId, generation_ms };
   } catch (err1) {
     const e1 = err1 instanceof Error ? err1 : new Error(String(err1));
 
     if (isForbiddenError(e1)) {
-      // Auth error — downgrade to Standard immediately (Pro access may require a paid plan tier on fal.ai)
       if (modelId !== fallbackModelId) {
         console.warn(`[KLING_FORBIDDEN_DOWNGRADE] shot=${input.shotId} ${modelId} → Forbidden, trying ${fallbackModelId}`);
         usedModelId = fallbackModelId;
@@ -218,38 +244,27 @@ export async function generateKlingClip(input: KlingWorkerInput): Promise<KlingW
         } catch (err2) {
           const e2 = err2 instanceof Error ? err2 : new Error(String(err2));
           if (isForbiddenError(e2)) {
-            // Both Pro and Standard are forbidden — this is a FAL_KEY auth failure
             console.error(`[KLING_AUTH_FAIL] shot=${input.shotId} both ${modelId} and ${fallbackModelId} returned Forbidden — FAL_KEY likely invalid`);
-            throw new Error(
-              `Video provider authentication failed for shot ${input.shotId}. ` +
-              `FAL_KEY is missing, invalid, or account lacks access. ` +
-              `Set FAL_KEY in Vercel environment variables.`
-            );
+            throw new Error(`Video provider authentication failed for shot ${input.shotId}. FAL_KEY is missing, invalid, or account lacks access.`);
           }
           throw e2;
         }
       } else {
-        // Was already on Standard — fail fast
         console.error(`[KLING_AUTH_FAIL] shot=${input.shotId} ${modelId} returned Forbidden — FAL_KEY invalid`);
-        throw new Error(
-          `Video provider authentication failed for shot ${input.shotId}. ` +
-          `Verify FAL_KEY / FAL_API_KEY is set correctly in environment variables.`
-        );
+        throw new Error(`Video provider authentication failed for shot ${input.shotId}. Verify FAL_KEY / FAL_API_KEY is set correctly.`);
       }
     }
 
     if (isRateLimitError(e1)) {
-      // Rate limited — 3s backoff then one retry
       console.warn(`[KLING_RATELIMIT] shot=${input.shotId} rate limited — retrying in 3s`);
       await new Promise(r => setTimeout(r, 3_000));
     } else {
-      // Transient error (timeout, 5xx) — 1.5s backoff
       console.warn(`[KLING_RETRY] shot=${input.shotId} attempt 1 failed: ${e1.message.slice(0, 120)} — retrying in 1.5s`);
       await new Promise(r => setTimeout(r, 1_500));
     }
   }
 
-  // Attempt 2: same model, after backoff (handles transient errors and rate limits)
+  // Attempt 2: same model, after backoff
   try {
     const result = await withTimeout(
       fal.subscribe(usedModelId, { input: falInput }),
@@ -259,7 +274,7 @@ export async function generateKlingClip(input: KlingWorkerInput): Promise<KlingW
     const video_url = extractVideoUrl(result);
     if (!video_url) throw new Error(`no video URL in retry for shot=${input.shotId}`);
     const generation_ms = Date.now() - startMs;
-    console.info(`[KLING_TIMING] shot=${input.shotId} model=${usedModelId} duration=${duration}s ms=${generation_ms} attempt=2`);
+    console.info(`[KLING_FAL_OK] shot=${input.shotId} model=${usedModelId} duration=${duration}s ms=${generation_ms} attempt=2`);
     return { shotId: input.shotId, shotNumber: input.shotNumber, video_url, duration_seconds: Number(duration), model_used: usedModelId, generation_ms };
   } catch (err3) {
     const e3 = err3 instanceof Error ? err3 : new Error(String(err3));
