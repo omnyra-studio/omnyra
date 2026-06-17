@@ -41,7 +41,7 @@ async function generateConceptImage(
 }
 
 export async function POST(req: Request) {
-  const { prompt, toolId, nichePrefill = '', visualStyle = 'Lifestyle', aspectRatio = '9:16', quality = 'fast' } = await req.json();
+  const { prompt, characterBrief = '', toolId, nichePrefill = '', visualStyle = 'Lifestyle', aspectRatio = '9:16', quality = 'fast' } = await req.json();
 
   if (!prompt?.trim()) {
     return Response.json({ error: 'prompt required' }, { status: 400 });
@@ -95,19 +95,21 @@ export async function POST(req: Request) {
       system:
         `You are a scene director for Omnyra, an AI video studio. ` +
         (nichePrefill ? `Niche mode: ${nichePrefill} ` : '') +
+        (characterBrief ? `SUBJECT/CHARACTER: "${characterBrief}" — this is the person in every scene. Match their age, gender, ethnicity, and appearance EXACTLY across all 4 scenes. ` : '') +
         `Visual style for this shoot: ${styleContext}. ` +
         `Given a script, extract exactly 4 DISTINCT PHYSICAL SCENE MOMENTS — one per major beat. ` +
         `CRITICAL RULES: ` +
-        `1. Each scene MUST reflect the ERA, SETTING, and ENVIRONMENT implied by the script (e.g. if the script is set in the 1990s, describe 1990s clothing, props, environments). ` +
-        `2. Scene descriptions must match the VISUAL STYLE above — if Lifestyle, describe the environment and activity, NOT a portrait. ` +
-        `3. Include: specific location/setting, time of day, lighting, clothing details, props, and physical action. ` +
-        `4. ZERO emotion labels — translate feelings into body language and micro-actions only. ` +
-        `5. Each description is a FLUX image generation prompt — be concrete, visual, and specific. ` +
+        `1. CHARACTER CONSISTENCY — every scene must feature the EXACT same person described in SUBJECT/CHARACTER above. Age, gender, and appearance must match precisely. ` +
+        `2. Each scene MUST reflect the ERA, SETTING, and ENVIRONMENT implied by the script. ` +
+        `3. Scene descriptions must match the VISUAL STYLE above. ` +
+        `4. Include: specific location/setting, time of day, lighting, clothing details, props, and physical action. ` +
+        `5. ZERO emotion labels — translate feelings into body language and micro-actions only. ` +
+        `6. Each description is a FLUX image generation prompt — be concrete, visual, and specific. ` +
         `Return ONLY valid JSON array: [{"title":"short scene title","description":"2-3 sentence physical scene for image generation","ghostScore":70-100}]`,
       messages: [
         {
           role:    'user',
-          content: `Niche/Tool: ${toolId}\nVisual Brief / Scene Directions:\n${prompt}\n\nExtract 4 scene moments as FLUX image generation prompts. If the input already contains camera angles, character descriptions, lighting and setting — use those directly and enrich them. If it is raw script dialogue, extract the physical visual beats. Always output concrete, photographic descriptions: character appearance, exact location, time of day, lighting quality, camera framing, props. Match era and setting exactly.`,
+          content: `${characterBrief ? `SUBJECT: ${characterBrief}\n\n` : ''}Niche/Tool: ${toolId}\nVisual Brief / Scene Directions:\n${prompt}\n\nExtract 4 scene moments as FLUX image generation prompts. IMPORTANT: Every scene must feature the subject described above — correct gender, age, ethnicity, appearance. If the input already contains camera angles, character descriptions, lighting and setting — use those directly and enrich them. If it is raw script dialogue with stage directions in [brackets], use those as the physical action for each scene. Always output concrete, photographic descriptions: subject appearance, exact location, time of day, lighting quality, camera framing, props. Match era and setting exactly.`,
         },
       ],
     });

@@ -171,10 +171,12 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
     const rawScript = editedScript || selectedScript.script || '';
     const hook = selectedScript.hook || '';
 
-    // Extract [SCENE: ...] stage directions as visual cues
-    const sceneMatches = rawScript.match(/\[SCENE:[^\]]+\]/gi) ?? [];
+    // Extract stage directions — support both [SCENE: ...] and plain [...] formats
+    const scenePrefixed = rawScript.match(/\[SCENE:[^\]]+\]/gi) ?? [];
+    const plainBrackets  = rawScript.match(/\[[^\]]{8,}\]/g)?.filter(s => !/^https?:/.test(s)) ?? [];
+    const sceneMatches   = scenePrefixed.length > 0 ? scenePrefixed : plainBrackets;
     const sceneLines = sceneMatches
-      .map(s => s.replace(/^\[SCENE:\s*/i, '').replace(/\]$/, '').trim())
+      .map(s => s.replace(/^\[SCENE:\s*/i, '').replace(/^\[/, '').replace(/\]$/, '').trim())
       .filter(Boolean);
 
     // Identify setting/era from first scene or hook
@@ -281,6 +283,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           prompt: imagePrompt || `${selectedScript.hook}\n\n${editedScript || selectedScript.script}`,
+          characterBrief: prompt,
           toolId,
           nichePrefill: nichePrefill ?? '',
           lightningMode,
