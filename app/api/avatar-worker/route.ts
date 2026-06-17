@@ -33,7 +33,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { writeFileSync, readFileSync, unlinkSync } from "fs";
 import { uploadArtifact, StorageValidationError } from "@/lib/storage-artifact";
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import { supabaseAdmin, cleanEnv } from "@/lib/supabase/admin";
 import {
   type AvatarJob,
   type PipelineStage,
@@ -194,7 +194,7 @@ interface AudioSegment {
 // ── POST handler ───────────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
-  const secret = process.env.CRON_SECRET;
+  const secret = cleanEnv(process.env.CRON_SECRET);
   if (secret && req.headers.get("x-worker-secret") !== secret) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -310,9 +310,21 @@ async function executeTtsStage(
   const hedraSceneCap   = job.input.lightningMode ? 1 : (HEDRA_SCENE_CAP[job.input.plan ?? "starter"] ?? 1);
   const hedraMaxScenes  = Math.min(effectiveMaxScenes, hedraSceneCap);
 
-  const rawScriptWords = job.input.script.trim().split(/\s+/).filter(Boolean);
+  // Strip stage directions BEFORE word-counting and Director Core planning.
+  // Raw scripts often contain [SCENE:...], (action), *emphasis* — these are not
+  // spoken words and Director Core would move them to visualPrompt, losing the
+  // word budget (131 raw → 21 spoken in tests).
+  const strippedScript = job.input.script.trim()
+    .replace(/\[SCENE:[^\]]*\]/gi, ' ')   // [SCENE: beach at sunset]
+    .replace(/\[[^\]]*\]/g, ' ')          // [any bracket direction]
+    .replace(/\([^)]*\)/g, ' ')           // (sighs) (whispering)
+    .replace(/\*[^*]*\*/g, ' ')           // *emphasis* or *action*
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const rawScriptWords = strippedScript.split(/\s+/).filter(Boolean);
   const estAudioSec    = Math.round((Math.min(rawScriptWords.length, hedraWordBudget) / 2.5) * 10) / 10;
-  let cappedScript     = job.input.script.trim();
+  let cappedScript     = strippedScript;
   if (rawScriptWords.length > hedraWordBudget) {
     cappedScript = rawScriptWords.slice(0, hedraWordBudget).join(" ").replace(/[,;.!?]+$/, "") + ".";
     log(`[AVATAR_CAP] words ${rawScriptWords.length}→${hedraWordBudget} est_audio_sec=${estAudioSec}s plan=${job.input.plan ?? "starter"} scenes_cap=${hedraMaxScenes}`);
@@ -320,7 +332,7 @@ async function executeTtsStage(
     log(`[AVATAR_CAP] no_cap words=${rawScriptWords.length} est_audio_sec=${estAudioSec}s budget=${hedraWordBudget}`);
   }
   cappedScript = adaptScriptForAvatar(cappedScript);
-  log(`[AVATAR_ADAPT] script adapted to first-person dialogue chars=${cappedScript.length}`);
+  log(`[AVATAR_ADAPT] script adapted to first-person dialogue chars=${cappedScript.length} words=${cappedScript.split(/\s+/).filter(Boolean).length}`);
 
   // ── Load creator + character memory (Director Core context) ───────────────
   const [creatorProfile, characterForCtx] = await Promise.all([
@@ -336,7 +348,12 @@ async function executeTtsStage(
   const directorT0 = Date.now();
   let scenes: SceneSpec[];
   try {
-    scenes = await planScenes(cappedScript, hedraMaxScenes, directorCtx);
+    const rawScenes = await planScenes(cappedScript, hedraMaxScenes, directorCtx);
+    // For avatar jobs, ALL scenes must use Hedra (lip-sync bakes audio in).
+    // Director Core motion-budget logic can downgrade "emotional" scenes to Kling
+    // leaving hedraScenes=0 — force override here.
+    scenes = rawScenes.map(s => ({ ...s, provider: 'hedra' as const }));
+    log(`[AVATAR_PROVIDER_OVERRIDE] forced all ${scenes.length} scene(s) to provider=hedra`);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     log(`[DIRECTOR] ERROR: ${msg} — aborting`);
@@ -845,7 +862,7 @@ async function retrigger(origin: string, jobId: string, log: (msg: string) => vo
       method:  "POST",
       headers: {
         "Content-Type":    "application/json",
-        "x-worker-secret": process.env.CRON_SECRET ?? "",
+        "x-worker-secret": cleanEnv(process.env.CRON_SECRET) ?? "",
       },
       body: JSON.stringify({ jobId }),
     });
