@@ -89,7 +89,7 @@ export async function generateKlingDirect(
     duration:        input.duration,
     aspect_ratio:    input.aspect_ratio,
   };
-  if (isI2V) body.image_url = input.image_url;
+  if (isI2V) body.image = input.image_url;
 
   const submitRes = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(body) });
   if (!submitRes.ok) {

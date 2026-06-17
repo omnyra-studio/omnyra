@@ -463,7 +463,7 @@ export async function makeHedraSafeImage(imageUrl: string, jobId: string): Promi
     .resize(960, 1280, { fit: "inside", withoutEnlargement: true })
     .modulate({ brightness: 1.15, saturation: 0.75, hue: 5 })
     .blur(1.0)
-    .gamma(0.9)
+    .gamma(1.2)
     .jpeg({ quality: 75 })
     .toBuffer();
 

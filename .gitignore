@@ -48,3 +48,5 @@ next-env.d.ts
 
 # user data — never commit
 /data/
+
+.vercel
