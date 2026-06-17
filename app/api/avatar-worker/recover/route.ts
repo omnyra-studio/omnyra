@@ -30,6 +30,7 @@
 
 import { after } from "next/server";
 import { runSystemConsensus } from "@/lib/avatar-consensus";
+import { cleanEnv } from "@/lib/supabase/admin";
 
 export const maxDuration = 60;
 
@@ -39,7 +40,7 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
-  const secret = process.env.CRON_SECRET;
+  const secret = cleanEnv(process.env.CRON_SECRET);
   if (secret) {
     const bearerOk = req.headers.get("authorization") === `Bearer ${secret}`;
     const headerOk = req.headers.get("x-worker-secret") === secret;
@@ -54,7 +55,7 @@ export async function POST(req: Request) {
 
   const origin       = new URL(req.url).origin;
   const workerUrl    = `${origin}/api/avatar-worker`;
-  const workerSecret = process.env.CRON_SECRET ?? "";
+  const workerSecret = cleanEnv(process.env.CRON_SECRET) ?? "";
 
   if (result.toTrigger.length > 0) {
     after(async () => {

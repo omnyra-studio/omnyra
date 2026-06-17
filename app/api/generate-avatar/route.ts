@@ -119,7 +119,7 @@ export async function POST(req: Request) {
   // Queued (new or reset) — fire the worker after this response is sent
   const origin = new URL(req.url).origin;
   const workerUrl = `${origin}/api/avatar-worker`;
-  const secret = process.env.CRON_SECRET ?? "";
+  const secret = cleanEnv(process.env.CRON_SECRET) ?? "";
   const jobId = job.id;
 
   after(() =>

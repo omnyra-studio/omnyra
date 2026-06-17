@@ -6,7 +6,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { writeFileSync, readFileSync, unlinkSync, existsSync } from "fs";
 import { randomUUID } from "crypto";
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import { supabaseAdmin, cleanEnv } from "@/lib/supabase/admin";
 
 ffmpeg.setFfmpegPath(ffmpegInstaller.path);
 
@@ -35,8 +35,8 @@ export async function POST(req: Request) {
   // ── Auth ────────────────────────────────────────────────────────────────────
   const cookieStore = await cookies();
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL),
+    cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
     { cookies: { getAll: () => cookieStore.getAll(), setAll: () => {} } },
   );
   const { data: { user }, error: authErr } = await supabase.auth.getUser();
@@ -151,6 +151,7 @@ export async function POST(req: Request) {
     console.log(`[merge-video-audio] uploaded → ${publicUrl.substring(0, 80)}`);
 
     return Response.json({
+      video_url:        publicUrl,
       merged_url:       publicUrl,
       duration_seconds: parseFloat(finalDurationSec.toFixed(2)),
     });

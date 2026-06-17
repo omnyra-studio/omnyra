@@ -16,7 +16,7 @@
  */
 
 import { type NextRequest } from "next/server";
-import { supabaseAdmin } from "@/lib/supabase/admin";
+import { supabaseAdmin, cleanEnv } from "@/lib/supabase/admin";
 import {
   type AvatarJob,
   completeJobFromCron,
@@ -77,13 +77,16 @@ async function klingAvatarFallbackCron(
 const JOB_TIMEOUT_MS = 40_000;
 // Cron wall-clock deadline — bail before Vercel/Cloudflare cuts us at ~55s
 const CRON_DEADLINE_MS = 50_000;
+// Stale job watchdog — fail jobs that have been in Hedra for > 6 minutes
+// Hedra typical: 3–5 min; 6 min gives headroom without spinning forever.
+const HEDRA_TIMEOUT_MS = 6 * 60 * 1000;
 
 export async function GET(req: NextRequest) {
   const cronT0  = Date.now();
   const invoked = new Date().toISOString();
   console.log(`[hedra-cron] [CRON_INVOKED] at=${invoked}`);
 
-  const secret = process.env.CRON_SECRET;
+  const secret = cleanEnv(process.env.CRON_SECRET);
   if (secret) {
     const auth = req.headers.get("authorization");
     if (auth !== `Bearer ${secret}`) {
@@ -135,6 +138,22 @@ export async function GET(req: NextRequest) {
     const log      = (msg: string) => console.log(`[hedra-cron] [${job.id.slice(0, 8)}] ${msg}`);
 
     log(`[CRON_JOB] generation_id=${genId} submitted_at=${outputs.hedra_submitted_at ?? "unknown"}`);
+
+    // ── Stale job watchdog ─────────────────────────────────────────────────────
+    // Fail jobs that have been waiting on Hedra longer than HEDRA_TIMEOUT_MS.
+    // failJobFromCron uses .eq("status","processing") — same atomic predicate as
+    // completeJobFromCron, so concurrent cron ticks race safely: exactly one wins.
+    const submittedAt = outputs.hedra_submitted_at ? new Date(outputs.hedra_submitted_at).getTime() : 0;
+    const elapsedMs   = submittedAt ? Date.now() - submittedAt : 0;
+    if (submittedAt && elapsedMs > HEDRA_TIMEOUT_MS) {
+      log(`[STALE_JOB_TIMEOUT] gen_id=${genId} elapsed=${Math.round(elapsedMs / 1000)}s > ${HEDRA_TIMEOUT_MS / 1000}s — failing job`);
+      await failJobFromCron(
+        job.id,
+        `hedra_timeout: generation ${genId} did not complete after ${Math.round(elapsedMs / 1000)}s`,
+      );
+      failed++;
+      return;
+    }
 
     let result: { status: string; videoUrl?: string; errorMessage?: string };
     try {

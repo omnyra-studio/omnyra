@@ -15,6 +15,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { CreatorProfile } from "./creator-profile";
 import type { Character } from "./character-registry";
+import { cleanEnv } from "@/lib/supabase/admin";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -340,7 +341,7 @@ async function planScenesLLM(
   ctx: CreatorContext,
   cap: number,
 ): Promise<SceneSpec[] | null> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
+  const apiKey = cleanEnv(process.env.ANTHROPIC_API_KEY);
   if (!apiKey) return null;
 
   try {

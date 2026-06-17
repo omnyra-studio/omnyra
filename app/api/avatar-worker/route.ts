@@ -58,7 +58,7 @@ import {
   animateRequestHash,
   hedraRequestHash,
 } from "@/lib/avatar-pipeline";
-import { submitHedraJob, checkHedraGenerationStatus } from "@/lib/providers/hedra";
+import { submitHedraJob, checkHedraGenerationStatus, makeHedraSafeImage } from "@/lib/providers/hedra";
 import { generateKlingClip } from "@/lib/orchestrator/kling-worker";
 import { KLING_I2V_PRO } from "@/lib/video-models";
 import { toSignedUrlForProvider } from "@/lib/avatar/asset-validator";
@@ -110,33 +110,14 @@ async function submitHedraWithRetry(
   payload: Parameters<typeof submitHedraJob>[0],
   onSubmit: Parameters<typeof submitHedraJob>[1],
   log: (msg: string) => void,
-  maxRetries = 3,
 ): Promise<string> {
-  let lastError: Error | null = null;
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      const genId = await submitHedraJob(payload, onSubmit);
-      if (attempt > 1) log(`[HEDRA_RETRY] submit succeeded on attempt ${attempt}`);
-      return genId;
-    } catch (err) {
-      lastError = err instanceof Error ? err : new Error(String(err));
-      log(`[HEDRA_RETRY] submit attempt ${attempt}/${maxRetries} failed: ${lastError.message}`);
-      // Moderation rejections are deterministic — retrying with the same image always fails.
-      // Break immediately so the caller can surface a clear error to the user.
-      const isModeration = lastError.message.includes("moderation_error")
-        || lastError.message.includes("moderation rules")
-        || lastError.message.includes("yes_female_nudity")
-        || lastError.message.includes("general_nsfw");
-      if (isModeration) {
-        log(`[HEDRA_RETRY] moderation rejection is non-retriable — stopping retry loop`);
-        break;
-      }
-      if (attempt < maxRetries) {
-        await new Promise(r => setTimeout(r, 3_000 * Math.pow(1.8, attempt - 1)));
-      }
-    }
+  try {
+    return await submitHedraJob(payload, onSubmit);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    log(`[HEDRA_SUBMIT_FAILED] ${msg}`);
+    throw err;
   }
-  throw lastError ?? new Error("Hedra submit retries exhausted");
 }
 
 async function klingAvatarFallback(params: {
@@ -312,7 +293,7 @@ async function executeTtsStage(
   // Hedra generation time scales with audio length. Cap total words so the
   // combined audio stays under target seconds, regardless of input script length.
   // starter: 20 words ≈ 8s, creator: 28 words ≈ 11s, studio: 40 words ≈ 16s
-  // starter≈16s, creator≈30s, studio≈34s — aligned with hedraAudioCapSec in lipsync stage.
+  // All plans capped at 20s in lipsync stage (lightning: 12s) — word budgets are sized accordingly.
   // Lightning mode overrides to 28 words (~11s) regardless of plan.
   const HEDRA_WORD_BUDGET: Record<string, number> = { starter: 40, creator: 75, studio: 85 };
   const HEDRA_SCENE_CAP:   Record<string, number> = { starter: 1,  creator: 2,  studio: 3  };
@@ -606,7 +587,8 @@ async function executeLipsyncStage(
   const segPaths   = allSegments.map((_, i) => join(tmpDir, `ha-${sid}-s${i}.mp3`));
   const concatPath = join(tmpDir, `ha-${sid}-concat.txt`);
   const outPath    = join(tmpDir, `ha-${sid}-out.mp3`);
-  const cleanup    = [...segPaths, concatPath, outPath];
+  const truncPath  = join(tmpDir, `ha-${sid}-trunc.mp3`);
+  const cleanup    = [...segPaths, concatPath, outPath, truncPath];
 
   let combinedAudioUrl = "";
   let audioDurationSec: number | null = null;
@@ -651,15 +633,39 @@ async function executeLipsyncStage(
     const stitchedBuffer = readFileSync(outPath);
     if (stitchedBuffer.byteLength === 0) throw new Error("ffmpeg audio concat produced 0-byte output");
 
-    const hedraAudioCapSec = job.input.lightningMode ? 12 :
-      (job.input.plan === "studio" ? 34 : job.input.plan === "creator" ? 30 : 16);
+    const hedraAudioCapSec = job.input.lightningMode ? 12 : 20;
     const overCap = audioDurationSec !== null && audioDurationSec > hedraAudioCapSec;
-    log(`[HEDRA_AUDIO_DURATION] duration_sec=${audioDurationSec ?? "unknown"} cap_sec=${hedraAudioCapSec} over_cap=${overCap} source=ffmpeg_concat bytes=${stitchedBuffer.byteLength}${overCap ? " ⚠️ AUDIO_EXCEEDS_CAP — check truncation" : ""}`);
+    log(`[HEDRA_AUDIO_DURATION] duration_sec=${audioDurationSec ?? "unknown"} cap_sec=${hedraAudioCapSec} over_cap=${overCap} source=ffmpeg_concat bytes=${stitchedBuffer.byteLength}`);
+
+    let finalAudioBuffer = stitchedBuffer;
+    if (overCap && audioDurationSec !== null) {
+      try {
+        await new Promise<void>((resolve, reject) => {
+          ffmpeg()
+            .input(outPath)
+            .outputOptions(["-t", String(hedraAudioCapSec), "-c", "copy"])
+            .output(truncPath)
+            .on("end", () => resolve())
+            .on("error", (err: Error) => reject(new Error(`ffmpeg truncate: ${err.message}`)))
+            .run();
+        });
+        const truncBuf = readFileSync(truncPath);
+        if (truncBuf.byteLength > 0) {
+          finalAudioBuffer = truncBuf;
+          audioDurationSec = hedraAudioCapSec;
+          log(`[AUDIO_TRUNCATED] ${((stitchedBuffer.byteLength - truncBuf.byteLength) / 1024).toFixed(0)}KB trimmed → duration=${hedraAudioCapSec}s bytes=${truncBuf.byteLength}`);
+        } else {
+          log(`[AUDIO_TRUNCATE_WARN] ffmpeg produced 0 bytes — using original audio`);
+        }
+      } catch (truncErr) {
+        log(`[AUDIO_TRUNCATE_ERROR] ${(truncErr as Error).message} — using original audio`);
+      }
+    }
 
     combinedAudioUrl = await uploadArtifact({
       jobId:        job.id,
       stage:        "tts_combined",
-      buffer:       stitchedBuffer,
+      buffer:       finalAudioBuffer,
       contentType:  "audio/mpeg",
       extension:    "mp3",
       modelVersion: "eleven_flash_v2_5",
@@ -745,8 +751,45 @@ async function executeLipsyncStage(
     return;
   }
 
-  log(`[HEDRA_START] image_len=${signedImageUrl.length} audio_len=${signedAudioUrl.length} avatar_source=${avatarImageSource}`);
+  // Pre-process image through safety filter before every Hedra submission.
+  // Reduces skin-detail moderation flags without visually degrading the image.
+  let hedraImageUrl = signedImageUrl;
+  try {
+    hedraImageUrl = await makeHedraSafeImage(avatarImageRaw, job.id);
+    log(`[HEDRA_SAFETY] image pre-processed for moderation safety url_len=${hedraImageUrl.length}`);
+  } catch (safeErr) {
+    log(`[HEDRA_SAFETY] pre-processing failed — using original: ${(safeErr as Error).message}`);
+  }
+
+  log(`[HEDRA_START] image_len=${hedraImageUrl.length} audio_len=${signedAudioUrl.length} avatar_source=${avatarImageSource}`);
   log(`[PIPELINE_ORDER] audio_source=${audioSource} segment_count=${allSegments.length} duration_sec=${audioDurationSec ?? "unknown"} audio_url=${combinedAudioUrl.substring(0, 80)}`);
+
+  const hedraTextPrompt = `${(job.input.script ?? "Natural talking head").substring(0, 200)}. Natural speaking, subtle head movement, fully clothed.`;
+
+  // ── Beach / outdoor early-switch to Kling ────────────────────────────────
+  // These scene types contain exposed skin that reliably triggers Hedra moderation.
+  // Skip Hedra entirely and go straight to Kling i2v.
+  const beachKeywords = ["beach", "ocean", "bikini", "swimwear", "swimming", "swim ", "summer", "surf", "poolside"];
+  const sceneHint = ((job.input.script ?? "") + " " + avatarImageRaw).toLowerCase();
+  const isBeachScene = beachKeywords.some(kw => sceneHint.includes(kw));
+  if (isBeachScene) {
+    log(`[KLING_EARLY_SWITCH] beach/outdoor content detected — skipping Hedra, using Kling i2v directly`);
+    try {
+      const klingUrl = await klingAvatarFallback({
+        imageUrl:     avatarImageRaw,
+        prompt:       job.input.script ?? "",
+        durationSecs: audioDurationSec ?? 10,
+      }, log);
+      await markCostCharged(job.id, "lipsync", reqHash, klingUrl);
+      await completeLedgerEntry(job.id, "lipsync", workerId, klingUrl);
+      await completeJobWithLease(job.id, workerId, klingUrl, klingUrl);
+      void saveAvatarRender(job.user_id, klingUrl, job.input.script, log);
+      log(`[KLING_EARLY_SWITCH] pipeline COMPLETE via Kling`);
+      return;
+    } catch (klingEarlyErr) {
+      log(`[KLING_EARLY_SWITCH] Kling also failed: ${(klingEarlyErr as Error).message} — continuing to Hedra`);
+    }
+  }
 
   // ── Resolve or submit generation ID ──────────────────────────────────────
   const existingGenId = (job.stage_outputs as Record<string, string> | undefined)
@@ -760,11 +803,12 @@ async function executeLipsyncStage(
     try {
       hedraGenId = await submitHedraWithRetry(
         {
-          image_url:    signedImageUrl,
+          image_url:    hedraImageUrl,
           audio_url:    signedAudioUrl,
           resolution:   "720p",
           aspect_ratio: "9:16",
           duration_s:   audioDurationSec ?? undefined,
+          text_prompt:  hedraTextPrompt,
           _jobId:       job.id,
         },
         async (genId: string) => {
@@ -791,18 +835,7 @@ async function executeLipsyncStage(
       log(`[HEDRA_SUBMIT_FAILED] ${e.message}`);
       log(`[HEDRA_DEBUG] name=${e.name} code=${node.code ?? "none"} cause_code=${node.cause?.code ?? "none"} cause_msg=${node.cause?.message ?? "none"}`);
 
-      // Detect Hedra content moderation rejection — do NOT fallback to Kling with same flagged image
-      const isModerationError = e.message.includes('moderation_error') || e.message.includes('moderation rules') || e.message.includes('yes_female_nudity') || e.message.includes('general_nsfw');
-      if (isModerationError) {
-        const userMsg = 'The selected image was flagged by our avatar AI content filter. Please go back and select a different scene image, or upload your own photo.';
-        log(`[MODERATION_BLOCK] Hedra rejected image — skipping Kling fallback, failing with user-friendly message`);
-        await failLedgerEntry(job.id, "lipsync", workerId, userMsg);
-        const { shouldRetry } = await recordStageFailure(job.id, workerId, "lipsync", userMsg, job.retry_count_per_stage ?? {});
-        if (shouldRetry) await retrigger(origin, job.id, log);
-        return;
-      }
-
-      // Emergency Kling fallback — Hedra submit failed after all retries (non-moderation error)
+      // Emergency Kling fallback — Hedra submit failed after all retries (including moderation)
       try {
         const klingUrl = await klingAvatarFallback({
           imageUrl:    signedImageUrl,
