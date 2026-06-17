@@ -41,7 +41,7 @@ async function generateConceptImage(
 }
 
 export async function POST(req: Request) {
-  const { prompt, toolId, visualStyle = 'Lifestyle', aspectRatio = '9:16', quality = 'fast' } = await req.json();
+  const { prompt, toolId, nichePrefill = '', visualStyle = 'Lifestyle', aspectRatio = '9:16', quality = 'fast' } = await req.json();
 
   if (!prompt?.trim()) {
     return Response.json({ error: 'prompt required' }, { status: 400 });
@@ -94,6 +94,7 @@ export async function POST(req: Request) {
       max_tokens: 1000,
       system:
         `You are a scene director for Omnyra, an AI video studio. ` +
+        (nichePrefill ? `Niche mode: ${nichePrefill} ` : '') +
         `Visual style for this shoot: ${styleContext}. ` +
         `Given a script, extract exactly 4 DISTINCT PHYSICAL SCENE MOMENTS — one per major beat. ` +
         `CRITICAL RULES: ` +

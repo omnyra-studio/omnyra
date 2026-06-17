@@ -26,6 +26,7 @@ interface Props {
   toolName: string;
   modelOverride?: string;
   scriptOnly?: boolean;
+  nichePrefill?: string;
 }
 
 interface ElevenLabsVoice {
@@ -51,7 +52,7 @@ const GoldDivider = () => (
   </div>
 );
 
-export default function GenerationFlow({ toolId, toolName, modelOverride, scriptOnly }: Props) {
+export default function GenerationFlow({ toolId, toolName, modelOverride, scriptOnly, nichePrefill }: Props) {
   const [prompt,         setPrompt]         = useState('');
   const [niche,          setNiche]          = useState('');
   const [platform,       setPlatform]       = useState('TikTok');
@@ -245,7 +246,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
       const res = await fetch('/api/generate-brief-sync', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          goal: prompt,
+          goal: nichePrefill ? `${nichePrefill}\n\n${prompt}` : prompt,
           toolId,
           niche: niche || toolId,
           platform,
@@ -281,6 +282,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
         body: JSON.stringify({
           prompt: imagePrompt || `${selectedScript.hook}\n\n${editedScript || selectedScript.script}`,
           toolId,
+          nichePrefill: nichePrefill ?? '',
           lightningMode,
           visualStyle,
           aspectRatio,
@@ -314,11 +316,17 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
       if (videoType === 'avatar') {
         // Avatar: single clip → Hedra lipsync
         const scriptText = editedScript || selectedScript?.script || selectedConcept.description;
+        const scriptWordCount = scriptText.trim().split(/\s+/).filter(Boolean).length;
+        if (scriptWordCount < 20) {
+          setVideoStatus('Please generate a script first — the concept description is too short for avatar video (need 20+ words)');
+          setVideoStarted(false);
+          return;
+        }
         const res = await fetch('/api/generate-avatar', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             script:           scriptText,
-            voice_id:         selectedVoice,
+            voice_id:         selectedVoice || voices[0]?.voice_id || '',
             background_image: selectedConcept.imageUrl,
           }),
         });
@@ -790,9 +798,9 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
               <option value="PSYCHOLOGY, KINDNESS, HONESTY">Psychology · Kindness · Honesty</option>
               <option value="HISTORY, TRUE STORIES, DOCUMENTARY">History · True Stories · Documentary</option>
               <option value="GAMING">Gaming</option>
-              <option value="SELF IMPROVEMENT, PERSONAL GROWTH, MINDSET">Self Improvement · Personal Growth · Mindset</option>
+              <option value="SELF IMPROVEMENT, MINDSET">Self Improvement · Mindset</option>
               <option value="RELATIONSHIPS, DATING, LOVE">Relationships · Dating · Love</option>
-              <option value="FRIENDSHIPS, SOCIAL LIFE, CONNECTION">Friendships · Social Life · Connection</option>
+              <option value="FRIENDSHIPS, SOCIAL LIFE">Friendships · Social Life</option>
               <option value="SPIRITUALITY, FAITH, WELLNESS">Spirituality · Faith · Wellness</option>
               <option value="LIFESTYLE, DAILY LIFE, VLOG">Lifestyle · Daily Life · Vlog</option>
               <option value="BEAUTY, SKINCARE, MAKEUP">Beauty · Skincare · Makeup</option>
@@ -802,17 +810,9 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
               <option value="BUSINESS, FINANCE, ENTREPRENEURSHIP">Business · Finance · Entrepreneurship</option>
               <option value="TRAVEL, ADVENTURE, CULTURE">Travel · Adventure · Culture</option>
               <option value="PARENTING, FAMILY, MOM LIFE">Parenting · Family · Mom Life</option>
-              <option value="EDUCATION, LEARNING, EXPLAINER">Education · Learning · Explainer</option>
-              <option value="TECHNOLOGY, AI, INNOVATION">Technology · AI · Innovation</option>
-              <option value="PETS, ANIMALS">Pets · Animals</option>
-              <option value="REAL ESTATE, PROPERTY, INVESTMENT">Real Estate · Property · Investment</option>
-              <option value="TRADES, CONSTRUCTION, DIY">Trades · Construction · DIY</option>
-              <option value="CAFE, HOSPITALITY, FOOD BUSINESS">Cafe · Hospitality · Food Business</option>
+              <option value="ANIMATION">Animation</option>
               <option value="MOTIVATION, HUSTLE, SUCCESS">Motivation · Hustle · Success</option>
               <option value="COMEDY, ENTERTAINMENT, POP CULTURE">Comedy · Entertainment · Pop Culture</option>
-              <option value="LUXURY, ASPIRATIONAL, HIGH END">Luxury · Aspirational · High End</option>
-              <option value="MEDICAL, HEALTH PROFESSIONAL">Medical · Health Professional</option>
-              <option value="OTHER">Other</option>
             </select>
           </div>
           <div>
