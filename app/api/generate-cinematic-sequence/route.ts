@@ -51,7 +51,7 @@ export const maxDuration = 300;
 
 const CLIP_SECONDS = 6;   // 6s @ 720p saves credits; 5 clips = 30s total
 const CLIP_COUNT   = 5;   // 5 × 6s = 30s
-const ROUTE_VERSION = "2026-06-19-v17-luma-ray2-t2v-only";
+const ROUTE_VERSION = "2026-06-19-v18-luma-ray2-i2v-fal-proxy";
 
 const FLUX_MODEL = "fal-ai/flux/schnell";
 
@@ -333,10 +333,15 @@ async function generateSceneImage(
 
 // ── Clip generators ───────────────────────────────────────────────────────────
 
-const ETHNICITY_PREFIX_RE = /^\[(?:MANDATORY ETHNICITY OVERRIDE|ETHNICITY DEFAULT RULE)[^\]]*\][\s\S]*?\n\n/i;
+const ETHNICITY_PREFIX_RE =
+  /\[(?:MANDATORY ETHNICITY OVERRIDE|ETHNICITY DEFAULT RULE)[^\]]*\][\s\S]*?(?=\[|$)/gi;
 
 function stripEthnicityPrefix(text: string): string {
-  return text.replace(ETHNICITY_PREFIX_RE, "").trim();
+  return text
+    .replace(ETHNICITY_PREFIX_RE, "")
+    .replace(/\[[^\]]{2,}\]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 async function generateSeedanceClip(
@@ -353,6 +358,7 @@ async function generateSeedanceClip(
     const { falSeedanceFastGenerate } = await import("@/lib/providers/seedance");
     const result = await falSeedanceFastGenerate({
       prompt:      motionPrompt,
+      imageUrl:    imageUrl?.startsWith("https://") ? imageUrl : undefined,
       duration:    Number(duration) || 6,
       resolution:  "720p",
       aspectRatio: "9:16",
