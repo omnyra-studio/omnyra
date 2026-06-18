@@ -1,7 +1,7 @@
 /**
  * POST /api/generate/cinematic
  *
- * Main Seedance-via-ElevenLabs cinematic endpoint.
+ * Main Luma Ray 2 cinematic endpoint (video via fal.ai, TTS via ElevenLabs).
  * Express equivalent: router.post('/generate/cinematic', authMiddleware, generateCinematic)
  */
 
@@ -9,7 +9,7 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { generateCinematic } from "@/lib/controllers/cinematic";
 import { parseJsonWithEthnicityFix } from "@/middleware/ethnicityFix";
-import { DEFAULT_VOICE_ID } from "@/lib/services/elevenlabs";
+import { FLOW_DEFAULT_VOICE_ID } from "@/lib/services/video-flow-generator";
 
 export const maxDuration = 300;
 
@@ -26,10 +26,17 @@ export async function POST(req: Request) {
     return Response.json({ success: false, error: "Unauthorized" }, { status: 401 });
   }
 
+  if (!process.env.FAL_API_KEY && !process.env.FAL_KEY) {
+    return Response.json({
+      success: false,
+      error:   "FAL_API_KEY not configured — required for Luma Ray 2 video",
+    }, { status: 500 });
+  }
+
   if (!process.env.ELEVENLABS_API_KEY) {
     return Response.json({
       success: false,
-      error:   "ELEVENLABS_API_KEY not configured",
+      error:   "ELEVENLABS_API_KEY not configured — required for TTS voiceover",
     }, { status: 500 });
   }
 
@@ -38,6 +45,8 @@ export async function POST(req: Request) {
     duration?: number;
     voiceoverText?: string;
     voiceId?: string;
+    style?: "dynamic" | "flashmob" | "story";
+    imageUrl?: string;
   };
 
   try {
@@ -46,7 +55,14 @@ export async function POST(req: Request) {
     return Response.json({ success: false, error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { prompt, duration = 30, voiceoverText, voiceId = DEFAULT_VOICE_ID } = body;
+  const {
+    prompt,
+    duration = 30,
+    voiceoverText,
+    voiceId = FLOW_DEFAULT_VOICE_ID,
+    style = "dynamic",
+    imageUrl,
+  } = body;
 
   if (!prompt?.trim()) {
     return Response.json({ success: false, error: "prompt is required" }, { status: 400 });
@@ -59,6 +75,8 @@ export async function POST(req: Request) {
       duration,
       voiceoverText,
       voiceId,
+      style,
+      imageUrl,
     });
 
     return Response.json(result);

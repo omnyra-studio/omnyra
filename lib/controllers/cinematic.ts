@@ -1,5 +1,5 @@
 /**
- * Cinematic controller — FORCED Seedance via ElevenLabs only.
+ * Cinematic controller — Luma Ray 2 via fal.ai, TTS via ElevenLabs.
  * Express equivalent: controllers/cinematic.js
  */
 
@@ -10,6 +10,12 @@ import {
   DEFAULT_VOICE_ID,
   SEEDANCE_ELEVENLABS_MODEL,
 } from "@/lib/services/elevenlabs";
+import {
+  generateCompleteVideo,
+  clipsForDuration,
+  FLOW_DEFAULT_VOICE_ID,
+  type FlowStyle,
+} from "@/lib/services/video-flow-generator";
 import { uploadVideoToRenders } from "@/lib/storage/upload-cinematic-video";
 import { saveRenderToLibrary } from "@/lib/renders/save-render";
 
@@ -19,6 +25,8 @@ export interface GenerateCinematicInput {
   duration?: number;
   voiceoverText?: string;
   voiceId?: string;
+  style?: FlowStyle;
+  imageUrl?: string;
   skipUpload?: boolean;
 }
 
@@ -40,28 +48,67 @@ export async function generateCinematic(
     prompt,
     duration = 30,
     voiceoverText,
-    voiceId = DEFAULT_VOICE_ID,
+    voiceId = FLOW_DEFAULT_VOICE_ID,
+    style = "dynamic",
+    imageUrl,
     skipUpload,
   } = input;
 
   if (!prompt?.trim()) throw new Error("prompt is required");
 
   const trimmedPrompt = prompt.trim();
-  const enhancedPrompt = `[ETHNICITY: Caucasian woman with blonde hair.]
+  const rawScript = voiceoverText?.trim() || trimmedPrompt;
+  const numClips = clipsForDuration(duration);
+  const useFlow = numClips > 1;
+
+  try {
+    if (useFlow) {
+      console.log(`[FLOW] cinematic controller — generateCompleteVideo ${numClips}×6s style=${style}`);
+
+      const flowResult = await generateCompleteVideo({
+        userId,
+        userScript:         rawScript,
+        imageUrl,
+        voiceId,
+        numClips,
+        ambientDescription: style === "flashmob"
+          ? "upbeat inspirational flashmob music"
+          : undefined,
+      });
+
+      void saveRenderToLibrary({
+        userId,
+        videoUrl: flowResult.videoUrl,
+        script:   flowResult.cleanVoiceText,
+        template: "cinematic-flow",
+      }).catch(err => console.warn("[generateCinematic] library save failed:", err));
+
+      return {
+        success:   true,
+        videoUrl:  flowResult.videoUrl,
+        model:     flowResult.model,
+        hasAudio:  flowResult.hasAudio,
+        modelUsed: flowResult.model,
+        hasMotion: true,
+        duration:  flowResult.durationSeconds,
+      };
+    }
+
+    const enhancedPrompt = `[ETHNICITY: Caucasian woman with blonde hair.]
 ${trimmedPrompt}
 
 [MANDATORY STRONG MOTION: Camera push-in, zoom, natural walking, dancing movement, fluid body animation, dynamic energy. Make it alive and emotional.]`;
 
-  try {
-    console.log("✅ FORCING SEEDANCE VIA ELEVENLABS ONLY");
+    console.log("[LUMA] cinematic controller — single 5s 720p");
 
     const videoResult = await elevenLabsSeedanceGenerate({
       prompt:          enhancedPrompt,
-      duration:        6,
+      duration:        5,
       resolution:      "720p",
       motionIntensity: "high",
       rawPrompt:       true,
       generateAudio:   false,
+      imageUrl,
     });
 
     if (!videoResult?.videoUrl) {

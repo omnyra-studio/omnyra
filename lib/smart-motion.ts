@@ -214,9 +214,9 @@ export function pickEffect(sceneType?: string, sceneIndex?: number): SmartMotion
 // ── Core generator ────────────────────────────────────────────────────────────
 
 export async function generateSmartMotionClip(input: SmartMotionInput): Promise<Buffer> {
-  const { FORCE_SEEDANCE } = await import("@/lib/video-provider");
-  if (FORCE_SEEDANCE) {
-    throw new Error("smart_motion disabled — FORCE_SEEDANCE is true. Use Seedance via ElevenLabs.");
+  const { FORCE_LUMA } = await import("@/lib/video-provider");
+  if (FORCE_LUMA) {
+    throw new Error("smart_motion disabled — use Luma Ray 2 via fal.ai only.");
   }
 
   const { imageUrl, effect, durationSec } = input;

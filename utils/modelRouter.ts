@@ -4,21 +4,16 @@ export type ModelRoute = {
   bestFor:  string;
 };
 
-// FORCE SEEDANCE - DISABLE KLING COMPLETELY
-const FORCE_SEEDANCE = true;
+const FORCE_LUMA = true;
 
 export async function routeToModel(params: {
   selectedModel?: string;
   campaignMode?:  boolean;
 }): Promise<ModelRoute> {
   void params;
-  if (FORCE_SEEDANCE) {
-    return { model: "seedance-elevenlabs", provider: "seedance-elevenlabs", bestFor: "Cinematic Quality" };
+  if (FORCE_LUMA) {
+    return { model: "luma-fal", provider: "luma-fal", bestFor: "Cinematic Quality" };
   }
 
-  if (params.selectedModel === "hedra") {
-    return { model: "hedra", provider: "hedra", bestFor: "Avatar / Talking Head" };
-  }
-
-  return { model: "seedance-elevenlabs", provider: "seedance-elevenlabs", bestFor: "Cinematic Quality" };
+  return { model: "luma-fal", provider: "luma-fal", bestFor: "Cinematic Quality" };
 }

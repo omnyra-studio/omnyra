@@ -8,23 +8,35 @@
 
 import { routeModel }    from "@/lib/avatar/model-router";
 import { classifyScene } from "@/lib/avatar/scene-classifier";
-import { forceElevenLabsSeedance, SEEDANCE_ELEVENLABS_MODEL } from "@/lib/services/elevenlabs";
-import { FORCE_SEEDANCE, getVideoProvider } from "@/lib/video-provider";
+import { LUMA_VIDEO_MODEL } from "@/lib/services/elevenlabs";
+import { falLumaGenerate } from "@/lib/providers/luma";
+import { FORCE_LUMA, getVideoProvider } from "@/lib/video-provider";
 import { isMultiCharacterScene } from "./multi-character-handler";
 
-/** Seedance via ElevenLabs is the only video provider — never fal.ai model IDs. */
-function pickSeedanceModel(speedMode: string, preferI2V: boolean): string {
+/** Luma Ray 2 via fal.ai — sole cinematic video provider. */
+function pickLumaModel(speedMode: string, preferI2V: boolean): string {
   void speedMode;
   void preferI2V;
-  return SEEDANCE_ELEVENLABS_MODEL;
+  return LUMA_VIDEO_MODEL;
 }
 
-/** Generate a Seedance clip — ElevenLabs only, no fal.ai fallback. */
-export async function generateSeedanceVideo(fullPrompt: string, duration = 6): Promise<string> {
-  if (FORCE_SEEDANCE) {
-    console.log("✅ FORCING SEEDANCE VIA ELEVENLABS ONLY");
+/** Generate a Luma Ray 2 clip via fal.ai. TTS voiceover is separate (ElevenLabs). */
+export async function generateSeedanceVideo(
+  fullPrompt: string,
+  options: { duration?: number; imageUrl?: string | null } = {},
+): Promise<string> {
+  if (FORCE_LUMA) {
+    console.log("[LUMA] scene router — 5s 720p i2v-preferred");
   }
-  return forceElevenLabsSeedance(fullPrompt, { duration, resolution: "720p", motionIntensity: "high" });
+  void getVideoProvider();
+  const result = await falLumaGenerate({
+    prompt:   fullPrompt,
+    imageUrl: options.imageUrl,
+    duration: options.duration ?? 5,
+    resolution: "720p",
+    aspectRatio: "9:16",
+  });
+  return result.videoUrl;
 }
 
 export type Provider = "hedra" | "seedance";
@@ -72,7 +84,7 @@ export function routeShot(shot: RoutableSot, opts: RouteOptions): ShotRoute {
     const motionStrength = getMotionStrength(speedMode, combinedText, stylized);
     const r: ShotRoute = {
       shotId: shot.id, shotNumber: shot.shot_number, provider: "seedance",
-      seedanceModelId: pickSeedanceModel(speedMode, false), motionStrength, isStylized: stylized,
+      seedanceModelId: pickLumaModel(speedMode, false), motionStrength, isStylized: stylized,
       reason: "multi-character → seedance",
     };
     console.info(`[ROUTER] → SEEDANCE ${label} reason=${r.reason} motion=${motionStrength} stylized=${stylized}`);
@@ -84,7 +96,7 @@ export function routeShot(shot: RoutableSot, opts: RouteOptions): ShotRoute {
       const motionStrength = getMotionStrength(speedMode, combinedText, stylized);
       const r: ShotRoute = {
         shotId: shot.id, shotNumber: shot.shot_number, provider: "seedance",
-        seedanceModelId: pickSeedanceModel(speedMode, false), motionStrength, isStylized: stylized,
+        seedanceModelId: pickLumaModel(speedMode, false), motionStrength, isStylized: stylized,
         reason: "render_assignment=avatar but no character image → seedance fallback",
       };
       console.info(`[ROUTER] → SEEDANCE ${label} reason=${r.reason} motion=${motionStrength}`);
@@ -101,7 +113,7 @@ export function routeShot(shot: RoutableSot, opts: RouteOptions): ShotRoute {
     const preferI2V = stylized && characterHasImage && speedMode !== 'ultra-draft';
     const r: ShotRoute = {
       shotId: shot.id, shotNumber: shot.shot_number, provider: "seedance",
-      seedanceModelId: pickSeedanceModel(speedMode, preferI2V), motionStrength, preferI2V, isStylized: stylized,
+      seedanceModelId: pickLumaModel(speedMode, preferI2V), motionStrength, preferI2V, isStylized: stylized,
       reason: "render_assignment=fal → seedance",
     };
     console.info(`[ROUTER] → SEEDANCE ${label} reason=${r.reason} motion=${motionStrength} i2v=${preferI2V} stylized=${stylized}`);
@@ -132,7 +144,7 @@ export function routeShot(shot: RoutableSot, opts: RouteOptions): ShotRoute {
   const provider = getVideoProvider();
   const r: ShotRoute = {
     shotId: shot.id, shotNumber: shot.shot_number, provider: "seedance",
-    seedanceModelId: pickSeedanceModel(speedMode, preferI2V), motionStrength, preferI2V, isStylized: stylized,
+    seedanceModelId: pickLumaModel(speedMode, preferI2V), motionStrength, preferI2V, isStylized: stylized,
     reason: `classifier: ${routing.reason} → ${provider}`,
   };
   console.info(`[ROUTER] → SEEDANCE ${label} model=${r.seedanceModelId} reason=${r.reason} motion=${motionStrength} i2v=${preferI2V} stylized=${stylized}`);
@@ -168,7 +180,7 @@ export function getSeedanceRoute(options: {
 
   if (speedMode === 'ultra-draft') {
     return {
-      seedanceModelId:   SEEDANCE_ELEVENLABS_MODEL,
+      seedanceModelId:   LUMA_VIDEO_MODEL,
       useI2V:            false,
       motionStrength:    0.45,
       maxDurationSecs:   5,
@@ -178,7 +190,7 @@ export function getSeedanceRoute(options: {
 
   if (isAvatar) {
     return {
-      seedanceModelId:   SEEDANCE_ELEVENLABS_MODEL,
+      seedanceModelId:   LUMA_VIDEO_MODEL,
       useI2V:            true,
       motionStrength:    0.45,
       maxDurationSecs:   12,
@@ -189,7 +201,7 @@ export function getSeedanceRoute(options: {
   if (isAnimated) {
     const boostedMotion = Math.max(0.68, 0.70);
     return {
-      seedanceModelId:   SEEDANCE_ELEVENLABS_MODEL,
+      seedanceModelId:   LUMA_VIDEO_MODEL,
       useI2V:            hasReferenceImage,
       motionStrength:    boostedMotion,
       maxDurationSecs:   10,
@@ -198,7 +210,7 @@ export function getSeedanceRoute(options: {
   }
 
   return {
-    seedanceModelId:   SEEDANCE_ELEVENLABS_MODEL,
+    seedanceModelId:   LUMA_VIDEO_MODEL,
     useI2V:            hasReferenceImage && speedMode !== 'draft',
     motionStrength:    0.62,
     maxDurationSecs:   10,

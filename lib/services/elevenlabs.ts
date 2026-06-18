@@ -1,10 +1,11 @@
 /**
- * ElevenLabs service layer — Seedance video, voiceover, merge.
- * FORCED default: seedance-elevenlabs only. No Kling.
+ * ElevenLabs service layer — TTS voiceover, ambient audio, FFmpeg merge.
+ * Video: Luma Ray 2 via fal.ai (lib/providers/luma.ts). No Kling / Seedance / Runway.
  */
 
 import { cleanEnv, supabaseAdmin } from "@/lib/supabase/admin";
 import { ENHANCED_CINEMATIC_RE, buildSeedanceElevenLabsPrompt } from "@/lib/motion-prompt";
+import { falLumaGenerate, LUMA_DREAM_MACHINE_MODEL } from "@/lib/providers/luma";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegStatic from "ffmpeg-static";
 import { writeFileSync, readFileSync, unlinkSync, existsSync, copyFileSync } from "fs";
@@ -14,21 +15,12 @@ import { randomUUID } from "crypto";
 import { execSync } from "child_process";
 
 const BASE_URL = "https://api.elevenlabs.io/v1";
-/**
- * Attempted Seedance endpoint — NOT in public OpenAPI as of 2026-06.
- * Official openapi.json only exposes /v1/music/video-to-music for video-related REST.
- * Image & Video (incl. Seedance) is dashboard/UI beta — no public generate route documented.
- * @see https://elevenlabs.io/docs/overview/capabilities/image-video
- */
-export const SEEDANCE_GENERATE_URL = `${BASE_URL}/video/seedance/generate`;
-const SEEDANCE_POLL_BASE = `${BASE_URL}/video/seedance`;
 export const DEFAULT_VOICE_ID = "EXAVITQu4vr4xnSDxMaL";
-
-const POLL_INTERVAL_MS = 4_000;
-const MAX_POLL_MS = 240_000;
 const MP3_BYTES_PER_SECOND = 16_000;
 
-export const SEEDANCE_ELEVENLABS_MODEL = "seedance-elevenlabs";
+/** Video model slug — Luma Ray 2 via fal.ai. Legacy name kept for routing compat. */
+export const LUMA_VIDEO_MODEL = LUMA_DREAM_MACHINE_MODEL;
+export const SEEDANCE_ELEVENLABS_MODEL = LUMA_DREAM_MACHINE_MODEL;
 
 export type SeedanceMotionLevel = "maximum" | "high" | "medium" | "low";
 
@@ -57,6 +49,13 @@ export interface ElevenLabsVoiceoverParams {
   voiceId?: string;
   userId?: string;
   jobId?: string;
+  modelId?: string;
+  voiceSettings?: {
+    stability?: number;
+    similarity_boost?: number;
+    style?: number;
+    use_speaker_boost?: boolean;
+  };
 }
 
 export interface ElevenLabsVoiceoverResult {
@@ -72,17 +71,8 @@ export interface MergeVideoAudioParams {
 
 function getApiKey(): string {
   const key = cleanEnv(process.env.ELEVENLABS_API_KEY);
-  if (!key) throw new Error("ELEVENLABS_API_KEY not configured — required for Seedance via ElevenLabs");
+  if (!key) throw new Error("ELEVENLABS_API_KEY not configured — required for TTS voiceover");
   return key;
-}
-
-function clampDuration(secs: number | undefined): number {
-  if (!secs || secs <= 0) return 6;
-  return Math.max(5, Math.min(10, Math.round(secs))); // ElevenLabs accepts 5–10s; 6s is credit-optimal
-}
-
-function resolveMotion(params: ElevenLabsSeedanceParams): SeedanceMotionLevel {
-  return params.motion ?? params.motionIntensity ?? "high";
 }
 
 function resolvePrompt(params: ElevenLabsSeedanceParams): string {
@@ -91,142 +81,31 @@ function resolvePrompt(params: ElevenLabsSeedanceParams): string {
   return buildSeedanceElevenLabsPrompt(trimmed);
 }
 
-function extractVideoUrl(payload: Record<string, unknown>): string | undefined {
-  // ElevenLabs Seedance response: { video_url, status, generation_id }
-  // Also handles nested shapes from other providers.
-  const candidates = [
-    payload.video_url,
-    payload.videoUrl,
-    payload.url,
-    payload.finalUrl,
-    (payload.video as Record<string, unknown> | undefined)?.url,
-    (payload.data  as Record<string, unknown> | undefined)?.video_url,
-    (payload.data  as Record<string, unknown> | undefined)?.url,
-  ];
-
-  for (const c of candidates) {
-    if (typeof c === "string" && c.startsWith("http")) return c;
-  }
-  return undefined;
-}
-
-async function pollSeedanceJob(
-  apiKey: string,
-  generationId: string,
-  startMs: number,
-): Promise<string> {
-  const deadline = startMs + MAX_POLL_MS;
-  const pollUrl = `${SEEDANCE_POLL_BASE}/${generationId}`;
-
-  while (Date.now() < deadline) {
-    await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
-
-    const res = await fetch(pollUrl, { headers: { "xi-api-key": apiKey } });
-    if (!res.ok) {
-      // Transient error — keep polling
-      console.warn(`[SEEDANCE_POLL] HTTP ${res.status} — retrying`);
-      continue;
-    }
-
-    const body = await res.json() as Record<string, unknown>;
-    const status = String(body.status ?? body.state ?? "").toLowerCase();
-    console.log(`[SEEDANCE_POLL] id=${generationId} status=${status}`);
-
-    if (status === "failed" || status === "error") {
-      throw new Error(`Seedance generation failed: ${String(body.error ?? body.message ?? "unknown")}`);
-    }
-
-    if (status === "completed" || status === "succeeded" || status === "success") {
-      const url = extractVideoUrl(body);
-      if (url) return url;
-      throw new Error("Seedance completed but returned no video URL");
-    }
-    // "queued" / "processing" / "generating" — keep polling
-  }
-
-  throw new Error("Seedance generation timed out after 4 minutes");
-}
-
-/**
- * Generate video with native ElevenLabs Seedance — no fal.ai, no Kling.
- * POST /v1/video/seedance/generate
- */
+/** Video via Luma Ray 2 (fal.ai). Voiceover stays on ElevenLabs TTS. */
 export async function elevenLabsSeedanceGenerate(
   params: ElevenLabsSeedanceParams,
 ): Promise<ElevenLabsSeedanceResult> {
-  const startMs = Date.now();
-  const apiKey = getApiKey();
-  const durationSeconds = clampDuration(params.duration);
-  const motion = resolveMotion(params);
   const finalPrompt = resolvePrompt(params);
-  const generateAudio = params.generateAudio ?? false;
-  const resolution = params.resolution ?? "720p";
+  const res = params.resolution === "480p" || params.resolution === "720p" ? params.resolution : "720p";
 
-  const requestBody: Record<string, unknown> = {
-    prompt:           finalPrompt,
-    duration_seconds: durationSeconds,
-    resolution,
-    motion_intensity: motion,
-    generate_audio:   generateAudio,
-  };
-
-  console.log(`[SEEDANCE_ELEVENLABS] POST /video/seedance/generate duration=${durationSeconds}s motion=${motion} generate_audio=${generateAudio} (voiceover via separate TTS) hasImage=${!!params.imageUrl}`);
-
-  const submitRes = await fetch(SEEDANCE_GENERATE_URL, {
-    method:  "POST",
-    headers: { "xi-api-key": apiKey, "Content-Type": "application/json" },
-    body:    JSON.stringify(requestBody),
+  const result = await falLumaGenerate({
+    prompt:      finalPrompt,
+    imageUrl:    params.imageUrl,
+    duration:    params.duration ?? 5,
+    resolution:  res,
+    aspectRatio: params.aspectRatio ?? "9:16",
   });
 
-  if (!submitRes.ok) {
-    const errText = await submitRes.text().catch(() => "");
-    console.error("[SEEDANCE_ELEVENLABS] Error:", submitRes.status, errText.substring(0, 500));
-
-    if (submitRes.status === 404) {
-      throw new Error(
-        `Seedance failed with status 404: ${SEEDANCE_GENERATE_URL} is not in the ElevenLabs public API. ` +
-        `OpenAPI only lists /v1/music/video-to-music — Image & Video (Seedance) is dashboard-only (beta). ` +
-        `fal.ai fallback is disabled. Response: ${errText.substring(0, 200)}`,
-      );
-    }
-
-    throw new Error(`Seedance failed with status ${submitRes.status}: ${errText.substring(0, 300)}`);
-  }
-
-  const payload = await submitRes.json() as Record<string, unknown>;
-  console.log(`[SEEDANCE_ELEVENLABS_OK] response keys=${Object.keys(payload).join(",")}`);
-
-  let videoUrl = extractVideoUrl(payload);
-
-  if (!videoUrl) {
-    const generationId =
-      (payload.generation_id as string | undefined) ??
-      (payload.id as string | undefined) ??
-      (payload.request_id as string | undefined);
-
-    if (!generationId) {
-      throw new Error(`Seedance returned no video_url or generation_id — ${JSON.stringify(payload).substring(0, 200)}`);
-    }
-
-    console.log(`[SEEDANCE_POLL_START] id=${generationId}`);
-    videoUrl = await pollSeedanceJob(apiKey, generationId, startMs);
-  }
-
-  if (!videoUrl) throw new Error("Seedance returned no video");
-
-  const generationMs = Date.now() - startMs;
-  console.info(`[SEEDANCE_ELEVENLABS_OK] motion=${motion} ms=${generationMs} url=${videoUrl.substring(0, 80)}`);
-
   return {
-    videoUrl,
-    modelUsed: SEEDANCE_ELEVENLABS_MODEL,
-    generationMs,
+    videoUrl:     result.videoUrl,
+    modelUsed:    result.modelUsed,
+    generationMs: result.generationMs,
   };
 }
 
 export const elevenLabsSeedance = elevenLabsSeedanceGenerate;
 
-/** Strict ElevenLabs-only Seedance entry — no fal.ai, no fallbacks. */
+/** Scene-router entry — Luma Ray 2 via fal.ai, ElevenLabs TTS separate. */
 export async function forceElevenLabsSeedance(
   prompt: string,
   options: {
@@ -235,16 +114,17 @@ export async function forceElevenLabsSeedance(
     motionIntensity?: SeedanceMotionLevel;
     generateAudio?: boolean;
     rawPrompt?: boolean;
+    imageUrl?: string | null;
   } = {},
 ): Promise<string> {
-  console.log("✅ FORCING SEEDANCE VIA ELEVENLABS ONLY");
+  void options.motionIntensity;
   const result = await elevenLabsSeedanceGenerate({
     prompt,
-    duration:        options.duration ?? 6,
-    resolution:      options.resolution ?? "720p",
-    motionIntensity: options.motionIntensity ?? "high",
-    generateAudio:   options.generateAudio ?? false,
-    rawPrompt:       options.rawPrompt ?? true,
+    duration:      options.duration ?? 6,
+    resolution:    options.resolution ?? "720p",
+    generateAudio: options.generateAudio ?? false,
+    rawPrompt:     options.rawPrompt ?? true,
+    imageUrl:      options.imageUrl ?? undefined,
   });
   return result.videoUrl;
 }
@@ -322,12 +202,12 @@ export async function elevenLabsVoiceover(
     },
     body: JSON.stringify({
       text,
-      model_id: "eleven_multilingual_v2",
+      model_id: params.modelId ?? "eleven_multilingual_v2",
       voice_settings: {
-        stability:         0.35,
-        similarity_boost:  0.75,
-        style:             0.65,
-        use_speaker_boost: true,
+        stability:         params.voiceSettings?.stability ?? 0.35,
+        similarity_boost:  params.voiceSettings?.similarity_boost ?? 0.75,
+        style:             params.voiceSettings?.style ?? 0.65,
+        use_speaker_boost: params.voiceSettings?.use_speaker_boost ?? true,
       },
     }),
   });

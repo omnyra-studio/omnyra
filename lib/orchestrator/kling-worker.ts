@@ -1,4 +1,4 @@
-// Video generation worker — Seedance via ElevenLabs only (Kling + fal.ai disabled).
+// Video generation worker — Luma Ray 2 via fal.ai only (Kling / Seedance disabled).
 
 import { VISUAL_LOCK_CONSTRAINTS } from "@/lib/avatar/model-router";
 import type { CharacterReference } from "@/lib/memory/types";
@@ -36,8 +36,8 @@ export interface KlingWorkerResult {
 }
 
 function clampDuration(secs: number | undefined): number {
-  if (!secs || secs <= 0) return 6;
-  return Math.max(5, Math.min(10, Math.round(secs)));
+  if (!secs || secs <= 0) return 5;
+  return secs >= 8 ? 9 : 5;
 }
 
 export async function generateKlingClip(input: KlingWorkerInput): Promise<KlingWorkerResult> {
@@ -101,7 +101,7 @@ export async function generateKlingClip(input: KlingWorkerInput): Promise<KlingW
   const prompt = parts.filter(Boolean).join(", ");
   const modelId = input.modelId ?? SEEDANCE_ELEVENLABS_MODEL;
 
-  console.info("[seedance-worker] submitting shot", {
+  console.info("[luma-worker] submitting shot", {
     shot_id:    input.shotId,
     model:      modelId,
     mode:       isI2V ? "i2v" : "t2v",
@@ -111,14 +111,14 @@ export async function generateKlingClip(input: KlingWorkerInput): Promise<KlingW
     prompt_preview: prompt.slice(0, 80),
   });
 
-  console.log("✅ FORCING SEEDANCE VIA ELEVENLABS ONLY");
   const result = await elevenLabsSeedanceGenerate({
     prompt,
-    duration:        duration || 6,
+    duration:        duration || 5,
     resolution:      "720p",
-    motionIntensity: "high",
     rawPrompt:       true,
     generateAudio:   false,
+    imageUrl:        resolvedImageUrl,
+    aspectRatio,
   });
 
   return {

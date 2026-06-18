@@ -1,7 +1,7 @@
 /**
  * Shot Executor — dispatches a single ShotPacket to the correct render API.
  *
- * Video shots: **Seedance via ElevenLabs only** (Kling + fal.ai disabled).
+ * Video shots: **Luma Ray 2 via fal.ai only** (Kling / Seedance / Runway disabled).
  * text_overlay: fal.ai Flux still-image card (unchanged).
  */
 
@@ -44,16 +44,16 @@ export async function executeDirectKlingShot(shot: ShotPacket): Promise<ShotExec
   const duration = seedanceDuration(shot.duration_seconds);
   const isI2V    = !!shot.scene_image_url;
 
-  console.info(`[shot-executor] Seedance via ElevenLabs (Kling disabled) for shot ${shot.shot_number}`);
+  console.info(`[shot-executor] Luma Ray 2 via fal.ai for shot ${shot.shot_number}`);
 
-  console.log("✅ FORCING SEEDANCE VIA ELEVENLABS ONLY");
   const result = await elevenLabsSeedanceGenerate({
     prompt,
-    duration:        6,
+    duration:        5,
     resolution:      "720p",
-    motionIntensity: "high",
     rawPrompt:       true,
     generateAudio:   false,
+    imageUrl:        shot.scene_image_url ?? undefined,
+    aspectRatio:     "9:16",
   });
 
   return { videoUrl: result.videoUrl, duration: shot.duration_seconds };

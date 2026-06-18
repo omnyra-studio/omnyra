@@ -350,19 +350,21 @@ async function generateSeedanceClip(
   const motionPrompt = buildSeedanceElevenLabsPrompt(cleanPrompt);
 
   try {
-    const { falSeedanceFastGenerate } = await import("@/lib/providers/seedance");
-    const result = await falSeedanceFastGenerate({
+    const { falLumaGenerate } = await import("@/lib/providers/luma");
+    const result = await falLumaGenerate({
       prompt:   motionPrompt,
       imageUrl: imageUrl?.startsWith("https://") ? imageUrl : null,
-      duration: 6,
+      duration: 5,
+      resolution: "720p",
+      aspectRatio: "9:16",
     });
-    clipReports.push(`${label} | seedance-fal-fast | OK ${result.latencyMs}ms | ${result.videoUrl.substring(0, 80)}`);
+    clipReports.push(`${label} | luma-ray2 | OK ${result.latencyMs}ms | ${result.videoUrl.substring(0, 80)}`);
     return result.videoUrl;
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
-    clipReports.push(`${label} | seedance-fal-fast | FAIL | ${detail}`);
-    console.error(`${label} Seedance Fast FAILED: ${detail}`);
-    return null;
+    clipReports.push(`${label} | luma-ray2 | FAIL | ${detail}`);
+    console.error(`${label} Luma Ray 2 FAILED: ${detail}`);
+    throw err;
   }
 }
 

@@ -3,9 +3,13 @@
 
 import { DEFAULT_VIDEO_MODEL } from "@/lib/video-provider";
 
-// ── Seedance via ElevenLabs (DEFAULT — primary video provider, June 2026) ──
-export const SEEDANCE_T2V_MODEL = "seedance-elevenlabs";
-export const SEEDANCE_I2V_MODEL = "seedance-elevenlabs";
+// ── Luma Dream Machine Ray 2 via fal.ai (sole cinematic video provider) ──
+export const LUMA_DREAM_MACHINE_T2V = "fal-ai/luma-dream-machine/ray-2";
+export const LUMA_DREAM_MACHINE_I2V = "fal-ai/luma-dream-machine/ray-2/image-to-video";
+export const LUMA_T2V_MODEL = LUMA_DREAM_MACHINE_T2V;
+export const LUMA_I2V_MODEL = LUMA_DREAM_MACHINE_I2V;
+export const SEEDANCE_T2V_MODEL = LUMA_T2V_MODEL;
+export const SEEDANCE_I2V_MODEL = LUMA_I2V_MODEL;
 
 // ── Kling (DISABLED — kept for legacy type references only) ─────────────────
 export const KLING_I2V_PRO     = "kling-direct/pro/image-to-video";
@@ -32,7 +36,7 @@ const DEPRECATED_MODELS = [
 ];
 
 // Startup validation — called once at module load.
-const ACTIVE_MODELS = [SEEDANCE_T2V_MODEL, SEEDANCE_I2V_MODEL, RUNWAY_MODEL];
+const ACTIVE_MODELS = [LUMA_T2V_MODEL, LUMA_I2V_MODEL];
 
 for (const m of ACTIVE_MODELS) {
   if (DEPRECATED_MODELS.includes(m)) {
