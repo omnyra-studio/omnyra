@@ -766,31 +766,6 @@ async function executeLipsyncStage(
 
   const hedraTextPrompt = `${(job.input.script ?? "Natural talking head").substring(0, 200)}. Natural speaking, subtle head movement, fully clothed.`;
 
-  // ── Beach / outdoor early-switch to Kling ────────────────────────────────
-  // These scene types contain exposed skin that reliably triggers Hedra moderation.
-  // Skip Hedra entirely and go straight to Kling i2v.
-  const beachKeywords = ["beach", "ocean", "bikini", "swimwear", "swimming", "swim ", "summer", "surf", "poolside"];
-  const sceneHint = ((job.input.script ?? "") + " " + avatarImageRaw).toLowerCase();
-  const isBeachScene = beachKeywords.some(kw => sceneHint.includes(kw));
-  if (isBeachScene) {
-    log(`[KLING_EARLY_SWITCH] beach/outdoor content detected — skipping Hedra, using Kling i2v directly`);
-    try {
-      const klingUrl = await klingAvatarFallback({
-        imageUrl:     avatarImageRaw,
-        prompt:       job.input.script ?? "",
-        durationSecs: audioDurationSec ?? 10,
-      }, log);
-      await markCostCharged(job.id, "lipsync", reqHash, klingUrl);
-      await completeLedgerEntry(job.id, "lipsync", workerId, klingUrl);
-      await completeJobWithLease(job.id, workerId, klingUrl, klingUrl);
-      void saveAvatarRender(job.user_id, klingUrl, job.input.script, log);
-      log(`[KLING_EARLY_SWITCH] pipeline COMPLETE via Kling`);
-      return;
-    } catch (klingEarlyErr) {
-      log(`[KLING_EARLY_SWITCH] Kling also failed: ${(klingEarlyErr as Error).message} — continuing to Hedra`);
-    }
-  }
-
   // ── Resolve or submit generation ID ──────────────────────────────────────
   const existingGenId = (job.stage_outputs as Record<string, string> | undefined)
     ?.hedra_generation_id;
@@ -834,23 +809,6 @@ async function executeLipsyncStage(
       const node = e as NodeJS.ErrnoException & { cause?: { code?: string; message?: string } };
       log(`[HEDRA_SUBMIT_FAILED] ${e.message}`);
       log(`[HEDRA_DEBUG] name=${e.name} code=${node.code ?? "none"} cause_code=${node.cause?.code ?? "none"} cause_msg=${node.cause?.message ?? "none"}`);
-
-      // Emergency Kling fallback — Hedra submit failed after all retries (including moderation)
-      try {
-        const klingUrl = await klingAvatarFallback({
-          imageUrl:    signedImageUrl,
-          prompt:      job.input.script ?? "",
-          durationSecs: audioDurationSec ?? 10,
-        }, log);
-        await markCostCharged(job.id, "lipsync", reqHash, klingUrl);
-        await completeLedgerEntry(job.id, "lipsync", workerId, klingUrl);
-        await completeJobWithLease(job.id, workerId, klingUrl, klingUrl);
-        void saveAvatarRender(job.user_id, klingUrl, job.input.script, log);
-        log(`[KLING_AVATAR_FALLBACK] pipeline COMPLETE via Kling`);
-        return;
-      } catch (klingErr) {
-        log(`[KLING_AVATAR_FALLBACK] also failed: ${(klingErr as Error).message}`);
-      }
 
       await failLedgerEntry(job.id, "lipsync", workerId, e.message);
       const { shouldRetry } = await recordStageFailure(job.id, workerId, "lipsync", e.message, job.retry_count_per_stage ?? {});
