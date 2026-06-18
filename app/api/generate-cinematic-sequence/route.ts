@@ -51,7 +51,7 @@ export const maxDuration = 300;
 
 const CLIP_SECONDS = 6;   // 6s @ 720p saves credits; 5 clips = 30s total
 const CLIP_COUNT   = 5;   // 5 × 6s = 30s
-const ROUTE_VERSION = "2026-06-18-v14-elevenlabs-runway-fallback";
+const ROUTE_VERSION = "2026-06-18-v15-elevenlabs-seedance-fast-fallback";
 
 const FLUX_MODEL = "fal-ai/flux/schnell";
 
@@ -341,7 +341,7 @@ function stripEthnicityPrefix(text: string): string {
 
 async function generateSeedanceClip(
   prompt: string,
-  _imageUrl: string | null,
+  imageUrl: string | null,
   duration: "5" | "6" | "10",
   label: string,
   clipReports: string[],
@@ -351,29 +351,34 @@ async function generateSeedanceClip(
 
   try {
     const videoUrl = await forceElevenLabsSeedance(motionPrompt, {
-      duration:        Number(duration),
-      resolution:      "720p",
-      motionIntensity: "high",
-      generateAudio:   false,
-      rawPrompt:       true,
+      duration:      Number(duration) || 6,
+      resolution:    "720p",
+      generateAudio: false,
+      rawPrompt:     true,
+      imageUrl:      imageUrl?.startsWith("https://") ? imageUrl : null,
     });
-    clipReports.push(`${label} | seedance-elevenlabs | OK | ${videoUrl.substring(0, 80)}`);
+    clipReports.push(`${label} | seedance-fal-fast | OK | ${videoUrl.substring(0, 80)}`);
     return videoUrl;
   } catch (elevenLabsErr) {
     const elDetail = elevenLabsErr instanceof Error ? elevenLabsErr.message : String(elevenLabsErr);
     clipReports.push(`${label} | seedance-elevenlabs | FAIL | ${elDetail}`);
-    console.warn(`${label} ElevenLabs failed — trying Runway: ${elDetail}`);
+    console.warn(`${label} ElevenLabs failed — falling back to Seedance Fast: ${elDetail}`);
 
     try {
-      const { callRunwayT2V } = await import("@/lib/providers/runway");
-      const runwayDuration = Number(duration) >= 10 ? 10 : 5;
-      const result = await callRunwayT2V({ prompt: motionPrompt, duration: runwayDuration as 5 | 10, ratio: "768:1344" });
-      clipReports.push(`${label} | runway-gen4 | OK | ${result.url.substring(0, 80)}`);
-      return result.url;
-    } catch (runwayErr) {
-      const rwDetail = runwayErr instanceof Error ? runwayErr.message : String(runwayErr);
-      clipReports.push(`${label} | runway-gen4 | FAIL | ${rwDetail}`);
-      console.error(`${label} Runway also FAILED: ${rwDetail}`);
+      const { falSeedanceFastGenerate } = await import("@/lib/providers/seedance");
+      const result = await falSeedanceFastGenerate({
+        prompt:      motionPrompt,
+        imageUrl:    imageUrl?.startsWith("https://") ? imageUrl : null,
+        duration:    Number(duration) || 6,
+        resolution:  "720p",
+        aspectRatio: "9:16",
+      });
+      clipReports.push(`${label} | seedance-fal-fast | OK | ${result.videoUrl.substring(0, 80)}`);
+      return result.videoUrl;
+    } catch (falErr) {
+      const falDetail = falErr instanceof Error ? falErr.message : String(falErr);
+      clipReports.push(`${label} | seedance-fal-fast | FAIL | ${falDetail}`);
+      console.error(`${label} Seedance Fast also FAILED: ${falDetail}`);
       return null;
     }
   }
@@ -540,14 +545,13 @@ export async function POST(req: Request) {
   }
   console.log(`[CINEMATIC_AUTH] ok user=${user.id}`);
 
-  console.log(`[PLAN_GATE] user=${user.id} provider=seedance-elevenlabs FORCE_SEEDANCE=${FORCE_SEEDANCE}`);
+  console.log(`[PLAN_GATE] user=${user.id} provider=seedance-fal-fast FORCE_SEEDANCE=${FORCE_SEEDANCE}`);
 
-  if (!process.env.ELEVENLABS_API_KEY) {
-    return Response.json({ error: "ELEVENLABS_API_KEY not configured — required for Seedance video" }, { status: 500 });
+  const falKey = process.env.FAL_API_KEY ?? process.env.FAL_KEY ?? process.env.FALAI_API_KEY;
+  if (!falKey) {
+    return Response.json({ error: "FAL_API_KEY not configured — required for Seedance Fast video" }, { status: 500 });
   }
-
-  const falKey = process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY;
-  if (falKey) fal.config({ credentials: falKey });
+  fal.config({ credentials: falKey });
 
   let prompts: string[];
   let imageUrl: string | null | undefined;
