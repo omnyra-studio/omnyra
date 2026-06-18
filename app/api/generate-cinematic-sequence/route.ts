@@ -355,7 +355,6 @@ async function generateSeedanceClip(
       resolution:    "720p",
       generateAudio: false,
       rawPrompt:     true,
-      imageUrl:      imageUrl?.startsWith("https://") ? imageUrl : null,
     });
     clipReports.push(`${label} | seedance-fal-fast | OK | ${videoUrl.substring(0, 80)}`);
     return videoUrl;
