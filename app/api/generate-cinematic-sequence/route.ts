@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { fal } from "@fal-ai/client";
-import { forceElevenLabsSeedance, elevenLabsVoiceover, mergeVideoAudio, generateAmbientSound, pickAmbientDescription } from "@/lib/services/elevenlabs";
+import { elevenLabsVoiceover, mergeVideoAudio, generateAmbientSound, pickAmbientDescription } from "@/lib/services/elevenlabs";
 import { mergeVideoWithAudio } from "@/lib/utils/merge-video-audio";
 import { FORCE_SEEDANCE, getVideoProvider } from "@/lib/video-provider";
 import { supabaseAdmin } from "@/lib/supabase/admin";
@@ -51,7 +51,7 @@ export const maxDuration = 300;
 
 const CLIP_SECONDS = 6;   // 6s @ 720p saves credits; 5 clips = 30s total
 const CLIP_COUNT   = 5;   // 5 × 6s = 30s
-const ROUTE_VERSION = "2026-06-18-v15-elevenlabs-seedance-fast-fallback";
+const ROUTE_VERSION = "2026-06-19-v16-seedance-fast-only-180s";
 
 const FLUX_MODEL = "fal-ai/flux/schnell";
 

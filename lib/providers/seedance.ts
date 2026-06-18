@@ -9,8 +9,8 @@ const FAL_T2V_FAST = "bytedance/seedance-2.0/fast/text-to-video";
 const FAL_I2V_FAST = "bytedance/seedance-2.0/fast/image-to-video";
 
 const MAX_PROMPT_CHARS = 400;
-const POLL_INTERVAL_MS = 1000;
-const SUBSCRIBE_TIMEOUT_MS = 120_000;
+const POLL_INTERVAL_MS = 1500;
+const SUBSCRIBE_TIMEOUT_MS = 180_000;
 const COST_ESTIMATE_AUD = "0.15-0.30 AUD";
 
 export const SEEDANCE_FAL_FAST_MODEL = "bytedance/seedance-2.0/fast";
