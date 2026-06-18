@@ -51,7 +51,7 @@ export const maxDuration = 300;
 
 const CLIP_SECONDS = 6;   // 6s @ 720p saves credits; 5 clips = 30s total
 const CLIP_COUNT   = 5;   // 5 × 6s = 30s
-const ROUTE_VERSION = "2026-06-19-v16-seedance-fast-only-180s";
+const ROUTE_VERSION = "2026-06-19-v17-luma-ray2-t2v-only";
 
 const FLUX_MODEL = "fal-ai/flux/schnell";
 
@@ -350,21 +350,20 @@ async function generateSeedanceClip(
   const motionPrompt = buildSeedanceElevenLabsPrompt(cleanPrompt);
 
   try {
-    const { falLumaGenerate } = await import("@/lib/providers/luma");
-    const result = await falLumaGenerate({
-      prompt:   motionPrompt,
-      imageUrl: imageUrl?.startsWith("https://") ? imageUrl : null,
-      duration: 5,
-      resolution: "720p",
+    const { falSeedanceFastGenerate } = await import("@/lib/providers/seedance");
+    const result = await falSeedanceFastGenerate({
+      prompt:      motionPrompt,
+      duration:    Number(duration) || 6,
+      resolution:  "720p",
       aspectRatio: "9:16",
     });
-    clipReports.push(`${label} | luma-ray2 | OK ${result.latencyMs}ms | ${result.videoUrl.substring(0, 80)}`);
+    clipReports.push(`${label} | luma-ray2 | OK ${result.generationMs}ms | ${result.videoUrl.substring(0, 80)}`);
     return result.videoUrl;
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
     clipReports.push(`${label} | luma-ray2 | FAIL | ${detail}`);
     console.error(`${label} Luma Ray 2 FAILED: ${detail}`);
-    throw err;
+    return null;
   }
 }
 
