@@ -28,6 +28,7 @@
 
 import { supabaseAdmin }             from "@/lib/supabase/admin";
 import { updateMemoryFromGeneration } from "@/lib/user-memory";
+import { recordOutcome as recordGenMemOutcome } from "@/lib/brand-brain/store";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -204,6 +205,60 @@ export async function processOutcome(
     return;
   }
 
+  // Multi-brand automatic memory refinement: bump consistency score on good outcomes (Requirement 1)
+  const { data: renderRow } = await supabaseAdmin
+    .from("renders")
+    .select("brand_profile_id")
+    .eq("id", generationId)
+    .maybeSingle();
+
+  if (renderRow?.brand_profile_id && was_published) {
+    const boost = (user_rating && user_rating >= 4) ? 4 : 2;
+    // Safe read-modify-write for consistency_score bump + version
+    const { data: currentBrand } = await supabaseAdmin
+      .from("brand_profiles")
+      .select("consistency_score")
+      .eq("id", renderRow.brand_profile_id)
+      .maybeSingle();
+
+    const newScore = Math.min(95, ((currentBrand?.consistency_score as number) || 50) + boost);
+
+    void Promise.resolve(
+      supabaseAdmin
+        .from("brand_profiles")
+        .update({ consistency_score: newScore, last_trained_at: new Date().toISOString() })
+        .eq("id", renderRow.brand_profile_id)
+    ).then(async () => {
+      const { data: fresh } = await supabaseAdmin.from("brand_profiles").select("*").eq("id", renderRow.brand_profile_id).maybeSingle();
+      if (fresh) {
+        await supabaseAdmin.from("brand_profile_versions").insert({
+          brand_profile_id: renderRow.brand_profile_id,
+          user_id: userId,
+          snapshot: fresh,
+          change_summary: `Auto-refined from published generation (rating ${user_rating ?? "n/a"}) — consistency +${boost}`,
+          source: "auto-refinement",
+          rating_context: generationId,
+        });
+      }
+    }).catch(() => {});
+  }
+
+  // ── FIX: also update generation_memory (so brand-brain analytics + EMA weights see outcomes)
+  void Promise.resolve(
+    supabaseAdmin
+      .from("generation_memory")
+      .update({
+        was_published,
+        was_edited,
+        user_rating: user_rating ?? null,
+        outcome_recorded: true,
+        outcome_at: new Date().toISOString(),
+      })
+      .eq("id", generationId)
+      .eq("user_id", userId)
+  ).then((r: any) => { if (r?.error) console.warn("[learning] gen_memory outcome update skipped:", r.error.message); })
+   .catch((e: any) => console.warn("[learning] gen_memory outcome update skipped:", e?.message));
+
   // 2. Fetch render context for observation building
   const { data: render, error: renderErr } = await supabaseAdmin
     .from("renders")
@@ -242,12 +297,16 @@ export async function processOutcome(
       `[OUTCOME_RECORDED] user=${userId} render=${generationId.slice(0, 8)} ` +
       `published=true edited=${was_edited} rating=${user_rating ?? "—"}`,
     );
+
+    // Also record to generation_memory for preference weight learning
+    void recordGenMemOutcome(userId, generationId, { was_published, was_edited, user_rating }).catch(() => {});
   } else {
     // Not published — log but don't write negative memory (too noisy, low signal)
     console.info(
       `[OUTCOME_RECORDED] user=${userId} render=${generationId.slice(0, 8)} ` +
       `published=false edited=${was_edited}`,
     );
+    void recordGenMemOutcome(userId, generationId, { was_published, was_edited, user_rating }).catch(() => {});
   }
 }
 

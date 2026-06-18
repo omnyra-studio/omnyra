@@ -20,7 +20,7 @@ import { cleanEnv } from "@/lib/supabase/admin";
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 export type SceneArc = "hook" | "presenter" | "visual" | "social_proof" | "cta";
-export type SceneProvider = "hedra" | "kling" | "smart_motion" | "tts";
+export type SceneProvider = "hedra" | "seedance" | "smart_motion" | "tts";
 export type SceneType =
   | "talking_head"
   | "avatar"
@@ -48,7 +48,7 @@ export interface SceneSpec {
   pacing:             "slow" | "measured" | "fast";
   deliveryStyle:      "direct" | "storytelling" | "conversational" | "rhetorical";
   emphasis:           string[];        // words to stress in TTS
-  provider:           SceneProvider;   // routing: hedra=avatar, kling=premium broll, smart_motion=lightweight
+  provider:           SceneProvider;   // routing: hedra=avatar, seedance=premium broll, smart_motion=lightweight
 }
 
 export interface CreatorContext {
@@ -74,8 +74,8 @@ const ARC_CYCLE: SceneArc[] = ["hook", "presenter", "visual", "presenter", "soci
 const ARC_PROVIDER: Record<SceneArc, SceneProvider> = {
   hook:         "hedra",
   presenter:    "hedra",
-  visual:       "kling",
-  social_proof: "kling",
+  visual:       "seedance",
+  social_proof: "seedance",
   cta:          "hedra",
 };
 
@@ -83,9 +83,9 @@ const ARC_PROVIDER: Record<SceneArc, SceneProvider> = {
 const SCENE_TYPE_PROVIDER: Record<SceneType, SceneProvider> = {
   talking_head:   "hedra",
   avatar:         "hedra",
-  lifestyle_broll:"kling",
-  product_demo:   "kling",
-  emotional:      "kling",
+  lifestyle_broll:"seedance",
+  product_demo:   "seedance",
+  emotional:      "seedance",
   quote:          "smart_motion",
   educational:    "smart_motion",
   cta:            "smart_motion",
@@ -102,7 +102,7 @@ const ARC_SCENE_TYPE: Record<SceneArc, SceneType> = {
   cta:          "cta",
 };
 
-// Motion budget: max premium scenes (hedra + kling) per 30-second video.
+// Motion budget: max premium scenes (hedra + seedance) per 30-second video.
 // Smart motion scenes are always allowed regardless of budget.
 const PREMIUM_SCENES_PER_30S = 2;
 
@@ -113,7 +113,7 @@ function computeMotionBudget(scenes: SceneSpec[]): SceneSpec[] {
 
   let premiumUsed = 0;
   return scenes.map((sc) => {
-    const isPremium = sc.provider === "hedra" || sc.provider === "kling";
+    const isPremium = sc.provider === "hedra" || sc.provider === "seedance";
     if (isPremium && premiumUsed < maxPremium) {
       premiumUsed++;
       return sc;
@@ -203,13 +203,13 @@ Every output MUST follow this arc unless quality_score < 0.4 (then simplify to 3
 
 ROUTING RULES (CRITICAL)
 hedra        → talking_head, avatar (presenter, face-forward, character performance)
-kling        → lifestyle_broll, product_demo, emotional (premium motion B-roll)
+seedance     → lifestyle_broll, product_demo, emotional (premium motion B-roll)
 smart_motion → quote, educational, cta, background, transition (lightweight cinematic motion)
 tts          → audio-only narration, voice-only segments
 
 MOTION BUDGET
-Max 2 premium scenes (hedra + kling) per 30 seconds of video.
-All other scenes MUST use smart_motion or tts. Never default all scenes to kling.
+Max 2 premium scenes (hedra + seedance) per 30 seconds of video.
+All other scenes MUST use smart_motion or tts. Never default all scenes to seedance.
 
 SCENE TYPE CLASSIFICATION
 Every scene MUST include a "sceneType" field from:
@@ -251,7 +251,7 @@ OUTPUT FORMAT (STRICT — return ONLY valid JSON, no markdown, no commentary)
       "pacing": "slow | measured | fast",
       "deliveryStyle": "direct | storytelling | conversational | rhetorical",
       "emphasis": ["word1", "word2"],
-      "provider": "hedra | kling | smart_motion | tts",
+      "provider": "hedra | seedance | smart_motion | tts",
       "visualPrompt": "<cinematic prompt: subject, environment, action, lighting, composition>",
       "shotType": "wide | medium | closeup | action | cutaway",
       "motion": "static | slow-pan | zoom-in | handheld | push-in | pull-out | pan-left | pan-right | tilt | parallax",
@@ -321,7 +321,9 @@ function coerceArc(a: unknown): SceneArc {
 }
 
 function coerceProvider(p: unknown, arc: SceneArc, sceneType?: SceneType): SceneProvider {
-  if (p === "hedra" || p === "kling" || p === "smart_motion" || p === "tts") return p;
+  if (p === "hedra" || p === "seedance" || p === "kling" || p === "smart_motion" || p === "tts") {
+    return p === "kling" ? "seedance" : p as SceneProvider;
+  }
   // Fall back to scene type routing, then arc routing
   if (sceneType) return SCENE_TYPE_PROVIDER[sceneType];
   return ARC_PROVIDER[arc];
@@ -387,9 +389,9 @@ async function planScenesLLM(
 
     const budgeted = computeMotionBudget(rawScenes);
     const hedra    = budgeted.filter(s => s.provider === "hedra").length;
-    const kling    = budgeted.filter(s => s.provider === "kling").length;
+    const seedance = budgeted.filter(s => s.provider === "seedance").length;
     const sm       = budgeted.filter(s => s.provider === "smart_motion").length;
-    console.log(`[PROVIDER_USAGE] { hedraScenes: ${hedra}, klingScenes: ${kling}, smartMotionScenes: ${sm} }`);
+    console.log(`[PROVIDER_USAGE] { hedraScenes: ${hedra}, seedanceScenes: ${seedance}, smartMotionScenes: ${sm} }`);
     return budgeted;
   } catch {
     return null;

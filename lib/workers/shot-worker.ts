@@ -1,33 +1,20 @@
 /**
  * Shot render worker — processes one shot per job invocation.
  *
- * Routing logic mirrors /api/generate-shot:
- *   text_overlay                → fal Flux via executeShot() (sync, fast)
- *   everything else             → fal.queue.submit() with Seedance — async, returns immediately
- *
- * For async fal shots the worker exits after submitting. Completion is
- * detected via the existing /api/generate-shot/status-batch polling endpoint
- * (driven by the director page). When the last shot completes, the
- * coordinator is triggered.
+ * Video shots: Kling DIRECT ONLY via executor (true animation, faster, no Fal/Seedance).
+ * text_overlay: Flux sync.
  */
 
 import { createClient }     from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { cleanEnv } from "@/lib/supabase/admin";
-import { fal }               from "@fal-ai/client";
 import {
   executeShot,
-  augmentPrompt,
-  seedanceDuration,
-  SEEDANCE_I2V_MODEL,
-  SEEDANCE_T2V_MODEL,
 } from "@/lib/shot-executor";
 import type { ShotPacket }     from "@/lib/types/shot";
 import type { ShotAssets }     from "@/lib/shot-executor";
 import type { RenderShotJob, WorkerResult } from "./types";
 import { emitAndForget } from "@/lib/events/emitter";
-
-fal.config({ credentials: process.env.FAL_API_KEY });
 
 export async function processShotJob(job: RenderShotJob): Promise<WorkerResult> {
   const { planId, shotDbId, shotId, userId } = job;
@@ -83,36 +70,27 @@ export async function processShotJob(job: RenderShotJob): Promise<WorkerResult> 
       planId,
       shotId,
       shotNumber: shot.shot_number as number,
-      renderer:   shot.content_type === "text_overlay" ? "flux" : "fal",
+      renderer:   shot.content_type === "text_overlay" ? "flux" : "elevenlabs-seedance",
     },
   });
 
-  const isAsyncFal = shot.content_type !== "text_overlay";
+  const isVideoShot = shot.content_type !== "text_overlay";
 
-  // ── Async fal path ────────────────────────────────────────────────────────────
-  if (isAsyncFal) {
-    const model  = shot.scene_image_url ? SEEDANCE_I2V_MODEL : SEEDANCE_T2V_MODEL;
-    const prompt = augmentPrompt(shot as ShotPacket);
-    const dur    = seedanceDuration(shot.duration_seconds as number);
-    const input  = shot.scene_image_url
-      ? { prompt, image_url: shot.scene_image_url, duration: dur, aspect_ratio: "9:16", generate_audio: false }
-      : { prompt, duration: dur, aspect_ratio: "9:16", generate_audio: false };
+  // ── Video shots: Direct Kling ONLY (no fal.ai queue for Seedance/Kling) ───────
+  if (isVideoShot) {
+    // Delegate to executor which now enforces direct Kling (faster + true animation)
+    const executor = await import("@/lib/shot-executor");
+    const res = await executor.executeDirectKlingShot(shot as any);
+    await supabase
+      .from("shots")
+      .update({
+        clip_url: res.videoUrl,
+        render_status: "completed",
+        render_error: null,
+      })
+      .eq("id", shotDbId);
 
-    try {
-       
-      const submitted = await (fal as any).queue.submit(model, { input }) as { request_id: string };
-      await supabase
-        .from("shots")
-        .update({ fal_request_id: submitted.request_id, fal_model: model })
-        .eq("shot_id", shotId);
-
-      console.log(`[shot-worker] shot ${shot.shot_number} queued → fal ${submitted.request_id}`);
-      return { success: true };  // async — actual completion tracked via status-batch
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "fal submit failed";
-      await markFailed(supabase, shotId, msg, planId, shot.shot_number as number);
-      return { success: false, error: msg };
-    }
+    return { success: true };
   }
 
   // ── Sync path (text_overlay only) ────────────────────────────────────────────

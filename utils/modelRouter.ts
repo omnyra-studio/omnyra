@@ -4,32 +4,21 @@ export type ModelRoute = {
   bestFor:  string;
 };
 
+// FORCE SEEDANCE - DISABLE KLING COMPLETELY
+const FORCE_SEEDANCE = true;
+
 export async function routeToModel(params: {
   selectedModel?: string;
   campaignMode?:  boolean;
 }): Promise<ModelRoute> {
-  const { selectedModel, campaignMode = false } = params;
-
-  if (selectedModel === 'hedra') {
-    return { model: 'hedra',        provider: 'hedra',   bestFor: 'Avatar / Talking Head' };
+  void params;
+  if (FORCE_SEEDANCE) {
+    return { model: "seedance-elevenlabs", provider: "seedance-elevenlabs", bestFor: "Cinematic Quality" };
   }
 
-  if (campaignMode) {
-    return { model: 'kling-3.0',    provider: 'kling',   bestFor: 'Cinematic Quality' };
+  if (params.selectedModel === "hedra") {
+    return { model: "hedra", provider: "hedra", bestFor: "Avatar / Talking Head" };
   }
 
-  switch (selectedModel) {
-    case 'kling':
-      return { model: 'kling-3.0',    provider: 'kling',   bestFor: 'Cinematic Quality' };
-    case 'pika':
-      return { model: 'pika-2.5',     provider: 'pika',    bestFor: 'Creative Effects' };
-    case 'runway':
-      return { model: 'runway-gen4',  provider: 'runway',  bestFor: 'Creative Control' };
-    case 'fal':
-      return { model: 'multi-model',  provider: 'fal',     bestFor: 'Fast Multi-Model' };
-    case 'getimg':
-      return { model: 'getimg-video', provider: 'getimg',  bestFor: 'All-in-One' };
-    default:
-      return { model: 'kling-3.0',    provider: 'kling',   bestFor: 'Cinematic Quality' };
-  }
+  return { model: "seedance-elevenlabs", provider: "seedance-elevenlabs", bestFor: "Cinematic Quality" };
 }

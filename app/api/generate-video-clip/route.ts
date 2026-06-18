@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
 import crypto from 'crypto';
+import { parseJsonWithEthnicityFix } from '@/middleware/ethnicityFix';
 
 export const maxDuration = 30;
 
@@ -22,7 +23,11 @@ export async function POST(req: NextRequest) {
     return Response.json({ error: 'Kling credentials not configured' }, { status: 500 });
   }
 
-  const { prompt, imageUrl, model = 'cinematic' } = await req.json();
+  const { prompt, imageUrl, model = 'cinematic' } = await parseJsonWithEthnicityFix<{
+    prompt: string;
+    imageUrl?: string;
+    model?: string;
+  }>(req);
   const cinemaPrompt = `${prompt}, cinematic motion, smooth natural movement, 9:16 vertical, high quality`;
   const hasImage = imageUrl && typeof imageUrl === 'string' && imageUrl.startsWith('https://');
   const mode = MODE_MAP[model] ?? 'pro';

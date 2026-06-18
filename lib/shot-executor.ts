@@ -1,23 +1,17 @@
 /**
  * Shot Executor — dispatches a single ShotPacket to the correct render API.
  *
- * Video shots: direct Kling API (bypasses fal.ai markup); fal.ai used as fallback.
- * text_overlay: fal.ai Flux still-image card held for duration.
- *
- * All paths retry once on failure before returning null.
+ * Video shots: **Seedance via ElevenLabs only** (Kling + fal.ai disabled).
+ * text_overlay: fal.ai Flux still-image card (unchanged).
  */
 
-import { fal } from "@fal-ai/client";
 import type { ShotPacket } from "./types/shot";
-import { extractVideoUrl } from "./video-models";
 import { compileKlingPrompt } from "./video-quality";
-import { generateKlingDirect, isDirectKlingAvailable } from "@/lib/providers/kling-direct";
-
-// ── fal.ai config (fallback only) ─────────────────────────────────────────────
+import { fal } from "@fal-ai/client";
+import { extractVideoUrl } from "./video-models";
+import { elevenLabsSeedanceGenerate, SEEDANCE_ELEVENLABS_MODEL } from "@/lib/services/elevenlabs";
 
 fal.config({ credentials: process.env.FAL_API_KEY });
-
-// ── Public types ──────────────────────────────────────────────────────────────
 
 export interface ShotAssets {
   voiceId?: string;
@@ -29,82 +23,41 @@ export interface ShotExecutionResult {
   duration: number;
 }
 
-// Kling v3 standard model IDs — used for FAL_TO_DIRECT mapping fallback
-export const SEEDANCE_T2V_MODEL = "fal-ai/kling-video/v3/standard/text-to-video";
-export const SEEDANCE_I2V_MODEL = "fal-ai/kling-video/v3/standard/image-to-video";
-export const KLING_I2V_MODEL    = "fal-ai/kling-video/v3/standard/image-to-video";
+export const SEEDANCE_T2V_MODEL = SEEDANCE_ELEVENLABS_MODEL;
+export const SEEDANCE_I2V_MODEL = SEEDANCE_ELEVENLABS_MODEL;
+export const KLING_I2V_MODEL = SEEDANCE_ELEVENLABS_MODEL;
 
-/**
- * Builds a structured Kling prompt — camera direction first, motion verbs injected.
- */
-export function augmentPrompt(shot: ShotPacket): string {
-  return compileKlingPrompt(shot, null);
+export function augmentPrompt(shot: ShotPacket, isCinematicAd: boolean = false): string {
+  return compileKlingPrompt(shot, null, isCinematicAd);
 }
 
-// Kling accepts integers 5–10 only.
-export function seedanceDuration(seconds: number): "5" | "10" {
-  return Math.max(5, Math.min(10, Math.round(seconds || 5))) <= 7 ? "5" : "10";
+export function seedanceDuration(seconds: number): number {
+  return Math.max(4, Math.min(15, Math.round(seconds || 5)));
 }
 
-// Re-exported for callers that imported extractVideoUrl from this module.
 export { extractVideoUrl };
 
-const SHOT_TIMEOUT_MS = 180_000; // 3 min — within Vercel 300s function limit
+const SHOT_TIMEOUT_MS = 180_000;
 
-async function executeFalShot(shot: ShotPacket): Promise<ShotExecutionResult> {
+export async function executeDirectKlingShot(shot: ShotPacket): Promise<ShotExecutionResult> {
   const prompt   = augmentPrompt(shot);
   const duration = seedanceDuration(shot.duration_seconds);
   const isI2V    = !!shot.scene_image_url;
-  const falModel = isI2V ? SEEDANCE_I2V_MODEL : SEEDANCE_T2V_MODEL;
 
-  // ── Direct Kling (preferred) ──────────────────────────────────────────────
-  if (isDirectKlingAvailable()) {
-    try {
-      const direct = await generateKlingDirect(
-        {
-          falModelId:      falModel,
-          prompt,
-          negative_prompt: "blurry, low quality, distorted, watermark",
-          duration,
-          aspect_ratio:    "9:16",
-          cfg_scale:       0.5,
-          image_url:       shot.scene_image_url ?? undefined,
-        },
-        SHOT_TIMEOUT_MS,
-        `shot=${shot.shot_id}`,
-      );
-      return { videoUrl: direct.video_url, duration: shot.duration_seconds };
-    } catch (directErr) {
-      console.warn(`[shot-executor] direct Kling failed for shot ${shot.shot_id}: ${(directErr as Error).message} — falling back to fal.ai`);
-    }
-  }
+  console.info(`[shot-executor] Seedance via ElevenLabs (Kling disabled) for shot ${shot.shot_number}`);
 
-  // ── fal.ai fallback ───────────────────────────────────────────────────────
-  if (!isI2V) {
-    const input = { prompt, duration, aspect_ratio: "9:16", generate_audio: false };
-    console.log(`[Shot ${shot.shot_number}] fal.ai fallback model=${SEEDANCE_T2V_MODEL}`);
-    const result = await (fal as any).subscribe(SEEDANCE_T2V_MODEL, { input, logs: false, pollInterval: 5000 });
-    const videoUrl = extractVideoUrl(result);
-    if (!videoUrl) throw new Error(`${SEEDANCE_T2V_MODEL} returned no video URL`);
-    return { videoUrl, duration: shot.duration_seconds };
-  }
+  console.log("✅ FORCING SEEDANCE VIA ELEVENLABS ONLY");
+  const result = await elevenLabsSeedanceGenerate({
+    prompt,
+    duration:        6,
+    resolution:      "720p",
+    motionIntensity: "high",
+    rawPrompt:       true,
+    generateAudio:   false,
+  });
 
-  const i2vInput = { prompt, image_url: shot.scene_image_url, duration, aspect_ratio: "9:16", generate_audio: false };
-  console.log(`[Shot ${shot.shot_number}] fal.ai fallback model=${SEEDANCE_I2V_MODEL}`);
-  let result: unknown;
-  try {
-    result = await (fal as any).subscribe(SEEDANCE_I2V_MODEL, { input: i2vInput, logs: false, pollInterval: 5000 });
-  } catch (seedanceErr) {
-    console.warn(`[Shot ${shot.shot_number}] Seedance i2v failed, falling back to Kling:`, seedanceErr);
-    const klingInput = { prompt, image_url: shot.scene_image_url, duration: Number(duration), aspect_ratio: "9:16" };
-    result = await (fal as any).subscribe(KLING_I2V_MODEL, { input: klingInput, logs: false, pollInterval: 5000 });
-  }
-  const videoUrl = extractVideoUrl(result);
-  if (!videoUrl) throw new Error(`image-to-video returned no video URL for shot ${shot.shot_number}`);
-  return { videoUrl, duration: shot.duration_seconds };
+  return { videoUrl: result.videoUrl, duration: shot.duration_seconds };
 }
-
-// ── Text overlay ──────────────────────────────────────────────────────────────
 
 async function executeTextOverlay(shot: ShotPacket): Promise<ShotExecutionResult> {
   const prompt = [
@@ -113,26 +66,20 @@ async function executeTextOverlay(shot: ShotPacket): Promise<ShotExecutionResult
     "9:16 portrait format, high contrast, clean minimalist design",
   ].join(" ");
 
-  const result = await (fal as any).subscribe("fal-ai/flux/dev", {
-    input: { prompt, image_size: "portrait_16_9", num_inference_steps: 28, num_images: 1 },
-    logs: false,
-  });
+  const result = await (fal as { subscribe: (id: string, opts: Record<string, unknown>) => Promise<unknown> }).subscribe(
+    "fal-ai/flux/dev",
+    { input: { prompt, image_size: "portrait_16_9", num_inference_steps: 28, num_images: 1 }, logs: false },
+  );
 
+  const r = result as Record<string, unknown>;
   const imageUrl: string =
-    result?.images?.[0]?.url ??
-    result?.data?.images?.[0]?.url;
+    (r?.images as Array<{ url: string }> | undefined)?.[0]?.url ??
+    ((r?.data as { images?: Array<{ url: string }> })?.images)?.[0]?.url ?? "";
 
   if (!imageUrl) throw new Error("fal.ai text overlay returned no image URL");
   return { videoUrl: imageUrl, duration: shot.duration_seconds };
 }
 
-// ── Main dispatcher ───────────────────────────────────────────────────────────
-
-/**
- * Executes a single shot packet by routing to the correct render API.
- * Retries once on failure (after 5 seconds).
- * Returns null if both attempts fail.
- */
 export async function executeShot(
   shot: ShotPacket,
   assets: ShotAssets = {},
@@ -141,7 +88,7 @@ export async function executeShot(
     if (shot.content_type === "text_overlay") {
       return executeTextOverlay(shot);
     }
-    return executeFalShot(shot);
+    return executeDirectKlingShot(shot);
   };
 
   try {
@@ -164,8 +111,6 @@ export async function executeShot(
     }
   }
 }
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));

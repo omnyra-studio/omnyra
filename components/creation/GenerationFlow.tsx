@@ -2,6 +2,13 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { splitPromptIntoClips } from '@/lib/seedance/split-prompt';
+import {
+  SUBJECT_ETHNICITY_OPTIONS,
+  type SubjectEthnicity,
+} from '@/lib/subject-appearance';
+
+type FlowMode = 'guided' | 'direct';
 
 interface VersionResult {
   title: string;
@@ -27,6 +34,8 @@ interface Props {
   modelOverride?: string;
   scriptOnly?: boolean;
   nichePrefill?: string;
+  defaultFlowMode?: FlowMode;
+  cinematicOnly?: boolean;
 }
 
 interface ElevenLabsVoice {
@@ -40,7 +49,7 @@ type VideoType = 'quick' | 'cinematic' | 'avatar';
 
 const VIDEO_TYPES: Array<{ id: VideoType; label: string; desc: string; duration: string; cr: number; badge: string }> = [
   { id: 'quick',     label: '10s Draft',       desc: 'fal.ai fast gen',    duration: '10s',  cr: 10, badge: '⚡' },
-  { id: 'cinematic', label: 'Cinematic Scene',  desc: 'Kling Pro',          duration: '30s',  cr: 40, badge: '🎬' },
+  { id: 'cinematic', label: 'Cinematic Scene',  desc: 'Seedance',           duration: '30s',  cr: 40, badge: '🎬' },
   { id: 'avatar',    label: 'Avatar Video',     desc: 'Hedra talking head', duration: '~30s', cr: 40, badge: '👤' },
 ];
 
@@ -52,8 +61,21 @@ const GoldDivider = () => (
   </div>
 );
 
-export default function GenerationFlow({ toolId, toolName, modelOverride, scriptOnly, nichePrefill }: Props) {
+export default function GenerationFlow({
+  toolId,
+  toolName,
+  modelOverride,
+  scriptOnly,
+  nichePrefill,
+  defaultFlowMode = 'guided',
+  cinematicOnly = false,
+}: Props) {
+  const [flowMode,       setFlowMode]       = useState<FlowMode>(defaultFlowMode);
   const [prompt,         setPrompt]         = useState('');
+  const [customVideoPrompt, setCustomVideoPrompt] = useState('');
+  const [enhancingPrompt, setEnhancingPrompt] = useState(false);
+  const [promptExplanation, setPromptExplanation] = useState('');
+  const [subjectEthnicity, setSubjectEthnicity] = useState<SubjectEthnicity>('caucasian');
   const [niche,          setNiche]          = useState('');
   const [platform,       setPlatform]       = useState('TikTok');
   const [targetAudience, setTargetAudience] = useState('');
@@ -237,6 +259,135 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
     audio.onended = () => { setPreviewingVoice(null); audioRef.current = null; };
   };
 
+  const handleEnhancePrompt = async () => {
+    const source = customVideoPrompt.trim() || prompt.trim();
+    if (!source || enhancingPrompt) return;
+    setEnhancingPrompt(true);
+    setPromptExplanation('');
+    try {
+      const res = await fetch('/api/seedance-prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: source, subjectEthnicity }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setScriptError(data.error ?? 'Prompt enhancement failed');
+        return;
+      }
+      if (data.prompt) setCustomVideoPrompt(data.prompt);
+      if (data.explanation) setPromptExplanation(data.explanation);
+    } catch {
+      setScriptError('Network error — could not enhance prompt');
+    } finally {
+      setEnhancingPrompt(false);
+    }
+  };
+
+  const startDirectVideoGeneration = async () => {
+    const videoPrompt = customVideoPrompt.trim() || prompt.trim();
+    if (!videoPrompt || videoStarted) return;
+
+    setVideoStarted(true);
+    setVideoStatus('Queued');
+    setVideoProgress(5);
+    setVideoUrl(null);
+    setClipUrls([]);
+    setFinalVideo(null);
+    setSelectedConcept({ title: 'Custom prompt', description: videoPrompt, ghostScore: 0, imageUrl: '' });
+
+    try {
+      setVideoStatus('Generating cinematic video…');
+      setVideoProgress(10);
+
+      if (cinematicOnly) {
+        const res = await fetch('/api/generate/cinematic', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            prompt: videoPrompt,
+            duration: videoType === 'quick' ? 10 : 30,
+            voiceoverText: editedScript.trim() || undefined,
+            subjectEthnicity,
+          }),
+        });
+        const data = await res.json();
+
+        if (!res.ok || !data.success) {
+          setVideoStatus('Error — ' + (data.error ?? `HTTP ${res.status}`));
+          setVideoStarted(false);
+          return;
+        }
+
+        if (data.videoUrl) {
+          setClipUrls([data.videoUrl]);
+          setVideoUrl(data.videoUrl);
+          setFinalVideo(data.videoUrl);
+          setVideoStatus('Video ready');
+          setVideoProgress(100);
+        } else {
+          setVideoStatus('Error — No video returned');
+          setVideoStarted(false);
+        }
+        return;
+      }
+
+      const clipCount = videoType === 'quick' ? 1 : 5; // 5 × 6s = 30s
+      const prompts = splitPromptIntoClips(videoPrompt, clipCount);
+
+      let imageUrl: string | null = null;
+      if (mediaFile) {
+        const supabase = createClient();
+        const ext = mediaFile.name.split('.').pop() ?? 'jpg';
+        const path = `uploads/${Date.now()}-ref.${ext}`;
+        const { error: uploadErr } = await supabase.storage
+          .from('renders')
+          .upload(path, mediaFile, { upsert: true });
+        if (!uploadErr) {
+          const { data: { publicUrl } } = supabase.storage.from('renders').getPublicUrl(path);
+          imageUrl = publicUrl;
+        }
+      }
+
+      setVideoStatus('Generating cinematic sequence…');
+
+      const res = await fetch('/api/generate-cinematic-sequence', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompts,
+          imageUrl,
+          clipDuration: 6,
+          goal: videoPrompt,
+          voiceoverText: editedScript || selectedScript?.script || videoPrompt,
+          videoType,
+          subjectEthnicity,
+        }),
+      });
+      const data = await res.json();
+
+      if (!res.ok || data.error) {
+        setVideoStatus('Error — ' + (data.error ?? `HTTP ${res.status}`));
+        setVideoStarted(false);
+        return;
+      }
+
+      const urls: string[] = data.clip_urls ?? (data.stitched_url ? [data.stitched_url] : []);
+      if (urls.length > 0) {
+        setClipUrls(urls);
+        setVideoStatus('Scenes ready');
+        setVideoProgress(100);
+      } else {
+        setVideoStatus('Error — No clips returned');
+        setVideoStarted(false);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Generation failed';
+      setVideoStatus('Error — ' + msg);
+      setVideoStarted(false);
+    }
+  };
+
   const handleGenerateScript = async () => {
     if (!prompt.trim()) return;
     setLoadingState('Writing your scripts…');
@@ -290,6 +441,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
           visualStyle,
           aspectRatio,
           quality,
+          subjectEthnicity,
         }),
       });
       const data = await res.json();
@@ -350,27 +502,26 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
           setVideoStarted(false);
         }
       } else {
-        // Cinematic / Quick: 3 × 10s clips via generate-cinematic-sequence
-        // Prompts are ACTION-driven from the script, not just camera angles.
+        // Cinematic / Quick: use custom prompt when provided, else derive from script beats
         const sceneDesc = selectedConcept.description;
-        const scriptFull = (editedScript || selectedScript?.script || '').trim();
-        const hook = selectedScript?.hook || '';
-
-        // Split script into 3 timed beats so each clip depicts the actual action
-        const sentences = scriptFull.split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 2);
-        const n = sentences.length;
-        const beat1 = sentences.slice(0, Math.ceil(n / 3)).join(' ') || hook;
-        const beat2 = sentences.slice(Math.ceil(n / 3), Math.ceil(2 * n / 3)).join(' ') || beat1;
-        const beat3 = sentences.slice(Math.ceil(2 * n / 3)).join(' ') || beat2;
-
-        // Clip 1: opening action from hook/beat1 — wide shot to establish scene
-        // Clip 2: mid action from beat2 — medium shot showing movement
-        // Clip 3: closing action from beat3 — close detail or resolution
-        const cameraVariations = [
-          `${sceneDesc}. ${beat1}. Opening scene, subjects actively doing the described action, wide shot, natural authentic movement, camera slowly pushing in`,
-          `${sceneDesc}. ${beat2}. Mid scene action continues, subjects clearly performing the action, medium shot, genuine motion not posed, fluid natural movement`,
-          `${sceneDesc}. ${beat3}. Closing beat, action resolving or completing, close detail shot showing the key prop or expression, camera gently pulling back`,
-        ];
+        const overridePrompt = customVideoPrompt.trim();
+        const clipCount = videoType === 'quick' ? 1 : 5; // 5 × 6s = 30s
+        const cameraVariations = overridePrompt
+          ? splitPromptIntoClips(overridePrompt, clipCount)
+          : (() => {
+              const scriptFull = (editedScript || selectedScript?.script || '').trim();
+              const hook = selectedScript?.hook || '';
+              const sentences = scriptFull.split(/(?<=[.!?])\s+/).filter(s => s.trim().length > 2);
+              const n = sentences.length;
+              const beat1 = sentences.slice(0, Math.ceil(n / 3)).join(' ') || hook;
+              const beat2 = sentences.slice(Math.ceil(n / 3), Math.ceil(2 * n / 3)).join(' ') || beat1;
+              const beat3 = sentences.slice(Math.ceil(2 * n / 3)).join(' ') || beat2;
+              return [
+                `${sceneDesc}. ${beat1}. Opening scene, subjects actively doing the described action, wide shot, natural authentic movement, camera slowly pushing in`,
+                `${sceneDesc}. ${beat2}. Mid scene action continues, subjects clearly performing the action, medium shot, genuine motion not posed, fluid natural movement`,
+                `${sceneDesc}. ${beat3}. Closing beat, action resolving or completing, close detail shot showing the key prop or expression, camera gently pulling back`,
+              ];
+            })();
 
         setVideoStatus('Generating cinematic sequence…');
         setVideoProgress(10);
@@ -379,11 +530,13 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            prompts:     cameraVariations,
-            imageUrl:    selectedConcept.imageUrl || null,
-            clipDuration: 10,
-            goal:        selectedConcept.description,
+            prompts:      cameraVariations,
+            imageUrl:     selectedConcept.imageUrl || null,
+            clipDuration: 6,
+            goal:         selectedConcept.description,
+            voiceoverText: editedScript || selectedScript?.script || selectedConcept.description,
             videoType,
+            subjectEthnicity,
           }),
         });
         const data = await res.json();
@@ -741,15 +894,124 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
           fontWeight: 700, fontSize: 'clamp(1.6rem, 4vw, 2.1rem)', color: '#C084FC',
           margin: '0 0 12px', lineHeight: 1.2, textAlign: 'center',
         }}>
-          What should Omnyra create?
+          {cinematicOnly ? 'Describe your cinematic scene' : 'What should Omnyra create?'}
         </h1>
         <p style={{ color: '#BBA8C8', fontSize: 14, lineHeight: 1.65, margin: '0 0 30px', textAlign: 'center' }}>
-          Describe your goal. Omnyra analyzes trends, audience patterns, and your creative
-          history to build strategy versions with hooks, viral scores, and predictions.
+          {cinematicOnly
+            ? 'Paste any prompt — rough idea or full Seedance 2.0 format. Omnyra generates 3 × 10s Kling Pro clips and stitches them into a 30s cinematic sequence.'
+            : flowMode === 'guided'
+              ? 'Describe your goal. Omnyra analyzes trends, audience patterns, and your creative history to build strategy versions with hooks, viral scores, and predictions.'
+              : 'Paste any prompt — rough idea, Seedance 2.0 format, or production-ready shot list. Omnyra sends it straight to video generation.'}
         </p>
+
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,video/*"
+          style={{ display: 'none' }}
+          onChange={e => setMediaFile(e.target.files?.[0] ?? null)}
+        />
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
+        {flowMode === 'direct' ? (
+          <>
+            <div>
+              <label style={labelStyle}>Your video prompt *</label>
+              <textarea
+                value={customVideoPrompt}
+                onChange={e => { setCustomVideoPrompt(e.target.value); setPromptExplanation(''); }}
+                placeholder={cinematicOnly
+                  ? "Describe your cinematic scene — character, action, setting, camera move, mood. Or paste a full Seedance 2.0 prompt. Use [00:00-00:10] timestamps for multi-shot sequences."
+                  : "Paste any prompt — rough idea or full Seedance 2.0 format. Use [00:00-00:04] timestamps for multi-shot sequences."}
+                rows={8}
+                disabled={isLoading || videoStarted}
+                className="omnyra-textarea"
+                style={{
+                  width: '100%', borderRadius: 16, padding: '16px',
+                  fontSize: '0.875rem', resize: 'vertical',
+                  border: '1px solid rgba(204,171,175,0.25)', outline: 'none',
+                  fontFamily: 'inherit', caretColor: '#C084FC',
+                  boxSizing: 'border-box',
+                  background: '#0D0010', color: '#C084FC',
+                }}
+              />
+              {promptExplanation && (
+                <p style={{ color: '#8B6FA8', fontSize: '0.78rem', margin: '8px 0 0', lineHeight: 1.5 }}>
+                  {promptExplanation}
+                </p>
+              )}
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10 }}>
+              <button
+                type="button"
+                onClick={handleEnhancePrompt}
+                disabled={enhancingPrompt || !(customVideoPrompt.trim() || prompt.trim()) || videoStarted}
+                style={{
+                  padding: '14px', borderRadius: 12, border: '1px solid rgba(212,168,67,0.35)',
+                  background: 'rgba(255,255,255,0.04)', color: '#D4A843',
+                  fontWeight: 600, fontSize: '0.85rem', cursor: 'pointer',
+                  opacity: enhancingPrompt ? 0.6 : 1,
+                }}
+              >
+                {enhancingPrompt ? 'Enhancing…' : '✦ Enhance for Seedance 2.0'}
+              </button>
+            </div>
+
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap',
+              padding: '12px 16px', borderRadius: 12,
+              background: 'rgba(212,168,67,0.08)', border: '1px solid rgba(212,168,67,0.25)',
+            }}>
+              <span style={{ fontSize: '1.1rem' }}>🎬</span>
+              <div>
+                <p style={{ color: '#D4A843', fontWeight: 700, fontSize: '0.85rem', margin: 0 }}>30s Cinematic Video</p>
+                <p style={{ color: '#8B6FA8', fontSize: '0.75rem', margin: '2px 0 0' }}>3 × 10s Seedance clips · stitched sequence · 40 credits</p>
+              </div>
+            </div>
+
+            <div
+              onClick={() => !isLoading && !videoStarted && fileInputRef.current?.click()}
+              style={{ border: '1px dashed rgba(255,255,255,0.25)', borderRadius: 12, padding: '16px', textAlign: 'center', cursor: 'pointer' }}
+            >
+              {mediaFile
+                ? <span style={{ color: '#D4A843', fontSize: '0.875rem' }}>📎 {mediaFile.name}</span>
+                : <p style={{ color: '#D4C5E2', fontSize: '0.85rem', margin: 0 }}>Optional reference image for image-to-video</p>}
+            </div>
+
+            {!videoStarted && !finalVideo && (
+              <button
+                type="button"
+                onClick={startDirectVideoGeneration}
+                disabled={!customVideoPrompt.trim() || isLoading}
+                className={customVideoPrompt.trim() ? 'gold-btn' : undefined}
+                style={{
+                  width: '100%', padding: '16px 24px', borderRadius: 9999, border: 'none',
+                  fontSize: 16, fontWeight: 600, fontFamily: 'inherit',
+                  cursor: !customVideoPrompt.trim() ? 'not-allowed' : 'pointer',
+                  opacity: !customVideoPrompt.trim() ? 0.5 : 1,
+                }}
+              >
+                {cinematicOnly ? 'Generate Cinematic Video →' : 'Generate Video →'}
+              </button>
+            )}
+
+            {videoStarted && (
+              <div style={{ borderRadius: 12, padding: '14px 16px', background: '#1A0A2E', border: '1px solid #2D1B4E' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <span style={{ color: '#B09FC0', fontSize: '0.82rem' }}>{videoStatus}</span>
+                  <span style={{ color: '#D4A843', fontSize: '0.82rem' }}>{videoProgress}%</span>
+                </div>
+                <div style={{ width: '100%', height: 4, background: 'rgba(255,255,255,0.1)', borderRadius: 2 }}>
+                  <div style={{ width: `${videoProgress}%`, height: '100%', background: 'linear-gradient(90deg, #C9A84C, #FFD700)', borderRadius: 2, transition: 'width 0.3s' }} />
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+        <>
         {/* Main goal */}
         <div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
@@ -934,13 +1196,6 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
               </>
             )}
           </div>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*,video/*"
-            style={{ display: 'none' }}
-            onChange={e => setMediaFile(e.target.files?.[0] ?? null)}
-          />
         </div>
 
         {/* Lightning Mode */}
@@ -1009,12 +1264,14 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
             ? <><span style={{ width: 7, height: 7, borderRadius: '50%', background: '#D4A843', display: 'inline-block', animation: 'pulseSoft 1.1s ease-in-out infinite' }} /> Building scripts…</>
             : scripts.length > 0 ? '↺ Regenerate Scripts' : 'Generate Strategy Versions →'}
         </button>
+        </>
+        )}
 
         </div>{/* end flex column */}
       </div>{/* end glass-card */}
 
       {/* ── SECTION 2: Scripts ─────────────────────────────────────────── */}
-      {scripts.length > 0 && (
+      {flowMode === 'guided' && scripts.length > 0 && (
         <>
           <GoldDivider />
           <div ref={scriptsSectionRef} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -1199,7 +1456,7 @@ export default function GenerationFlow({ toolId, toolName, modelOverride, script
       )}
 
       {/* ── SECTION 3: Visuals ─────────────────────────────────────────── */}
-      {selectedScript && !scriptOnly && (
+      {flowMode === 'guided' && selectedScript && !scriptOnly && (
         <>
           <GoldDivider />
           <div ref={visualsSectionRef} style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>

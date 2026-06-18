@@ -1,5 +1,6 @@
 /**
- * Smart Motion Engine
+ * Smart Motion Engine — DISABLED when FORCE_SEEDANCE is true.
+ * Use Seedance via ElevenLabs instead.
  *
  * Applies lightweight cinematic motion effects to static images using FFmpeg.
  * Target: <2 seconds per scene. Zero AI generation cost.
@@ -213,6 +214,11 @@ export function pickEffect(sceneType?: string, sceneIndex?: number): SmartMotion
 // ── Core generator ────────────────────────────────────────────────────────────
 
 export async function generateSmartMotionClip(input: SmartMotionInput): Promise<Buffer> {
+  const { FORCE_SEEDANCE } = await import("@/lib/video-provider");
+  if (FORCE_SEEDANCE) {
+    throw new Error("smart_motion disabled — FORCE_SEEDANCE is true. Use Seedance via ElevenLabs.");
+  }
+
   const { imageUrl, effect, durationSec } = input;
 
   // Download source image

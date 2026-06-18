@@ -18,6 +18,7 @@ import { after } from "next/server";
 import { createOrFindJob } from "@/lib/avatar-queue";
 import { assertNoLegacyLipsync, LegacyPipelineViolationError } from "@/lib/guards/legacy-pipeline-guard";
 import { cleanEnv } from "@/lib/supabase/admin";
+import { parseJsonWithEthnicityFix } from "@/middleware/ethnicityFix";
 
 export const maxDuration = 30;
 
@@ -35,7 +36,7 @@ export async function POST(req: Request) {
 
   let body: { script?: string; voice_id?: string; background_image?: string; avatar_image_url?: string; plan?: string; character_id?: string };
   try {
-    body = await req.json();
+    body = await parseJsonWithEthnicityFix<{ script?: string; voice_id?: string; background_image?: string; avatar_image_url?: string; plan?: string; character_id?: string }>(req);
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }

@@ -17,10 +17,17 @@ import { supabaseAdmin }         from "@/lib/supabase/admin";
 import { generateKlingClip }     from "@/lib/orchestrator/kling-worker";
 import { generateVoiceover }     from "@/lib/orchestrator/elevenlabs-worker";
 import { stitchClips }           from "@/lib/orchestrator/clip-stitcher";
-import { KLING_T2V_PRO, KLING_T2V_MODEL, KLING_I2V_PRO, KLING_I2V_MODEL } from "@/lib/video-models";
+import { SEEDANCE_T2V_MODEL, SEEDANCE_I2V_MODEL } from "@/lib/video-models";
 import { loadBrandMemory }       from "@/lib/memory/brand-memory";
+import { mergeVideoWithAudio }   from "@/lib/utils/merge-video-audio";
 import { loadCharacterMemory, buildKlingCharacterSuffix } from "@/lib/memory/character-memory";
 import { generateGetImgFrame }   from "@/lib/orchestrator/getimg-worker";
+import {
+  applySubjectEthnicityToPrompts,
+  getEthnicityLock,
+  resolveSubjectEthnicity,
+} from "@/lib/subject-appearance";
+import { buildBaseImagePrompt, buildMotionPrompt, HIGH_MOTION_STRENGTH } from "@/lib/motion-prompt";
 
 export const maxDuration = 300;
 
@@ -156,8 +163,8 @@ export async function POST(req: Request) {
     const MIN_OUTPUT_SECS = isUltraDraft ? 20 : 26; // hard floor — final video never shorter than this
 
     // Model selection: ultra-draft uses v3 standard (shorter queue), all other modes use v3 pro
-    const klingT2V = isUltraDraft ? KLING_T2V_MODEL : KLING_T2V_PRO;
-    const klingI2V = isUltraDraft ? KLING_I2V_MODEL : KLING_I2V_PRO;
+    const seedanceT2V = SEEDANCE_T2V_MODEL;
+    const seedanceI2V = SEEDANCE_I2V_MODEL;
 
     const trimmedScript = trimToWords(rawScript || goal, 300);
     console.log(`[LIGHTNING_ENFORCED] mode=${speedMode} scenes=${SCENE_COUNT} clip_dur=${CLIP_DURATION}s target=${TARGET_SECS}s model=v3-${isUltraDraft ? "standard" : "pro"} lightning=${lightningMode}`);
@@ -195,6 +202,13 @@ export async function POST(req: Request) {
     }
     scenePrompts = scenePrompts.slice(0, SCENE_COUNT);
 
+    const ethnicityCtx = `${rawScript} ${goal} ${niche}`;
+    const resolvedEthnicity = resolveSubjectEthnicity(undefined, ethnicityCtx);
+    const ethnicityLocked = applySubjectEthnicityToPrompts(scenePrompts, resolvedEthnicity);
+    scenePrompts = ethnicityLocked.prompts;
+    const ethnicityNegative = ethnicityLocked.negativeAddon;
+    console.log(`[SUBJECT_ETHNICITY] resolved=${resolvedEthnicity} scenes=${scenePrompts.length}`);
+
     // Inject style prefix into every scene prompt.
     // Animated: Disney/Pixar 3D. Non-animated: cinematic quality guard.
     if (isAnimated) {
@@ -203,6 +217,17 @@ export async function POST(req: Request) {
     } else {
       scenePrompts = scenePrompts.map(p => CINEMATIC_QUALITY_PREFIX + p);
       console.log(`[STYLE_ENFORCED] cinematic=true prefix="${CINEMATIC_QUALITY_PREFIX.substring(0, 60)}" scenes=${scenePrompts.length}`);
+    }
+
+    // Support quick-start for Mad Men / dramatic office cinematic ads (matches user ElevenLabs/Seedance style)
+    const isCinematicAd = /\b(ad|commercial|pitch|office|mad men|dramatic office|sales pitch)\b/i.test(`${rawScript} ${goal} ${niche}`);
+    if (isCinematicAd && !isAnimated) {
+      const DRAMATIC_AD_PREFIX = "Cinematic 1960s Mad Men dramatic office style, intense venetian blind shadows and dramatic lighting, passionate middle-aged man in sharp tailored suit slicked hair, fist pump, leaning aggressively, intense expression, dynamic low angle to wide shot, realistic physics, professional color grading, filmic, high-end commercial ad quality, ";
+      scenePrompts = scenePrompts.map(p => {
+        if (!/venetian|mad men|dramatic office/i.test(p)) return DRAMATIC_AD_PREFIX + p;
+        return p;
+      });
+      console.log(`[STYLE_ENFORCED] cinematic-ad=true dramatic office/Mad Men style applied`);
     }
 
     // Append emotional intelligence + brand context to each scene prompt when provided
@@ -217,6 +242,9 @@ export async function POST(req: Request) {
       scenePrompts = scenePrompts.map(p => `${p}, ${emotionSuffix}`);
       console.log(`[EI_INJECT] arc=${emotionalArc} intensity=${microIntensity} emotions=${activeEmotions.join(",")} suffix="${emotionSuffix.slice(0, 80)}"`);
     }
+
+    scenePrompts = scenePrompts.map(p => buildMotionPrompt(p));
+    console.log(`[MOTION_PROMPT] applied to ${scenePrompts.length} scene(s) strength=${HIGH_MOTION_STRENGTH}`);
 
     await setJobStatus(jobId, "running", 15);
 
@@ -246,8 +274,9 @@ export async function POST(req: Request) {
       console.log(`[CHARACTER_LOCK] stored_ref_frame char=${characterId} parent_render=${parentRenderId ?? "none"} url=${referenceImageUrl.substring(0, 80)}`);
     } else if (!lightningMode) {
       const subjectHint = charSuffix ? charSuffix.split(",")[0].trim() : "";
+      const ethLock = getEthnicityLock(resolvedEthnicity);
 
-      const refPrompt = isAnimated
+      const refPrompt = buildBaseImagePrompt(isAnimated
         ? [
             "highly detailed 3D Disney Pixar style animated character",
             subjectHint || goal.slice(0, 80),
@@ -255,13 +284,14 @@ export async function POST(req: Request) {
             "animated film still, studio lighting, 9:16 portrait, no photorealism",
           ].filter(Boolean).join(", ")
         : [
-            subjectHint || "lifestyle creator, mid-shot",
+            ethLock.prefix,
+            subjectHint || "Caucasian lifestyle creator, mid-shot",
             goal || trimmedScript.slice(0, 100),
             "establishing shot, full body visible, facing camera directly",
             "candid photography, sharp focus, natural light, real person",
             brandSuffix || "minimal clean background",
             "9:16 portrait, ultra-realistic, high detail",
-          ].filter(Boolean).join(", ");
+          ].filter(Boolean).join(", "));
 
       const refNegative = isAnimated
         ? "photorealistic, live action, real people, blurry, deformed, extra limbs, text, watermark, nsfw, nude"
@@ -272,6 +302,7 @@ export async function POST(req: Request) {
             "cartoon, anime, illustration, painting, cgi, render",
             "blurry, out of focus, low quality, pixelated, noise",
             "looking away, back turned, side profile",
+            ethnicityNegative,
           ].join(", ");
 
       try {
@@ -330,7 +361,7 @@ export async function POST(req: Request) {
         shotId:                `${jobId}-${i}`,
         shotNumber:            i + 1,
         visualPrompt:          prompt,
-        modelId:               referenceImageUrl ? klingI2V : klingT2V,
+        modelId:               referenceImageUrl ? seedanceI2V : seedanceT2V,
         imageUrl:              referenceImageUrl,
         durationSecs:          CLIP_DURATION,
         aspectRatio:           "9:16" as const,
@@ -338,11 +369,14 @@ export async function POST(req: Request) {
         characterPromptSuffix: charSuffix,
         speedMode,
         isStylized:            isAnimated,
-        negativePrompt:        isAnimated ? ANIM_NEGATIVE_PROMPT : undefined,
+        motionStrength:        isAnimated ? 0.68 : HIGH_MOTION_STRENGTH,
+        negativePrompt:        isAnimated
+          ? ANIM_NEGATIVE_PROMPT
+          : [ethnicityNegative, "asian, east asian, asian features"].filter(Boolean).join(", ") || undefined,
       };
       try {
         const r = await generateKlingClip(baseConfig);
-        console.log(`[KLING_CLIP_OK] clip=${i} ms=${Date.now()-clipT0} model=${r.model_used}`);
+        console.log(`[SEEDANCE_CLIP_OK] clip=${i} ms=${Date.now()-clipT0} model=${r.model_used}`);
         return r;
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -350,7 +384,7 @@ export async function POST(req: Request) {
           // I2V timed out or failed → retry as pure T2V (no reference, faster queue)
           console.warn(`[LIGHTNING_KLING] I2V failed → T2V fallback clip=${i}: ${msg.slice(0, 80)}`);
           try {
-            const r2 = await generateKlingClip({ ...baseConfig, modelId: klingT2V, imageUrl: undefined, shotId: `${jobId}-${i}-t2v` });
+            const r2 = await generateKlingClip({ ...baseConfig, modelId: seedanceT2V, imageUrl: undefined, shotId: `${jobId}-${i}-t2v` });
             console.log(`[LIGHTNING_KLING] T2V fallback ok clip=${i} ms=${Date.now()-clipT0}`);
             return r2;
           } catch (err2) {
@@ -427,8 +461,18 @@ export async function POST(req: Request) {
       stitchMs = Date.now() - stitchT0;
       console.log(`[FINAL_VIDEO] duration=${stitchResult.duration_seconds.toFixed(1)}s clips=${stitchResult.clip_count} hasAudio=${!!voiceoverUrl} url=${finalVideoUrl.substring(0, 80)}`);
     } catch (stitchErr) {
-      console.warn("[run-cinematic] stitch failed, using first clip:", (stitchErr as Error).message);
+      console.warn("[run-cinematic] stitch failed, using first clip + voice fallback:", (stitchErr as Error).message);
       finalVideoUrl = validClips[0].video_url;
+      if (voiceoverUrl) {
+        try {
+          const merged = await mergeVideoWithAudio(userId, validClips[0].video_url, voiceoverUrl);
+          finalVideoUrl = merged.video_url;
+          console.log(`[run-cinematic] voiceover baked via fallback merge: ${finalVideoUrl.substring(0, 80)}`);
+        } catch (mergeErr) {
+          console.warn("[run-cinematic] fallback voice merge also failed, audio_url ref will be used by client:", (mergeErr as Error).message);
+          // DB will still have audio_url set below; video is silent fallback
+        }
+      }
       stitchMs = Date.now() - stitchT0;
     }
 

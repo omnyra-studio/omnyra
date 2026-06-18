@@ -1,8 +1,9 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { fal } from "@fal-ai/client";
-import { KLING_I2V_MODEL, KLING_T2V_MODEL, extractVideoUrl } from "@/lib/video-models";
-import { generateSmartMotionClip, pickEffect } from "@/lib/smart-motion";
+import { forceElevenLabsSeedance, elevenLabsVoiceover, mergeVideoAudio, generateAmbientSound, pickAmbientDescription } from "@/lib/services/elevenlabs";
+import { mergeVideoWithAudio } from "@/lib/utils/merge-video-audio";
+import { FORCE_SEEDANCE, getVideoProvider } from "@/lib/video-provider";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import * as fs from "fs";
 import * as os from "os";
@@ -34,24 +35,45 @@ import { videoCreditCost } from "@/lib/rules/creditRules";
 import { withCreditState, InsufficientCreditsError, CreditReservationError } from "@/lib/credits/withCreditState";
 import { loadBrandMemory } from "@/lib/memory/brand-memory";
 import { saveRenderToLibrary } from "@/lib/renders/save-render";
+import {
+  applySubjectEthnicityToPrompts,
+  resolveSubjectEthnicity,
+  type SubjectEthnicityInput,
+} from "@/lib/subject-appearance";
+import { parseJsonWithEthnicityFix } from "@/middleware/ethnicityFix";
+import {
+  buildBaseImagePrompt,
+  buildSeedanceElevenLabsPrompt,
+} from "@/lib/motion-prompt";
+
 
 export const maxDuration = 300;
 
-const CLIP_SECONDS = 10;
-const ROUTE_VERSION = "2026-06-06-v12-pad-logging-voice-full";
+const CLIP_SECONDS = 6;   // 6s @ 720p saves credits; 5 clips = 30s total
+const CLIP_COUNT   = 5;   // 5 × 6s = 30s
+const ROUTE_VERSION = "2026-06-18-v14-elevenlabs-runway-fallback";
 
 const FLUX_MODEL = "fal-ai/flux/schnell";
 
 // ── SLA budget: Vercel maxDuration=300s; keep 30s for post-processing ─────────
-const SLA_TOTAL_MS   = 260_000; // 260s total (40s margin before Vercel kills)
-const SLA_GEN_MS     = 230_000; // clip generation allocation
+const SLA_TOTAL_MS   = 270_000; // 270s total (30s margin before Vercel 300s kills)
+const SLA_GEN_MS     = 240_000; // clip generation allocation — fal.ai needs ~200s/clip parallel
 const SLA_POST_MS    =  30_000; // post-processing + continuity reserve
 // Absolute deadline for generation to finish (30s reserved for post)
 // Computed per-request as: routeT0 + SLA_TOTAL_MS - SLA_POST_MS
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type SceneProvider = "kling" | "smart_motion";
+type SceneProvider = "seedance";
+
+/** SCENE_ROUTER — hard-forced ElevenLabs Seedance only. No fal.ai, no Kling, no smart_motion. */
+function sceneRouter(_sceneType: string, _motionScore: number): SceneProvider {
+  if (FORCE_SEEDANCE) {
+    console.log("✅ FORCING SEEDANCE VIA ELEVENLABS ONLY");
+  }
+  void getVideoProvider();
+  return "seedance";
+}
 
 class AllClipsFailedError extends Error {
   readonly payload: Record<string, unknown>;
@@ -63,20 +85,6 @@ class AllClipsFailedError extends Error {
 }
 
 // ── Storage upload helper ─────────────────────────────────────────────────────
-
-async function uploadSmartMotionClip(
-  buffer: Buffer,
-  userId: string,
-  index: number,
-): Promise<string> {
-  const path = `${userId}/smart-motion/${Date.now()}-clip${index}.mp4`;
-  const { error } = await supabaseAdmin.storage
-    .from("renders")
-    .upload(path, buffer, { contentType: "video/mp4", upsert: true });
-  if (error) throw new Error(`smart-motion upload: ${error.message}`);
-  const { data: { publicUrl } } = supabaseAdmin.storage.from("renders").getPublicUrl(path);
-  return publicUrl;
-}
 
 // ── Last-frame extraction for clip chaining ───────────────────────────────────
 
@@ -182,6 +190,7 @@ async function generateSceneImage(
   sceneIndex?:  number,
   charRefUrl?:  string,  // when set: score after gen and retry once if score < 0.72
   charSuffix?:  string,  // prepended on retry to anchor character description
+  ethnicityNegative?: string,
 ): Promise<string> {
   const isAnimated = detectAnimatedStyle(prompt);
   const label = sceneIndex !== undefined ? `scene=${sceneIndex + 1}` : "scene=?";
@@ -206,11 +215,12 @@ async function generateSceneImage(
     `bad anatomy, extra legs, malformed limbs, three hands, two left hands, ` +
     `anatomical errors, wrong body proportions`;
 
+  const ethnicityGuard = ethnicityNegative ? `, ${ethnicityNegative}` : '';
   const coupleNegative = isCouple
     ? `single person, solo, one person, alone, missing person, partial person, cropped person, ` +
       `overlapping limbs, fused bodies, merged torsos, arm going through body, extra arm between people, ` +
-      `${baseNegative}`
-    : baseNegative;
+      `${baseNegative}${ethnicityGuard}`
+    : `${baseNegative}${ethnicityGuard}`;
 
   const buildPrompt = (corePrompt: string, attempt: number): string => {
     const anatomySuffix = [ANATOMY_GUARD, handObjectGuard].filter(Boolean).join(", ");
@@ -247,7 +257,7 @@ async function generateSceneImage(
   };
 
   const callFlux = async (attempt: number): Promise<string> => {
-    const safePrompt = buildPrompt(prompt, attempt);
+    const safePrompt = buildPrompt(buildBaseImagePrompt(prompt), attempt);
     console.log(`[FLUX_ATTEMPT] ${label} attempt=${attempt} isCouple=${isCouple} prompt="${safePrompt.substring(0, 120)}"`);
     const result = await (fal as any).subscribe(FLUX_MODEL, {
       input: {
@@ -323,88 +333,49 @@ async function generateSceneImage(
 
 // ── Clip generators ───────────────────────────────────────────────────────────
 
-async function generateKlingClip(
-  prompt: string,
-  imageUrl: string | null,
-  duration: "5" | "10",
-  label: string,
-  clipReports: string[],
-  negativePrompt?: string,
-): Promise<string | null> {
-  const hasImage = typeof imageUrl === "string" && imageUrl.startsWith("https://");
+const ETHNICITY_PREFIX_RE = /^\[(?:MANDATORY ETHNICITY OVERRIDE|ETHNICITY DEFAULT RULE)[^\]]*\][\s\S]*?\n\n/i;
 
-  if (hasImage) {
-    const i2vInput: Record<string, unknown> = { prompt, image_url: imageUrl, duration, aspect_ratio: "9:16", generate_audio: false };
-    if (negativePrompt) i2vInput.negative_prompt = negativePrompt;
-    try {
-      const result = await (fal as any).subscribe(KLING_I2V_MODEL, { input: i2vInput, logs: false, pollInterval: 4000 });
-      const url = extractVideoUrl(result);
-      if (!url) throw new Error("no video URL from i2v");
-      clipReports.push(`${label} | ${KLING_I2V_MODEL} | OK | ${url.substring(0, 80)}`);
-      return url;
-    } catch (err) {
-      const e = err as any;
-      clipReports.push(`${label} | ${KLING_I2V_MODEL} | FAIL | ${e?.message ?? String(err)}`);
-      console.warn(`${label} i2v FAILED — falling back to t2v`);
-    }
-  }
-
-  // text-to-video fallback
-  const t2vInput: Record<string, unknown> = { prompt, duration, aspect_ratio: "9:16", generate_audio: false };
-  if (negativePrompt) t2vInput.negative_prompt = negativePrompt;
-  try {
-    const result = await (fal as any).subscribe(KLING_T2V_MODEL, { input: t2vInput, logs: false, pollInterval: 4000 });
-    const url = extractVideoUrl(result);
-    if (!url) throw new Error("no video URL from t2v");
-    clipReports.push(`${label} | ${KLING_T2V_MODEL} | OK | ${url.substring(0, 80)}`);
-    return url;
-  } catch (err) {
-    const e = err as any;
-    const detail = `${e?.message ?? String(err)}`;
-    clipReports.push(`${label} | ${KLING_T2V_MODEL} | FAIL | ${detail}`);
-    console.error(`${label} t2v FAILED: ${detail}`);
-    return null;
-  }
+function stripEthnicityPrefix(text: string): string {
+  return text.replace(ETHNICITY_PREFIX_RE, "").trim();
 }
 
-async function generateSmartMotionClipWithUpload(
-  prompt:      string,
-  imageUrl:    string | null,
-  sceneType:   string,
-  index:       number,
-  userId:      string,
-  label:       string,
+async function generateSeedanceClip(
+  prompt: string,
+  _imageUrl: string | null,
+  duration: "5" | "6" | "10",
+  label: string,
   clipReports: string[],
-  durationSec: number,
-  sourceImages: Array<string | null>,
-  isCouple:    boolean,
-  charRefUrl?: string,  // character reference for consistency-gated retry
-  charSuffix?: string,  // character description prefix used in retry prompt
 ): Promise<string | null> {
-  const smT0 = Date.now();
+  const cleanPrompt = stripEthnicityPrefix(prompt);
+  const motionPrompt = buildSeedanceElevenLabsPrompt(cleanPrompt);
+
   try {
-    // Always generate a scene-specific image from the visual prompt.
-    // The imageUrl from the client is a reference/brand image — reusing it for every
-    // scene causes all clips to animate the same frame (identical output).
-    const sourceImageUrl = await generateSceneImage(prompt, isCouple, index, charRefUrl, charSuffix);
+    const videoUrl = await forceElevenLabsSeedance(motionPrompt, {
+      duration:        Number(duration),
+      resolution:      "720p",
+      motionIntensity: "high",
+      generateAudio:   false,
+      rawPrompt:       true,
+    });
+    clipReports.push(`${label} | seedance-elevenlabs | OK | ${videoUrl.substring(0, 80)}`);
+    return videoUrl;
+  } catch (elevenLabsErr) {
+    const elDetail = elevenLabsErr instanceof Error ? elevenLabsErr.message : String(elevenLabsErr);
+    clipReports.push(`${label} | seedance-elevenlabs | FAIL | ${elDetail}`);
+    console.warn(`${label} ElevenLabs failed — trying Runway: ${elDetail}`);
 
-    sourceImages[index] = sourceImageUrl;
-
-    const effect = pickEffect(sceneType, index);
-    console.log(`${label} [SMART_MOTION] effect=${effect} sourceImage=${sourceImageUrl.substring(0, 60)}`);
-
-    const buffer = await generateSmartMotionClip({ imageUrl: sourceImageUrl, effect, durationSec });
-    const url    = await uploadSmartMotionClip(buffer, userId, index);
-
-    const elapsed = Date.now() - smT0;
-    clipReports.push(`${label} | smart_motion:${effect} | OK | ${url.substring(0, 80)} | ${elapsed}ms`);
-    console.log(`${label} [SMART_MOTION] DONE effect=${effect} elapsed=${elapsed}ms url=${url.substring(0, 60)}`);
-    return url;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    clipReports.push(`${label} | smart_motion | FAIL | ${msg}`);
-    console.error(`${label} smart_motion FAILED: ${msg}`);
-    return null;
+    try {
+      const { callRunwayT2V } = await import("@/lib/providers/runway");
+      const runwayDuration = Number(duration) >= 10 ? 10 : 5;
+      const result = await callRunwayT2V({ prompt: motionPrompt, duration: runwayDuration as 5 | 10, ratio: "768:1344" });
+      clipReports.push(`${label} | runway-gen4 | OK | ${result.url.substring(0, 80)}`);
+      return result.url;
+    } catch (runwayErr) {
+      const rwDetail = runwayErr instanceof Error ? runwayErr.message : String(runwayErr);
+      clipReports.push(`${label} | runway-gen4 | FAIL | ${rwDetail}`);
+      console.error(`${label} Runway also FAILED: ${rwDetail}`);
+      return null;
+    }
   }
 }
 
@@ -431,17 +402,12 @@ async function withSlaDeadline<T>(gen: Promise<T>, budgetMs: number, label: stri
 
 // ── Clip execution with retry-once + provider downgrade ───────────────────────
 
-type ProviderTier = "kling" | "smart_motion";
-
-function downgradeProvider(p: ProviderTier): ProviderTier {
-  if (p === "kling") return "smart_motion";
-  return p;
-}
+type ProviderTier = "seedance";
 
 async function executeClip(
   prompt:         string,
   imageUrl:       string | null,
-  duration:       "5" | "10",
+  duration:       "5" | "6" | "10",
   provider:       ProviderTier,
   sceneType:      string,
   index:          number,
@@ -453,25 +419,15 @@ async function executeClip(
   label:          string,
   isCouple:       boolean,
   negativePrompt?: string,
-  charRefUrl?:    string,  // threaded for smart_motion consistency retry
+  charRefUrl?:    string,
   charSuffix?:    string,
+  ethnicityNegative?: string,
 ): Promise<string> {
-  const render = async (p: ProviderTier): Promise<string | null> => {
-    if (p === "smart_motion") {
-      return generateSmartMotionClipWithUpload(
-        prompt, imageUrl, sceneType, index, userId, label, clipReports, rawSeconds, sourceImages, isCouple,
-        charRefUrl, charSuffix,
-      );
-    }
-    return generateKlingClip(prompt, imageUrl, duration, label, clipReports, negativePrompt);
-  };
+  const render = async (): Promise<string | null> =>
+    generateSeedanceClip(prompt, imageUrl, duration, label, clipReports);
 
-  const fallback    = downgradeProvider(provider);
-  const hasFallback = fallback !== provider;
-  // One scene, one budget — all retries and downgrades draw from the same deadline.
-  const queue: ProviderTier[] = hasFallback
-    ? [provider, provider, fallback]
-    : [provider, provider];
+  // Seedance only — no Kling / smart_motion fallback
+  const queue: ProviderTier[] = ["seedance", "seedance"];
 
   const sceneStartedAt = Date.now();
   const sceneDeadline  = sceneStartedAt + budgetMs;
@@ -487,11 +443,11 @@ async function executeClip(
 
     console.info("[SCENE_ATTEMPT]", { attempt: i + 1, provider: queue[i], remainingMs, elapsedMs, budgetMs });
 
-    const url = await withSlaDeadline(render(queue[i]), remainingMs, label);
+    const url = await withSlaDeadline(render(), remainingMs, label);
     if (url) return url;
 
-    if (i === 0) console.warn(`${label} attempt-1 null — retrying ${queue[i]}`);
-    if (i === 1 && hasFallback) console.warn(`${label} attempt-2 null — downgrading ${provider} → ${fallback}`);
+    if (i === 0) console.warn(`${label} attempt-1 null — retrying Seedance`);
+    if (i === 1) console.warn(`${label} attempt-2 null — final Seedance retry`);
   }
 
   throw new Error(`${label} all attempts exhausted`);
@@ -524,26 +480,24 @@ function inferSceneType(prompt: string): string {
   return "talking_head";
 }
 
-// ── Motion-intent scoring: drives provider selection ─────────────────────────
-// Returns 0.0–1.0. Threshold 0.4: above → Kling, below → smart_motion.
-// Kling is the default for ambiguous cases — we never downgrade silently.
+// Motion-intent scoring — logging only. Provider is always Seedance (sceneRouter).
 
 const MOTION_VERB_RE = /\b(walk|run|mov|turn|sway|breath|gestur|spin|danc|flow|driv|fall|rise|lift|reach|step|leap|jump|throw|pour|apply|embrac|laugh|cry|react)\w*\b/i;
 
 const SCENE_BASE_SCORES: Record<string, number> = {
-  talking_head:    0.55,  // presenter with motion — Kling in cinematic pipeline (no Hedra fallback here)
-  lifestyle_broll: 0.85,  // high kinetic — always Kling
-  product_demo:    0.70,  // handling + close-up — Kling
-  emotional:       0.80,  // impact moments — Kling
-  educational:     0.55,  // demonstrations benefit from Kling; above threshold
-  background:      0.50,  // atmospheric — borderline; motion verbs push above
-  quote:           0.25,  // text overlay — smart_motion
-  transition:      0.20,  // visual cut — smart_motion
-  cta:             0.20,  // text CTA — smart_motion
+  talking_head:    0.55,
+  lifestyle_broll: 0.85,
+  product_demo:    0.70,
+  emotional:       0.80,
+  educational:     0.55,
+  background:      0.50,
+  quote:           0.25,
+  transition:      0.20,
+  cta:             0.20,
 };
 
 function computeMotionIntensity(prompt: string, sceneType: string): number {
-  let score = SCENE_BASE_SCORES[sceneType] ?? 0.60; // unknown type → default Kling
+  let score = SCENE_BASE_SCORES[sceneType] ?? 0.60;
 
   // Motion verb boost (capped at +0.20 so CTA+lots-of-verbs still stays cheap)
   const verbs = prompt.match(MOTION_VERB_RE) ?? [];
@@ -586,24 +540,14 @@ export async function POST(req: Request) {
   }
   console.log(`[CINEMATIC_AUTH] ok user=${user.id}`);
 
-  // Resolve plan from DB — Studio gets Kling; all other plans use smart_motion only
-  let userPlan = "creator";
-  try {
-    const { data: profileRow } = await supabaseAdmin
-      .from("profiles")
-      .select("plan")
-      .eq("id", user.id)
-      .maybeSingle();
-    userPlan = (profileRow?.plan as string | undefined) ?? "creator";
-  } catch {
-    console.warn("[PLAN_GATE] profile fetch failed — defaulting to creator");
+  console.log(`[PLAN_GATE] user=${user.id} provider=seedance-elevenlabs FORCE_SEEDANCE=${FORCE_SEEDANCE}`);
+
+  if (!process.env.ELEVENLABS_API_KEY) {
+    return Response.json({ error: "ELEVENLABS_API_KEY not configured — required for Seedance video" }, { status: 500 });
   }
-  const isStudio = userPlan === "studio";
-  console.log(`[PLAN_GATE] user=${user.id} plan=${userPlan} studio=${isStudio}`);
 
   const falKey = process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY;
-  if (!falKey) return Response.json({ error: "FAL_API_KEY not configured" }, { status: 500 });
-  fal.config({ credentials: falKey });
+  if (falKey) fal.config({ credentials: falKey });
 
   let prompts: string[];
   let imageUrl: string | null | undefined;
@@ -614,8 +558,11 @@ export async function POST(req: Request) {
   let characterId: string | undefined;
   let niche: string | undefined;
   let isQuickMode = false;
+  let subjectEthnicity: SubjectEthnicityInput = 'caucasian';
+  let voiceoverText: string | undefined;
+  let voiceId: string | undefined;
   try {
-    const body = await req.json() as {
+    const body = await parseJsonWithEthnicityFix<{
       prompts?: string[];
       imageUrl?: string | null;
       clipDuration?: number;
@@ -625,7 +572,13 @@ export async function POST(req: Request) {
       characterId?: string;
       niche?: string;
       videoType?: 'quick' | 'cinematic' | 'avatar';
-    };
+      subjectEthnicity?: SubjectEthnicityInput;
+      voiceoverText?: string;
+      voiceId?: string;
+    }>(req);
+    subjectEthnicity = body.subjectEthnicity ?? 'caucasian';
+    voiceoverText = body.voiceoverText?.trim() || body.script?.trim() || undefined;
+    voiceId = body.voiceId;
     prompts      = body.prompts ?? [];
     imageUrl     = body.imageUrl;
     clipDuration = body.clipDuration;
@@ -635,7 +588,7 @@ export async function POST(req: Request) {
     characterId  = body.characterId;
     niche        = body.niche;
     isQuickMode = body.videoType === 'quick';
-    console.log(`[BRIEF_CONTEXT] goal="${(goal ?? "").substring(0, 120)}" characterId=${characterId ?? "none"} niche=${niche ?? "none"}`)
+    console.log(`[BRIEF_CONTEXT] goal="${(goal ?? "").substring(0, 120)}" characterId=${characterId ?? "none"} niche=${niche ?? "none"} ethnicity=${subjectEthnicity}`)
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
@@ -676,11 +629,16 @@ export async function POST(req: Request) {
     return Response.json({ error: "prompts required" }, { status: 400 });
   }
 
-  // Inject creative brief into scene 1 — first scene MUST literally depict the brief
+  // Inject creative brief into scene 1 — strip any ethnicity middleware prefix first
   if (goal?.trim() && prompts.length > 0) {
-    const goalText = goal.trim().slice(0, 200);
-    prompts[0] = `${goalText}, ${prompts[0]}`;
-    console.log(`[BRIEF_INJECT] scene=1 prompt="${prompts[0].substring(0, 120)}"`);
+    let goalText = goal.trim();
+    // Strip ethnicity middleware prefix if it leaked through
+    const ethnicityPrefixRe = /^\[(?:MANDATORY ETHNICITY OVERRIDE|ETHNICITY DEFAULT RULE)[^\]]*\][\s\S]*?\n\n/i;
+    goalText = goalText.replace(ethnicityPrefixRe, "").trim();
+    if (goalText) {
+      prompts[0] = `${goalText.slice(0, 200)}, ${prompts[0]}`;
+      console.log(`[BRIEF_INJECT] scene=1 prompt="${prompts[0].substring(0, 120)}"`);
+    }
   }
 
   // ── Abuse protection (video-specific: cooldown + concurrent job limit) ────
@@ -699,7 +657,7 @@ export async function POST(req: Request) {
   }
 
   // ── Credit-protected generation pipeline ─────────────────────────────────────
-  // Estimate conservatively (all Kling); credit_commit_atomic refunds the difference.
+  // Estimate conservatively (all Seedance); credit_commit_atomic refunds the difference.
   const estimatedCost = videoCreditCost(prompts.length, 0);
 
   try {
@@ -709,7 +667,7 @@ export async function POST(req: Request) {
       run:    async () => {
         // ── Guardrail (throw on rejection → auto-rollback) ────────────────────
         {
-          const guardrail = applyGenerationGuardrail({ sceneCount: prompts.length, modelTier: "kling_standard", validationPasses: 1 });
+          const guardrail = applyGenerationGuardrail({ sceneCount: prompts.length, modelTier: "seedance_elevenlabs", validationPasses: 1 });
           if (!guardrail.approved) {
             throw new Error(guardrail.reason ?? "Generation blocked by guardrail");
           }
@@ -721,7 +679,9 @@ export async function POST(req: Request) {
         }
 
         const rawSeconds = Math.round(clipDuration ?? CLIP_SECONDS);
-        const duration   = rawSeconds <= 5 ? "5" : "10";
+        // ElevenLabs Seedance: 6s @ 720p is the credit-optimal sweet spot.
+        // Snap to 5 only if caller explicitly requested ≤5s; otherwise use 6.
+        const duration   = rawSeconds <= 5 ? "5" : "6";
         const plannedTotalSec = prompts.length * Number(duration);
         console.info("[DURATION_PLAN]", {
           REQUESTED_DURATION:      rawSeconds * prompts.length,
@@ -736,71 +696,54 @@ export async function POST(req: Request) {
           console.warn(`[DURATION_SNAP] requested ${rawSeconds}s per clip → snapped to ${duration}s (Kling/Seedance only supports 5 or 10). Planned total: ${plannedTotalSec}s`);
         }
 
-        // All scenes are Kling-eligible — motion score determines provider, SLA kills stragglers
-        const maxPremium = prompts.length;
-        let premiumUsed = 0;
-
         const resolvedSceneTypes: string[] = prompts.map((prompt, i) =>
           sceneTypes?.[i] ?? inferSceneType(prompt),
         );
         const resolvedMotionScores: number[] = prompts.map((prompt, i) =>
           computeMotionIntensity(prompt, resolvedSceneTypes[i]),
         );
-        const resolvedProviders: SceneProvider[] = resolvedMotionScores.map(score =>
-          score >= 0.4 ? "kling" : "smart_motion",
+
+        console.log(" FORCING SEEDANCE VIA ELEVENLABS");
+        const finalProviders: SceneProvider[] = prompts.map((prompt, i) =>
+          sceneRouter(resolvedSceneTypes[i], resolvedMotionScores[i]),
         );
-
-        const finalProviders: SceneProvider[] = resolvedProviders.map((p) => {
-          if (p === "kling") {
-            if (premiumUsed < maxPremium) { premiumUsed++; return "kling"; }
-            return "smart_motion";
-          }
-          return p;
-        });
-
-        let klingCount = finalProviders.filter(p => p === "kling").length;
-        let smCount    = finalProviders.filter(p => p === "smart_motion").length;
+        const seedanceCount = finalProviders.length;
+        const smCount = 0;
 
         // SLA escalation
-        const estimatedGenMs   = 45_000 + klingCount * 8_000;
+        const estimatedGenMs   = 45_000 + seedanceCount * 12_000;
         const elapsedBeforeGen = Date.now() - routeT0;
         const genBudgetMs      = SLA_TOTAL_MS - elapsedBeforeGen - SLA_POST_MS;
-        if (estimatedGenMs > genBudgetMs * 0.8 && klingCount > 2) {
-          const klingToKeep = Math.max(2, Math.floor(genBudgetMs * 0.8 / 8_000));
-          let kept = 0;
-          for (let i = 0; i < finalProviders.length; i++) {
-            if (finalProviders[i] === "kling") {
-              if (kept < klingToKeep) kept++;
-              else finalProviders[i] = "smart_motion";
-            }
-          }
-          klingCount = finalProviders.filter(p => p === "kling").length;
-          smCount    = finalProviders.filter(p => p === "smart_motion").length;
-          console.warn(`[SLA_ESCALATION] estimatedGen=${estimatedGenMs}ms genBudget=${genBudgetMs}ms — Kling reduced to ${klingCount}`);
+        if (estimatedGenMs > genBudgetMs * 0.8 && seedanceCount > 2) {
+          console.warn(`[SLA_ESCALATION] estimatedGen=${estimatedGenMs}ms genBudget=${genBudgetMs}ms — all ${seedanceCount} clips still use Seedance (no fallback)`);
         }
 
-        // Quick mode: force all clips to smart_motion for ~30s total generation
         if (isQuickMode) {
-          for (let i = 0; i < finalProviders.length; i++) {
-            finalProviders[i] = "smart_motion";
-          }
-          klingCount = 0;
-          smCount = finalProviders.length;
-          console.log(`[QUICK_MODE] forcing all ${smCount} clips to smart_motion for speed`);
+          console.log(`[QUICK_MODE] using Seedance (default provider) clips=${finalProviders.length}`);
         }
-        console.log(`[SCENE_ROUTER] scenes=${prompts.length} kling=${klingCount} smart_motion=${smCount} maxPremium=${maxPremium} estimatedGen=${estimatedGenMs}ms`);
-        console.log(`[PROVIDER_USAGE] { klingScenes: ${klingCount}, smartMotionScenes: ${smCount} }`);
+        console.log(`[SCENE_ROUTER] scenes=${prompts.length} seedance=${seedanceCount} smart_motion=${smCount} FORCE_SEEDANCE=${FORCE_SEEDANCE} estimatedGen=${estimatedGenMs}ms`);
+        console.log(`[PROVIDER_USAGE] { seedanceScenes: ${seedanceCount}, smartMotionScenes: ${smCount} }`);
 
         // ── Visual Continuity: extract bibles + inject enforcement suffixes ────
         let bibles: ContinuityBibles | null = null;
         let enforcedPrompts = [...prompts];
+        let subjectEthnicityNegative = '';
+
+        {
+          const resolvedEth = resolveSubjectEthnicity(subjectEthnicity, `${goal ?? ''} ${script ?? ''} ${prompts.join(' ')}`);
+          const locked = applySubjectEthnicityToPrompts(enforcedPrompts, resolvedEth);
+          enforcedPrompts = locked.prompts;
+          subjectEthnicityNegative = locked.negativeAddon;
+          console.log(`[SUBJECT_ETHNICITY] resolved=${resolvedEth} scenes=${enforcedPrompts.length}`);
+        }
+
         try {
-          bibles = await extractBibles(prompts, script);
+          bibles = await extractBibles(enforcedPrompts, script);
           if (bibles.hasCharacter || bibles.environment) {
             const charPrefix = buildCharacterPrefix(bibles);
             const envSuffix  = buildConsistencySuffix(bibles);
             if (charPrefix || envSuffix) {
-              enforcedPrompts = prompts.map(p => charPrefix + p + envSuffix);
+              enforcedPrompts = enforcedPrompts.map(p => charPrefix + p + envSuffix);
               console.log(`[CONTINUITY] bible_extracted hasCharacter=${bibles.hasCharacter} prefix_len=${charPrefix.length} suffix_len=${envSuffix.length}`);
             }
           }
@@ -910,7 +853,7 @@ export async function POST(req: Request) {
         const sceneNegativePrompts: string[] = enforcedPrompts.map((_, i) => {
           const pos     = _total > 1 ? i / (_total - 1) : 0;
           const sadGuard = (_isEmotional && pos <= 0.33) ? "smiling, happy expression, teeth showing, joyful face, laughing" : "";
-          return [_negBase, _negEmotional, sadGuard].filter(Boolean).join(", ");
+          return [_negBase, _negEmotional, sadGuard, subjectEthnicityNegative].filter(Boolean).join(", ");
         });
 
         // Animated style: suppress photorealism + live-action with stronger terms
@@ -940,6 +883,32 @@ export async function POST(req: Request) {
 
         const sourceImages: Array<string | null> = new Array(prompts.length).fill(null);
         const clipReports: string[] = [];
+
+        console.log(`[MOTION_PROMPT] seedance motion=maximum scenes=${enforcedPrompts.length}`);
+
+        // Fire voiceover + ambient in parallel when narration text is provided
+        const seqId = `seq-${user.id}-${Date.now()}`;
+        const voiceoverPromise = voiceoverText
+          ? elevenLabsVoiceover({
+              text:    voiceoverText,
+              voiceId,
+              userId:  user.id,
+              jobId:   seqId,
+            }).catch(err => {
+              console.warn("[cinematic-seq] voiceover failed (non-fatal):", err instanceof Error ? err.message : err);
+              return { audioUrl: undefined as string | undefined, duration: prompts.length * Number(duration) };
+            })
+          : null;
+
+        // Ambient sound — pick description from first scene prompt, generate in parallel
+        const ambientDesc = pickAmbientDescription(prompts[0] ?? "");
+        const ambientPromise: Promise<Buffer | null> = ambientDesc
+          ? generateAmbientSound(ambientDesc, prompts.length * Number(duration))
+              .catch(err => {
+                console.warn("[cinematic-seq] ambient sound failed (non-fatal):", err instanceof Error ? err.message : err);
+                return null;
+              })
+          : Promise.resolve(null);
 
         // ── Parallel clip generation ───────────────────────────────────────────
         // All clips fire simultaneously — cuts wall time from 3× to 1× clip latency.
@@ -976,6 +945,7 @@ export async function POST(req: Request) {
               clipBudget, label, isCouple, sceneNegativePrompts[i],
               _isAnimated ? undefined : charCharRefUrl,
               _isAnimated ? undefined : charSuffix,
+              subjectEthnicityNegative || undefined,
             );
 
             const elapsed = Date.now() - clipT0;
@@ -984,7 +954,7 @@ export async function POST(req: Request) {
           } catch (err) {
             const reason = err instanceof Error ? err.message : String(err);
             if (reason === "skipped_due_to_latency" || reason === "SCENE_BUDGET_EXCEEDED") {
-              console.warn(`[SLA] scene ${i + 1} ${reason} — queued for smart_motion fallback`);
+              console.warn(`[SLA] scene ${i + 1} ${reason} — will pad (no smart_motion fallback)`);
               slaFallbackIndices.push(i);
             } else {
               console.error(`[cinematic-sequence] clip ${i + 1} failed:`, reason);
@@ -995,29 +965,7 @@ export async function POST(req: Request) {
         const genElapsed = Date.now() - genT0;
         console.log(`[TIMING] CLIP_GENERATION complete ${genElapsed}ms`);
 
-        // ── Pass 2: smart_motion fallback for SLA-timed-out scenes ────────────
-        if (slaFallbackIndices.length > 0) {
-          console.log(`[SLA_FALLBACK] attempting smart_motion for ${slaFallbackIndices.length} scene(s)`);
-          await Promise.allSettled(
-            slaFallbackIndices.map(async (ri) => {
-              const fbLabel    = `[clip ${ri + 1}/${prompts.length}][smart_motion_fallback]`;
-              const fbIsCouple = COUPLE_RE.test(goal ?? "") || COUPLE_RE.test(script ?? "") || COUPLE_RE.test(prompts[ri]);
-              console.log(`[SLA_FALLBACK] scene=${ri + 1} starting`);
-              const fbUrl = await generateSmartMotionClipWithUpload(
-                prompts[ri], null, resolvedSceneTypes[ri], ri,
-                user.id, fbLabel, clipReports, rawSeconds, sourceImages, fbIsCouple,
-              );
-              if (fbUrl) {
-                extractedUrls[ri] = fbUrl;
-                console.log(`[SLA_FALLBACK] scene=${ri + 1} RECOVERED url=${fbUrl.substring(0, 60)}`);
-              } else {
-                console.warn(`[SLA_FALLBACK] scene=${ri + 1} fallback also failed — will pad`);
-              }
-            }),
-          );
-        }
-
-        // ── Pass 3: pad remaining nulls with nearest successful clip ──────────
+        // ── Pass 2: pad remaining nulls with nearest successful clip ──────────
         let lastGoodUrl: string | null = null;
         let lastGoodIdx = -1;
         for (let pi = 0; pi < extractedUrls.length; pi++) {
@@ -1042,7 +990,7 @@ export async function POST(req: Request) {
         if (motionCoverage < 100) {
           console.warn(`[QUALITY_GUARDRAIL] coverage=${motionCoverage}% — ${failedClips} scenes padded`);
         }
-        console.log(`[RENDER_BREAKDOWN] { klingScenes: ${klingCount}, smartMotionScenes: ${smCount}, genMs: ${genElapsed} }`);
+        console.log(`[RENDER_BREAKDOWN] { seedanceScenes: ${seedanceCount}, smartMotionScenes: ${smCount}, genMs: ${genElapsed} }`);
         console.log(`[TIMING] SEQUENCE SUMMARY clipsAttempted=${prompts.length} success=${successfulClips} failed=${failedClips} genMs=${genElapsed}`);
 
         // All clips failed (after fallback + padding) → throw
@@ -1117,8 +1065,93 @@ export async function POST(req: Request) {
           }),
         );
 
-        const actualCost   = videoCreditCost(klingCount, smCount);
-        const stitched_url = clip_urls[0];
+        const actualCost   = videoCreditCost(seedanceCount, smCount);
+        let stitched_url = clip_urls[0];
+        let audio_url: string | undefined;
+
+        // Await voiceover + ambient (both launched in parallel with clip gen)
+        const ambientBuffer = await ambientPromise;
+        if (ambientDesc && ambientBuffer) {
+          console.log(`[AMBIENT] ready — "${ambientDesc.substring(0, 50)}" ${ambientBuffer.length}b`);
+        }
+
+        if (voiceoverPromise) {
+          const voResult = await voiceoverPromise;
+          audio_url = voResult.audioUrl;
+        }
+
+        // ── Stitch clips + voiceover via Railway Composer ───────────────────────
+        // Railway handles FFmpeg concat + audio mix so Vercel's serverless isn't
+        // doing heavy media processing within the 300s timeout.
+        const composerUrl = process.env.COMPOSER_SERVICE_URL;
+        const composerKey = process.env.COMPOSER_API_KEY ?? "";
+        if (composerUrl && audio_url && clip_urls.length > 0) {
+          console.log(`[RAILWAY_STITCH] clips=${clip_urls.length} hasVoice=${!!audio_url} hasAmbient=${!!ambientBuffer}`);
+          try {
+            // Download clips + voiceover in parallel
+            const fetchBuf = async (url: string, label: string) => {
+              const r = await fetch(url, { cache: "no-store" });
+              if (!r.ok) throw new Error(`${label} HTTP ${r.status}`);
+              return Buffer.from(await r.arrayBuffer());
+            };
+            const [clipBuffers, voiceBuffer] = await Promise.all([
+              Promise.all(clip_urls.map((url, i) => fetchBuf(url, `clip${i + 1}`))),
+              fetchBuf(audio_url, "voiceover"),
+            ]);
+
+            const form = new FormData();
+            for (let i = 0; i < clipBuffers.length; i++) {
+              form.append("clips", new Blob([clipBuffers[i]], { type: "video/mp4" }), `clip_${i}.mp4`);
+            }
+            form.append("voiceover", new Blob([voiceBuffer], { type: "audio/mpeg" }), "voiceover.mp3");
+            form.append("shot_plan", JSON.stringify({
+              shots: clip_urls.map(() => ({
+                duration:            Number(duration),
+                energy_curve:        "sustain",
+                transition_in:       "hard_cut",
+                transition_after:    null,
+                transition_duration: 0,
+                zoom_effect:         false,
+              })),
+            }));
+
+            const railwayRes = await fetch(composerUrl, {
+              method:  "POST",
+              headers: composerKey ? { "x-api-key": composerKey } : {},
+              body:    form,
+              signal:  AbortSignal.timeout(90_000),
+            });
+
+            if (railwayRes.ok) {
+              const result = await railwayRes.json() as { success?: boolean; video_url?: string };
+              const rawUrl = result.video_url;
+              if (rawUrl) {
+                const resolvedUrl = rawUrl.startsWith("http") ? rawUrl : `${composerUrl}${rawUrl}`;
+                // Download Railway output, upload to renders bucket
+                const composedBuf = await fetchBuf(resolvedUrl, "railway-output");
+                const storePath   = `renders/${user.id}/${Date.now()}/cinematic.mp4`;
+                const { error: upErr } = await supabaseAdmin.storage
+                  .from("renders")
+                  .upload(storePath, composedBuf, { contentType: "video/mp4", upsert: true });
+                if (!upErr) {
+                  const { data: { publicUrl } } = supabaseAdmin.storage.from("renders").getPublicUrl(storePath);
+                  stitched_url = publicUrl;
+                  console.log(`[RAILWAY_STITCH_OK] ${clip_urls.length} clips → ${stitched_url.substring(0, 80)}`);
+                } else {
+                  console.warn("[RAILWAY_STITCH] upload failed:", upErr.message);
+                }
+              }
+            } else {
+              const errText = await railwayRes.text().catch(() => "");
+              console.warn(`[RAILWAY_STITCH] composer HTTP ${railwayRes.status}: ${errText.substring(0, 200)}`);
+            }
+          } catch (railwayErr) {
+            console.warn("[RAILWAY_STITCH] failed (non-fatal — returning first clip):", railwayErr instanceof Error ? railwayErr.message : railwayErr);
+          }
+        } else {
+          console.log(`[RAILWAY_STITCH] skipped — composerUrl=${!!composerUrl} hasVoice=${!!audio_url} clips=${clip_urls.length}`);
+        }
+
         const totalMs      = Date.now() - routeT0;
         const postMs       = Date.now() - postT0;
 
@@ -1129,11 +1162,19 @@ export async function POST(req: Request) {
         const skippedScenes = slaFallbackIndices;
         const slaCompliant = skippedScenes.length === 0 && totalMs <= SLA_TOTAL_MS;
 
-        console.log(`[TIMING] SEQUENCE TOTAL ${totalMs}ms clips=${clip_urls.length} kling=${klingCount} smart_motion=${smCount} sla=${slaCompliant ? "OK" : "BREACH"} bottleneck=${bottleneckStage}`);
+        console.log(`[TIMING] SEQUENCE TOTAL ${totalMs}ms clips=${clip_urls.length} seedance=${seedanceCount} smart_motion=${smCount} sla=${slaCompliant ? "OK" : "BREACH"} bottleneck=${bottleneckStage}`);
 
         return {
           data: {
+            success:             true,
+            videoUrl:            stitched_url,
+            modelUsed:           "seedance-elevenlabs",
+            model:               "seedance-elevenlabs",
+            hasMotion:           true,
+            hasAudio:            !!voiceoverText && !!audio_url,
+            duration:            prompts.length * Number(duration),
             stitched_url,
+            audio_url:           audio_url ?? null,
             clip_urls,
             source_images:       sourceImages.filter((u): u is string => u !== null),
             clips_generated:     clip_urls.length,
@@ -1141,7 +1182,9 @@ export async function POST(req: Request) {
             total_duration:      clip_urls.length * Number(duration),
             providers:           finalProviders,
             motion_coverage:     motionCoverage,
-            kling_scenes:        klingCount,
+            seedance_scenes:     seedanceCount,
+            model_used:          "seedance-elevenlabs",
+            kling_scenes:        0,
             smart_motion_scenes: smCount,
             continuity_score:    continuityScore,
             skipped_scenes:      skippedScenes,
@@ -1151,7 +1194,7 @@ export async function POST(req: Request) {
               generation_ms:      genElapsed,
               post_processing_ms: postMs,
               scene_count:        prompts.length,
-              provider_mix:       { kling: klingCount, smart_motion: smCount },
+              provider_mix:       { seedance: seedanceCount, smart_motion: smCount },
               bottleneck_stage:   bottleneckStage,
             },
             timing_ms: { generation: genElapsed, total: totalMs },
@@ -1185,8 +1228,13 @@ export async function POST(req: Request) {
       return Response.json({ error: "All clips failed to generate", ...err.payload }, { status: 500 });
     }
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("[cinematic-sequence] unhandled error:", msg);
-    return Response.json({ error: msg, SEQUENCE_ROUTE_VERSION: ROUTE_VERSION }, { status: 500 });
+    console.error("[CINEMATIC_ERROR]", msg);
+    return Response.json({
+      success: false,
+      error:   "Video generation failed",
+      message: msg,
+      SEQUENCE_ROUTE_VERSION: ROUTE_VERSION,
+    }, { status: 500 });
 
   } finally {
     releaseVideoSlot(user.id);

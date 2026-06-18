@@ -1,11 +1,12 @@
-import { routeToModel } from './modelRouter';
-import { generateKlingVideo } from './realKling';
+import { routeToModel } from "./modelRouter";
+import { elevenLabsSeedanceGenerate } from "@/lib/services/elevenlabs";
+import { buildSeedanceElevenLabsPrompt } from "@/lib/motion-prompt";
 
 export async function generateVideoClip({
   prompt,
   selectedModel,
   referenceImages = [],
-  duration        = 6,
+  duration        = 30,
   campaignMode    = false,
   microIntensity  = 65,
   activeEmotions  = [],
@@ -18,34 +19,30 @@ export async function generateVideoClip({
   microIntensity?:  number;
   activeEmotions?:  string[];
 }) {
-  const modelRoute = await routeToModel({ selectedModel, campaignMode });
+  void campaignMode;
+  void microIntensity;
+  void activeEmotions;
 
-  console.log(`[generateVideoClip] Routing to ${modelRoute.provider}`);
+  const modelRoute = await routeToModel({ selectedModel, campaignMode: true });
 
-  if (modelRoute.provider === 'kling' && process.env.KLING_API_KEY) {
-    const result = await generateKlingVideo({
-      prompt,
-      modelId:     modelRoute.model,
-      duration,
-      aspectRatio: '9:16',
-      imageUrl:    referenceImages[0],
-    });
-    return {
-      url:       result.url,
-      thumbnail: result.url.replace(/\.mp4.*$/, '-thumb.jpg'),
-      duration:  result.duration,
-      modelUsed: modelRoute.model,
-      provider:  modelRoute.provider,
-    };
-  }
+  console.log(`[generateVideoClip] FORCING Seedance via ElevenLabs (was ${modelRoute.provider})`);
 
-  // Stub fallback while provider keys are not configured
-  const videoUrl = `https://${modelRoute.provider}-generated-${Date.now()}.mp4`;
+  const enhancedPrompt = buildSeedanceElevenLabsPrompt(prompt);
+  console.log("✅ FORCING SEEDANCE VIA ELEVENLABS ONLY");
+  const result = await elevenLabsSeedanceGenerate({
+    prompt:          enhancedPrompt,
+    duration:        6,
+    resolution:      "720p",
+    motionIntensity: "high",
+    rawPrompt:       true,
+    generateAudio:   false,
+  });
+
   return {
-    url:       videoUrl,
-    thumbnail: videoUrl.replace('.mp4', '-thumb.jpg'),
+    url:       result.videoUrl,
+    thumbnail: result.videoUrl,
     duration,
-    modelUsed: modelRoute.model,
-    provider:  modelRoute.provider,
+    modelUsed: "seedance-elevenlabs",
+    provider:  "seedance-elevenlabs",
   };
 }

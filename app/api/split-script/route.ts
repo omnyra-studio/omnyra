@@ -3,6 +3,12 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { getBrandProfile, getBrandSystemPrompt } from "@/lib/brand";
 import { logUsageEvent } from "@/lib/cache";
+import {
+  applySubjectEthnicityLock,
+  CAUCASIAN_DEFAULT_SYSTEM_RULE,
+  resolveSubjectEthnicity,
+} from "@/lib/subject-appearance";
+import { parseJsonWithEthnicityFix } from "@/middleware/ethnicityFix";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -105,7 +111,13 @@ export async function POST(req: Request) {
     return Response.json({ error: "ANTHROPIC_API_KEY missing" }, { status: 500 });
   }
 
-  const { script, hook, num_segments: rawSegments, niche, goal } = await req.json();
+  const { script, hook, num_segments: rawSegments, niche, goal } = await parseJsonWithEthnicityFix<{
+    script: string;
+    hook?: string;
+    num_segments?: number;
+    niche?: string;
+    goal?: string;
+  }>(req);
 
   if (!script || !rawSegments) {
     return Response.json({ error: "script and num_segments required" }, { status: 400 });
@@ -132,6 +144,8 @@ export async function POST(req: Request) {
   // ── System prompt: strict JSON mode ──────────────────────────────────────────
 
   const systemPrompt = `You are a script segmentation engine for AI video generation.${brandContext}
+
+${CAUCASIAN_DEFAULT_SYSTEM_RULE}
 
 OUTPUT RULE — CRITICAL: Return ONLY valid JSON. Do NOT use markdown, backticks, code fences, labels, or any text outside the JSON object.
 
@@ -216,6 +230,12 @@ Return this exact JSON structure. The first character MUST be { and the last MUS
 
     const parsed  = safeParseSplitScript(raw);
     const scenes  = repairSplitScript(parsed, script, num_segments);
+    const resolvedEth = resolveSubjectEthnicity(undefined, `${goal ?? ''} ${script}`);
+    for (const scene of scenes) {
+      if (scene.visual_prompt) {
+        scene.visual_prompt = applySubjectEthnicityLock(scene.visual_prompt, resolvedEth).prompt;
+      }
+    }
 
     if (userId) {
       logUsageEvent(userId, "split-script", "generate", 1, { num_segments, niche });

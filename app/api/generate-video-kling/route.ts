@@ -1,4 +1,5 @@
 import crypto from 'crypto'
+import { parseJsonWithEthnicityFix } from '@/middleware/ethnicityFix'
 
 export const maxDuration = 60
 
@@ -12,7 +13,13 @@ function generateKlingToken(accessKey: string, secretKey: string) {
 }
 
 export async function POST(req: Request) {
-  const { prompt, image_url, duration = '5', aspect_ratio = '9:16', quality = 'high' } = await req.json()
+  const { prompt, image_url, duration = '5', aspect_ratio = '9:16', quality = 'high' } = await parseJsonWithEthnicityFix<{
+    prompt: string;
+    image_url?: string;
+    duration?: string;
+    aspect_ratio?: string;
+    quality?: string;
+  }>(req)
 
   if (!process.env.KLING_ACCESS_KEY || !process.env.KLING_SECRET_KEY) {
     return Response.json({ error: 'Kling credentials not configured' }, { status: 500 })

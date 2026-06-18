@@ -4,6 +4,7 @@ import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { getBrandProfile, getBrandSystemPrompt } from "@/lib/brand";
 import { checkCache, saveCache, logUsageEvent } from "@/lib/cache";
+import { parseJsonWithEthnicityFix } from "@/middleware/ethnicityFix";
 
 export const maxDuration = 300;
 
@@ -27,7 +28,13 @@ export async function POST(req: Request) {
   console.log('[generate-video-fal] FAL_API_KEY present:', !!process.env.FAL_API_KEY, '| FALAI_API_KEY present:', !!process.env.FALAI_API_KEY);
   console.log('[generate-video-fal] key length:', falKey?.length ?? 0, '| last4:', falKey ? falKey.slice(-4) : 'none');
 
-  const { prompt, image_url, model = "fast", niche, duration } = await req.json();
+  const { prompt, image_url, model = "fast", niche, duration } = await parseJsonWithEthnicityFix<{
+    prompt: string;
+    image_url?: string;
+    model?: string;
+    niche?: string;
+    duration?: number;
+  }>(req);
   const klingDuration: "5" | "10" = Number(duration) > 5 ? "10" : "5";
   console.log('[generate-video-fal] payload:', { model, prompt: prompt?.substring(0, 80), has_image: !!image_url, niche });
 

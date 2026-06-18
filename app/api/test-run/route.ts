@@ -71,6 +71,7 @@ export async function POST(req: Request) {
       planId:            result.planId,
       clips:             result.clips.length,
       hedra:             result.hedraCount,
+      seedance:          result.seedanceCount,
       kling:             result.klingCount,
       failed:            result.failedShots,
       totalMs:           result.totalMs,

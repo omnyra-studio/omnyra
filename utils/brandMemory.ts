@@ -1,5 +1,13 @@
 import { createClient } from '@/lib/supabase/client';
 
+/**
+ * @deprecated — legacy client-side brand memory utils.
+ * The canonical implementation lives in lib/memory/brand-memory.ts (now fixed + auto-sync to brand_brain)
+ * and the improved core at artifacts/backend/core/brand-memory/unified.ts
+ * This file may have column drift vs 20260615_brand_memories migration.
+ * Prefer loadUnified / saveBrandProfileAndSync paths for new work.
+ */
+
 export interface BrandMemory {
   id?:                string;
   user_id?:           string;

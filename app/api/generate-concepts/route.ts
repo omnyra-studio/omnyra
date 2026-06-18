@@ -1,5 +1,13 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { cleanEnv } from '@/lib/supabase/admin';
+import {
+  buildCharacterBriefFromEthnicity,
+  CAUCASIAN_DEFAULT_SYSTEM_RULE,
+  resolveSubjectEthnicity,
+  applySubjectEthnicityLock,
+  type SubjectEthnicityInput,
+} from '@/lib/subject-appearance';
+import { parseJsonWithEthnicityFix } from '@/middleware/ethnicityFix';
 
 const anthropic = new Anthropic({ apiKey: cleanEnv(process.env.ANTHROPIC_API_KEY) });
 
@@ -11,16 +19,18 @@ async function generateConceptImage(
   negativeStyle: string,
   imageSize: { width: number; height: number },
   inferenceSteps: number,
+  resolvedEthnicity: ReturnType<typeof resolveSubjectEthnicity>,
 ): Promise<string> {
-  // Style prefix leads the prompt so FLUX weights it highest
-  const fullPrompt = `${stylePrefix}, ${description}, ${ratioPrompt}, natural dramatic lighting, sharp focus, high detail, cinematic color grade`;
+  const locked = applySubjectEthnicityLock(`${stylePrefix}, ${description}`, resolvedEthnicity);
+  const fullPrompt = `${locked.prompt}, ${ratioPrompt}, natural dramatic lighting, sharp focus, high detail, cinematic color grade`;
+  const fullNegative = [negativeStyle, locked.negativeAddon].filter(Boolean).join(', ');
   try {
     const res = await fetch('https://fal.run/fal-ai/flux/schnell', {
       method:  'POST',
       headers: { Authorization: `Key ${falKey}`, 'Content-Type': 'application/json' },
       body:    JSON.stringify({
         prompt:                fullPrompt,
-        negative_prompt:       negativeStyle,
+        negative_prompt:       fullNegative,
         num_images:            1,
         image_size:            imageSize,
         num_inference_steps:   inferenceSteps,
@@ -41,7 +51,25 @@ async function generateConceptImage(
 }
 
 export async function POST(req: Request) {
-  const { prompt, characterBrief = '', toolId, nichePrefill = '', visualStyle = 'Lifestyle', aspectRatio = '9:16', quality = 'fast' } = await req.json();
+  const {
+    prompt,
+    characterBrief = '',
+    toolId,
+    nichePrefill = '',
+    visualStyle = 'Lifestyle',
+    aspectRatio = '9:16',
+    quality = 'fast',
+    subjectEthnicity,
+  } = await parseJsonWithEthnicityFix<{
+    prompt: string;
+    characterBrief?: string;
+    toolId: string;
+    nichePrefill?: string;
+    visualStyle?: string;
+    aspectRatio?: string;
+    quality?: string;
+    subjectEthnicity?: SubjectEthnicityInput;
+  }>(req);
 
   if (!prompt?.trim()) {
     return Response.json({ error: 'prompt required' }, { status: 400 });
@@ -89,6 +117,13 @@ export async function POST(req: Request) {
 
   const inferenceSteps = quality === 'premium' ? 20 : quality === 'standard' ? 12 : 8;
 
+  const combinedText = `${characterBrief} ${prompt}`;
+  const resolvedEthnicity = resolveSubjectEthnicity(subjectEthnicity, combinedText);
+  const resolvedCharacterBrief = [
+    buildCharacterBriefFromEthnicity(resolvedEthnicity),
+    characterBrief,
+  ].filter(Boolean).join('. ');
+
   try {
     // Step 1: Claude extracts 4 physical scene beats, guided by visual style
     const msg = await anthropic.messages.create({
@@ -96,8 +131,9 @@ export async function POST(req: Request) {
       max_tokens: 1000,
       system:
         `You are a scene director for Omnyra, an AI video studio. ` +
+        CAUCASIAN_DEFAULT_SYSTEM_RULE + ' ' +
         (nichePrefill ? `Niche mode: ${nichePrefill} ` : '') +
-        (characterBrief ? `SUBJECT/CHARACTER: "${characterBrief}" — this is the person in every scene. Match their age, gender, ethnicity, and appearance EXACTLY across all 4 scenes. ` : '') +
+        `SUBJECT/CHARACTER: "${resolvedCharacterBrief}" — this is the person in every scene. Match their age, gender, ethnicity, and appearance EXACTLY across all 4 scenes. NEVER change ethnicity across scenes. ` +
         `Visual style for this shoot: ${styleContext}. ` +
         `Given a script, extract exactly 4 DISTINCT PHYSICAL SCENE MOMENTS — one per major beat. ` +
         `CRITICAL RULES: ` +
@@ -111,7 +147,7 @@ export async function POST(req: Request) {
       messages: [
         {
           role:    'user',
-          content: `${characterBrief ? `SUBJECT: ${characterBrief}\n\n` : ''}Niche/Tool: ${toolId}\nVisual Brief / Scene Directions:\n${prompt}\n\nExtract 4 scene moments as FLUX image generation prompts. IMPORTANT: Every scene must feature the subject described above — correct gender, age, ethnicity, appearance. If the input already contains camera angles, character descriptions, lighting and setting — use those directly and enrich them. If it is raw script dialogue with stage directions in [brackets], use those as the physical action for each scene. Always output concrete, photographic descriptions: subject appearance, exact location, time of day, lighting quality, camera framing, props. Match era and setting exactly.`,
+          content: `SUBJECT: ${resolvedCharacterBrief}\n\nNiche/Tool: ${toolId}\nVisual Brief / Scene Directions:\n${prompt}\n\nExtract 4 scene moments as FLUX image generation prompts. IMPORTANT: Every scene must feature the Caucasian/white subject described above unless the brief explicitly names another ethnicity. Location (e.g. Tokyo, neon alley) does NOT determine ethnicity. If the input already contains camera angles, character descriptions, lighting and setting — use those directly and enrich them. If it is raw script dialogue with stage directions in [brackets], use those as the physical action for each scene. Always output concrete, photographic descriptions: subject appearance, exact location, time of day, lighting quality, camera framing, props. Match era and setting exactly.`,
         },
       ],
     });
@@ -128,7 +164,10 @@ export async function POST(req: Request) {
 
     // Step 2: Generate images in parallel
     const imageUrls = await Promise.all(
-      four.map(c => generateConceptImage(c.description, falKey, stylePrefix, ratioPrompt, negativeStyle, imageSize, inferenceSteps))
+      four.map(c => generateConceptImage(
+        c.description, falKey, stylePrefix, ratioPrompt, negativeStyle, imageSize, inferenceSteps,
+        resolvedEthnicity,
+      ))
     );
 
     const concepts = four.map((c, i) => ({

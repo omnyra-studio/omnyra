@@ -14,6 +14,7 @@ import { cookies }            from "next/headers";
 import { NextResponse }       from "next/server";
 import { runParallelEngine }  from "@/lib/orchestrator/parallel-engine";
 import { supabaseAdmin }      from "@/lib/supabase/admin";
+import { parseJsonWithEthnicityFix } from "@/middleware/ethnicityFix";
 
 function emitRaw(type: string, correlationId: string, payload: Record<string, unknown>): void {
   void supabaseAdmin.from("orchestration_events")
@@ -35,7 +36,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: {
+  type ParallelRenderBody = {
     planId?:             string;
     characterId?:        string;
     characterIds?:       string[];
@@ -48,8 +49,10 @@ export async function POST(request: Request) {
     maxClips?:           number;
     niche?:              string;
   };
+
+  let body: ParallelRenderBody;
   try {
-    body = await request.json();
+    body = await parseJsonWithEthnicityFix<ParallelRenderBody>(request);
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }

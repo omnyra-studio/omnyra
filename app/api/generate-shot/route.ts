@@ -3,33 +3,21 @@
  *
  * Generates ONE shot and saves the resulting clip URL to the shots table.
  *
- * Routing:
- *   content_type="text_overlay" → fal Flux via executeShot() (sync, fast)
- *   everything else → fal.queue.submit() with Seedance — returns immediately with { status: "queued" }
+ * Video shots: Kling DIRECT ONLY (true animation, faster, no Fal).
+ * text_overlay: Flux sync (unchanged).
  *
- * Async path body:  { shotId: string }
- * Async path return: { success: true, status: "queued", fal_request_id: string, shot_db_id: string }
- * Sync path return:  { success: true, clip_url: string, duration: number }
- * Error return:      { error: string }
- *
- * Poll async shots via POST /api/generate-shot/status-batch
+ * Returns clip immediately for video (direct call) or queued for overlay.
  */
 
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
-import { fal } from "@fal-ai/client";
 import {
   executeShot,
-  augmentPrompt,
-  seedanceDuration,
-  SEEDANCE_I2V_MODEL,
-  SEEDANCE_T2V_MODEL,
+  executeDirectKlingShot,
 } from "@/lib/shot-executor";
 import type { ShotPacket } from "@/lib/types/shot";
 import type { ShotAssets } from "@/lib/shot-executor";
-
-fal.config({ credentials: process.env.FAL_API_KEY });
 
 export const maxDuration = 300;
 
@@ -96,8 +84,7 @@ export async function POST(request: Request) {
   }
 
   // ── Route decision ────────────────────────────────────────────────────────────
-  // text_overlay (Flux) is synchronous; everything else is async fal queue
-  const isAsyncFal = shot.content_type !== "text_overlay";
+  const isVideoShot = shot.content_type !== "text_overlay";
 
   // ── Mark as rendering ────────────────────────────────────────────────────────
   await supabase
@@ -105,43 +92,24 @@ export async function POST(request: Request) {
     .update({ render_status: "rendering", render_error: null })
     .eq("shot_id", shotId);
 
-  // ── Async fal path ────────────────────────────────────────────────────────────
-  if (isAsyncFal) {
-    const model  = shot.scene_image_url ? SEEDANCE_I2V_MODEL : SEEDANCE_T2V_MODEL;
-    const prompt = augmentPrompt(shot as ShotPacket);
-    const dur    = seedanceDuration(shot.duration_seconds);
-    const input  = shot.scene_image_url
-      ? { prompt, image_url: shot.scene_image_url, duration: dur, aspect_ratio: "9:16", generate_audio: false }
-      : { prompt, duration: dur, aspect_ratio: "9:16", generate_audio: false };
-
-    let falRequestId: string;
-    try {
-       
-      const submitted = await (fal as any).queue.submit(model, { input }) as { request_id: string };
-      falRequestId = submitted.request_id;
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "fal queue submit failed";
-      console.error(`[generate-shot] async submit failed for shot ${shot.shot_number}:`, msg);
-      await supabase
-        .from("shots")
-        .update({ render_status: "failed", render_error: msg })
-        .eq("shot_id", shotId);
-      return NextResponse.json({ error: msg }, { status: 400 });
-    }
-
+  // ── Video shots: Kling DIRECT ONLY (actual animation, faster, no Fal/Seedance) ─
+  if (isVideoShot) {
+    const res = await executeDirectKlingShot(shot as ShotPacket);
     await supabase
       .from("shots")
-      .update({ fal_request_id: falRequestId, fal_model: model, render_error: null })
+      .update({
+        clip_url: res.videoUrl,
+        render_status: "completed",
+        render_error: null,
+      })
       .eq("shot_id", shotId);
 
-    console.log(`[generate-shot] shot ${shot.shot_number} queued → fal requestId=${falRequestId}`);
-
     return NextResponse.json({
-      success:        true,
-      status:         "queued",
-      fal_request_id: falRequestId,
-      shot_db_id:     shot.id,
-      shot_number:    shot.shot_number,
+      success: true,
+      status: "completed",
+      clip_url: res.videoUrl,
+      duration: res.duration,
+      shot_db_id: shot.id,
     });
   }
 

@@ -15,6 +15,7 @@ import { NextResponse }        from "next/server";
 import { supabaseAdmin }       from "@/lib/supabase/admin";
 import { randomUUID }          from "crypto";
 import { InsufficientCreditsError } from "@/lib/credits/withCreditState";
+import { parseJsonWithEthnicityFix } from "@/middleware/ethnicityFix";
 
 export const maxDuration = 30;
 
@@ -33,7 +34,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const input = await req.json() as Record<string, unknown>;
+  const input = await parseJsonWithEthnicityFix<Record<string, unknown>>(req);
 
   // ── Reserve credits upfront ───────────────────────────────────────────────
   const txnId = randomUUID();

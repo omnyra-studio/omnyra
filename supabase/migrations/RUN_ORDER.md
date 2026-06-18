@@ -51,6 +51,7 @@ If you haven't already, run `setup.sql` once before any migration below.
 | 31 | `system_insights_extend.sql` | ADD COLUMN: `insight_type`, `title`, `summary`, `metadata`, `severity`, `source`, `confidence_score`, `user_id`; 4 new indexes | system_insights |
 | 32 | `creator_profiles_table.sql` | `creator_profiles` — user-curated identity memory used by Director Core (niche, tone, hooks, CTAs, quality_score) | auth.users |
 | 33 | `brand_brain_tables.sql` | `generation_memory` (per-generation settings + outcome) + `preference_weights` (EMA weight maps per user) | auth.users |
+| 34 | `20260618_multi_brand_system.sql` | Multi-brand support (relax 1-brand limit), rich assets (PDFs/logos/voices/references), versions, brand_profile_id on renders, privacy consent + audit, helper functions | brand_profiles, renders |
 
 ## Notes
 

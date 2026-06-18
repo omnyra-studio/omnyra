@@ -7,6 +7,7 @@ export const HARD_CAP_SECONDS = 240;
 // ── Cost estimates ────────────────────────────────────────────────────────────
 
 const SECONDS_PER_CLIP: Record<string, number> = {
+  seedance_elevenlabs: 45,
   kling_hq: 55,
   kling_standard: 40,
   smart_motion: 8,
@@ -18,7 +19,7 @@ const OVERHEAD_SECONDS = 10; // auth, DB reads, upload
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-export type ModelTier = "kling_hq" | "kling_standard" | "smart_motion" | "fal_flux";
+export type ModelTier = "seedance_elevenlabs" | "kling_hq" | "kling_standard" | "smart_motion" | "fal_flux";
 
 export interface GuardrailInput {
   sceneCount: number;
@@ -54,6 +55,8 @@ function estimateRuntime(
 const DOWNGRADE_CHAIN: ModelTier[] = ["kling_hq", "kling_standard", "smart_motion", "fal_flux"];
 
 function downgradeTier(tier: ModelTier): ModelTier | null {
+  // FORCE SEEDANCE — never downgrade to Kling or smart_motion
+  if (tier === "seedance_elevenlabs") return null;
   const idx = DOWNGRADE_CHAIN.indexOf(tier);
   return idx >= 0 && idx < DOWNGRADE_CHAIN.length - 1
     ? DOWNGRADE_CHAIN[idx + 1]!

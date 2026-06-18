@@ -267,7 +267,7 @@ export async function stitchClips(
   const fileBuffer  = fs.readFileSync(outputPath);
 
   const { error: uploadErr } = await supabaseAdmin.storage
-    .from("videos")
+    .from("renders")
     .upload(storagePath, fileBuffer, { contentType: "video/mp4", upsert: true });
 
   // Cleanup temp files (non-fatal)
@@ -277,7 +277,7 @@ export async function stitchClips(
 
   if (uploadErr) throw new Error(`[clip-stitcher] upload failed: ${uploadErr.message}`);
 
-  const { data: publicData } = supabaseAdmin.storage.from("videos").getPublicUrl(storagePath);
+  const { data: publicData } = supabaseAdmin.storage.from("renders").getPublicUrl(storagePath);
   const uploadMs = Date.now() - uploadT0;
 
   // Duration = max(voiceover actual, minimum floor, clips sum).

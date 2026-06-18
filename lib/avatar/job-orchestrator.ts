@@ -195,10 +195,9 @@ async function runExecute(
   console.info("[job-orchestrator] executing with visual lock", { model: routing.model, prompt: prompt.substring(0, 80) });
   void negative_prompt;
 
-  // Phase 1: Hedra handles lipsync/talking-head. Kling integration adds in Phase 2.
-  // When routing.model === "kling", fall through to Hedra until Kling provider is wired.
-  if (routing.model === "kling") {
-    console.warn("[job-orchestrator] Kling selected but provider not yet wired — executing with Hedra (Phase 1 fallback)");
+  // Hedra handles lipsync/talking-head. Seedance routes use Hedra for avatar jobs.
+  if (routing.model === "seedance") {
+    console.info("[job-orchestrator] Seedance routed scene — avatar job uses Hedra lip-sync");
   }
 
   let result: { video_url: string; request_id: string };

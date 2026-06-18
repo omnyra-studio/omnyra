@@ -2,34 +2,44 @@
 //
 // Routing precedence:
 //   1. shots.render_assignment field ('avatar' | 'fal') — set at shot-plan creation
-//   2. Multi-character scenes always → Kling
+//   2. Multi-character scenes always → Seedance
 //   3. Classifier on combined visual_prompt + audio_intent
-//   4. No character image → Kling fallback
+//   4. No character image → Seedance fallback
 
 import { routeModel }    from "@/lib/avatar/model-router";
 import { classifyScene } from "@/lib/avatar/scene-classifier";
-import { KLING_T2V_PRO, KLING_T2V_MODEL, KLING_I2V_PRO, KLING_I2V_MODEL } from "@/lib/video-models";
+import { forceElevenLabsSeedance, SEEDANCE_ELEVENLABS_MODEL } from "@/lib/services/elevenlabs";
+import { FORCE_SEEDANCE, getVideoProvider } from "@/lib/video-provider";
 import { isMultiCharacterScene } from "./multi-character-handler";
 
-// ultra-draft uses v3 standard (shorter queue, 5s clips are fast);
-// all other modes use v3 pro for best motion quality.
-function pickKlingT2V(speedMode: string): string {
-  return speedMode === 'ultra-draft' ? KLING_T2V_MODEL : KLING_T2V_PRO;
+/** Seedance via ElevenLabs is the only video provider — never fal.ai model IDs. */
+function pickSeedanceModel(speedMode: string, preferI2V: boolean): string {
+  void speedMode;
+  void preferI2V;
+  return SEEDANCE_ELEVENLABS_MODEL;
 }
 
-export type Provider = "hedra" | "kling" | "runway";
+/** Generate a Seedance clip — ElevenLabs only, no fal.ai fallback. */
+export async function generateSeedanceVideo(fullPrompt: string, duration = 6): Promise<string> {
+  if (FORCE_SEEDANCE) {
+    console.log("✅ FORCING SEEDANCE VIA ELEVENLABS ONLY");
+  }
+  return forceElevenLabsSeedance(fullPrompt, { duration, resolution: "720p", motionIntensity: "high" });
+}
+
+export type Provider = "hedra" | "seedance";
 
 export interface ShotRoute {
-  shotId:           string;
-  shotNumber:       number;
-  provider:         Provider;
-  klingModelId?:    string;   // fal.ai model slug when provider=kling
-  maxDurationSecs?: number;   // Hedra cap — keeps avatar shots short for speed
-  motionStrength?:  number;   // 0-1 for Kling cfg_scale mapping
-  preferI2V?:       boolean;  // use image-to-video when char ref exists
-  isStylized?:      boolean;  // stylized/cartoon character — affects neg prompts
-  sourceImageProvider?: "getimg"; // generate source frame via GetImg before i2v
-  reason:           string;
+  shotId:              string;
+  shotNumber:          number;
+  provider:            Provider;
+  seedanceModelId?:    string;
+  maxDurationSecs?:    number;
+  motionStrength?:     number;
+  preferI2V?:          boolean;
+  isStylized?:         boolean;
+  sourceImageProvider?: "getimg";
+  reason:              string;
 }
 
 export interface RoutableSot {
@@ -37,7 +47,7 @@ export interface RoutableSot {
   shot_number:       number;
   render_assignment: string | null;
   visual_prompt:     string;
-  audio_intent?:     string | null;  // combined with visual_prompt for classification
+  audio_intent?:     string | null;
   fal_model?:        string | null;
   content_type?:     string | null;
 }
@@ -46,34 +56,38 @@ export interface RouteOptions {
   characterHasImage: boolean;
   draftMode?:        boolean;
   speedMode?:        string;
-  isMultiCharacter?: boolean;  // force Kling — two characters can't use Hedra
-  enableRunway?:     boolean;  // opt-in: route quality i2v shots to Runway Gen-4
+  isMultiCharacter?: boolean;
 }
 
 export function routeShot(shot: RoutableSot, opts: RouteOptions): ShotRoute {
-  const { characterHasImage, draftMode = false, speedMode = 'balanced' } = opts;
+  const { characterHasImage, speedMode = 'balanced' } = opts;
 
   const label = `shot=${shot.id} num=${shot.shot_number}`;
 
-  // ── 0. Multi-character — Hedra is single-character only ──────────────────────
   const multiChar = opts.isMultiCharacter ?? isMultiCharacterScene(shot.visual_prompt);
   const combinedText = `${shot.visual_prompt} ${shot.audio_intent ?? ""}`.toLowerCase();
   const stylized     = isStylizedCharacter(combinedText);
 
   if (multiChar) {
     const motionStrength = getMotionStrength(speedMode, combinedText, stylized);
-    // Multi-character: t2v only (single ref image can't represent both chars)
-    const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "kling", klingModelId: pickKlingT2V(speedMode), motionStrength, isStylized: stylized, reason: "multi-character → kling" };
-    console.info(`[ROUTER] → KLING ${label} reason=${r.reason} motion=${motionStrength} stylized=${stylized}`);
+    const r: ShotRoute = {
+      shotId: shot.id, shotNumber: shot.shot_number, provider: "seedance",
+      seedanceModelId: pickSeedanceModel(speedMode, false), motionStrength, isStylized: stylized,
+      reason: "multi-character → seedance",
+    };
+    console.info(`[ROUTER] → SEEDANCE ${label} reason=${r.reason} motion=${motionStrength} stylized=${stylized}`);
     return r;
   }
 
-  // ── 1. Explicit render_assignment from the shot-plan director ─────────────────
   if (shot.render_assignment === "avatar") {
     if (!characterHasImage) {
       const motionStrength = getMotionStrength(speedMode, combinedText, stylized);
-      const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "kling", klingModelId: pickKlingT2V(speedMode), motionStrength, isStylized: stylized, reason: "render_assignment=avatar but no character image → kling fallback" };
-      console.info(`[ROUTER] → KLING ${label} reason=${r.reason} motion=${motionStrength}`);
+      const r: ShotRoute = {
+        shotId: shot.id, shotNumber: shot.shot_number, provider: "seedance",
+        seedanceModelId: pickSeedanceModel(speedMode, false), motionStrength, isStylized: stylized,
+        reason: "render_assignment=avatar but no character image → seedance fallback",
+      };
+      console.info(`[ROUTER] → SEEDANCE ${label} reason=${r.reason} motion=${motionStrength}`);
       return r;
     }
     const maxDurationSecs = _hedraMaxSecs(speedMode);
@@ -84,14 +98,16 @@ export function routeShot(shot: RoutableSot, opts: RouteOptions): ShotRoute {
 
   if (shot.render_assignment === "fal") {
     const motionStrength = getMotionStrength(speedMode, combinedText, stylized);
-    // Prefer i2v for stylized characters when a reference image exists — better consistency
     const preferI2V = stylized && characterHasImage && speedMode !== 'ultra-draft';
-    const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "kling", klingModelId: pickKlingT2V(speedMode), motionStrength, preferI2V, isStylized: stylized, reason: "render_assignment=fal" };
-    console.info(`[ROUTER] → KLING ${label} reason=${r.reason} motion=${motionStrength} i2v=${preferI2V} stylized=${stylized}`);
+    const r: ShotRoute = {
+      shotId: shot.id, shotNumber: shot.shot_number, provider: "seedance",
+      seedanceModelId: pickSeedanceModel(speedMode, preferI2V), motionStrength, preferI2V, isStylized: stylized,
+      reason: "render_assignment=fal → seedance",
+    };
+    console.info(`[ROUTER] → SEEDANCE ${label} reason=${r.reason} motion=${motionStrength} i2v=${preferI2V} stylized=${stylized}`);
     return r;
   }
 
-  // ── 2. Talking-scene fast-path — check before full classifier ────────────────
   const isTalkingScene = /\b(speaking|talking|says|narration|looking at camera|direct to camera|addresses camera|lip.?sync|voiceover|presenter|host|direct address)\b/.test(combinedText);
 
   if (isTalkingScene && characterHasImage && speedMode !== 'ultra-draft') {
@@ -101,7 +117,6 @@ export function routeShot(shot: RoutableSot, opts: RouteOptions): ShotRoute {
     return r;
   }
 
-  // ── 3. Full classifier on combined text ───────────────────────────────────────
   const classification = classifyScene(combinedText);
   const routing        = routeModel(classification);
 
@@ -112,98 +127,88 @@ export function routeShot(shot: RoutableSot, opts: RouteOptions): ShotRoute {
     return r;
   }
 
-  // ── 4. Runway — quality i2v when explicitly enabled ─────────────────────────
-  // Only when: opt-in flag set + character image available + quality mode.
-  // Runway Gen-4 Turbo is i2v only and produces highest-quality results.
-  if (opts.enableRunway && characterHasImage && speedMode === 'quality') {
-    const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "runway", reason: `runway quality i2v: ${routing.reason}` };
-    console.info(`[ROUTER] → RUNWAY ${label} reason=${r.reason}`);
-    return r;
-  }
-
   const motionStrength = getMotionStrength(speedMode, combinedText, stylized);
   const preferI2V      = stylized && characterHasImage && speedMode !== 'ultra-draft';
-  const r: ShotRoute = { shotId: shot.id, shotNumber: shot.shot_number, provider: "kling", klingModelId: shot.fal_model ?? pickKlingT2V(speedMode), motionStrength, preferI2V, isStylized: stylized, reason: `classifier: ${routing.reason}` };
-  console.info(`[ROUTER] → KLING ${label} model=${r.klingModelId?.split("/").pop()} reason=${r.reason} motion=${motionStrength} i2v=${preferI2V} stylized=${stylized}`);
+  const provider = getVideoProvider();
+  const r: ShotRoute = {
+    shotId: shot.id, shotNumber: shot.shot_number, provider: "seedance",
+    seedanceModelId: pickSeedanceModel(speedMode, preferI2V), motionStrength, preferI2V, isStylized: stylized,
+    reason: `classifier: ${routing.reason} → ${provider}`,
+  };
+  console.info(`[ROUTER] → SEEDANCE ${label} model=${r.seedanceModelId} reason=${r.reason} motion=${motionStrength} i2v=${preferI2V} stylized=${stylized}`);
   return r;
 }
 
-// Hedra duration cap by speed mode — controls audio length fed to Hedra.
-// Hedra generation time ≈ 3-5× audio length; raise cap only with adequate timeout.
 function _hedraMaxSecs(speedMode: string): number {
-  if (speedMode === 'ultra-draft') return 9;   // 22 words — fastest Hedra + 45s fallback
-  if (speedMode === 'draft')       return 12;  // 30 words — quick with 60s fallback
-  if (speedMode === 'balanced')    return 25;  // 62 words — 25s audio, 60s fallback → Kling
-  return 30;  // quality: 75 words — 30s audio, 80s fallback
+  if (speedMode === 'ultra-draft') return 9;
+  if (speedMode === 'draft')       return 12;
+  if (speedMode === 'balanced')    return 25;
+  return 30;
 }
 
-// Detects stylized / non-human characters that need softer motion tuning.
-// High motion strength + complex fur/feathers = model artifact spiral.
 function isStylizedCharacter(t: string): boolean {
   return /\b(big bird|snuffleupagus|snuffy|muppet|puppet|sesame|cartoon|anime|pokemon|furry|creature|monster|dragon|fairy|elf|gnome|troll|goblin|unicorn|dinosaur|robot|alien|plush|stuffed animal|mascot|disney|pixar|dreamworks|animated character|3d animation|cgi character|princess peach|mario|luigi|bowser|zelda|kirby|pikachu|yoshi|wario|donkey kong|abraham lincoln|george washington|napoleon|historical cartoon|fictional character|storybook)\b/.test(t);
 }
 
-// ── getKlingRoute — lightweight routing helper for callers that don't need full ShotRoute ──
-// Returns model slug, i2v flag, motion strength, and duration cap based on mode + shot type.
-
-export interface KlingRoute {
-  klingModelId:    string;
-  useI2V:          boolean;
-  motionStrength:  number;
-  maxDurationSecs: number;
-  reason:          string;
+export interface SeedanceRoute {
+  seedanceModelId:   string;
+  useI2V:            boolean;
+  motionStrength:    number;
+  maxDurationSecs:   number;
+  reason:            string;
 }
 
-export function getKlingRoute(options: {
-  speedMode:       string;
-  isAvatar?:       boolean;
-  isAnimated?:     boolean;
+export function getSeedanceRoute(options: {
+  speedMode:          string;
+  isAvatar?:          boolean;
+  isAnimated?:        boolean;
   hasReferenceImage?: boolean;
-}): KlingRoute {
+}): SeedanceRoute {
   const { speedMode, isAvatar = false, isAnimated = false, hasReferenceImage = false } = options;
 
   if (speedMode === 'ultra-draft') {
     return {
-      klingModelId:    KLING_T2V_MODEL,
-      useI2V:          false,
-      motionStrength:  0.45,
-      maxDurationSecs: 5,
-      reason:          `routing:${speedMode}-standard`,
+      seedanceModelId:   SEEDANCE_ELEVENLABS_MODEL,
+      useI2V:            false,
+      motionStrength:    0.45,
+      maxDurationSecs:   5,
+      reason:            `routing:${speedMode}-standard`,
     };
   }
 
   if (isAvatar) {
     return {
-      klingModelId:    KLING_I2V_PRO,
-      useI2V:          true,
-      motionStrength:  0.45,
-      maxDurationSecs: 12,
-      reason:          `routing:avatar-i2v`,
+      seedanceModelId:   SEEDANCE_ELEVENLABS_MODEL,
+      useI2V:            true,
+      motionStrength:    0.45,
+      maxDurationSecs:   12,
+      reason:            `routing:avatar-i2v`,
     };
   }
 
   if (isAnimated) {
+    const boostedMotion = Math.max(0.68, 0.70);
     return {
-      klingModelId:    KLING_I2V_MODEL,
-      useI2V:          hasReferenceImage,
-      motionStrength:  0.68,
-      maxDurationSecs: 10,
-      reason:          `routing:animated`,
+      seedanceModelId:   SEEDANCE_ELEVENLABS_MODEL,
+      useI2V:            hasReferenceImage,
+      motionStrength:    boostedMotion,
+      maxDurationSecs:   10,
+      reason:            `routing:animated`,
     };
   }
 
   return {
-    klingModelId:    KLING_T2V_PRO,
-    useI2V:          hasReferenceImage && speedMode !== 'draft',
-    motionStrength:  0.62,
-    maxDurationSecs: 10,
-    reason:          `routing:${speedMode}-cinematic`,
+    seedanceModelId:   SEEDANCE_ELEVENLABS_MODEL,
+    useI2V:            hasReferenceImage && speedMode !== 'draft',
+    motionStrength:    0.62,
+    maxDurationSecs:   10,
+    reason:            `routing:${speedMode}-cinematic`,
   };
 }
 
-// ── Motion strength for Kling — higher = more dynamic motion.
-// Maps inversely to cfg_scale: strength 0.75 → cfg_scale 0.25 (free motion).
-// Stylized characters use moderate strength to avoid artifact spiral.
+/** @deprecated Use getSeedanceRoute */
+export const getKlingRoute = getSeedanceRoute;
+
 function getMotionStrength(speedMode: string, combinedText: string, stylized = false): number {
   if (speedMode === 'ultra-draft') return 0.45;
   if (speedMode === 'draft')       return stylized ? 0.50 : 0.55;
@@ -214,13 +219,11 @@ function getMotionStrength(speedMode: string, combinedText: string, stylized = f
   const isCalm    = /\b(gentle|calm|slow|emotional|tender|intimate|peaceful|serene|soft|still|standing|sitting)\b/.test(t);
 
   if (stylized) {
-    // Animated/cartoon: higher motion for lively cartoon feel — CGI handles motion better than fur/feathers
     if (isDance || isAction) return 0.65;
     if (isCalm)              return 0.55;
     return 0.60;
   }
 
-  // Realistic / human characters
   if (isAction || isDance) return 0.72;
   if (isCalm)              return 0.50;
   return 0.62;

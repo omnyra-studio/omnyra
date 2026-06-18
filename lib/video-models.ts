@@ -1,15 +1,21 @@
-// ── Canonical fal.ai video model slugs ───────────────────────────────────────
+// ── Canonical video model slugs ─────────────────────────────────────────────
 // All video generation routes must import from here — no hardcoded strings elsewhere.
 
-// ── Kling v3 (default — best motion quality, June 2026) ──────────────────────
-export const KLING_I2V_PRO     = "fal-ai/kling-video/v3/pro/image-to-video";     // avatar animate, multi-char composite
-export const KLING_T2V_PRO     = "fal-ai/kling-video/v3/pro/text-to-video";      // cinematic clips (parallel engine)
-export const KLING_I2V_MODEL   = "fal-ai/kling-video/v3/standard/image-to-video"; // lower-cost i2v fallback
-export const KLING_T2V_MODEL   = "fal-ai/kling-video/v3/standard/text-to-video";  // lower-cost t2v fallback
+import { DEFAULT_VIDEO_MODEL } from "@/lib/video-provider";
 
-// ── Kling v2.1 (explicit fallback only — do not use as default) ──────────────
-export const KLING_I2V_PRO_V2  = "fal-ai/kling-video/v2.1/pro/image-to-video";
-export const KLING_T2V_PRO_V2  = "fal-ai/kling-video/v2.1/pro/text-to-video";
+// ── Seedance via ElevenLabs (DEFAULT — primary video provider, June 2026) ──
+export const SEEDANCE_T2V_MODEL = "seedance-elevenlabs";
+export const SEEDANCE_I2V_MODEL = "seedance-elevenlabs";
+
+// ── Kling (DISABLED — kept for legacy type references only) ─────────────────
+export const KLING_I2V_PRO     = "kling-direct/pro/image-to-video";
+export const KLING_T2V_PRO     = "kling-direct/pro/text-to-video";
+export const KLING_I2V_MODEL   = "kling-direct/standard/image-to-video";
+export const KLING_T2V_MODEL   = "kling-direct/standard/text-to-video";
+
+// Legacy Fal IDs kept only for mapping inside direct client. Do not use for actual calls.
+export const KLING_I2V_PRO_V2  = "fal-ai/kling-video/v2.1/pro/image-to-video"; // mapping only
+export const KLING_T2V_PRO_V2  = "fal-ai/kling-video/v2.1/pro/text-to-video"; // mapping only
 
 export const RUNWAY_MODEL      = "fal-ai/runway-gen4/turbo";
 
@@ -26,7 +32,7 @@ const DEPRECATED_MODELS = [
 ];
 
 // Startup validation — called once at module load.
-const ACTIVE_MODELS = [KLING_I2V_MODEL, KLING_T2V_MODEL, KLING_I2V_PRO, KLING_T2V_PRO, RUNWAY_MODEL];
+const ACTIVE_MODELS = [SEEDANCE_T2V_MODEL, SEEDANCE_I2V_MODEL, RUNWAY_MODEL];
 
 for (const m of ACTIVE_MODELS) {
   if (DEPRECATED_MODELS.includes(m)) {
@@ -36,7 +42,7 @@ for (const m of ACTIVE_MODELS) {
   }
 }
 
-console.log("[video-models] active models:", ACTIVE_MODELS.join(", "));
+console.log(`[video-models] default=${DEFAULT_VIDEO_MODEL} active:`, ACTIVE_MODELS.join(", "));
 
 // ── Shared response URL extractor ─────────────────────────────────────────────
 // fal.ai wraps results differently depending on the SDK version and model.

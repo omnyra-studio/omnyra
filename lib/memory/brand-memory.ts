@@ -29,6 +29,36 @@ export interface BrandMemory {
   socialContext:       string;   // ready-to-inject AI context fragment
 }
 
+// ── FIX: centralized suffix builders (deduped, used across engines)
+function buildKlingStyleSuffix(visualStyle: string | null, toneKeywords: string[] | null): string {
+  const parts: string[] = [];
+  if (visualStyle) parts.push(visualStyle);
+  if (toneKeywords?.length) parts.push(toneKeywords.slice(0, 3).join(", "));
+  return parts.filter(Boolean).join(", ");
+}
+function buildFluxStyleSuffix(visualStyle: string | null, toneKeywords: string[] | null): string {
+  const parts: string[] = [];
+  if (visualStyle) parts.push(visualStyle);
+  if (toneKeywords?.length) {
+    const visualTone = toneKeywords.filter(t => !/\b(energetic|dynamic|fast|motion|movement)\b/i.test(t)).slice(0, 2);
+    if (visualTone.length) parts.push(visualTone.join(", "));
+  }
+  return parts.filter(Boolean).join(", ");
+}
+function buildNegativeStyleSuffix(negativeTerms: string[] | null): string {
+  return (negativeTerms || []).filter(Boolean).join(", ");
+}
+function deriveToneKeywords(toneOfVoice?: string | null, toneTags?: string[] | null, notes?: string | null): string[] {
+  const kws: string[] = [];
+  if (toneOfVoice) kws.push(...toneOfVoice.split(/[,;]+/).map(s => s.trim()).filter(Boolean));
+  if (toneTags?.length) kws.push(...toneTags);
+  if (notes) {
+    const m = notes.match(/\b(minimal|bold|cinematic|editorial|luxury|playful|professional|witty|clean|dramatic|natural|high-contrast)\b/gi);
+    if (m) kws.push(...m.map(x => x.toLowerCase()));
+  }
+  return Array.from(new Set(kws.map(k => k.toLowerCase()))).slice(0, 8);
+}
+
 const EMPTY_BRAND: BrandMemory = {
   brandName:           null,
   toneKeywords:        [],
@@ -44,69 +74,156 @@ const EMPTY_BRAND: BrandMemory = {
   socialContext:       "",
 };
 
-export async function loadBrandMemory(userId: string): Promise<BrandMemory> {
+// Simple in-memory TTL cache for scalability (brand loads are hot path in every generation)
+const _brandCache = new Map<string, { value: BrandMemory; expires: number }>();
+const BRAND_CACHE_TTL = 1000 * 60 * 2; // 2 minutes
+
+function makeCacheKey(userId: string, brandProfileId?: string | null): string {
+  return brandProfileId ? `${userId}:${brandProfileId}` : userId;
+}
+
+function getCachedBrand(key: string): BrandMemory | null {
+  const hit = _brandCache.get(key);
+  if (hit && hit.expires > Date.now()) return hit.value;
+  if (hit) _brandCache.delete(key);
+  return null;
+}
+function setCachedBrand(key: string, value: BrandMemory) {
+  _brandCache.set(key, { value, expires: Date.now() + BRAND_CACHE_TTL });
+  if (_brandCache.size > 400) {
+    // evict oldest
+    const first = _brandCache.keys().next().value;
+    if (first) _brandCache.delete(first);
+  }
+}
+export function invalidateBrandMemoryCache(userId?: string, brandProfileId?: string | null) {
+  if (userId) {
+    const key = makeCacheKey(userId, brandProfileId);
+    _brandCache.delete(key);
+    // also clear plain user key in case
+    _brandCache.delete(userId);
+  } else {
+    _brandCache.clear();
+  }
+}
+
+export async function loadBrandMemory(
+  userId: string,
+  brandProfileId?: string | null
+): Promise<BrandMemory & { brandProfileId?: string | null }> {
+  if (!userId) return { ...EMPTY_BRAND };
+
+  const cacheKey = makeCacheKey(userId, brandProfileId);
+
+  // Scalability: serve from short TTL cache when possible
+  const cached = getCachedBrand(cacheKey);
+  if (cached) return { ...cached, brandProfileId: brandProfileId ?? null };
+
   // Load from brand_brain (AI-curated data) AND brand_profiles (user-entered data) in parallel
-  const [brainResult, profileResult] = await Promise.all([
+  // Support multi-brand: filter by brandProfileId when provided (new requirement)
+  const profileFilter = brandProfileId
+    ? supabaseAdmin.from("brand_profiles").select("*").eq("id", brandProfileId).eq("user_id", userId).maybeSingle()
+    : supabaseAdmin.from("brand_profiles").select("*").eq("user_id", userId).order("is_default", { ascending: false }).limit(1).maybeSingle();
+
+  const [brainResult, profileResult, creatorResult] = await Promise.all([
     supabaseAdmin
       .from("brand_brain")
       .select("brand_name, tone_keywords, visual_style, content_pillars, tagline, preferred_hooks, negative_style_terms, performance_summary")
       .eq("user_id", userId)
+      .eq("brand_profile_id", brandProfileId || "") // will be ignored if no column match, but migration adds support path
       .maybeSingle(),
+    profileFilter,
     supabaseAdmin
-      .from("brand_profiles")
-      .select("social_platforms")
+      .from("creator_profiles")
+      .select("visual_style, preferred_hooks, content_pillars")
       .eq("user_id", userId)
       .maybeSingle(),
   ]);
 
-  const { data, error } = brainResult;
-  if (error || !data) {
-    // Still return social platforms if brand_brain is empty
-    const socialPlatforms = extractSocialPlatforms(profileResult.data?.social_platforms);
-    return { ...EMPTY_BRAND, socialPlatforms, socialContext: buildSocialContext(socialPlatforms) };
+  const { data: brain, error: brainErr } = brainResult;
+  const profile = profileResult.data as any;
+  const creator = creatorResult.data as any;
+
+  // ── FIX: auto-populate brand_brain from brand_profiles/creator if missing (the core memory bug fix)
+  if ((!brain || brainErr) && profile && (profile.brand_name || profile.tone_of_voice)) {
+    const toneKws = deriveToneKeywords(profile.tone_of_voice, profile.tone_tags, profile.content_style_notes);
+    const vs = creator?.visual_style || profile.style_preset || null;
+    const hooks = creator?.preferred_hooks || [];
+    const pillars = creator?.content_pillars || (profile.content_style_notes ? [profile.content_style_notes] : null);
+
+    try {
+      await supabaseAdmin.from("brand_brain").upsert({
+        user_id: userId,
+        brand_name: profile.brand_name || null,
+        tone_keywords: toneKws,
+        visual_style: vs,
+        content_pillars: pillars,
+        tagline: profile.tagline || null,
+        preferred_hooks: hooks,
+        negative_style_terms: [],
+        performance_summary: null,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "user_id" });
+      console.info(`[BRAND_MEMORY_FIX] auto-populated brand_brain for ${userId.slice(0, 8)} — memory will now affect generations`);
+    } catch (e) {
+      console.warn("[brand-memory] auto-populate failed (non-fatal):", (e as any)?.message);
+    }
+    // Re-fetch once
+    const refetch = await supabaseAdmin.from("brand_brain").select("*").eq("user_id", userId).maybeSingle();
+    if (refetch.data) {
+      const mem = buildFromBrain(refetch.data, profile);
+      setCachedBrand(cacheKey, mem);
+      return { ...mem, brandProfileId: profile?.id ?? brandProfileId ?? null };
+    }
   }
 
-  const record = data as {
-    brand_name:           string | null;
-    tone_keywords:        string[] | null;
-    visual_style:         string | null;
-    content_pillars:      string[] | null;
-    tagline:              string | null;
-    preferred_hooks:      string[] | null;
+  if (!brain) {
+    const socialPlatforms = extractSocialPlatforms(profile?.social_platforms);
+    const emptyWithSocial = { ...EMPTY_BRAND, socialPlatforms, socialContext: buildSocialContext(socialPlatforms) };
+    setCachedBrand(cacheKey, emptyWithSocial);
+    return { ...emptyWithSocial, brandProfileId: profile?.id ?? brandProfileId ?? null };
+  }
+
+  const result = buildFromBrain(brain, profile);
+  setCachedBrand(cacheKey, result);
+  return { ...result, brandProfileId: profile?.id ?? brandProfileId ?? null };
+}
+
+function buildFromBrain(brain: any, profile: any): BrandMemory {
+  const record = brain as {
+    brand_name: string | null;
+    tone_keywords: string[] | null;
+    visual_style: string | null;
+    content_pillars: string[] | null;
+    tagline: string | null;
+    preferred_hooks: string[] | null;
     negative_style_terms: string[] | null;
-    performance_summary:  string | null;
+    performance_summary: string | null;
   };
 
-  // Kling suffix: visual_style + tone (motion context for video prompts)
-  const klingParts: string[] = [];
-  if (record.visual_style) klingParts.push(record.visual_style);
-  if (record.tone_keywords?.length) klingParts.push(record.tone_keywords.slice(0, 3).join(", "));
+  const toneKeywords = record.tone_keywords?.length
+    ? record.tone_keywords
+    : deriveToneKeywords(profile?.tone_of_voice, profile?.tone_tags, profile?.content_style_notes);
 
-  // Flux suffix: visual_style + 2 tone keywords (static image; drop motion terms)
-  const fluxParts: string[] = [];
-  if (record.visual_style) fluxParts.push(record.visual_style);
-  if (record.tone_keywords?.length) {
-    const visualTone = record.tone_keywords
-      .filter(t => !/\b(energetic|dynamic|fast|motion|movement)\b/i.test(t))
-      .slice(0, 2);
-    if (visualTone.length) fluxParts.push(visualTone.join(", "));
-  }
+  const visualStyle = record.visual_style || profile?.style_preset || null;
 
-  const negativeStyleSuffix = record.negative_style_terms?.filter(Boolean).join(", ") ?? "";
+  const klingStyleSuffix = buildKlingStyleSuffix(visualStyle, toneKeywords);
+  const fluxStyleSuffix = buildFluxStyleSuffix(visualStyle, toneKeywords);
+  const negativeStyleSuffix = buildNegativeStyleSuffix(record.negative_style_terms);
 
-  const socialPlatforms = extractSocialPlatforms(profileResult.data?.social_platforms);
-  const socialContext   = buildSocialContext(socialPlatforms);
+  const socialPlatforms = extractSocialPlatforms(profile?.social_platforms);
+  const socialContext = buildSocialContext(socialPlatforms);
 
   return {
-    brandName:           record.brand_name,
-    toneKeywords:        record.tone_keywords ?? [],
-    visualStyle:         record.visual_style,
-    tagline:             record.tagline,
-    preferredHooks:      record.preferred_hooks ?? [],
-    negativeTerms:       record.negative_style_terms ?? [],
-    performanceSummary:  record.performance_summary,
-    klingStyleSuffix:    klingParts.filter(Boolean).join(", "),
-    fluxStyleSuffix:     fluxParts.filter(Boolean).join(", "),
+    brandName: record.brand_name,
+    toneKeywords,
+    visualStyle,
+    tagline: record.tagline,
+    preferredHooks: record.preferred_hooks ?? [],
+    negativeTerms: record.negative_style_terms ?? [],
+    performanceSummary: record.performance_summary,
+    klingStyleSuffix,
+    fluxStyleSuffix,
     negativeStyleSuffix,
     socialPlatforms,
     socialContext,

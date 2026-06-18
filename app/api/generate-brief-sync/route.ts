@@ -4,6 +4,7 @@ import { getBrandProfile, getBrandSystemPrompt } from "@/lib/brand";
 import { checkCache, saveCache, logUsageEvent } from "@/lib/cache";
 import { isScriptTooSimilar, storeScriptHistory } from "@/lib/memory/script-uniqueness";
 import { cleanEnv } from "@/lib/supabase/admin";
+import { parseJsonWithEthnicityFix } from "@/middleware/ethnicityFix";
 
 // ── Silent Ghost Test: rewrite prompt to physical-action-only language ────────
 async function ghostEnhance(apiKey: string, prompt: string): Promise<string> {
@@ -57,7 +58,19 @@ async function detectEmotion(apiKey: string, prompt: string): Promise<EmotionDat
 }
 
 export async function POST(req: Request) {
-  const { goal, template, niche, targetAudience, platforms, platform, pastWins, competitors, uniqueAngle, isContinuation, lightningMode } = await req.json();
+  const { goal, template, niche, targetAudience, platforms, platform, pastWins, competitors, uniqueAngle, isContinuation, lightningMode } = await parseJsonWithEthnicityFix<{
+    goal: string;
+    template?: string;
+    niche?: string;
+    targetAudience?: string;
+    platforms?: string[];
+    platform?: string;
+    pastWins?: string;
+    competitors?: string;
+    uniqueAngle?: string;
+    isContinuation?: boolean;
+    lightningMode?: boolean;
+  }>(req);
   const platformStr = Array.isArray(platforms) ? platforms.join(", ") : (platform ?? "TikTok");
 
   const apiKey = cleanEnv(process.env.ANTHROPIC_API_KEY);
@@ -164,9 +177,13 @@ Return JSON in this exact shape (fill every empty string):
       },
       body: JSON.stringify({
         model,
-        max_tokens: lightningMode ? 2000 : 3000,
+        max_tokens: lightningMode ? 2000 : 3500,
         system: systemPrompt,
-        messages: [{ role: "user", content: userPrompt }],
+        // Prefill assistant turn with "{" — forces Claude to output JSON directly, no preamble
+        messages: [
+          { role: "user",      content: userPrompt },
+          { role: "assistant", content: "{" },
+        ],
       }),
     });
 
@@ -180,15 +197,16 @@ Return JSON in this exact shape (fill every empty string):
       return Response.json({ error: anthropicData.error.message }, { status: 500 });
     }
 
-    const text = anthropicData.content?.[0]?.text ?? "";
-    const start = text.indexOf("{");
-    const end = text.lastIndexOf("}");
-    if (start === -1 || end === -1) {
-      console.error("generate-brief-sync: no JSON in response:", text.substring(0, 200));
+    // Prepend the prefilled "{" since Anthropic returns only the completion text
+    const raw  = "{" + (anthropicData.content?.[0]?.text ?? "");
+    const end  = raw.lastIndexOf("}");
+    if (end === -1) {
+      console.error("generate-brief-sync: no JSON in response:", raw.substring(0, 200));
       return Response.json({ error: "No JSON in model response" }, { status: 500 });
     }
+    const text = raw.slice(0, end + 1);
 
-    const parsed = JSON.parse(text.slice(start, end + 1)) as { versions?: unknown[] };
+    const parsed = JSON.parse(text) as { versions?: unknown[] };
 
     if (!parsed.versions?.length) {
       console.error("No versions in parsed response:", text.substring(0, 200));
@@ -207,16 +225,16 @@ Return JSON in this exact shape (fill every empty string):
           const retryRes = await fetch("https://api.anthropic.com/v1/messages", {
             method: "POST",
             headers: { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
-            body: JSON.stringify({ model, max_tokens: lightningMode ? 2000 : 3000, system: systemPrompt, messages: [{ role: "user", content: diversityPrompt }] }),
+            body: JSON.stringify({ model, max_tokens: lightningMode ? 2000 : 3500, system: systemPrompt, messages: [{ role: "user", content: diversityPrompt }, { role: "assistant", content: "{" }] }),
           });
           const retryData = await retryRes.json() as { content?: Array<{ type: string; text: string }> };
-          const retryText = retryData.content?.[0]?.text ?? "";
-          const rs = retryText.indexOf("{"), re = retryText.lastIndexOf("}");
-          if (rs !== -1 && re !== -1) {
-            const retryParsed = JSON.parse(retryText.slice(rs, re + 1)) as { versions?: unknown[] };
-            if (retryParsed.versions?.length) {
-              finalParsed = retryParsed;
-            }
+          const retryRaw  = "{" + (retryData.content?.[0]?.text ?? "");
+          const re        = retryRaw.lastIndexOf("}");
+          if (re !== -1) {
+            try {
+              const retryParsed = JSON.parse(retryRaw.slice(0, re + 1)) as { versions?: unknown[] };
+              if (retryParsed.versions?.length) finalParsed = retryParsed;
+            } catch { /* keep original */ }
           }
         }
       }
