@@ -1,8 +1,6 @@
 /**
- * Seedance Fast via fal.ai — optimized for latency + cost.
+ * Seedance Fast via fal.ai — latency + cost optimized.
  * ElevenLabs handles TTS voiceover separately.
- *
- * Best settings: 5–6s, 720p, i2v when image available, motion_strength medium.
  */
 
 import { fal } from "@fal-ai/client";
@@ -10,8 +8,10 @@ import { fal } from "@fal-ai/client";
 const FAL_T2V_FAST = "bytedance/seedance-2.0/fast/text-to-video";
 const FAL_I2V_FAST = "bytedance/seedance-2.0/fast/image-to-video";
 
-const POLL_INTERVAL_MS = 1200;
-const SUBSCRIBE_TIMEOUT_MS = 90_000;
+const MAX_PROMPT_CHARS = 400;
+const POLL_INTERVAL_MS = 1000;
+const SUBSCRIBE_TIMEOUT_MS = 120_000;
+const COST_ESTIMATE_AUD = "0.15-0.30 AUD";
 
 export const SEEDANCE_FAL_FAST_MODEL = "bytedance/seedance-2.0/fast";
 export const SEEDANCE_T2V_MODEL = FAL_T2V_FAST;
@@ -36,6 +36,7 @@ export interface FalSeedanceFastResult {
   modelUsed: string;
   generationMs: number;
   latencyMs: number;
+  costEstimate: string;
   seed?: number;
 }
 
@@ -63,10 +64,14 @@ function getFalKey(): string {
   return key;
 }
 
-/** 5–6s optimal; hard cap 8s for speed. */
+/** Max 6s for speed & cost; default 6. */
 function clampDuration(secs: number | undefined): number {
-  if (!secs || secs <= 0) return 6;
-  return Math.max(5, Math.min(8, Math.round(secs)));
+  const raw = secs && secs > 0 ? Math.round(secs) : 6;
+  return Math.min(raw, 6);
+}
+
+function trimPrompt(prompt: string): string {
+  return prompt.trim().slice(0, MAX_PROMPT_CHARS);
 }
 
 function extractFalVideoUrl(data: Record<string, unknown> | undefined): string | undefined {
@@ -81,7 +86,7 @@ function extractFalVideoUrl(data: Record<string, unknown> | undefined): string |
   return undefined;
 }
 
-/** Optimized Seedance Fast — prefer i2v, 720p, medium motion, fast poll. */
+/** Optimized Seedance Fast — i2v when image available, concise prompt, 6s max. */
 export async function falSeedanceFastGenerate(
   params: FalSeedanceFastParams,
 ): Promise<FalSeedanceFastResult> {
@@ -89,21 +94,21 @@ export async function falSeedanceFastGenerate(
   fal.config({ credentials: getFalKey() });
 
   const duration = clampDuration(params.duration);
-  const resolution = params.resolution ?? "720p";
   const hasImage = typeof params.imageUrl === "string" && params.imageUrl.startsWith("https://");
   const model = hasImage ? FAL_I2V_FAST : FAL_T2V_FAST;
-  const seed = params.seed ?? Math.floor(Math.random() * 1_000_000_000);
+  const seed = params.seed ?? Date.now() % 999_999_999;
   const motionStrength = params.motionStrength ?? "medium";
 
-  console.log(`[SEEDANCE_FAST] Starting | Duration: ${duration}s | Image: ${hasImage} | Model: ${model}`);
+  console.log(`[SEEDANCE_FAST] Generating ${duration}s clip | Image input: ${hasImage}`);
 
   const input: Record<string, unknown> = {
-    prompt:          params.prompt.trim(),
-    duration:        String(duration),
-    resolution,
-    aspect_ratio:    params.aspectRatio ?? "9:16",
-    generate_audio:  params.generateAudio ?? false,
-    motion_strength: motionStrength,
+    prompt:           trimPrompt(params.prompt),
+    negative_prompt:  "extra limbs, extra hands, extra fingers, duplicate objects, two phones, multiple phones, deformed hands, mutated, disfigured, watermark, text",
+    duration:         String(duration),
+    resolution:       params.resolution ?? "720p",
+    aspect_ratio:     params.aspectRatio ?? "9:16",
+    generate_audio:   params.generateAudio ?? false,
+    motion_strength:  motionStrength,
     seed,
   };
   if (hasImage) input.image_url = params.imageUrl;
@@ -120,11 +125,10 @@ export async function falSeedanceFastGenerate(
     const latencyMs = Date.now() - startMs;
 
     if (!videoUrl) {
-      console.error(`[SEEDANCE_FAST] Done in ${latencyMs}ms | Video: Failed`);
       throw new Error(`fal.ai Seedance Fast returned no video URL — ${JSON.stringify(result?.data ?? {}).substring(0, 200)}`);
     }
 
-    console.log(`[SEEDANCE_FAST] Done in ${latencyMs}ms | Video: OK | ~$0.15-0.35 AUD/${duration}s`);
+    console.log(`[SEEDANCE_FAST] ✅ Done in ${latencyMs}ms`);
 
     return {
       videoUrl,
@@ -132,6 +136,7 @@ export async function falSeedanceFastGenerate(
       modelUsed:    model,
       generationMs: latencyMs,
       latencyMs,
+      costEstimate: COST_ESTIMATE_AUD,
       seed:         (result?.data?.seed as number | undefined) ?? seed,
     };
   } catch (error) {

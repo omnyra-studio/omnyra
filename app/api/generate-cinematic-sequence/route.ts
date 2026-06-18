@@ -350,36 +350,19 @@ async function generateSeedanceClip(
   const motionPrompt = buildSeedanceElevenLabsPrompt(cleanPrompt);
 
   try {
-    const videoUrl = await forceElevenLabsSeedance(motionPrompt, {
-      duration:      Number(duration) || 6,
-      resolution:    "720p",
-      generateAudio: false,
-      rawPrompt:     true,
+    const { falSeedanceFastGenerate } = await import("@/lib/providers/seedance");
+    const result = await falSeedanceFastGenerate({
+      prompt:   motionPrompt,
+      imageUrl: imageUrl?.startsWith("https://") ? imageUrl : null,
+      duration: 6,
     });
-    clipReports.push(`${label} | seedance-fal-fast | OK | ${videoUrl.substring(0, 80)}`);
-    return videoUrl;
-  } catch (elevenLabsErr) {
-    const elDetail = elevenLabsErr instanceof Error ? elevenLabsErr.message : String(elevenLabsErr);
-    clipReports.push(`${label} | seedance-elevenlabs | FAIL | ${elDetail}`);
-    console.warn(`${label} ElevenLabs failed — falling back to Seedance Fast: ${elDetail}`);
-
-    try {
-      const { falSeedanceFastGenerate } = await import("@/lib/providers/seedance");
-      const result = await falSeedanceFastGenerate({
-        prompt:      motionPrompt,
-        imageUrl:    imageUrl?.startsWith("https://") ? imageUrl : null,
-        duration:    Number(duration) || 6,
-        resolution:  "720p",
-        aspectRatio: "9:16",
-      });
-      clipReports.push(`${label} | seedance-fal-fast | OK | ${result.videoUrl.substring(0, 80)}`);
-      return result.videoUrl;
-    } catch (falErr) {
-      const falDetail = falErr instanceof Error ? falErr.message : String(falErr);
-      clipReports.push(`${label} | seedance-fal-fast | FAIL | ${falDetail}`);
-      console.error(`${label} Seedance Fast also FAILED: ${falDetail}`);
-      return null;
-    }
+    clipReports.push(`${label} | seedance-fal-fast | OK ${result.latencyMs}ms | ${result.videoUrl.substring(0, 80)}`);
+    return result.videoUrl;
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    clipReports.push(`${label} | seedance-fal-fast | FAIL | ${detail}`);
+    console.error(`${label} Seedance Fast FAILED: ${detail}`);
+    return null;
   }
 }
 
@@ -580,7 +563,16 @@ export async function POST(req: Request) {
       voiceId?: string;
     }>(req);
     subjectEthnicity = body.subjectEthnicity ?? 'caucasian';
-    voiceoverText = body.voiceoverText?.trim() || body.script?.trim() || undefined;
+    const rawVoiceover = body.voiceoverText?.trim() || body.script?.trim() || "";
+    // Strip stage directions, scene headers, and action lines before TTS
+    voiceoverText = rawVoiceover
+      .replace(/\[SCENE:[^\]]*\]/gi, "")
+      .replace(/\[CUT TO[^\]]*\]/gi, "")
+      .replace(/\[.*?\]/g, "")
+      .replace(/\(.*?\)/g, "")
+      .replace(/^\s*#.*$/gm, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim() || undefined;
     voiceId = body.voiceId;
     prompts      = body.prompts ?? [];
     imageUrl     = body.imageUrl;
