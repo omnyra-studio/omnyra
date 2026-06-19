@@ -6,6 +6,7 @@
 
 import { fal } from "@fal-ai/client";
 import { assertProviderModel, logFalRequest } from "./fal-guard";
+import { formatFalError, logFalError, logFalPayload } from "./fal-errors";
 
 /** Luma Dream Machine Ray 2 — text-to-video */
 export const LUMA_DREAM_MACHINE_T2V = "fal-ai/luma-dream-machine/ray-2";
@@ -80,18 +81,6 @@ export function sanitizeLumaPrompt(raw: string): string {
 
 function trimPrompt(prompt: string): string {
   return sanitizeLumaPrompt(prompt);
-}
-
-function formatFalError(error: unknown): string {
-  if (error && typeof error === "object") {
-    const e = error as { message?: string; body?: unknown; status?: number; detail?: unknown };
-    const parts = [e.message ?? "fal error"];
-    if (e.status) parts.push(`status=${e.status}`);
-    const detail = e.body ?? e.detail;
-    if (detail) parts.push(JSON.stringify(detail).slice(0, 500));
-    return parts.join(" | ");
-  }
-  return String(error);
 }
 
 /** Verify image is fetchable; re-upload to fal storage when host blocks hotlinking. */
@@ -211,6 +200,8 @@ export async function falLumaGenerate(params: FalLumaParams): Promise<FalLumaRes
   if (params.loop) input.loop = true;
   if (useI2V && resolvedImageUrl) input.image_url = resolvedImageUrl;
 
+  logFalPayload(`scene=${params.sceneNumber ?? "?"} i2v=${useI2V}`, model, input);
+
   try {
     const result = await fal.subscribe(model, {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -241,8 +232,7 @@ export async function falLumaGenerate(params: FalLumaParams): Promise<FalLumaRes
     };
   } catch (error) {
     const latencyMs = Date.now() - startMs;
-    const msg = formatFalError(error);
-    console.error(`[LUMA_DREAM_MACHINE] Failed after ${latencyMs}ms:`, msg);
-    throw new Error(msg);
+    logFalError(`LUMA_DREAM_MACHINE scene=${params.sceneNumber ?? "?"}`, error, latencyMs);
+    throw new Error(formatFalError(error));
   }
 }

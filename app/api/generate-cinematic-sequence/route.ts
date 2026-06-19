@@ -684,8 +684,8 @@ export async function POST(req: Request) {
         }
 
         const rawSeconds = Math.round(clipDuration ?? CLIP_SECONDS);
-        // Seedance Fast: pass requested duration through unchanged (clamped 1–6s).
-        const clipDurationSecs = Math.min(6, Math.max(1, rawSeconds));
+        // Seedance Fast: pass requested duration through (API enum 4–15s; we clamp 4–6 for cost).
+        const clipDurationSecs = Math.min(6, Math.max(4, rawSeconds));
         const plannedTotalSec = prompts.length * clipDurationSecs;
         console.info("[DURATION_PLAN]", {
           REQUESTED_DURATION:      rawSeconds * prompts.length,
@@ -697,7 +697,7 @@ export async function POST(req: Request) {
           planned_total_sec:       plannedTotalSec,
         });
         if (rawSeconds !== clipDurationSecs) {
-          console.warn(`[DURATION_CLAMP] requested ${rawSeconds}s per clip → clamped to ${clipDurationSecs}s (Seedance max 6s). Planned total: ${plannedTotalSec}s`);
+          console.warn(`[DURATION_CLAMP] requested ${rawSeconds}s per clip → clamped to ${clipDurationSecs}s (Seedance enum 4–6s). Planned total: ${plannedTotalSec}s`);
         }
 
         const resolvedSceneTypes: string[] = prompts.map((prompt, i) =>
