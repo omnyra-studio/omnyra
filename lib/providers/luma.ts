@@ -138,10 +138,13 @@ async function resolveLumaImageUrl(imageUrl: string): Promise<string | undefined
     const buf = Buffer.from(await res.arrayBuffer());
     if (buf.length < 500) return undefined;
 
-    const contentType = res.headers.get("content-type") ?? "image/jpeg";
-    const uploaded = await fal.storage.upload(
-      new Blob([buf], { type: contentType }) as Blob,
+    const ext = url.includes(".png") ? "png" : "jpg";
+    const file = new File(
+      [buf],
+      `luma-scene.${ext}`,
+      { type: ext === "png" ? "image/png" : "image/jpeg" },
     );
+    const uploaded = await fal.storage.upload(file);
     if (typeof uploaded === "string" && uploaded.startsWith("https://")) {
       console.log(`[LUMA_DREAM_MACHINE] image re-uploaded to fal storage`);
       return uploaded;
@@ -178,28 +181,6 @@ function mapAspectRatio(ar?: string): LumaAspectRatio {
   return "9:16";
 }
 
-/**
- * Ensure the image URL is on a CDN that Luma's servers can reach.
- * fal.ai CDN (v3b.fal.media) works; Supabase signed/public URLs often get 422.
- * If it's already a fal.ai URL, pass through. Otherwise fetch + re-upload.
- */
-async function ensurePublicImageUrl(imageUrl: string): Promise<string> {
-  if (imageUrl.includes("fal.media") || imageUrl.includes("fal.run")) return imageUrl;
-  try {
-    const res = await fetch(imageUrl);
-    if (!res.ok) throw new Error(`image fetch ${res.status}`);
-    const buf  = await res.arrayBuffer();
-    const ext  = imageUrl.includes(".png") ? "png" : "jpg";
-    const file = new File([buf], `scene.${ext}`, { type: ext === "png" ? "image/png" : "image/jpeg" });
-    const uploaded = await fal.storage.upload(file);
-    console.log(`[LUMA_IMG_PROXY] re-uploaded to fal CDN: ${String(uploaded).substring(0, 80)}`);
-    return String(uploaded);
-  } catch (e) {
-    console.warn("[LUMA_IMG_PROXY] failed, using original URL:", (e as Error).message);
-    return imageUrl;
-  }
-}
-
 function extractFalVideoUrl(data: Record<string, unknown> | undefined): string | undefined {
   if (!data) return undefined;
   const video = data.video;
@@ -219,24 +200,32 @@ export async function falLumaGenerate(params: FalLumaParams): Promise<FalLumaRes
 
   const lumaDuration = mapDuration(params.duration);
   const durSecs = durationSeconds(lumaDuration);
-  const hasImage = typeof params.imageUrl === "string" && params.imageUrl.startsWith("https://");
-  const model = hasImage ? LUMA_DREAM_MACHINE_I2V : LUMA_DREAM_MACHINE_T2V;
-
-  console.log(`[LUMA_DREAM_MACHINE] Generating ${lumaDuration} | i2v=${hasImage} | ${model}`);
 
   let resolvedImageUrl: string | undefined;
-  if (hasImage) {
-    resolvedImageUrl = await ensurePublicImageUrl(params.imageUrl!);
+  if (typeof params.imageUrl === "string" && params.imageUrl.startsWith("https://")) {
+    if (params.imageUrl.includes("fal.media") || params.imageUrl.includes("fal.run")) {
+      resolvedImageUrl = params.imageUrl;
+    } else {
+      resolvedImageUrl = await resolveLumaImageUrl(params.imageUrl);
+    }
   }
 
-  const input = {
-    prompt:       trimPrompt(params.prompt),
+  const useI2V = !!resolvedImageUrl;
+  const model = useI2V ? LUMA_DREAM_MACHINE_I2V : LUMA_DREAM_MACHINE_T2V;
+  const safePrompt = trimPrompt(params.prompt);
+
+  console.log(
+    `[LUMA_DREAM_MACHINE] Generating ${lumaDuration} | i2v=${useI2V} | ${model} | prompt="${safePrompt.slice(0, 80)}..."`,
+  );
+
+  const input: Record<string, unknown> = {
+    prompt:       safePrompt,
     duration:     lumaDuration,
     resolution:   mapResolution(params.resolution),
     aspect_ratio: mapAspectRatio(params.aspectRatio),
-    loop:         params.loop ?? false,
-    ...(hasImage ? { image_url: resolvedImageUrl } : {}),
   };
+  if (params.loop) input.loop = true;
+  if (useI2V && resolvedImageUrl) input.image_url = resolvedImageUrl;
 
   try {
     const result = await fal.subscribe(model, {

@@ -352,14 +352,14 @@ async function generateSeedanceClip(
   clipReports: string[],
 ): Promise<string | null> {
   const cleanPrompt = stripEthnicityPrefix(prompt);
-  const motionPrompt = buildSeedanceElevenLabsPrompt(cleanPrompt);
+  const motionPrompt = `${cleanPrompt}. Cinematic motion, dynamic camera movement, fluid natural movement, photorealistic.`;
 
   try {
-    const { falSeedanceFastGenerate } = await import("@/lib/providers/seedance");
-    const result = await falSeedanceFastGenerate({
+    const { falLumaGenerate } = await import("@/lib/providers/luma");
+    const result = await falLumaGenerate({
       prompt:      motionPrompt,
       imageUrl:    imageUrl?.startsWith("https://") ? imageUrl : undefined,
-      duration:    Number(duration) || 6,
+      duration:    Number(duration) || 5,
       resolution:  "720p",
       aspectRatio: "9:16",
     });
