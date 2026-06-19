@@ -5,6 +5,7 @@
  */
 
 import { fal } from "@fal-ai/client";
+import { assertProviderModel, logFalRequest } from "./fal-guard";
 
 /** Luma Dream Machine Ray 2 — text-to-video */
 export const LUMA_DREAM_MACHINE_T2V = "fal-ai/luma-dream-machine/ray-2";
@@ -34,6 +35,7 @@ export interface FalLumaParams {
   aspectRatio?: LumaAspectRatio | "1:1" | "auto";
   loop?: boolean;
   seed?: number;
+  sceneNumber?: number;
 }
 
 export interface FalLumaResult {
@@ -44,33 +46,6 @@ export interface FalLumaResult {
   latencyMs: number;
   seed?: number;
 }
-
-/** Legacy compat — same shape as former Seedance params. */
-export interface FalSeedanceFastParams extends FalLumaParams {
-  generateAudio?: boolean;
-  motionStrength?: string;
-}
-
-export interface FalSeedanceFastResult extends FalLumaResult {
-  costEstimate?: string;
-}
-
-export interface SeedanceGenerateInput extends FalLumaParams {
-  motionStrength?: string;
-  generateAudio?: boolean;
-  pollInterval?: number;
-}
-
-export interface SeedanceGenerateResult {
-  url: string;
-  model_used: string;
-  generation_ms: number;
-  seed?: number;
-}
-
-export const SEEDANCE_FAL_FAST_MODEL = LUMA_DREAM_MACHINE_MODEL;
-export const SEEDANCE_T2V_MODEL = LUMA_DREAM_MACHINE_T2V;
-export const SEEDANCE_I2V_MODEL = LUMA_DREAM_MACHINE_I2V;
 
 function getFalKey(): string {
   const key =
@@ -214,6 +189,15 @@ export async function falLumaGenerate(params: FalLumaParams): Promise<FalLumaRes
   const model = useI2V ? LUMA_DREAM_MACHINE_I2V : LUMA_DREAM_MACHINE_T2V;
   const safePrompt = trimPrompt(params.prompt);
 
+  assertProviderModel("luma", model);
+  logFalRequest({
+    provider:    "luma",
+    model,
+    endpoint:    model,
+    sceneNumber: params.sceneNumber,
+    duration:    lumaDuration,
+  });
+
   console.log(
     `[LUMA_DREAM_MACHINE] Generating ${lumaDuration} | i2v=${useI2V} | ${model} | prompt="${safePrompt.slice(0, 80)}..."`,
   );
@@ -262,28 +246,3 @@ export async function falLumaGenerate(params: FalLumaParams): Promise<FalLumaRes
     throw new Error(msg);
   }
 }
-
-/** @deprecated Legacy alias — routes to Luma Ray 2. */
-export const falSeedanceFastGenerate = async (
-  params: FalSeedanceFastParams,
-): Promise<FalSeedanceFastResult> => {
-  const result = await falLumaGenerate(params);
-  return { ...result, costEstimate: "luma-ray2-via-fal" };
-};
-
-/** @deprecated Legacy alias — routes to Luma Ray 2. */
-export const callSeedance = async (input: SeedanceGenerateInput): Promise<SeedanceGenerateResult> => {
-  const result = await falLumaGenerate({
-    prompt:      input.prompt,
-    imageUrl:    input.imageUrl,
-    duration:    input.duration,
-    resolution:  input.resolution,
-    aspectRatio: input.aspectRatio,
-  });
-  return {
-    url:           result.videoUrl,
-    model_used:    result.modelUsed,
-    generation_ms: result.generationMs,
-    seed:          result.seed,
-  };
-};

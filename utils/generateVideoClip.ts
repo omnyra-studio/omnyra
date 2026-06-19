@@ -25,12 +25,12 @@ export async function generateVideoClip({
 
   const modelRoute = await routeToModel({ selectedModel, campaignMode: true });
 
-  console.log(`[generateVideoClip] Luma Ray 2 via fal.ai (was ${modelRoute.provider})`);
+  console.log(`[generateVideoClip] Seedance via fal.ai (route=${modelRoute.provider})`);
 
   const enhancedPrompt = buildSeedanceElevenLabsPrompt(prompt);
   const result = await elevenLabsSeedanceGenerate({
     prompt:        enhancedPrompt,
-    duration:      5,
+    duration:      6,
     resolution:    "720p",
     rawPrompt:     true,
     generateAudio: false,
@@ -42,7 +42,7 @@ export async function generateVideoClip({
     url:       result.videoUrl,
     thumbnail: result.videoUrl,
     duration,
-    modelUsed: "luma-fal",
-    provider:  "luma-fal",
+    modelUsed: result.modelUsed,
+    provider:  "seedance-fal",
   };
 }

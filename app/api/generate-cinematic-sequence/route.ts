@@ -51,7 +51,7 @@ export const maxDuration = 300;
 
 const CLIP_SECONDS = 6;   // 6s @ 720p saves credits; 5 clips = 30s total
 const CLIP_COUNT   = 5;   // 5 × 6s = 30s
-const ROUTE_VERSION = "2026-06-19-v18-luma-ray2-i2v-fal-proxy";
+const ROUTE_VERSION = "2026-06-19-v19-seedance-strict-routing";
 
 const FLUX_MODEL = "fal-ai/flux/schnell";
 
@@ -347,28 +347,31 @@ function stripEthnicityPrefix(text: string): string {
 async function generateSeedanceClip(
   prompt: string,
   imageUrl: string | null,
-  duration: "5" | "6" | "10",
+  durationSecs: number,
   label: string,
   clipReports: string[],
+  sceneNumber: number,
 ): Promise<string | null> {
   const cleanPrompt = stripEthnicityPrefix(prompt);
   const motionPrompt = `${cleanPrompt}. Cinematic motion, dynamic camera movement, fluid natural movement, photorealistic.`;
 
   try {
-    const { falLumaGenerate } = await import("@/lib/providers/luma");
-    const result = await falLumaGenerate({
-      prompt:      motionPrompt,
-      imageUrl:    imageUrl?.startsWith("https://") ? imageUrl : undefined,
-      duration:    Number(duration) || 5,
-      resolution:  "720p",
-      aspectRatio: "9:16",
+    const { generateVideoByProvider } = await import("@/lib/providers/video-dispatch");
+    const result = await generateVideoByProvider("seedance", {
+      prompt:         motionPrompt,
+      imageUrl:       imageUrl?.startsWith("https://") ? imageUrl : undefined,
+      duration:       durationSecs,
+      resolution:     "720p",
+      aspectRatio:    "9:16",
+      motionStrength: "high",
+      sceneNumber,
     });
-    clipReports.push(`${label} | luma-ray2 | OK ${result.generationMs}ms | ${result.videoUrl.substring(0, 80)}`);
+    clipReports.push(`${label} | seedance | OK ${result.generationMs}ms | ${result.videoUrl.substring(0, 80)}`);
     return result.videoUrl;
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
-    clipReports.push(`${label} | luma-ray2 | FAIL | ${detail}`);
-    console.error(`${label} Luma Ray 2 FAILED: ${detail}`);
+    clipReports.push(`${label} | seedance | FAIL | ${detail}`);
+    console.error(`${label} Seedance FAILED: ${detail}`);
     return null;
   }
 }
@@ -401,7 +404,7 @@ type ProviderTier = "seedance";
 async function executeClip(
   prompt:         string,
   imageUrl:       string | null,
-  duration:       "5" | "6" | "10",
+  durationSecs:   number,
   provider:       ProviderTier,
   sceneType:      string,
   index:          number,
@@ -418,7 +421,7 @@ async function executeClip(
   ethnicityNegative?: string,
 ): Promise<string> {
   const render = async (): Promise<string | null> =>
-    generateSeedanceClip(prompt, imageUrl, duration, label, clipReports);
+    generateSeedanceClip(prompt, imageUrl, durationSecs, label, clipReports, index + 1);
 
   // Seedance only — no Kling / smart_motion fallback
   const queue: ProviderTier[] = ["seedance", "seedance"];
@@ -681,21 +684,20 @@ export async function POST(req: Request) {
         }
 
         const rawSeconds = Math.round(clipDuration ?? CLIP_SECONDS);
-        // ElevenLabs Seedance: 6s @ 720p is the credit-optimal sweet spot.
-        // Snap to 5 only if caller explicitly requested ≤5s; otherwise use 6.
-        const duration   = rawSeconds <= 5 ? "5" : "6";
-        const plannedTotalSec = prompts.length * Number(duration);
+        // Seedance Fast: pass requested duration through unchanged (clamped 1–6s).
+        const clipDurationSecs = Math.min(6, Math.max(1, rawSeconds));
+        const plannedTotalSec = prompts.length * clipDurationSecs;
         console.info("[DURATION_PLAN]", {
           REQUESTED_DURATION:      rawSeconds * prompts.length,
           PLANNED_DURATION:        plannedTotalSec,
           SUM_SCENE_DURATIONS:     plannedTotalSec,
           clip_duration_requested: rawSeconds,
-          clip_duration_snapped:   Number(duration),
+          clip_duration_snapped:   clipDurationSecs,
           scene_count:             prompts.length,
           planned_total_sec:       plannedTotalSec,
         });
-        if (rawSeconds !== Number(duration)) {
-          console.warn(`[DURATION_SNAP] requested ${rawSeconds}s per clip → snapped to ${duration}s (Kling/Seedance only supports 5 or 10). Planned total: ${plannedTotalSec}s`);
+        if (rawSeconds !== clipDurationSecs) {
+          console.warn(`[DURATION_CLAMP] requested ${rawSeconds}s per clip → clamped to ${clipDurationSecs}s (Seedance max 6s). Planned total: ${plannedTotalSec}s`);
         }
 
         const resolvedSceneTypes: string[] = prompts.map((prompt, i) =>
@@ -898,14 +900,14 @@ export async function POST(req: Request) {
               jobId:   seqId,
             }).catch(err => {
               console.warn("[cinematic-seq] voiceover failed (non-fatal):", err instanceof Error ? err.message : err);
-              return { audioUrl: undefined as string | undefined, duration: prompts.length * Number(duration) };
+              return { audioUrl: undefined as string | undefined, duration: plannedTotalSec };
             })
           : null;
 
         // Ambient sound — pick description from first scene prompt, generate in parallel
         const ambientDesc = pickAmbientDescription(prompts[0] ?? "");
         const ambientPromise: Promise<Buffer | null> = ambientDesc
-          ? generateAmbientSound(ambientDesc, prompts.length * Number(duration))
+          ? generateAmbientSound(ambientDesc, plannedTotalSec)
               .catch(err => {
                 console.warn("[cinematic-seq] ambient sound failed (non-fatal):", err instanceof Error ? err.message : err);
                 return null;
@@ -942,7 +944,7 @@ export async function POST(req: Request) {
 
           try {
             const url = await executeClip(
-              prompt, baseImageUrl, duration, provider,
+              prompt, baseImageUrl, clipDurationSecs, provider,
               sceneType, i, user.id, rawSeconds, sourceImages, clipReports,
               clipBudget, label, isCouple, sceneNegativePrompts[i],
               _isAnimated ? undefined : charCharRefUrl,
@@ -956,7 +958,7 @@ export async function POST(req: Request) {
           } catch (err) {
             const reason = err instanceof Error ? err.message : String(err);
             if (reason === "skipped_due_to_latency" || reason === "SCENE_BUDGET_EXCEEDED") {
-              console.warn(`[SLA] scene ${i + 1} ${reason} — will pad (no smart_motion fallback)`);
+              console.warn(`[SLA] scene ${i + 1} ${reason} — marked failed (no padding)`);
               slaFallbackIndices.push(i);
             } else {
               console.error(`[cinematic-sequence] clip ${i + 1} failed:`, reason);
@@ -967,20 +969,9 @@ export async function POST(req: Request) {
         const genElapsed = Date.now() - genT0;
         console.log(`[TIMING] CLIP_GENERATION complete ${genElapsed}ms`);
 
-        // ── Pass 2: pad remaining nulls with nearest successful clip ──────────
-        let lastGoodUrl: string | null = null;
-        let lastGoodIdx = -1;
-        for (let pi = 0; pi < extractedUrls.length; pi++) {
-          if (extractedUrls[pi]) { lastGoodUrl = extractedUrls[pi]; lastGoodIdx = pi; }
-          else if (lastGoodUrl)  { console.warn(`[PAD_CLIP] scene=${pi + 1} padded from scene=${lastGoodIdx + 1} url=${lastGoodUrl.substring(0, 60)}`); extractedUrls[pi] = lastGoodUrl; }
-        }
-        const firstGoodIdx  = extractedUrls.findIndex(u => u !== null);
-        const firstGoodUrl  = firstGoodIdx >= 0 ? extractedUrls[firstGoodIdx] : null;
-        if (firstGoodUrl) {
-          for (let pi = 0; pi < extractedUrls.length; pi++) {
-            if (!extractedUrls[pi]) { console.warn(`[PAD_CLIP] scene=${pi + 1} padded from scene=${firstGoodIdx + 1} (leading failure) url=${firstGoodUrl.substring(0, 60)}`); extractedUrls[pi] = firstGoodUrl; }
-          }
-        }
+        const failedSceneIndices = extractedUrls
+          .map((url, idx) => (url ? -1 : idx))
+          .filter(idx => idx >= 0);
 
         const clip_urls: string[] = extractedUrls.filter((u): u is string => u !== null);
 
@@ -988,9 +979,9 @@ export async function POST(req: Request) {
         const failedClips     = prompts.length - successfulClips;
         const motionCoverage  = successfulClips > 0 ? Math.round((successfulClips / prompts.length) * 100) : 0;
 
-        console.log(`[QUALITY_GUARDRAIL] { motionScenes: ${successfulClips}, totalScenes: ${prompts.length}, coverage: ${motionCoverage}% }`);
-        if (motionCoverage < 100) {
-          console.warn(`[QUALITY_GUARDRAIL] coverage=${motionCoverage}% — ${failedClips} scenes padded`);
+        console.log(`[QUALITY_GUARDRAIL] { motionScenes: ${successfulClips}, totalScenes: ${prompts.length}, coverage: ${motionCoverage}%, failedScenes: [${failedSceneIndices.map(i => i + 1).join(",")}] }`);
+        if (failedClips > 0) {
+          console.warn(`[QUALITY_GUARDRAIL] ${failedClips} scene(s) failed — no padding applied`);
         }
         console.log(`[RENDER_BREAKDOWN] { seedanceScenes: ${seedanceCount}, smartMotionScenes: ${smCount}, genMs: ${genElapsed} }`);
         console.log(`[TIMING] SEQUENCE SUMMARY clipsAttempted=${prompts.length} success=${successfulClips} failed=${failedClips} genMs=${genElapsed}`);
@@ -1108,7 +1099,7 @@ export async function POST(req: Request) {
             form.append("voiceover", new Blob([voiceBuffer], { type: "audio/mpeg" }), "voiceover.mp3");
             form.append("shot_plan", JSON.stringify({
               shots: clip_urls.map(() => ({
-                duration:            Number(duration),
+                duration:            clipDurationSecs,
                 energy_curve:        "sustain",
                 transition_in:       "hard_cut",
                 transition_after:    null,
@@ -1117,7 +1108,7 @@ export async function POST(req: Request) {
               })),
             }));
 
-            const railwayRes = await fetch(composerUrl, {
+            const railwayRes = await fetch(`${composerUrl}/compose`, {
               method:  "POST",
               headers: composerKey ? { "x-api-key": composerKey } : {},
               body:    form,
@@ -1168,20 +1159,24 @@ export async function POST(req: Request) {
 
         return {
           data: {
-            success:             true,
+            success:             failedClips === 0,
+            partial:             failedClips > 0 && successfulClips > 0,
             videoUrl:            stitched_url,
             modelUsed:           "seedance-elevenlabs",
             model:               "seedance-elevenlabs",
-            hasMotion:           true,
+            hasMotion:           successfulClips > 0,
             hasAudio:            !!voiceoverText && !!audio_url,
-            duration:            prompts.length * Number(duration),
+            duration:            successfulClips * clipDurationSecs,
             stitched_url,
             audio_url:           audio_url ?? null,
             clip_urls,
+            failed_scenes:       failedSceneIndices.map(i => i + 1),
+            clips_failed:        failedClips,
+            clips_succeeded:     successfulClips,
             source_images:       sourceImages.filter((u): u is string => u !== null),
-            clips_generated:     clip_urls.length,
-            clip_duration:       Number(duration),
-            total_duration:      clip_urls.length * Number(duration),
+            clips_generated:     successfulClips,
+            clip_duration:       clipDurationSecs,
+            total_duration:      successfulClips * clipDurationSecs,
             providers:           finalProviders,
             motion_coverage:     motionCoverage,
             seedance_scenes:     seedanceCount,

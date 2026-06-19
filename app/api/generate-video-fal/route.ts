@@ -3,28 +3,37 @@ import { cookies } from "next/headers";
 import { getBrandProfile, getBrandSystemPrompt } from "@/lib/brand";
 import { checkCache, saveCache, logUsageEvent } from "@/lib/cache";
 import { parseJsonWithEthnicityFix } from "@/middleware/ethnicityFix";
-import { falLumaGenerate } from "@/lib/providers/luma";
+import { generateVideoByProvider } from "@/lib/providers/video-dispatch";
+import { FORCE_LUMA, FORCE_SEEDANCE } from "@/lib/video-provider";
 
 export const maxDuration = 300;
 
 export async function POST(req: Request) {
   const falKey = process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY;
-  console.log("[generate-video-fal] === REQUEST START (Luma Ray 2 only) ===");
+  console.log("[generate-video-fal] === REQUEST START ===");
 
   if (!falKey) {
     return Response.json({ error: "FAL_API_KEY not configured" }, { status: 500 });
   }
 
-  const { prompt, image_url, niche, duration } = await parseJsonWithEthnicityFix<{
-    prompt: string;
-    image_url?: string;
-    niche?: string;
-    duration?: number;
-  }>(req);
+  const { prompt, image_url, niche, duration, provider: requestedProvider } =
+    await parseJsonWithEthnicityFix<{
+      prompt: string;
+      image_url?: string;
+      niche?: string;
+      duration?: number;
+      provider?: "seedance" | "luma";
+    }>(req);
 
   if (!prompt?.trim()) {
     return Response.json({ error: "prompt is required" }, { status: 400 });
   }
+
+  const provider = FORCE_LUMA
+    ? "luma"
+    : FORCE_SEEDANCE
+      ? "seedance"
+      : (requestedProvider === "luma" ? "luma" : "seedance");
 
   let userId: string | null = null;
   let brandSuffix = "";
@@ -44,7 +53,7 @@ export async function POST(req: Request) {
     }
   } catch { /* brand injection is optional */ }
 
-  const cacheInput = JSON.stringify({ prompt, image_url: !!image_url, niche });
+  const cacheInput = JSON.stringify({ prompt, image_url: !!image_url, niche, provider });
   if (userId) {
     const cached = await checkCache(userId, "generate-video-fal", cacheInput);
     if (cached) {
@@ -61,30 +70,32 @@ export async function POST(req: Request) {
   const cinemaPrompt = `${animationPrefix}${prompt}, cinematic motion, smooth natural movement, high quality${brandSuffix}`;
 
   try {
-    const result = await falLumaGenerate({
+    const result = await generateVideoByProvider(provider, {
       prompt:      cinemaPrompt,
       imageUrl:    image_url?.startsWith("https://") ? image_url : undefined,
-      duration:    duration ?? 5,
+      duration:    duration ?? 6,
       resolution:  "720p",
       aspectRatio: "9:16",
+      motionStrength: "high",
     });
 
     if (userId) {
       saveCache(userId, "generate-video-fal", cacheInput, JSON.stringify({ video_url: result.videoUrl, status: "completed" }));
-      logUsageEvent(userId, "generate-video-fal", "generate", 8, { model: "luma-ray2" });
+      logUsageEvent(userId, "generate-video-fal", "generate", 8, { model: result.modelUsed });
     }
 
     return Response.json({
       video_url:  result.videoUrl,
       status:     "completed",
       model:      result.modelUsed,
+      provider,
       duration:   result.duration,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("[generate-video-fal] LUMA FAILED:", msg);
+    console.error(`[generate-video-fal] ${provider.toUpperCase()} FAILED:`, msg);
     return Response.json(
-      { error: `Luma Ray 2 via fal.ai failed: ${msg}` },
+      { error: `${provider} via fal.ai failed: ${msg}` },
       { status: 500 },
     );
   }

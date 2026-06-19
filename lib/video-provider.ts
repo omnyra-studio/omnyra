@@ -1,34 +1,37 @@
 /**
- * Global video model router — Luma Ray 2 via fal.ai ONLY.
- * Seedance, Kling, Runway, and smart_motion are fully disabled.
+ * Global video model router — Seedance via fal.ai by default.
+ * Luma is only used when explicitly selected (FORCE_LUMA or scene.provider=luma).
  */
 
-export const FORCE_LUMA = true;
-
-/** @deprecated Use FORCE_LUMA — kept so existing imports compile. */
 export const FORCE_SEEDANCE = true;
+export const FORCE_LUMA = false;
 
-export type VideoProvider = "luma-fal";
+export type VideoProvider = "seedance-fal" | "luma-fal";
 
-export const DEFAULT_VIDEO_MODEL: VideoProvider = "luma-fal";
+export const DEFAULT_VIDEO_MODEL: VideoProvider = "seedance-fal";
 
-/** Hard override — always Luma Ray 2 via fal.ai. */
-export function getVideoProvider(_scene?: unknown): VideoProvider {
-  return "luma-fal";
+export function getVideoProvider(scene?: { provider?: string } | unknown): VideoProvider {
+  if (FORCE_LUMA) return "luma-fal";
+  if (FORCE_SEEDANCE) return "seedance-fal";
+
+  const explicit = scene && typeof scene === "object" && "provider" in scene
+    ? String((scene as { provider?: string }).provider ?? "")
+    : "";
+
+  if (explicit === "luma" || explicit === "luma-fal") return "luma-fal";
+  return DEFAULT_VIDEO_MODEL;
 }
 
 export function isLumaDefault(): boolean {
-  return true;
+  return getVideoProvider() === "luma-fal";
 }
 
-/** @deprecated Use isLumaDefault() */
 export function isElevenLabsSeedance(): boolean {
-  return false;
+  return getVideoProvider() === "seedance-fal";
 }
 
-/** @deprecated Use isLumaDefault() */
 export function isSeedanceDefault(): boolean {
-  return false;
+  return getVideoProvider() === "seedance-fal";
 }
 
 /** @deprecated Kling disabled */

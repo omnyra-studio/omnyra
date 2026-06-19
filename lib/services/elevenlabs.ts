@@ -1,11 +1,12 @@
 /**
  * ElevenLabs service layer — TTS voiceover, ambient audio, FFmpeg merge.
- * Video: Luma Ray 2 via fal.ai (lib/providers/luma.ts). No Kling / Seedance / Runway.
+ * Video: Seedance Fast via fal.ai (lib/providers/seedance.ts). TTS stays on ElevenLabs.
  */
 
 import { cleanEnv, supabaseAdmin } from "@/lib/supabase/admin";
 import { ENHANCED_CINEMATIC_RE, buildSeedanceElevenLabsPrompt } from "@/lib/motion-prompt";
-import { falLumaGenerate, LUMA_DREAM_MACHINE_MODEL } from "@/lib/providers/luma";
+import { SEEDANCE_FAL_FAST_MODEL } from "@/lib/providers/seedance";
+import { generateVideoByProvider } from "@/lib/providers/video-dispatch";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegStatic from "ffmpeg-static";
 import { writeFileSync, readFileSync, unlinkSync, existsSync, copyFileSync } from "fs";
@@ -18,9 +19,8 @@ const BASE_URL = "https://api.elevenlabs.io/v1";
 export const DEFAULT_VOICE_ID = "EXAVITQu4vr4xnSDxMaL";
 const MP3_BYTES_PER_SECOND = 16_000;
 
-/** Video model slug — Luma Ray 2 via fal.ai. Legacy name kept for routing compat. */
-export const LUMA_VIDEO_MODEL = LUMA_DREAM_MACHINE_MODEL;
-export const SEEDANCE_ELEVENLABS_MODEL = LUMA_DREAM_MACHINE_MODEL;
+/** Video model slug — Seedance Fast via fal.ai. */
+export const SEEDANCE_ELEVENLABS_MODEL = SEEDANCE_FAL_FAST_MODEL;
 
 export type SeedanceMotionLevel = "maximum" | "high" | "medium" | "low";
 
@@ -81,19 +81,21 @@ function resolvePrompt(params: ElevenLabsSeedanceParams): string {
   return buildSeedanceElevenLabsPrompt(trimmed);
 }
 
-/** Video via Luma Ray 2 (fal.ai). Voiceover stays on ElevenLabs TTS. */
+/** Video via Seedance Fast (fal.ai). Voiceover stays on ElevenLabs TTS. */
 export async function elevenLabsSeedanceGenerate(
   params: ElevenLabsSeedanceParams,
 ): Promise<ElevenLabsSeedanceResult> {
   const finalPrompt = resolvePrompt(params);
   const res = params.resolution === "480p" || params.resolution === "720p" ? params.resolution : "720p";
 
-  const result = await falLumaGenerate({
-    prompt:      finalPrompt,
-    imageUrl:    params.imageUrl,
-    duration:    params.duration ?? 5,
-    resolution:  res,
-    aspectRatio: params.aspectRatio ?? "9:16",
+  const result = await generateVideoByProvider("seedance", {
+    prompt:         finalPrompt,
+    imageUrl:       params.imageUrl,
+    duration:       params.duration ?? 6,
+    resolution:     res,
+    aspectRatio:    params.aspectRatio ?? "9:16",
+    motionStrength: params.motion ?? params.motionIntensity ?? "high",
+    generateAudio:  params.generateAudio ?? false,
   });
 
   return {
@@ -105,7 +107,7 @@ export async function elevenLabsSeedanceGenerate(
 
 export const elevenLabsSeedance = elevenLabsSeedanceGenerate;
 
-/** Scene-router entry — Luma Ray 2 via fal.ai, ElevenLabs TTS separate. */
+/** Scene-router entry — Seedance via fal.ai, ElevenLabs TTS separate. */
 export async function forceElevenLabsSeedance(
   prompt: string,
   options: {

@@ -3,7 +3,8 @@
  * Express equivalent: services/full-video-generator.js
  */
 
-import { falLumaGenerate, LUMA_DREAM_MACHINE_MODEL } from "@/lib/providers/luma";
+import { generateVideoByProvider } from "@/lib/providers/video-dispatch";
+import { SEEDANCE_FAL_FAST_MODEL } from "@/lib/providers/seedance";
 import {
   elevenLabsVoiceover,
   generateAmbientSound,
@@ -13,7 +14,7 @@ import { mergeVideoVoiceAmbient } from "@/lib/utils/merge-video-voice-ambient";
 
 export { mergeVideoVoiceAmbient } from "@/lib/utils/merge-video-voice-ambient";
 
-const CLIP_SECONDS = 5;
+const CLIP_SECONDS = 6;
 const DEFAULT_NUM_CLIPS = 5;
 const DEFAULT_AMBIENT = "upbeat inspirational flashmob music";
 
@@ -102,18 +103,20 @@ export async function generateCompleteVideo(
 
   const cleanVoiceText = cleanScriptForVoice(userScript);
   const clipPrompts = createStrongFlowPrompts().slice(0, numClips);
-  console.log(`Generating ${numClips} flowing 5s Luma clips...`);
+  console.log(`Generating ${numClips} flowing ${CLIP_SECONDS}s Seedance clips...`);
   console.log(`[FLOW] voice: ${cleanVoiceText.substring(0, 80)}...`);
 
   const clipUrls: string[] = [];
 
   for (let i = 0; i < clipPrompts.length; i++) {
-    const result = await falLumaGenerate({
-      prompt:      clipPrompts[i],
-      duration:    CLIP_SECONDS,
-      resolution:  "720p",
-      aspectRatio: "9:16",
-      imageUrl:    i === 0 && imageUrl?.startsWith("https://") ? imageUrl : undefined,
+    const result = await generateVideoByProvider("seedance", {
+      prompt:         clipPrompts[i],
+      duration:       CLIP_SECONDS,
+      resolution:     "720p",
+      aspectRatio:    "9:16",
+      imageUrl:       i === 0 && imageUrl?.startsWith("https://") ? imageUrl : undefined,
+      motionStrength: "high",
+      sceneNumber:    i + 1,
     });
     clipUrls.push(result.videoUrl);
     console.log(`Clip ${i + 1}/${numClips} completed`);
@@ -158,7 +161,7 @@ export async function generateCompleteVideo(
     hasAmbient: !!ambientBuffer,
     cleanVoiceText,
     clipUrls,
-    model: LUMA_DREAM_MACHINE_MODEL,
+    model: SEEDANCE_FAL_FAST_MODEL,
   };
 }
 
