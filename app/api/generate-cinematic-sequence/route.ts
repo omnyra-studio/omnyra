@@ -1,6 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import { elevenLabsVoiceover, mergeVideoAudio, generateAmbientSound, pickAmbientDescription } from "@/lib/services/elevenlabs";
+import { elevenLabsVoiceover, mergeVideoAudio, mixVoiceAndAmbient, generateAmbientSound, pickAmbientDescription } from "@/lib/services/elevenlabs";
 import { generateKlingSingleShot } from "@/lib/providers/kling-pro";
 import { getVideoProvider } from "@/lib/video-provider";
 import { supabaseAdmin } from "@/lib/supabase/admin";
@@ -45,7 +45,7 @@ import { getNicheSettings, detectEra } from "@/lib/config/nicheSettings";
 export const maxDuration = 300;
 
 const KLING_CLIP_SECS  = 10;  // Kling 2.6 Pro: 10s per scene
-const ROUTE_VERSION    = "2026-06-22-v22-motion-era-tts";
+const ROUTE_VERSION    = "2026-06-22-v23-ambient-mix";
 
 // ── SLA budget: Vercel maxDuration=300s; keep 30s for post-processing ─────────
 const SLA_TOTAL_MS   = 270_000; // 270s total (30s margin before Vercel 300s kills)
@@ -830,12 +830,25 @@ export async function POST(req: Request) {
           console.log(`[VOICE_RESULT] skipped — no voiceoverText provided`);
         }
 
-        // ── Stitch clips + voiceover via Railway Composer ───────────────────────
+        // Mix voiceover + ambient into one audio track (ambient ducked to 20% under voice)
+        let finalAudioUrl: string | undefined = audio_url;
+        if (audio_url && ambientBuffer) {
+          try {
+            finalAudioUrl = await mixVoiceAndAmbient({ voiceUrl: audio_url, ambientBuffer, userId: user.id });
+            console.log(`[AUDIO_MIX] voice+ambient mixed url=${finalAudioUrl.substring(0, 80)}`);
+          } catch (mixErr) {
+            console.warn("[AUDIO_MIX] mix failed, falling back to voice only:", mixErr instanceof Error ? mixErr.message : mixErr);
+          }
+        } else if (audio_url) {
+          console.log(`[AUDIO_MIX] skipped — no ambient sound matched for this scene`);
+        }
+
+        // ── Stitch clips + audio via Railway Composer ────────────────────────────
         const composerUrl = process.env.COMPOSER_SERVICE_URL;
         const composerKey = process.env.COMPOSER_API_KEY ?? "";
-        console.log(`[MERGE_START] clips=${clip_urls.length} voice=${!!audio_url} ambient=${!!ambientBuffer} composer=${!!composerUrl}`);
+        console.log(`[MERGE_START] clips=${clip_urls.length} voice=${!!audio_url} ambient=${!!ambientBuffer} mixed=${finalAudioUrl !== audio_url} composer=${!!composerUrl}`);
         if (composerUrl && clip_urls.length > 0) {
-          console.log(`[RAILWAY_STITCH] clips=${clip_urls.length} hasVoice=${!!audio_url} hasAmbient=${!!ambientBuffer}`);
+          console.log(`[RAILWAY_STITCH] clips=${clip_urls.length} hasAudio=${!!finalAudioUrl}`);
           try {
             const fetchBuf = async (url: string, label: string) => {
               const r = await fetch(url, { cache: "no-store" });
@@ -843,14 +856,14 @@ export async function POST(req: Request) {
               return Buffer.from(await r.arrayBuffer());
             };
             const clipBuffers = await Promise.all(clip_urls.map((url, i) => fetchBuf(url, `clip${i + 1}`)));
-            const voiceBuffer = audio_url ? await fetchBuf(audio_url, "voiceover") : null;
+            const audioBuffer = finalAudioUrl ? await fetchBuf(finalAudioUrl, "audio") : null;
 
             const form = new FormData();
             for (let i = 0; i < clipBuffers.length; i++) {
               form.append("clips", new Blob([clipBuffers[i]], { type: "video/mp4" }), `clip_${i}.mp4`);
             }
-            if (voiceBuffer) {
-              form.append("voiceover", new Blob([voiceBuffer], { type: "audio/mpeg" }), "voiceover.mp3");
+            if (audioBuffer) {
+              form.append("voiceover", new Blob([audioBuffer], { type: "audio/mpeg" }), "voiceover.mp3");
             }
             form.append("shot_plan", JSON.stringify({
               shots: clip_urls.map(() => ({
@@ -892,9 +905,9 @@ export async function POST(req: Request) {
               // Railway returned HTTP error — fall through to FFmpeg merge
               const errText = await railwayRes.text().catch(() => "");
               console.warn(`[RAILWAY_STITCH] composer HTTP ${railwayRes.status}: ${errText.substring(0, 200)} — falling back to FFmpeg`);
-              if (audio_url) {
+              if (finalAudioUrl) {
                 try {
-                  stitched_url = await mergeVideoAudio({ videoUrl: clip_urls[0], audioUrl: audio_url, userId: user.id });
+                  stitched_url = await mergeVideoAudio({ videoUrl: clip_urls[0], audioUrl: finalAudioUrl, userId: user.id });
                   console.log(`[AUDIO_MERGE_FALLBACK_OK] railway_failed url=${stitched_url.substring(0, 80)}`);
                 } catch (ffmpegErr) {
                   console.error("[AUDIO_MERGE_FALLBACK] ffmpeg also failed:", ffmpegErr instanceof Error ? ffmpegErr.message : ffmpegErr);
@@ -904,9 +917,9 @@ export async function POST(req: Request) {
           } catch (railwayErr) {
             // Network-level Railway failure — fall back to FFmpeg merge
             console.warn("[RAILWAY_STITCH] network error:", railwayErr instanceof Error ? railwayErr.message : railwayErr);
-            if (audio_url) {
+            if (finalAudioUrl) {
               try {
-                stitched_url = await mergeVideoAudio({ videoUrl: clip_urls[0], audioUrl: audio_url, userId: user.id });
+                stitched_url = await mergeVideoAudio({ videoUrl: clip_urls[0], audioUrl: finalAudioUrl, userId: user.id });
                 console.log(`[AUDIO_MERGE_FALLBACK_OK] url=${stitched_url.substring(0, 80)}`);
               } catch (ffmpegErr) {
                 console.error("[AUDIO_MERGE_FALLBACK] ffmpeg also failed:", ffmpegErr instanceof Error ? ffmpegErr.message : ffmpegErr);
@@ -916,14 +929,14 @@ export async function POST(req: Request) {
         } else {
           console.log(`[RAILWAY_STITCH] skipped — composerUrl=${!!composerUrl} clips=${clip_urls.length}`);
           // Fallback: apply audio to first clip locally
-          if (audio_url && clip_urls.length > 0) {
+          if (finalAudioUrl && clip_urls.length > 0) {
             try {
-              stitched_url = await mergeVideoAudio({ videoUrl: clip_urls[0], audioUrl: audio_url, userId: user.id });
+              stitched_url = await mergeVideoAudio({ videoUrl: clip_urls[0], audioUrl: finalAudioUrl, userId: user.id });
             } catch { /* use first clip URL */ }
           }
         }
 
-        console.log(`[MERGE_DONE] final_url=${stitched_url.substring(0, 80)} has_audio=${!!audio_url}`);
+        console.log(`[MERGE_DONE] final_url=${stitched_url.substring(0, 80)} has_audio=${!!audio_url} has_ambient=${!!ambientBuffer} mixed=${finalAudioUrl !== audio_url}`);
 
         const totalMs      = Date.now() - routeT0;
         const postMs       = Date.now() - postT0;
@@ -945,9 +958,10 @@ export async function POST(req: Request) {
           clip_status:      extractedUrls.map((u, i) => `scene${i + 1}:${u ? "OK" : "FAIL"}`),
           voice_url:        audio_url ? "YES" : "NO",
           ambient_url:      ambientDesc ? "YES" : "NO",
+          audio_mixed:      (finalAudioUrl !== audio_url && !!finalAudioUrl) ? "YES" : "NO",
           composer_used:    !!(composerUrl),
           final_url:        stitched_url ? "YES" : "NO",
-          has_audio:        !!audio_url,
+          has_audio:        !!finalAudioUrl,
           final_is_kling:   stitched_url === clip_urls[0],
           total_ms:         totalMs,
         }));
@@ -960,10 +974,10 @@ export async function POST(req: Request) {
             modelUsed:           "kling-2.6-pro",
             model:               "kling-2.6-pro",
             hasMotion:           successfulClips > 0,
-            hasAudio:            !!voiceoverText && !!audio_url,
+            hasAudio:            !!voiceoverText && !!finalAudioUrl,
             duration:            successfulClips * clipDurationSecs,
             stitched_url,
-            audio_url:           audio_url ?? null,
+            audio_url:           finalAudioUrl ?? null,
             clip_urls,
             failed_scenes:       failedSceneIndices.map((i: number) => i + 1),
             clips_failed:        failedClips,

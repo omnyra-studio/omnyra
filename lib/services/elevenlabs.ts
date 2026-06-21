@@ -262,6 +262,63 @@ async function fetchMediaBuffer(url: string, label: string): Promise<Buffer> {
   return buf;
 }
 
+/**
+ * Mix voiceover (from URL) + ambient sound (Buffer already in memory) into one audio track.
+ * Ambient is ducked to 20% volume so voice is always intelligible.
+ * Returns public URL of the mixed MP3 in Supabase `renders` bucket.
+ */
+export async function mixVoiceAndAmbient(params: {
+  voiceUrl: string;
+  ambientBuffer: Buffer;
+  userId?: string;
+}): Promise<string> {
+  const userId = params.userId ?? "anonymous";
+  const id = randomUUID();
+  const voicePath   = join(tmpdir(), `mix-v-${id}.mp3`);
+  const ambientPath = join(tmpdir(), `mix-a-${id}.mp3`);
+  const outputPath  = join(tmpdir(), `mix-out-${id}.mp3`);
+
+  try {
+    resolveFfmpegPath();
+
+    const voiceBuf = await fetchMediaBuffer(params.voiceUrl, "voice");
+    writeFileSync(voicePath, voiceBuf);
+    writeFileSync(ambientPath, params.ambientBuffer);
+
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg()
+        .input(voicePath)
+        .input(ambientPath)
+        .outputOptions([
+          "-filter_complex", "[1:a]volume=0.20[amb];[0:a][amb]amix=inputs=2:duration=first:dropout_transition=0[out]",
+          "-map", "[out]",
+          "-c:a", "aac",
+          "-b:a", "128k",
+        ])
+        .output(outputPath)
+        .on("end", () => resolve())
+        .on("error", (err) => reject(new Error(`FFmpeg mix: ${err.message}`)))
+        .run();
+    });
+
+    if (!existsSync(outputPath)) throw new Error("FFmpeg mix produced no output file");
+    const buffer = readFileSync(outputPath);
+    if (!buffer.length) throw new Error("FFmpeg mix produced empty output");
+
+    const storagePath = `voice/${userId}/${Date.now()}-mixed.mp3`;
+    const { data, error } = await supabaseAdmin.storage
+      .from("renders")
+      .upload(storagePath, buffer, { contentType: "audio/mpeg", upsert: true });
+    if (error) throw new Error(`Mixed audio upload failed: ${error.message}`);
+
+    const { data: { publicUrl } } = supabaseAdmin.storage.from("renders").getPublicUrl(data.path);
+    console.log(`[MIX_OK] voice+ambient url=${publicUrl.substring(0, 80)}`);
+    return publicUrl;
+  } finally {
+    [voicePath, ambientPath, outputPath].forEach(p => { try { unlinkSync(p); } catch {} });
+  }
+}
+
 /** Merge video + voiceover via FFmpeg, upload to Supabase `renders` bucket. */
 export async function mergeVideoAudio(params: MergeVideoAudioParams): Promise<string> {
   const userId = params.userId ?? "anonymous";
