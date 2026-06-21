@@ -45,7 +45,7 @@ import { getNicheSettings, detectEra } from "@/lib/config/nicheSettings";
 export const maxDuration = 300;
 
 const KLING_CLIP_SECS  = 10;  // Kling 2.6 Pro: 10s per scene
-const ROUTE_VERSION    = "2026-06-22-v23-ambient-mix";
+const ROUTE_VERSION    = "2026-06-22-v24-stage-diag";
 
 // ── SLA budget: Vercel maxDuration=300s; keep 30s for post-processing ─────────
 const SLA_TOTAL_MS   = 270_000; // 270s total (30s margin before Vercel 300s kills)
@@ -426,11 +426,15 @@ export async function POST(req: Request) {
   }
 
   // ── Abuse protection (video-specific: cooldown + concurrent job limit) ────
-  const videoAbuse = await checkAbuse({
-    userId: user.id,
-    input: prompts[0] ?? "",
-    isVideoGeneration: true,
+  console.log(`[STAGE_1_ABUSE] start user=${user.id}`);
+  const videoAbuse = await Promise.race([
+    checkAbuse({ userId: user.id, input: prompts[0] ?? "", isVideoGeneration: true }),
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error('ABUSE_CHECK_TIMEOUT_10s')), 10_000)),
+  ]).catch(err => {
+    console.warn(`[STAGE_1_ABUSE] timeout/error: ${err instanceof Error ? err.message : err} — failing open`);
+    return { allowed: true, flagLevel: "none" as const, creditMultiplier: 1, cooldownRemainingMs: 0, userMessage: null, queueDelayMs: 0 };
   });
+  console.log(`[STAGE_1_ABUSE] done allowed=${videoAbuse.allowed}`);
   if (!videoAbuse.allowed) {
     const retryAfterSec = Math.ceil(videoAbuse.cooldownRemainingMs / 1000);
     console.warn(`[429_REASON] flagLevel=${videoAbuse.flagLevel} cooldownRemainingMs=${videoAbuse.cooldownRemainingMs} retryAfterSec=${retryAfterSec}`);
@@ -445,13 +449,20 @@ export async function POST(req: Request) {
   const estimatedCost = videoCreditCost(prompts.length, 0);
 
   let capturedThumbnailUrl: string | null = null;
+  let lastStageLogged = 'BRIEF_INJECT';
 
   try {
+    lastStageLogged = 'CREDIT_RESERVE_start';
+    console.log(`[STAGE_2_CREDIT] start cost=${estimatedCost}`);
     const responsePayload = await withCreditState<Record<string, unknown>>({
       userId: user.id,
       cost:   estimatedCost,
       run:    async () => {
+        lastStageLogged = 'inside_run';
+        console.log(`[STAGE_2_CREDIT] done — inside run`);
+
         // ── Guardrail (throw on rejection → auto-rollback) ────────────────────
+        console.log(`[STAGE_3_GUARDRAIL] start`);
         {
           const guardrail = applyGenerationGuardrail({ sceneCount: prompts.length, modelTier: "kling_elevenlabs", validationPasses: 1 });
           if (!guardrail.approved) {
@@ -463,6 +474,8 @@ export async function POST(req: Request) {
           }
           console.log(`[GUARDRAIL] scenes=${guardrail.finalSceneCount} tier=${guardrail.finalModelTier} est=${guardrail.estimatedRuntimeSeconds}s opts=[${guardrail.appliedOptimizations.join(",")}]`);
         }
+        lastStageLogged = 'GUARDRAIL_done';
+        console.log(`[STAGE_3_GUARDRAIL] done`);
 
         const clipDurationSecs = KLING_CLIP_SECS;
         const plannedTotalSec  = prompts.length * KLING_CLIP_SECS;
@@ -485,6 +498,7 @@ export async function POST(req: Request) {
         console.log(`[PROVIDER_USAGE] { klingScenes: ${klingScenesTotal} }`);
 
         // ── Visual Continuity: extract bibles + inject enforcement suffixes ────
+        console.log(`[STAGE_4_ETHNICITY] start`);
         let bibles: ContinuityBibles | null = null;
         let enforcedPrompts = [...prompts];
         let subjectEthnicityNegative = '';
@@ -496,9 +510,15 @@ export async function POST(req: Request) {
           subjectEthnicityNegative = locked.negativeAddon;
           console.log(`[SUBJECT_ETHNICITY] resolved=${resolvedEth} scenes=${enforcedPrompts.length}`);
         }
+        lastStageLogged = 'ETHNICITY_done';
+        console.log(`[STAGE_4_ETHNICITY] done`);
 
+        console.log(`[STAGE_5_CONTINUITY] start`);
         try {
-          bibles = await extractBibles(enforcedPrompts, script);
+          bibles = await Promise.race([
+            extractBibles(enforcedPrompts, script),
+            new Promise<never>((_, reject) => setTimeout(() => reject(new Error('[STAGE_5_CONTINUITY] TIMEOUT after 15s')), 15_000)),
+          ]);
           if (bibles.hasCharacter || bibles.environment) {
             const charPrefix = buildCharacterPrefix(bibles);
             const envSuffix  = buildConsistencySuffix(bibles);
@@ -508,10 +528,13 @@ export async function POST(req: Request) {
             }
           }
         } catch (err) {
-          console.warn("[CONTINUITY] bible extraction failed (non-fatal):", err instanceof Error ? err.message : err);
+          console.warn("[CONTINUITY] bible extraction failed or timed out (non-fatal):", err instanceof Error ? err.message : err);
         }
+        lastStageLogged = 'CONTINUITY_done';
+        console.log(`[STAGE_5_CONTINUITY] done`);
 
         // Character memory injection — stacks on top of continuity bibles
+        console.log(`[STAGE_6_CHAR_BRAND] start`);
         if (charMemory) {
           const charSuffix = buildKlingCharacterSuffix(charMemory);
           if (charSuffix.trim()) {
@@ -525,9 +548,12 @@ export async function POST(req: Request) {
           enforcedPrompts = enforcedPrompts.map(p => `${p}, ${brandMemory.fluxStyleSuffix}`);
           console.log(`[BRAND_INJECT] fluxSuffix="${brandMemory.fluxStyleSuffix.substring(0, 80)}" injected into ${enforcedPrompts.length} prompts`);
         }
+        lastStageLogged = 'CHAR_BRAND_done';
+        console.log(`[STAGE_6_CHAR_BRAND] done`);
 
         // ── Animated / cartoon style enforcement ──────────────────────────────
         // Include niche in detection so "Animation" niche always triggers animated style
+        console.log(`[STAGE_7_PROMPT_ARC] start`);
         const _combinedCtx  = `${goal ?? ""} ${script ?? ""} ${niche ?? ""}`.toLowerCase();
         const _isAnimated   = detectAnimatedStyle(_combinedCtx) || /\banimation\b/i.test(niche ?? "");
         const ANIM_PREFIX   = "In vibrant Disney Pixar 3D animated style, colorful cartoon characters with big expressive eyes, smooth CGI animation, stylized proportions, highly detailed 3D animated render, cinematic lighting, ";
@@ -672,6 +698,9 @@ export async function POST(req: Request) {
           console.log(`[BRAND_NEG] extended ${sceneNegativePrompts.length} scene neg prompts with brand negative terms`);
         }
 
+        lastStageLogged = 'PROMPT_ARC_done';
+        console.log(`[STAGE_7_PROMPT_ARC] done`);
+
         const sourceImages: Array<string | null> = new Array(prompts.length).fill(null);
         const clipReports: string[] = [];
 
@@ -735,6 +764,8 @@ export async function POST(req: Request) {
 
         // ── 3 parallel Kling 2.6 Pro single-shot calls ───────────────────────────
         // Each scene gets its own image + unique prompt + unique seed.
+        lastStageLogged = 'KLING_start';
+        console.log(`[STAGE_8_KLING] start scenes=${prompts.length}`);
         console.log(`[TIMING] KLING_GENERATION start scenes=${prompts.length} mode=parallel`);
         const genT0   = Date.now();
         const baseSeed = Date.now() % 999_999_999;
@@ -1035,11 +1066,16 @@ export async function POST(req: Request) {
       return Response.json({ error: "All clips failed to generate", ...err.payload }, { status: 500 });
     }
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("[CINEMATIC_ERROR]", msg);
+    console.error("[CINEMATIC_ERROR]", JSON.stringify({
+      message:         msg,
+      lastStageLogged,
+      stack:           err instanceof Error ? err.stack?.substring(0, 600) : undefined,
+    }));
     return Response.json({
       success: false,
       error:   "Video generation failed",
       message: msg,
+      lastStageLogged,
       SEQUENCE_ROUTE_VERSION: ROUTE_VERSION,
     }, { status: 500 });
 

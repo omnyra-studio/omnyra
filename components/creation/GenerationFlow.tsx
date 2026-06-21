@@ -1702,7 +1702,6 @@ export default function GenerationFlow({
                           <div style={{ fontSize: '2rem', opacity: 0.3 }}>🎬</div>
                         </div>
                       )}
-                      <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.2) 50%, transparent 100%)' }} />
                       {selectedConcept === c && (
                         <div style={{
                           position: 'absolute', top: 8, left: 8, width: 24, height: 24,
@@ -1712,9 +1711,6 @@ export default function GenerationFlow({
                           ✓
                         </div>
                       )}
-                      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: 12 }}>
-                        <p style={{ fontSize: 11, fontWeight: 600, color: '#fff', margin: 0, lineHeight: 1.4 }}>{c.title}</p>
-                      </div>
                     </div>
                   ))}
                 </div>
