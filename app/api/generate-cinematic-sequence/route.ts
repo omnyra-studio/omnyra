@@ -759,7 +759,8 @@ export async function POST(req: Request) {
 
         await Promise.all(klingScenePrompts.map(async (klingPrompt, i) => {
           const sceneImg = sceneImageUrls[i];
-          console.log(`[SCENE_ROUTER] scene=${i + 1} provider=kling-2.6-pro image=${sceneImg ? "yes" : "none"}`);
+          const mode = (sceneImg?.startsWith("https://")) ? "i2v" : "t2v";
+          console.log(`[CLIP_FIRE] scene=${i + 1} mode=${mode} imageUrl=${sceneImg?.substring(0, 80) ?? "NONE"}`);
 
           try {
             const result = await generateKlingSingleShot({
@@ -773,13 +774,17 @@ export async function POST(req: Request) {
               cfgScale:        0.5,
             });
             extractedUrls[i] = result.videoUrl;
+            console.log(`[CLIP_RESULT] scene=${i + 1} success=true elapsed=${result.generationMs}ms url=${result.videoUrl.substring(0, 80)}`);
             clipReports.push(`scene=${i + 1} | kling-2.6-pro | OK ${result.generationMs}ms | ${result.videoUrl.substring(0, 80)}`);
           } catch (err) {
             const reason = err instanceof Error ? err.message : String(err);
+            const detail = JSON.stringify(err, Object.getOwnPropertyNames(err instanceof Error ? err : {})).substring(0, 300);
+            console.error(`[CLIP_FAIL] scene=${i + 1} mode=${mode} reason="${reason}" detail=${detail}`);
             clipReports.push(`scene=${i + 1} | kling-2.6-pro | FAIL | ${reason}`);
-            console.error(`[KLING] scene ${i + 1} FAILED: ${reason}`);
           }
         }));
+
+        console.log(`[CLIPS_TOTAL] success=${extractedUrls.filter(Boolean).length}/${prompts.length} breakdown=${extractedUrls.map((u, i) => `scene${i + 1}:${u ? "OK" : "FAIL"}`).join(" ")}`);
 
         const genElapsed      = Date.now() - genT0;
         console.log(`[TIMING] KLING_GENERATION complete ${genElapsed}ms`);
@@ -884,17 +889,28 @@ export async function POST(req: Request) {
                 }
               }
             } else {
+              // Railway returned HTTP error — fall through to FFmpeg merge
               const errText = await railwayRes.text().catch(() => "");
-              console.warn(`[RAILWAY_STITCH] composer HTTP ${railwayRes.status}: ${errText.substring(0, 200)}`);
+              console.warn(`[RAILWAY_STITCH] composer HTTP ${railwayRes.status}: ${errText.substring(0, 200)} — falling back to FFmpeg`);
+              if (audio_url) {
+                try {
+                  stitched_url = await mergeVideoAudio({ videoUrl: clip_urls[0], audioUrl: audio_url, userId: user.id });
+                  console.log(`[AUDIO_MERGE_FALLBACK_OK] railway_failed url=${stitched_url.substring(0, 80)}`);
+                } catch (ffmpegErr) {
+                  console.error("[AUDIO_MERGE_FALLBACK] ffmpeg also failed:", ffmpegErr instanceof Error ? ffmpegErr.message : ffmpegErr);
+                }
+              }
             }
           } catch (railwayErr) {
-            // Non-fatal: if Railway stitch fails, apply audio locally via FFmpeg merge
-            console.warn("[RAILWAY_STITCH] failed:", railwayErr instanceof Error ? railwayErr.message : railwayErr);
+            // Network-level Railway failure — fall back to FFmpeg merge
+            console.warn("[RAILWAY_STITCH] network error:", railwayErr instanceof Error ? railwayErr.message : railwayErr);
             if (audio_url) {
               try {
                 stitched_url = await mergeVideoAudio({ videoUrl: clip_urls[0], audioUrl: audio_url, userId: user.id });
                 console.log(`[AUDIO_MERGE_FALLBACK_OK] url=${stitched_url.substring(0, 80)}`);
-              } catch { /* use first clip URL */ }
+              } catch (ffmpegErr) {
+                console.error("[AUDIO_MERGE_FALLBACK] ffmpeg also failed:", ffmpegErr instanceof Error ? ffmpegErr.message : ffmpegErr);
+              }
             }
           }
         } else {
@@ -920,6 +936,21 @@ export async function POST(req: Request) {
         const slaCompliant = skippedScenes.length === 0 && totalMs <= SLA_TOTAL_MS;
 
         console.log(`[TIMING] SEQUENCE TOTAL ${totalMs}ms clips=${clip_urls.length} kling=${successfulClips} sla=${slaCompliant ? "OK" : "BREACH"} bottleneck=${bottleneckStage}`);
+
+        console.log("[PIPELINE_SUMMARY]", JSON.stringify({
+          version:          ROUTE_VERSION,
+          niche:            nicheSettings.key,
+          clips_attempted:  prompts.length,
+          clips_succeeded:  successfulClips,
+          clip_status:      extractedUrls.map((u, i) => `scene${i + 1}:${u ? "OK" : "FAIL"}`),
+          voice_url:        audio_url ? "YES" : "NO",
+          ambient_url:      ambientDesc ? "YES" : "NO",
+          composer_used:    !!(composerUrl),
+          final_url:        stitched_url ? "YES" : "NO",
+          has_audio:        !!audio_url,
+          final_is_kling:   stitched_url === clip_urls[0],
+          total_ms:         totalMs,
+        }));
 
         return {
           data: {

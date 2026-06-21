@@ -236,27 +236,25 @@ Return exactly 4 objects, one per angle in this order: WIDE, CLOSE, DETAIL, OVER
           throw new Error(`Expected 4 scene prompts from Claude, got ${Array.isArray(scenePlan) ? scenePlan.length : "invalid response"}`);
         }
 
-        // ── Build per-scene negative prompt ───────────────────────────────────
-        // Each angle gets extra angle-specific negatives stacked on the base
-        const angleNegatives: Record<SceneAngle, string> = {
-          WIDE:           "close-up face, portrait, macro, hands in foreground, objects dominating frame",
-          CLOSE:          "hands, objects, pen, paper, cup, food, full body, wide shot, environment, text",
-          DETAIL:         "face, portrait, full body, wide shot, floating objects, text on paper",
-          OVER_SHOULDER:  "face visible, front-facing portrait, floating objects, text",
-        };
-
         // ── Generate all 4 images in parallel via Fal ─────────────────────────
+        // NOTE: fal-ai/flux/schnell uses flow matching and IGNORES negative_prompt.
+        // Anti-text and angle constraints are injected directly into the positive prompt.
+        const ANTI_TEXT_SUFFIX =
+          "No readable text anywhere. No visible writing. No legible words or numbers on any surface. " +
+          "No text on walls, paper, books, signs, screens, clocks, or clothing. " +
+          "No clock face with numbers. No newspaper text. No letters. Blank surfaces only.";
+
         const imageResults: Scene[] = await Promise.all(
           scenePlan.slice(0, 4).map(async (scene, i) => {
             const angle = (scene.angle ?? SCENE_ANGLES[i]) as SceneAngle;
-            const angleNeg = angleNegatives[angle] ?? "";
-            const nicheNeg = nicheSettings.negativePrompt ?? "";
-            const negativePrompt = [FLUX_NEGATIVE_BASE, angleNeg, nicheNeg]
-              .filter(Boolean)
-              .join(", ");
 
-            console.log(`[IMAGE_PROMPT_FINAL] scene=${i + 1} angle=${angle}: ${scene.prompt.substring(0, 200)}`);
-            console.log(`[IMAGE_NEG_PROMPT] scene=${i + 1}: ${negativePrompt.substring(0, 120)}`);
+            // Compose positive prompt: scene + anti-text + angle reminder
+            const finalPrompt = [
+              scene.prompt,
+              ANTI_TEXT_SUFFIX,
+            ].join(" ");
+
+            console.log(`[IMAGE_PROMPT_FINAL] scene=${i + 1} angle=${angle}: ${finalPrompt.substring(0, 220)}`);
 
             const res = await fetch("https://fal.run/fal-ai/flux/schnell", {
               method: "POST",
@@ -265,8 +263,7 @@ Return exactly 4 objects, one per angle in this order: WIDE, CLOSE, DETAIL, OVER
                 "Content-Type": "application/json",
               },
               body: JSON.stringify({
-                prompt:                scene.prompt,
-                negative_prompt:       negativePrompt,
+                prompt:                finalPrompt,
                 num_images:            1,
                 image_size:            { width: 1080, height: 1920 },
                 num_inference_steps:   8,
@@ -285,7 +282,7 @@ Return exactly 4 objects, one per angle in this order: WIDE, CLOSE, DETAIL, OVER
             if (!imageUrl) throw new Error("Fal returned no image URL for scene");
 
             return {
-              prompt:      scene.prompt,
+              prompt:      finalPrompt,
               description: scene.description,
               script_part: scene.script_part,
               image_url:   imageUrl,
