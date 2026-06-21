@@ -378,6 +378,10 @@ export default function GenerationFlow({
         setClipUrls(urls);
         setVideoStatus('Scenes ready');
         setVideoProgress(100);
+        // Auto-set finalVideo when server already stitched + merged audio
+        if (data.stitched_url) {
+          setFinalVideo(data.stitched_url);
+        }
       } else {
         setVideoStatus('Error — No clips returned');
         setVideoStarted(false);
@@ -555,6 +559,10 @@ export default function GenerationFlow({
           setClipUrls(urls);
           setVideoStatus('Scenes ready');
           setVideoProgress(100);
+          // Auto-set finalVideo when server already stitched + merged audio
+          if (data.stitched_url) {
+            setFinalVideo(data.stitched_url);
+          }
         } else {
           setVideoStatus('Error — No clips returned');
           setVideoStarted(false);
@@ -1063,24 +1071,64 @@ export default function GenerationFlow({
               }}
             >
               <option value="" disabled>Select your niche...</option>
-              <option value="PSYCHOLOGY, KINDNESS, HONESTY">Psychology · Kindness · Honesty</option>
-              <option value="HISTORY, TRUE STORIES, DOCUMENTARY">History · True Stories · Documentary</option>
-              <option value="GAMING">Gaming</option>
-              <option value="SELF IMPROVEMENT, MINDSET">Self Improvement · Mindset</option>
-              <option value="RELATIONSHIPS, DATING, LOVE">Relationships · Dating · Love</option>
-              <option value="FRIENDSHIPS, SOCIAL LIFE">Friendships · Social Life</option>
-              <option value="SPIRITUALITY, FAITH, WELLNESS">Spirituality · Faith · Wellness</option>
-              <option value="LIFESTYLE, DAILY LIFE, VLOG">Lifestyle · Daily Life · Vlog</option>
-              <option value="BEAUTY, SKINCARE, MAKEUP">Beauty · Skincare · Makeup</option>
-              <option value="FITNESS, HEALTH, BODY">Fitness · Health · Body</option>
-              <option value="FOOD, RECIPES, COOKING">Food · Recipes · Cooking</option>
-              <option value="FASHION, STYLE, TRENDS">Fashion · Style · Trends</option>
-              <option value="BUSINESS, FINANCE, ENTREPRENEURSHIP">Business · Finance · Entrepreneurship</option>
-              <option value="TRAVEL, ADVENTURE, CULTURE">Travel · Adventure · Culture</option>
-              <option value="PARENTING, FAMILY, MOM LIFE">Parenting · Family · Mom Life</option>
-              <option value="ANIMATION">Animation</option>
-              <option value="MOTIVATION, HUSTLE, SUCCESS">Motivation · Hustle · Success</option>
-              <option value="COMEDY, ENTERTAINMENT, POP CULTURE">Comedy · Entertainment · Pop Culture</option>
+              <optgroup label="── STORYTELLING ──">
+                <option value="history">History</option>
+                <option value="true-stories-documentary">True Stories · Documentary</option>
+                <option value="news-politics">News &amp; Politics</option>
+                <option value="psychology">Psychology</option>
+                <option value="kindness">Random Acts of Kindness</option>
+              </optgroup>
+              <optgroup label="── MONEY ──">
+                <option value="business-entrepreneurship">Business · Entrepreneurship</option>
+                <option value="personal-finance">Personal Finance</option>
+                <option value="investing">Investing</option>
+                <option value="side-hustles">Side Hustles</option>
+                <option value="money-saving">Money Saving Hacks</option>
+              </optgroup>
+              <optgroup label="── LIFESTYLE ──">
+                <option value="lifestyle">Lifestyle · Daily Life · Vlog</option>
+                <option value="motivation">Motivation</option>
+                <option value="trends">Trends</option>
+                <option value="nomad-lifestyle">Nomad Lifestyle &amp; Cultures</option>
+                <option value="sustainability">Sustainability &amp; Eco Living</option>
+                <option value="minimalism">Minimalism &amp; Decluttering</option>
+                <option value="productivity">Productivity &amp; Time Management</option>
+              </optgroup>
+              <optgroup label="── RELATIONSHIPS ──">
+                <option value="relationships">Relationships &amp; Love</option>
+                <option value="dating">Dating &amp; Advice</option>
+                <option value="friendships">Friendships &amp; Social Life</option>
+                <option value="weddings">Weddings &amp; Events</option>
+                <option value="teens">Teens &amp; Teen Life</option>
+              </optgroup>
+              <optgroup label="── WELLNESS ──">
+                <option value="health-wellness">Health &amp; Wellness</option>
+                <option value="fitness">Fitness</option>
+                <option value="mental-health">Mental Health &amp; Mindfulness</option>
+                <option value="recovery-relaxation">Recovery &amp; Relaxation</option>
+                <option value="spirituality">Spirituality &amp; Faith</option>
+                <option value="skill-improvement">Skill Improvement &amp; Education</option>
+              </optgroup>
+              <optgroup label="── CONTENT ──">
+                <option value="beauty-skincare">Beauty · Skincare · Makeup</option>
+                <option value="food-recipes">Food · Recipes · Cooking</option>
+                <option value="fashion-style">Fashion &amp; Style</option>
+                <option value="music-dance">Music &amp; Dance</option>
+                <option value="gaming">Gaming</option>
+                <option value="cars-motors">Cars &amp; Motors</option>
+                <option value="diy">DIY</option>
+                <option value="pet-care">Pet Care &amp; Animals</option>
+                <option value="comedy-entertainment">Comedy &amp; Entertainment</option>
+                <option value="sports">Sports &amp; Athletics</option>
+                <option value="luxury">Luxury · Designer · High-End</option>
+              </optgroup>
+              <optgroup label="── CREATIVE ──">
+                <option value="3d-animation">3D Animation</option>
+                <option value="vfx">Visual Effects (VFX)</option>
+                <option value="medical-animation">Medical &amp; Scientific Animation</option>
+                <option value="vr-ar">Virtual Reality &amp; AR</option>
+                <option value="technology-ai">Technology &amp; AI</option>
+              </optgroup>
             </select>
           </div>
           <div>
@@ -2021,7 +2069,7 @@ export default function GenerationFlow({
                 {/* Gold download button */}
                 <a
                   href={finalVideo}
-                  download={`omnyra-${toolId}-${Date.now()}.mp4`}
+                  download={`omnyra-${niche ? niche.split(',')[0].trim().toLowerCase().replace(/\s+/g, '-') : toolId}-${new Date().toISOString().slice(0,10)}.mp4`}
                   style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
                     width: '100%', padding: '18px', borderRadius: 14, textDecoration: 'none',
@@ -2033,43 +2081,55 @@ export default function GenerationFlow({
                   ⬇ Download Video
                 </a>
 
-                {/* Create another */}
-                <button
-                  onClick={() => {
-                    setFinalVideo(null);
-                    setClipUrls([]);
-                    setVideoUrl(null);
-                    setVideoStarted(false);
-                    setVideoStatus('');
-                    setVideoProgress(0);
-                    setStitching(false);
-                  }}
-                  style={{
-                    width: '100%', padding: '14px', borderRadius: 12,
-                    background: 'transparent', border: '1px solid #2D1B4E',
-                    color: '#8B6FA8', fontSize: '0.875rem', cursor: 'pointer',
-                  }}
-                >
-                  ↺ Generate Another Video
-                </button>
+                {/* Secondary links */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 24 }}>
+                  <a
+                    href="/videos"
+                    style={{ color: '#8B6FA8', fontSize: '0.875rem', textDecoration: 'none' }}
+                  >
+                    View in My Videos →
+                  </a>
+                  <button
+                    onClick={() => {
+                      setFinalVideo(null);
+                      setClipUrls([]);
+                      setVideoUrl(null);
+                      setVideoStarted(false);
+                      setVideoStatus('');
+                      setVideoProgress(0);
+                      setStitching(false);
+                    }}
+                    style={{
+                      background: 'none', border: 'none', padding: 0,
+                      color: '#8B6FA8', fontSize: '0.875rem', cursor: 'pointer',
+                    }}
+                  >
+                    ↺ Start Over
+                  </button>
+                </div>
               </div>
             ) : (clipUrls.length > 0 || videoUrl) ? (
-              <button
-                onClick={generateFinal}
-                disabled={stitching}
-                style={{
-                  width: '100%', padding: '20px', borderRadius: 16,
-                  background: 'linear-gradient(105deg, #5A3400 0%, #9A7010 20%, #CFA42F 42%, #E8C84A 50%, #CFA42F 58%, #9A7010 80%, #5A3400 100%)',
-                  backgroundSize: '200% auto',
-                  animation: stitching ? 'none' : 'metalShimmer 3s linear infinite',
-                  color: '#0D0010', fontWeight: 700, fontSize: '0.875rem',
-                  border: 'none', cursor: stitching ? 'not-allowed' : 'pointer',
-                  boxShadow: '0 0 24px rgba(207,164,47,0.35)',
-                  opacity: stitching ? 0.5 : 1,
-                }}
-              >
-                {stitching ? 'Stitching with Railway…' : 'Generate Final Video ✨'}
-              </button>
+              // Clips ready but no stitched_url returned — manual fallback
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <p style={{ color: '#8B6FA8', fontSize: '0.8rem', textAlign: 'center', margin: 0 }}>
+                  Clips ready — add a voice above, or stitch without voice:
+                </p>
+                <button
+                  onClick={generateFinal}
+                  disabled={stitching}
+                  style={{
+                    width: '100%', padding: '16px', borderRadius: 14,
+                    background: stitching ? 'rgba(212,168,67,0.3)' : 'linear-gradient(105deg, #5A3400 0%, #9A7010 20%, #CFA42F 42%, #E8C84A 50%, #CFA42F 58%, #9A7010 80%, #5A3400 100%)',
+                    backgroundSize: '200% auto',
+                    animation: stitching ? 'none' : 'metalShimmer 3s linear infinite',
+                    color: '#0D0010', fontWeight: 700, fontSize: '0.875rem',
+                    border: 'none', cursor: stitching ? 'not-allowed' : 'pointer',
+                    opacity: stitching ? 0.5 : 1,
+                  }}
+                >
+                  {stitching ? 'Stitching…' : 'Stitch Without Voice →'}
+                </button>
+              </div>
             ) : videoStarted ? (
               <button
                 disabled

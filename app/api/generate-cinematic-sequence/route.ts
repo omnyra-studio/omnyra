@@ -45,7 +45,7 @@ import { getNicheSettings, detectEra } from "@/lib/config/nicheSettings";
 export const maxDuration = 300;
 
 const KLING_CLIP_SECS  = 10;  // Kling 2.6 Pro: 10s per scene
-const ROUTE_VERSION    = "2026-06-21-v21-kling-only";
+const ROUTE_VERSION    = "2026-06-22-v22-motion-era-tts";
 
 // ── SLA budget: Vercel maxDuration=300s; keep 30s for post-processing ─────────
 const SLA_TOTAL_MS   = 270_000; // 270s total (30s margin before Vercel 300s kills)
@@ -206,6 +206,36 @@ function inferSceneType(prompt: string): string {
 
   return "talking_head";
 }
+
+// ── Emotional arc detection — extracts motion tone from script thirds ─────────
+
+function detectTone(text: string): string {
+  if (/trembl|grip|clench|rigid|jaw|stiff|fear/i.test(text))
+    return 'hands tremble as they move forward, jaw tightens, body holds rigid with barely controlled tension';
+  if (/pause|stare|still|silent|breath/i.test(text))
+    return 'movement stills, breath deepens and steadies visibly, eyes drift and slowly unfocus';
+  if (/fold|press|close|final|peace|resolv/i.test(text))
+    return 'hands fold slowly and deliberately, shoulders drop and release, chin lifts';
+  return 'subtle natural movement, weight shifts forward, slow deliberate measured gesture';
+}
+
+function detectEmotionalArc(text: string): { opening: string; middle: string; close: string } {
+  const third = Math.floor(text.length / 3);
+  return {
+    opening: detectTone(text.slice(0, third)),
+    middle:  detectTone(text.slice(third, third * 2)),
+    close:   detectTone(text.slice(third * 2)),
+  };
+}
+
+// Per-scene camera moves — each scene gets a different camera direction
+const SCENE_CAMERA_MOVES = [
+  'Camera holds low and drifts slightly left.',
+  'Camera slowly pulls back, revealing the surrounding space.',
+  'Camera stays tight on hands then rises gently to face.',
+  'Camera tilts down to hands then drifts upward to face.',
+  'Camera pushes toward face in a slow deliberate drift.',
+];
 
 // Motion-intent scoring — logging only. Provider is always Seedance (sceneRouter).
 
@@ -516,8 +546,20 @@ export async function POST(req: Request) {
         const _isCoupleCtx  = !_isAnimated && (COUPLE_RE.test(goal ?? "") || COUPLE_RE.test(script ?? ""));
         const _total        = enforcedPrompts.length;
 
+        // Extract emotional arc from script text — runs for ALL live-action content
+        // Falls back to niche.emotionalArc label (logged only), then neutral
+        const _scriptForArc = (script ?? goal ?? enforcedPrompts.join(' ')).trim();
+        const _arc = !_isAnimated && _scriptForArc ? detectEmotionalArc(_scriptForArc) : null;
+        if (_arc) {
+          console.log(`[EMOTIONAL_ARC] detected: opening="${_arc.opening.substring(0, 60)}" | middle="${_arc.middle.substring(0, 60)}" | close="${_arc.close.substring(0, 60)}"`);
+        } else if (nicheSettings.emotionalArc) {
+          console.log(`[EMOTIONAL_ARC] not detected from script — niche arc="${nicheSettings.emotionalArc}" (narrative label for niche="${nicheSettings.key}")`);
+        } else {
+          console.log(`[EMOTIONAL_ARC] not detected — using neutral movement for all scenes`);
+        }
+
         if (!_isAnimated) {
-          // Live-action: add front-facing camera rule + emotional arc
+          // Live-action: add front-facing camera rule + motion arc for every scene
           enforcedPrompts = enforcedPrompts.map((p, i) => {
             const pLow    = p.toLowerCase();
             const isBeach = /\b(beach|shore|ocean|sand|wave|water|sea)\b/.test(pLow);
@@ -527,42 +569,53 @@ export async function POST(req: Request) {
             const cameraRule = "subjects facing camera, front-facing, faces clearly visible";
             const facingNote = _isCoupleCtx ? ", man facing toward woman, correct orientation, proper eye line, both faces visible" : `, ${cameraRule}`;
 
+            const pos = _total > 1 ? i / (_total - 1) : 0;
+
             if (!_isEmotional) {
-              console.log(`[PROMPT_ARC] scene=${i + 1} no emotional arc detected — camera rule only`);
-              return `${p}${facingNote}`;
+              // Use arc detected from script for motion — fixes slideshow output
+              let arcBeat = 'neutral, measured movement';
+              if (_arc) {
+                arcBeat = pos <= 0.33 ? _arc.opening : pos <= 0.66 ? _arc.middle : _arc.close;
+              }
+              const cameraMove = SCENE_CAMERA_MOVES[i % SCENE_CAMERA_MOVES.length];
+              console.log(`[PROMPT_ARC] scene=${i + 1} arc="${arcBeat}" camera="${cameraMove}"`);
+              return `${p}, ${arcBeat}, ${cameraMove}${facingNote}`;
             }
 
             const lighting = isBeach
               ? "golden hour lighting, warm backlighting, soft rim light on hair and shoulders, wet sand reflections, atmospheric ocean haze, warm sky gradient, cinematic anamorphic lens"
               : "soft cinematic lighting, warm key light, gentle fill light, emotional mood lighting, shallow depth of field";
 
-            const pos = _total > 1 ? i / (_total - 1) : 0;
             let arcBeat: string;
             if (pos <= 0.33) {
-              arcBeat = isSad
-                ? "visible tear on cheek, head slightly down, quiet sadness and vulnerability, no smiling yet"
-                : "opening beat, character settling into scene, subdued expression, quiet introspective moment";
+              arcBeat = _arc
+                ? _arc.opening
+                : isSad
+                  ? "visible tear on cheek, head slightly down, quiet sadness and vulnerability, no smiling yet"
+                  : "opening beat, character settling into scene, subdued expression, quiet introspective moment";
             } else if (pos <= 0.66) {
-              // Only introduce a second person / relationship beat when the brief explicitly has a couple.
-              // Injecting "man approaching" for a solo scene creates a completely fabricated narrative.
-              arcBeat = _isCoupleCtx
-                ? "man gently approaching from the side, turning to face her, opening arms, beginning to pull her close, transition moment"
-                : isSad
-                  ? "posture shifting slightly, jaw unclenching, eyes lifting, quiet internal change, still alone in the same setting"
-                  : "middle beat, subtle posture adjustment, gaze moving across scene, micro-expression shift, same setting";
+              arcBeat = _arc
+                ? _arc.middle
+                : _isCoupleCtx
+                  ? "man gently approaching from the side, turning to face her, opening arms, beginning to pull her close, transition moment"
+                  : isSad
+                    ? "posture shifting slightly, jaw unclenching, eyes lifting, quiet internal change, still alone in the same setting"
+                    : "middle beat, subtle posture adjustment, gaze moving across scene, micro-expression shift, same setting";
             } else {
-              // Resolution beat — again, lean-in / dance only fires for couple context
-              arcBeat = _isCoupleCtx
-                ? (isDance
-                    ? "tender slow dance in shallow water, woman softening, gentle smile through remaining tears, intimate comfort and connection"
-                    : "resolution moment, woman leaning into him, soft smile through tears, warmth and relief replacing sadness")
-                : isSad
-                  ? "quiet resolution, shoulders releasing tension, faint upward curve of lip corners, still alone, internal stillness returning"
-                  : "closing beat, expression softening, settled into the scene, moment of quiet stillness, same setting unchanged";
+              arcBeat = _arc
+                ? _arc.close
+                : _isCoupleCtx
+                  ? (isDance
+                      ? "tender slow dance in shallow water, woman softening, gentle smile through remaining tears, intimate comfort and connection"
+                      : "resolution moment, woman leaning into him, soft smile through tears, warmth and relief replacing sadness")
+                  : isSad
+                    ? "quiet resolution, shoulders releasing tension, faint upward curve of lip corners, still alone, internal stillness returning"
+                    : "closing beat, expression softening, settled into the scene, moment of quiet stillness, same setting unchanged";
             }
 
+            const cameraMove = SCENE_CAMERA_MOVES[i % SCENE_CAMERA_MOVES.length];
             console.log(`[PROMPT_ARC] scene=${i + 1}/${_total} pos=${pos.toFixed(2)} beach=${isBeach} arc="${arcBeat.substring(0, 60)}"`);
-            return `${p}, ${lighting}, ${arcBeat}${facingNote}`;
+            return `${p}, ${lighting}, ${arcBeat}, ${cameraMove}${facingNote}`;
           });
           console.log(`[PROMPT_ARC] enhanced ${_total} scene(s) emotional=${_isEmotional} couple=${_isCoupleCtx}`);
         } else {
@@ -601,6 +654,14 @@ export async function POST(req: Request) {
             sceneNegativePrompts[i] = [sceneNegativePrompts[i], charMemory.neg_prompt].filter(Boolean).join(", ");
           }
           console.log(`[CHAR_NEG] extended ${sceneNegativePrompts.length} scene neg prompts with charMemory.neg_prompt`);
+        }
+
+        // Extend with niche-specific negative prompts (prevents cross-contamination)
+        if (nicheSettings.negativePrompt?.trim() && !_isAnimated) {
+          for (let i = 0; i < sceneNegativePrompts.length; i++) {
+            sceneNegativePrompts[i] = [sceneNegativePrompts[i], nicheSettings.negativePrompt].filter(Boolean).join(", ");
+          }
+          console.log(`[NICHE_NEG] extended ${sceneNegativePrompts.length} scene neg prompts with niche="${nicheSettings.key}" negatives`);
         }
 
         // Extend with brand-specific negative style terms
@@ -676,9 +737,10 @@ export async function POST(req: Request) {
         // Prepend niche video prefix + detected era for period accuracy
         const klingScenePrompts = enforcedPrompts.map((p, i) => {
           const clean   = stripEthnicityPrefix(p).trim();
+          // Era goes FIRST so Kling anchors on the period before reading any other detail
           const parts   = [
-            nicheSettings.videoPromptPrefix || null,
             detectedEra ? `Set in ${detectedEra}.` : null,
+            nicheSettings.videoPromptPrefix || null,
             clean,
           ].filter((x): x is string => !!x);
           const final = parts.join(" ");
@@ -695,13 +757,14 @@ export async function POST(req: Request) {
 
           try {
             const result = await generateKlingSingleShot({
-              prompt:      klingPrompt,
-              imageUrl:    sceneImg?.startsWith("https://") ? sceneImg : undefined,
-              duration:    "10",
-              aspectRatio: "9:16",
-              seed:        baseSeed + i,
-              sceneNumber: i + 1,
-              cfgScale:    0.5,
+              prompt:          klingPrompt,
+              negativePrompt:  sceneNegativePrompts[i] || undefined,
+              imageUrl:        sceneImg?.startsWith("https://") ? sceneImg : undefined,
+              duration:        "10",
+              aspectRatio:     "9:16",
+              seed:            baseSeed + i,
+              sceneNumber:     i + 1,
+              cfgScale:        0.5,
             });
             extractedUrls[i] = result.videoUrl;
             clipReports.push(`scene=${i + 1} | kling-2.6-pro | OK ${result.generationMs}ms | ${result.videoUrl.substring(0, 80)}`);

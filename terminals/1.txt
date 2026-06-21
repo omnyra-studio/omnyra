@@ -3,9 +3,15 @@ pid: 14036
 cwd: "C:\Users\Admin\Desktop\omnyra-ai"
 command: "cd \"C:\\Users\\Admin\\Desktop\\omnyra-ai\"; npx tsc --noEmit 2>&1 | Select-String -Pattern \"ethnicityFix|generate-concepts|parallel-render\" | Select-Object -First 15"
 started_at: 2026-06-18T08:43:15.651Z
-running_for_ms: 18249991 
+running_for_ms: 244312553
 ---
 
 middleware/ethnicityFix.ts(151,7): error TS2862: Type 'T' is generic and can only be indexed for reading.
 
 
+
+---
+exit_code: -1
+elapsed_ms: 244312553
+ended_at: 2026-06-21T04:36:06.263Z
+---

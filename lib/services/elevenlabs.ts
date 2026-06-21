@@ -281,6 +281,7 @@ export async function mergeVideoAudio(params: MergeVideoAudioParams): Promise<st
     writeFileSync(audioPath, audioBuf);
 
     // Loop video so full voiceover plays when narration is longer than the clip.
+    const stitchT0 = Date.now();
     await new Promise<void>((resolve, reject) => {
       ffmpeg()
         .input(videoPath)
@@ -288,10 +289,11 @@ export async function mergeVideoAudio(params: MergeVideoAudioParams): Promise<st
         .input(audioPath)
         .outputOptions([
           "-c:v", "libx264",
-          "-preset", "fast",
+          "-preset", "ultrafast",
           "-crf", "23",
+          "-threads", "0",
           "-c:a", "aac",
-          "-b:a", "192k",
+          "-b:a", "128k",
           "-map", "0:v:0",
           "-map", "1:a:0",
           "-shortest",
@@ -302,6 +304,7 @@ export async function mergeVideoAudio(params: MergeVideoAudioParams): Promise<st
         .on("error", (err) => reject(new Error(`FFmpeg: ${err.message}`)))
         .run();
     });
+    console.log(`[STITCH_DURATION] elapsed=${Date.now() - stitchT0}ms`);
 
     if (!existsSync(outputPath)) throw new Error("FFmpeg produced no output file");
 

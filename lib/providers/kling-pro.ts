@@ -13,13 +13,14 @@ const POLL_INTERVAL_MS = 2_000;
 const MAX_PROMPT_CHARS = 2500;
 
 export interface KlingSingleShotParams {
-  prompt:       string;
-  imageUrl?:    string;
-  duration?:    "5" | "10";
-  aspectRatio?: "9:16" | "16:9" | "1:1";
-  seed?:        number;
-  sceneNumber?: number;
-  cfgScale?:    number;
+  prompt:          string;
+  negativePrompt?: string;
+  imageUrl?:       string;
+  duration?:       "5" | "10";
+  aspectRatio?:    "9:16" | "16:9" | "1:1";
+  seed?:           number;
+  sceneNumber?:    number;
+  cfgScale?:       number;
 }
 
 export interface KlingProMultiShotParams {
@@ -85,12 +86,13 @@ function extractKlingVideoUrl(data: Record<string, unknown> | undefined): string
 }
 
 async function klingSubscribe(
-  prompt:      string,
-  imageUrl:    string | undefined,
-  duration:    "5" | "10",
-  aspectRatio: "9:16" | "16:9" | "1:1",
-  seed:        number,
-  cfgScale:    number,
+  prompt:          string,
+  imageUrl:        string | undefined,
+  duration:        "5" | "10",
+  aspectRatio:     "9:16" | "16:9" | "1:1",
+  seed:            number,
+  cfgScale:        number,
+  negativePrompt?: string,
 ): Promise<string> {
   const input: Record<string, unknown> = {
     prompt:          prompt.slice(0, MAX_PROMPT_CHARS),
@@ -100,6 +102,9 @@ async function klingSubscribe(
     cfg_scale:       cfgScale,
     seed,
   };
+  if (negativePrompt?.trim()) {
+    input.negative_prompt = negativePrompt.slice(0, 500);
+  }
   if (imageUrl?.startsWith("https://")) {
     input.start_image_url = imageUrl;
   }
@@ -143,14 +148,14 @@ export async function generateKlingSingleShot(
 
   const tryGenerate = async (retrySeed: number): Promise<string> => {
     try {
-      return await klingSubscribe(params.prompt, params.imageUrl, duration, aspectRatio, retrySeed, cfgScale);
+      return await klingSubscribe(params.prompt, params.imageUrl, duration, aspectRatio, retrySeed, cfgScale, params.negativePrompt);
     } catch (err) {
       const elapsed = Date.now() - startMs;
       const msg = err instanceof Error ? err.message : String(err);
       const isTimeout = msg.includes("timeout") || msg.includes("TIMEOUT") || elapsed >= TIMEOUT_MS - 5_000;
       if (isTimeout) {
         console.warn(`[KLING_TIMEOUT] scene=${scene} elapsed=${Math.round(elapsed / 1000)}s — retrying with seed=${retrySeed + 1}`);
-        return await klingSubscribe(params.prompt, params.imageUrl, duration, aspectRatio, retrySeed + 1, cfgScale);
+        return await klingSubscribe(params.prompt, params.imageUrl, duration, aspectRatio, retrySeed + 1, cfgScale, params.negativePrompt);
       }
       throw new Error(`[KLING_ERROR] scene=${scene}: ${msg}`);
     }
