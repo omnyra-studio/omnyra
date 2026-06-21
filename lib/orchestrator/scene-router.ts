@@ -10,7 +10,7 @@ import { routeModel }    from "@/lib/avatar/model-router";
 import { classifyScene } from "@/lib/avatar/scene-classifier";
 import { SEEDANCE_ELEVENLABS_MODEL } from "@/lib/services/elevenlabs";
 import { generateVideoByProvider } from "@/lib/providers/video-dispatch";
-import { FORCE_SEEDANCE, getVideoProvider } from "@/lib/video-provider";
+import { getVideoProvider } from "@/lib/video-provider";
 import { isMultiCharacterScene } from "./multi-character-handler";
 
 /** Seedance Fast via fal.ai — default cinematic video provider. */
@@ -25,12 +25,10 @@ export async function generateSeedanceVideo(
   fullPrompt: string,
   options: { duration?: number; imageUrl?: string | null; sceneNumber?: number } = {},
 ): Promise<string> {
-  const provider = getVideoProvider();
-  const dispatchProvider = provider === "luma-fal" ? "luma" : "seedance";
+  void getVideoProvider();
+  const dispatchProvider = "seedance"; // luma removed; this path is legacy parallel engine only
 
-  if (FORCE_SEEDANCE) {
-    console.log(`[SEEDANCE] scene router — ${options.duration ?? 6}s 720p provider=${dispatchProvider}`);
-  }
+  console.log(`[SEEDANCE] scene router — ${options.duration ?? 6}s 720p provider=${dispatchProvider}`);
 
   const result = await generateVideoByProvider(dispatchProvider, {
     prompt:      fullPrompt,

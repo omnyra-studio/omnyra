@@ -17,6 +17,7 @@ import { getBrandProfile, getBrandSystemPrompt } from "@/lib/brand";
 import { logUsageEvent } from "@/lib/cache";
 import { withCreditState, InsufficientCreditsError } from "@/lib/credits/withCreditState";
 import { CREDIT_COSTS } from "@/lib/rules/creditRules";
+import { getNicheSettings, detectEra } from "@/lib/config/nicheSettings";
 
 export const maxDuration = 120;
 
@@ -49,13 +50,24 @@ export async function POST(req: Request) {
     hook?: string;
     targetAudience?: string;
     characterRef?: string;
+    niche?: string;
   };
   try { body = await req.json(); }
   catch { return Response.json({ error: "Invalid JSON" }, { status: 400 }); }
 
-  const { script, concept, hook, targetAudience, characterRef } = body;
+  const { script, concept, hook, targetAudience, characterRef, niche } = body;
   if (!script?.trim()) return Response.json({ error: "script is required" }, { status: 400 });
   if (!concept?.trim()) return Response.json({ error: "concept is required" }, { status: 400 });
+
+  const nicheSettings = getNicheSettings(niche);
+  console.log(`[NICHE_RECEIVED] niche="${niche ?? "default"}" imagePrefix="${nicheSettings.imagePromptPrefix.substring(0, 60)}"`);
+
+  let detectedEra: string | null = null;
+  if (nicheSettings.eraDetection) {
+    const eraSearchText = `${script} ${concept ?? ""}`;
+    detectedEra = detectEra(eraSearchText);
+    if (detectedEra) console.log(`[ERA_DETECTED] era="${detectedEra}" niche="${niche ?? "default"}"`);
+  }
 
   let brandSuffix = "";
   try {
@@ -77,6 +89,13 @@ export async function POST(req: Request) {
       cost: creditCost,
       run: async () => {
         // ── Step 1: Claude generates 4 character-consistent image prompts ─────
+        const nicheDirective = [
+          nicheSettings.imagePromptPrefix ? `NICHE VISUAL STYLE: ${nicheSettings.imagePromptPrefix}` : null,
+          nicheSettings.cinemaStyle       ? `CINEMA STYLE: ${nicheSettings.cinemaStyle}` : null,
+          detectedEra                     ? `ERA: This scene is set in ${detectedEra}. Every prop, costume, and environment must be period-accurate. No modern objects.` : null,
+          nicheSettings.negativePrompt    ? `AVOID IN ALL PROMPTS: ${nicheSettings.negativePrompt}` : null,
+        ].filter(Boolean).join("\n");
+
         const planningMsg = await anthropic.messages.create({
           model: "claude-haiku-4-5-20251001",
           max_tokens: 2000,
@@ -91,7 +110,7 @@ STRICT RULES:
 2. Visual consistency: Same lighting style, color grade, and mood across all 4 prompts.
 3. Ghost Test: Describe only visible physical behavior — body posture, hand position, eye direction, micro-expressions, how they hold or move objects. Never name the emotion.
 4. Text overlays: If a scene requires on-screen text, describe it in the "description" field only. Do NOT include unrenderable text in the image prompt itself.
-5. Composition: Cinematic framing, depth of field, professional natural lighting, high detail, photorealistic — no cartoon or AI artifacts.${brandSuffix ? `\n6. Brand style: ${brandSuffix}` : ""}
+5. Composition: Cinematic framing, depth of field, professional natural lighting, high detail, photorealistic — no cartoon or AI artifacts.${brandSuffix ? `\n6. Brand style: ${brandSuffix}` : ""}${nicheDirective ? `\n\n${nicheDirective}` : ""}
 
 Return ONLY valid JSON — no markdown, no backticks, no explanation. Exactly this structure:
 [
@@ -127,7 +146,8 @@ Return exactly 4 objects.`,
 
         // ── Step 2: Generate all 4 images in parallel via Fal ────────────────
         const imageResults: Scene[] = await Promise.all(
-          scenePlan.slice(0, 4).map(async (scene) => {
+          scenePlan.slice(0, 4).map(async (scene, i) => {
+            console.log(`[IMAGE_PROMPT_FINAL] scene=${i + 1}: ${scene.prompt.substring(0, 200)}`);
             const res = await fetch("https://fal.run/fal-ai/flux/schnell", {
               method: "POST",
               headers: {

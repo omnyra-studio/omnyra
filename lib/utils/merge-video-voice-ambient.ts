@@ -138,14 +138,16 @@ export async function mergeVideoVoiceAmbient(
   try {
     console.log(`[merge-vva] downloading ${clipUrls.length} clips...`);
 
+    const orderedClipFiles: string[] = new Array(clipUrls.length);
     await Promise.all(
       clipUrls.map(async (url, i) => {
         const clipPath = join(tempDir, `clip${i}.mp4`);
         const buf = await fetchBuffer(url, `clip${i}`);
         writeFileSync(clipPath, buf);
-        clipFiles.push(clipPath);
+        orderedClipFiles[i] = clipPath;
       }),
     );
+    clipFiles.push(...orderedClipFiles);
 
     const listContent = clipFiles.map((f) => `file '${escapeConcatPath(f)}'`).join("\n");
     writeFileSync(concatList, listContent);

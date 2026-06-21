@@ -49,7 +49,7 @@ type VideoType = 'quick' | 'cinematic' | 'avatar';
 
 const VIDEO_TYPES: Array<{ id: VideoType; label: string; desc: string; duration: string; cr: number; badge: string }> = [
   { id: 'quick',     label: '10s Draft',       desc: 'fal.ai fast gen',    duration: '10s',  cr: 10, badge: '⚡' },
-  { id: 'cinematic', label: 'Cinematic Scene',  desc: 'Seedance',           duration: '30s',  cr: 40, badge: '🎬' },
+  { id: 'cinematic', label: 'Cinematic Scene',  desc: 'Kling v3',           duration: '30s',  cr: 25, badge: '🎬' },
   { id: 'avatar',    label: 'Avatar Video',     desc: 'Hedra talking head', duration: '~30s', cr: 40, badge: '👤' },
 ];
 
@@ -362,6 +362,7 @@ export default function GenerationFlow({
           voiceoverText: editedScript || selectedScript?.script || videoPrompt,
           videoType,
           subjectEthnicity,
+          niche: niche || nichePrefill || undefined,
         }),
       });
       const data = await res.json();
@@ -537,6 +538,7 @@ export default function GenerationFlow({
             voiceoverText: editedScript || selectedScript?.script || selectedConcept.description,
             videoType,
             subjectEthnicity,
+            niche: niche || nichePrefill || undefined,
           }),
         });
         const data = await res.json();
@@ -968,7 +970,7 @@ export default function GenerationFlow({
               <span style={{ fontSize: '1.1rem' }}>🎬</span>
               <div>
                 <p style={{ color: '#D4A843', fontWeight: 700, fontSize: '0.85rem', margin: 0 }}>30s Cinematic Video</p>
-                <p style={{ color: '#8B6FA8', fontSize: '0.75rem', margin: '2px 0 0' }}>3 × 10s Seedance clips · stitched sequence · 40 credits</p>
+                <p style={{ color: '#8B6FA8', fontSize: '0.75rem', margin: '2px 0 0' }}>3 × 10s Kling v3 clips · stitched sequence · 25 credits</p>
               </div>
             </div>
 
@@ -1543,7 +1545,7 @@ export default function GenerationFlow({
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                     {([
                       { id: 'quick'     as VideoType, icon: '⚡', label: '10s Draft',       sub: 'fal.ai · Fast preview',  credits: '10 credits', tier: 'All tiers', fullWidth: false },
-                      { id: 'cinematic' as VideoType, icon: '🎬', label: 'Cinematic Scene',  sub: '30s · Kling Pro',         credits: '40 credits', tier: 'Creator+',  fullWidth: false },
+                      { id: 'cinematic' as VideoType, icon: '🎬', label: 'Cinematic Scene',  sub: '30s · Kling v3',          credits: '25 credits', tier: 'Creator+',  fullWidth: false },
                       { id: 'avatar'    as VideoType, icon: '👤', label: 'Avatar Video',     sub: '30s · Hedra lip-sync',    credits: '40 credits', tier: 'Creator+',  fullWidth: true  },
                     ]).map(type => (
                       <div

@@ -27,7 +27,7 @@ interface EthnicityLock {
 
 const ETHNICITY_LOCKS: Record<SubjectEthnicity, EthnicityLock> = {
   caucasian: {
-    prefix:   'Beautiful Caucasian white European person, fair to light skin, Western European facial features, NOT Asian NOT East Asian,',
+    prefix:   'a person with fair skin and light features,',
     negative: 'asian, east asian, asian face, asian woman, asian man, asian person, asian features, asian ethnicity, korean, japanese, chinese, southeast asian, mongolian, filipino, vietnamese, thai person, chinese person, japanese person, korean person, brown asian skin, slanted eyes, latina, latino, black african features',
   },
   black: {

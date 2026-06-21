@@ -10,6 +10,8 @@ export interface SaveRenderParams {
   audioUrl?:       string | null;
   script?:         string | null;
   template?:       string | null;
+  niche?:          string | null;
+  thumbnail_url?:  string | null;
   sendEmail?:      boolean;
   intelligenceTip?: string | null;
 }
@@ -20,13 +22,15 @@ export async function saveRenderToLibrary(params: SaveRenderParams): Promise<str
       const { data, error } = await supabaseAdmin
         .from("renders")
         .insert({
-          user_id:      params.userId,
-          status:       "complete",
-          video_url:    params.videoUrl,
-          audio_url:    params.audioUrl ?? null,
-          script:       params.script ?? null,
-          template:     params.template ?? null,
-          completed_at: new Date().toISOString(),
+          user_id:       params.userId,
+          status:        "complete",
+          video_url:     params.videoUrl,
+          audio_url:     params.audioUrl ?? null,
+          script:        params.script ?? null,
+          template:      params.template ?? null,
+          niche:         params.niche ?? null,
+          thumbnail_url: params.thumbnail_url ?? null,
+          completed_at:  new Date().toISOString(),
         })
         .select("id")
         .single();

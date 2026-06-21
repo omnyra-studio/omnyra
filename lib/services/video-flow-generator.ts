@@ -1,52 +1,53 @@
 /**
- * Full video generator — visual clips + cleaned voiceover + ambient audio.
- * Express equivalent: services/full-video-generator.js
+ * Full video generator — Kling 2.6 Pro multi-shot + ElevenLabs voiceover.
+ * ONE fal.ai call returns one ~10s clip. No stitching.
  */
 
-import { generateVideoByProvider } from "@/lib/providers/video-dispatch";
-import { SEEDANCE_FAL_FAST_MODEL } from "@/lib/providers/seedance";
+import { generateKlingProMultiShot, buildKlingMultiShotPrompt } from "@/lib/providers/kling-pro";
 import {
   elevenLabsVoiceover,
   generateAmbientSound,
 } from "@/lib/services/elevenlabs";
 import { cleanScriptForVoice } from "@/lib/utils/clean-script-for-voice";
 import { mergeVideoVoiceAmbient } from "@/lib/utils/merge-video-voice-ambient";
+import { splitPromptIntoClips } from "@/lib/seedance/split-prompt";
 
 export { mergeVideoVoiceAmbient } from "@/lib/utils/merge-video-voice-ambient";
 
-const CLIP_SECONDS = 6;
-const DEFAULT_NUM_CLIPS = 5;
-const DEFAULT_AMBIENT = "upbeat inspirational flashmob music";
+const DEFAULT_NUM_CLIPS  = 3;
+const CLIP_DURATION_SECS = 10;
+const DEFAULT_AMBIENT    = "cinematic ambient music, subtle atmospheric soundscape";
 
-/** Default voice for flashmob / cinematic flow (ElevenLabs). */
 export const FLOW_DEFAULT_VOICE_ID = "4tRn1lSkEn13EVTuqb0g";
+export const SEQUENCE_ROUTE_VERSION = "2026-06-21-v21-kling-pro-multishot";
 
 export type FlowStyle = "dynamic" | "flashmob" | "story";
 
 export interface GenerateCompleteVideoParams {
-  userId: string;
-  userScript: string;
-  imageUrl?: string;
-  voiceId?: string;
+  userId:              string;
+  userScript:          string;
+  imageUrl?:           string;
+  voiceId?:            string;
   ambientDescription?: string;
-  numClips?: number;
+  numClips?:           number;
+  subjectDescriptor?:  string;
 }
 
 export interface GenerateCompleteVideoResult {
-  videoUrl: string;
-  clipCount: number;
+  videoUrl:        string;
+  clipCount:       number;
   durationSeconds: number;
-  hasAudio: boolean;
-  hasAmbient: boolean;
-  cleanVoiceText: string;
-  clipUrls: string[];
-  model: string;
+  hasAudio:        boolean;
+  hasAmbient:      boolean;
+  cleanVoiceText:  string;
+  clipUrls:        string[];
+  model:           string;
 }
 
 /** @deprecated Use GenerateCompleteVideoParams */
 export type GenerateFullVideoParams = GenerateCompleteVideoParams & {
-  userPrompt?: string;
-  style?: FlowStyle;
+  userPrompt?:    string;
+  style?:         FlowStyle;
   voiceoverText?: string;
 };
 
@@ -55,26 +56,12 @@ export type GenerateFullVideoResult = GenerateCompleteVideoResult;
 
 export { cleanScriptForVoice };
 
-/** Strong Seedance prompts — flashmob narrative with explicit motion beats. */
+/** @deprecated kept for compat — use buildAtlasPrompt instead */
 export function createStrongFlowPrompts(): string[] {
-  const base =
-    "Photorealistic cinematic video, golden hour busy city street intersection, warm amber lighting, consistent handsome Caucasian businessman in dark suit and checkered shirt, realistic physics, detailed faces, emotional expressions, high detail, seamless motion continuation from previous clip. ";
-
-  return [
-    base +
-      "Wide dynamic establishing shot: crowded intersection. Businessman walking forward seriously through the crowd. Natural pedestrian and traffic movement.",
-    base +
-      "Sudden energetic flashmob: dancers in bright red shirts emerge synchronized from the crowd and start powerful coordinated choreography around the businessman.",
-    base +
-      "Businessman reacts with surprise, eyes widen, turns to watch. Strong emotional shift on face. Dancers perform tight unison dance surrounding him. Crowd reacts with phones.",
-    base +
-      "High energy climax: full synchronized flashmob dance with dynamic spins, formations and powerful movements around the man. He stands amazed in the center.",
-    base +
-      "Flashmob smoothly disperses back into the crowd. Businessman stands still, transformed - face showing deep understanding and quiet smile. Traffic resumes around him.",
-  ];
+  return buildAtlasPrompt("A person in a cinematic scene", "a person", 3);
 }
 
-/** @deprecated Use createStrongFlowPrompts */
+/** @deprecated */
 export function createSmartFlowPrompts(
   _mainPrompt?: string,
   numClips = DEFAULT_NUM_CLIPS,
@@ -84,8 +71,49 @@ export function createSmartFlowPrompts(
 }
 
 /**
- * Full pipeline: clean script → 5×6s Seedance → voiceover → ambient → final merge.
- * Call with your full cinematic script as `userScript`.
+ * Build director-prose scene prompts.
+ * Format: "[WHO does WHAT, HOW]. [Camera movement]. [Atmosphere/light/sound]."
+ * Rules: no keyword lists, no abstract emotions, Ghost Test — physical actions only.
+ */
+export function buildAtlasPrompt(
+  sceneDescription: string,
+  subjectDescriptor = "a person",
+  numClips = 3,
+  era?: string,
+): string[] {
+  const segments   = splitPromptIntoClips(sceneDescription, numClips);
+  const eraPrefix  = era ? `Period accurate ${era}. No modern equipment or technology. ` : "";
+
+  return segments.map((segment, i) => {
+    const cleanSegment = segment
+      .replace(/\[.*?\]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
+    const cameras = [
+      "Camera slowly pushes in, shallow depth of field, smooth controlled movement.",
+      "Camera holds steady on medium shot, slight natural sway, rack focus on face.",
+      "Camera gently pulls back, revealing wider scene, soft dolly motion.",
+    ];
+    const camera = cameras[i % cameras.length];
+
+    const atmospheres = [
+      "Warm golden-hour light falls across the scene, natural ambient sound fills the air.",
+      "Soft diffused daylight, quiet environmental sounds, cinematic stillness.",
+      "Rich deep shadows with warm rim light, subtle atmospheric texture in the air.",
+    ];
+    const atmosphere = atmospheres[i % atmospheres.length];
+
+    const prompt = `${eraPrefix}${subjectDescriptor} ${cleanSegment}. ${camera} ${atmosphere}`.trim();
+    console.log(`[KLING_PROMPT] scene=${i + 1}: ${prompt.substring(0, 120)}`);
+    return prompt;
+  });
+}
+
+/**
+ * Full pipeline: build director prose → ONE Kling 2.6 Pro multi-shot call
+ * → ElevenLabs voiceover → audio merge.
+ * No stitching — Kling returns a single ~10s clip with 3 embedded scenes.
  */
 export async function generateCompleteVideo(
   params: GenerateCompleteVideoParams,
@@ -94,47 +122,43 @@ export async function generateCompleteVideo(
     userId,
     userScript,
     imageUrl,
-    voiceId = FLOW_DEFAULT_VOICE_ID,
+    voiceId            = FLOW_DEFAULT_VOICE_ID,
     ambientDescription = DEFAULT_AMBIENT,
-    numClips = DEFAULT_NUM_CLIPS,
+    numClips           = DEFAULT_NUM_CLIPS,
+    subjectDescriptor  = "a person",
   } = params;
 
   if (!userScript?.trim()) throw new Error("userScript is required");
 
   const cleanVoiceText = cleanScriptForVoice(userScript);
-  const clipPrompts = createStrongFlowPrompts().slice(0, numClips);
-  console.log(`Generating ${numClips} flowing ${CLIP_SECONDS}s Seedance clips...`);
-  console.log(`[FLOW] voice: ${cleanVoiceText.substring(0, 80)}...`);
+  const scenePrompts   = buildAtlasPrompt(userScript, subjectDescriptor, numClips);
 
-  const clipUrls: string[] = [];
+  console.log(`[FLOW] provider=kling-2.6-pro-multishot scenes=${numClips} duration=${CLIP_DURATION_SECS}s`);
 
-  for (let i = 0; i < clipPrompts.length; i++) {
-    const result = await generateVideoByProvider("seedance", {
-      prompt:         clipPrompts[i],
-      duration:       CLIP_SECONDS,
-      resolution:     "720p",
-      aspectRatio:    "9:16",
-      imageUrl:       i === 0 && imageUrl?.startsWith("https://") ? imageUrl : undefined,
-      motionStrength: "high",
-      sceneNumber:    i + 1,
-    });
-    clipUrls.push(result.videoUrl);
-    console.log(`Clip ${i + 1}/${numClips} completed`);
-  }
+  // Voiceover fires in parallel with clip generation.
+  const voiceoverPromise = elevenLabsVoiceover({
+    text:    cleanVoiceText,
+    voiceId,
+    userId,
+    modelId: "eleven_turbo_v2_5",
+    voiceSettings: {
+      stability:        0.8,
+      similarity_boost: 0.9,
+      style:            0.35,
+    },
+  });
+
+  // Single Kling Pro call — all 3 scenes in one request.
+  const klingResult = await generateKlingProMultiShot({
+    scenePrompts,
+    startImageUrl: imageUrl?.startsWith("https://") ? imageUrl : undefined,
+    duration:      "10",
+    aspectRatio:   "9:16",
+  });
 
   const [voiceResult, ambientBuffer] = await Promise.all([
-    elevenLabsVoiceover({
-      text: cleanVoiceText,
-      voiceId,
-      userId,
-      modelId: "eleven_turbo_v2_5",
-      voiceSettings: {
-        stability:        0.8,
-        similarity_boost: 0.9,
-        style:            0.35,
-      },
-    }),
-    generateAmbientSound(ambientDescription, numClips * CLIP_SECONDS).catch((err) => {
+    voiceoverPromise,
+    generateAmbientSound(ambientDescription, CLIP_DURATION_SECS).catch((err) => {
       console.warn("[FLOW] ambient generation failed — voice only:", err instanceof Error ? err.message : err);
       return null;
     }),
@@ -143,25 +167,25 @@ export async function generateCompleteVideo(
   console.log(`[FLOW] Final merge — voice${ambientBuffer ? " + ambient" : ""}...`);
 
   const { videoUrl, durationSeconds } = await mergeVideoVoiceAmbient({
-    clipUrls,
+    clipUrls:      [klingResult.videoUrl],
     userId,
     voiceAudioUrl: voiceResult.audioUrl,
     ambientBuffer: ambientBuffer ?? undefined,
   });
 
   console.log(
-    `[FLOW] ✅ Done — ${durationSeconds.toFixed(1)}s | clips=${clipUrls.length} audio=true ambient=${!!ambientBuffer}`,
+    `[FLOW] Done — ${durationSeconds.toFixed(1)}s | kling=1 audio=true ambient=${!!ambientBuffer}`,
   );
 
   return {
     videoUrl,
-    clipCount: clipUrls.length,
+    clipCount:       1,
     durationSeconds,
-    hasAudio: true,
-    hasAmbient: !!ambientBuffer,
+    hasAudio:        true,
+    hasAmbient:      !!ambientBuffer,
     cleanVoiceText,
-    clipUrls,
-    model: SEEDANCE_FAL_FAST_MODEL,
+    clipUrls:        [klingResult.videoUrl],
+    model:           "kling-2.6-pro",
   };
 }
 
@@ -179,7 +203,7 @@ export async function generateFullVideo(
   });
 }
 
-/** Derive clip count from requested duration (6s per clip, max 5). */
-export function clipsForDuration(durationSecs: number): number {
-  return Math.min(5, Math.max(1, Math.round(durationSecs / CLIP_SECONDS)));
+/** Derive clip count (always 3 for Kling multi-shot). */
+export function clipsForDuration(_durationSecs: number): number {
+  return 3;
 }

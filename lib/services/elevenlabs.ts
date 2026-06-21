@@ -7,6 +7,7 @@ import { cleanEnv, supabaseAdmin } from "@/lib/supabase/admin";
 import { ENHANCED_CINEMATIC_RE, buildSeedanceElevenLabsPrompt } from "@/lib/motion-prompt";
 import { SEEDANCE_FAL_FAST_MODEL } from "@/lib/providers/seedance";
 import { generateVideoByProvider } from "@/lib/providers/video-dispatch";
+import { prepareScriptForTts } from "@/lib/utils/strip-visual-directions";
 import ffmpeg from "fluent-ffmpeg";
 import ffmpegStatic from "ffmpeg-static";
 import { writeFileSync, readFileSync, unlinkSync, existsSync, copyFileSync } from "fs";
@@ -193,7 +194,7 @@ export async function elevenLabsVoiceover(
 ): Promise<ElevenLabsVoiceoverResult> {
   const apiKey = getApiKey();
   const voiceId = params.voiceId ?? DEFAULT_VOICE_ID;
-  const text = params.text.trim();
+  const text = prepareScriptForTts(params.text.trim());
   if (!text) throw new Error("Voiceover text is required");
 
   const res = await fetch(`${BASE_URL}/text-to-speech/${voiceId}`, {

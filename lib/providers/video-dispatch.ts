@@ -1,21 +1,20 @@
 /**
- * Strict provider router — Seedance and Luma never cross-call.
+ * Provider router — all video routes to Atlas Cloud Seedance v1.5 Fast.
+ * Luma and Kling are no longer supported.
  */
 
-import { falSeedanceFastGenerate } from "./seedance";
-import { falLumaGenerate } from "./luma";
-import type { SeedanceMotionStrength } from "./seedance";
-import type { LumaAspectRatio, LumaResolution } from "./luma";
+import { generateVideoClip } from "./atlasCloud";
 
 export type VideoDispatchProvider = "seedance" | "luma" | "kling";
 
 export interface VideoDispatchParams {
-  prompt:          string;
-  imageUrl?:       string | null;
-  duration?:       number;
-  resolution?:     string;
-  aspectRatio?:    string;
-  motionStrength?: SeedanceMotionStrength;
+  prompt:       string;
+  imageUrl?:    string | null;
+  duration?:    number;
+  resolution?:  string;
+  aspectRatio?: string;
+  /** Legacy compat — not used by Atlas Cloud (conveyed via prompt). */
+  motionStrength?: string;
   generateAudio?:  boolean;
   seed?:           number;
   sceneNumber?:    number;
@@ -37,11 +36,11 @@ export async function generateVideoByProvider(
 ): Promise<VideoDispatchResult> {
   switch (provider) {
     case "seedance":
-      return dispatchSeedance(params);
+      return dispatchAtlas(params);
     case "luma":
-      return dispatchLuma(params);
+      throw new Error("Luma video dispatch removed — all video uses Atlas Cloud Seedance.");
     case "kling":
-      throw new Error("Kling video dispatch is not wired — use kling-direct or explicit kling route.");
+      throw new Error("Kling video dispatch removed — all video uses Atlas Cloud Seedance.");
     default: {
       const _exhaustive: never = provider;
       throw new Error(`Unknown video provider: ${_exhaustive}`);
@@ -49,49 +48,34 @@ export async function generateVideoByProvider(
   }
 }
 
-async function dispatchSeedance(params: VideoDispatchParams): Promise<VideoDispatchResult> {
-  const result = await falSeedanceFastGenerate({
-    prompt:         params.prompt,
-    imageUrl:       params.imageUrl,
-    duration:       params.duration,
-    resolution:     (params.resolution === "480p" || params.resolution === "720p")
-      ? params.resolution
-      : "720p",
-    aspectRatio:    (params.aspectRatio as "9:16" | "16:9" | "1:1" | "auto" | undefined) ?? "9:16",
-    generateAudio:  params.generateAudio ?? false,
-    motionStrength: params.motionStrength ?? "high",
-    seed:           params.seed,
-    sceneNumber:    params.sceneNumber,
-  });
+async function dispatchAtlas(params: VideoDispatchParams): Promise<VideoDispatchResult> {
+  const durationSec = params.duration ?? 5;
+  const seed = params.seed ?? (Date.now() % 999_999_999);
+  const aspectRatio = (params.aspectRatio === "16:9" || params.aspectRatio === "1:1")
+    ? params.aspectRatio
+    : "9:16";
+  const resolution = params.resolution === "480p" ? "480p" : "720p";
+
+  console.log(`[guardrail] provider=seedance-atlas-fast scene=${params.sceneNumber ?? "?"} mode=${params.imageUrl ? "i2v" : "t2v"}`);
+
+  const result = await generateVideoClip(
+    params.imageUrl?.startsWith("https://") ? params.imageUrl : undefined,
+    params.prompt,
+    durationSec,
+    seed,
+    {
+      aspectRatio,
+      resolution,
+      sceneNumber: params.sceneNumber,
+    },
+  );
 
   return {
-    videoUrl:     result.videoUrl,
-    duration:     result.duration,
-    modelUsed:    result.modelUsed,
+    videoUrl:    result.videoUrl,
+    duration:    durationSec,
+    modelUsed:   result.modelUsed,
     generationMs: result.generationMs,
-    latencyMs:    result.latencyMs,
-    seed:         result.seed,
-    costEstimate: result.costEstimate,
-  };
-}
-
-async function dispatchLuma(params: VideoDispatchParams): Promise<VideoDispatchResult> {
-  const result = await falLumaGenerate({
-    prompt:      params.prompt,
-    imageUrl:    params.imageUrl,
-    duration:    params.duration,
-    resolution:  params.resolution as LumaResolution | "480p" | undefined,
-    aspectRatio: params.aspectRatio as LumaAspectRatio | "1:1" | "auto" | undefined,
-    seed:        params.seed,
-    sceneNumber: params.sceneNumber,
-  });
-
-  return {
-    videoUrl:     result.videoUrl,
-    duration:     result.duration,
-    modelUsed:    result.modelUsed,
-    generationMs: result.generationMs,
-    latencyMs:    result.latencyMs,
-    seed:         result.seed,
+    latencyMs:   result.generationMs,
+    seed:        result.seed,
   };
 }
