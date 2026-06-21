@@ -533,6 +533,7 @@ export default function GenerationFlow({
           body: JSON.stringify({
             prompts:      cameraVariations,
             imageUrl:     selectedConcept.imageUrl || null,
+            sceneImages:  concepts.map(c => c.imageUrl).filter(Boolean),
             clipDuration: 6,
             goal:         selectedConcept.description,
             voiceoverText: editedScript || selectedScript?.script || selectedConcept.description,
@@ -1663,13 +1664,6 @@ export default function GenerationFlow({
                         </div>
                       )}
                       <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.2) 50%, transparent 100%)' }} />
-                      <div style={{
-                        position: 'absolute', top: 8, right: 8, fontSize: 11, fontWeight: 700,
-                        padding: '2px 8px', borderRadius: 999,
-                        background: 'rgba(0,0,0,0.7)', color: '#C084FC', border: '1px solid rgba(192,132,252,0.4)',
-                      }}>
-                        👻 {c.ghostScore}
-                      </div>
                       {selectedConcept === c && (
                         <div style={{
                           position: 'absolute', top: 8, left: 8, width: 24, height: 24,

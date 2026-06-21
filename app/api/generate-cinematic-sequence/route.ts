@@ -286,10 +286,12 @@ export async function POST(req: Request) {
   let subjectEthnicity: SubjectEthnicityInput = 'caucasian';
   let voiceoverText: string | undefined;
   let voiceId: string | undefined;
+  let bodySceneImages: string[] = [];
   try {
     const body = await parseJsonWithEthnicityFix<{
       prompts?: string[];
       imageUrl?: string | null;
+      sceneImages?: string[];
       clipDuration?: number;
       sceneTypes?: (string | null)[];
       script?: string;
@@ -302,6 +304,7 @@ export async function POST(req: Request) {
       voiceId?: string;
     }>(req);
     subjectEthnicity = body.subjectEthnicity ?? 'caucasian';
+    bodySceneImages = (body.sceneImages ?? []).filter((u): u is string => typeof u === "string" && u.startsWith("https://"));
     const rawVoiceover = body.voiceoverText?.trim() || body.script?.trim() || "";
     // Strip stage directions, scene headers, and action lines before TTS
     voiceoverText = rawVoiceover
@@ -637,32 +640,29 @@ export async function POST(req: Request) {
               })
           : Promise.resolve(null);
 
-        // ── Per-scene image lookup from Supabase (with fallback) ─────────────────
-        // Try scene_images table first; fall back to imageUrl for scene 0.
+        // ── Per-scene image assignment ────────────────────────────────────────────
+        // Priority: body.sceneImages[] (all concept images from frontend) → imageUrl fallback
         const fallbackImageUrl: string | null = _isAnimated ? null : (imageUrl ?? null);
         let sceneImageUrls: Array<string | null> = new Array(prompts.length).fill(null);
-        try {
-          const { data: sceneImgRows } = await supabaseAdmin
-            .from("scene_images")
-            .select("image_url, scene_index")
-            .eq("user_id", user.id)
-            .order("scene_index", { ascending: true })
-            .limit(prompts.length);
-          if (sceneImgRows && sceneImgRows.length > 0) {
-            sceneImgRows.forEach((row: { image_url: string; scene_index: number }) => {
-              if (row.scene_index < prompts.length) {
-                sceneImageUrls[row.scene_index] = row.image_url;
-              }
-            });
-            console.log(`[SCENE_IMAGES] loaded ${sceneImgRows.length} scene image(s) from Supabase`);
-          } else {
-            sceneImageUrls[0] = fallbackImageUrl;
-            console.log(`[SCENE_IMAGES] no scene_images rows — using fallback imageUrl for scene 0`);
+
+        if (!_isAnimated && bodySceneImages.length > 0) {
+          // Use images passed directly from the frontend (one per scene angle)
+          for (let i = 0; i < prompts.length; i++) {
+            sceneImageUrls[i] = bodySceneImages[i] ?? bodySceneImages[0] ?? null;
           }
-        } catch {
+          console.log(`[SCENE_IMAGES] using ${bodySceneImages.length} images from request body for ${prompts.length} scenes`);
+        } else {
+          // Fallback: use single imageUrl for scene 0 only
           sceneImageUrls[0] = fallbackImageUrl;
-          console.log(`[SCENE_IMAGES] scene_images query failed — using fallback imageUrl for scene 0`);
+          console.log(`[SCENE_IMAGES] no body sceneImages — using fallback imageUrl for scene 0 only`);
         }
+
+        // Throw if any scene has no image (i2v requires image)
+        const missingImages = sceneImageUrls.map((u, i) => u ? null : i).filter((i): i is number => i !== null);
+        if (missingImages.length > 0 && bodySceneImages.length > 0) {
+          console.warn(`[SCENE_IMAGES] missing images for scenes: ${missingImages.map(i => i + 1).join(", ")} — will run t2v for those scenes`);
+        }
+
         // Capture first scene image as thumbnail for My Videos
         capturedThumbnailUrl = sceneImageUrls[0] ?? fallbackImageUrl;
 

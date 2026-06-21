@@ -219,9 +219,96 @@ export function detectEra(text: string): string | null {
 }
 
 export function getNicheSettings(niche: string | null | undefined): NicheSettings {
-  const key = (niche ?? "tiktok-storytime")
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, "-");
-  return NICHE_HIDDEN_SETTINGS[key] ?? NICHE_HIDDEN_SETTINGS["tiktok-storytime"];
+  if (!niche?.trim()) return NICHE_HIDDEN_SETTINGS["tiktok-storytime"];
+
+  const raw = niche.toLowerCase().trim().replace(/\s+/g, "-");
+
+  // 1. Direct match (exact key)
+  if (NICHE_HIDDEN_SETTINGS[raw]) {
+    console.log(`[NICHE_RESOLVED] input="${niche}" resolved="${raw}"`);
+    return NICHE_HIDDEN_SETTINGS[raw];
+  }
+
+  // 2. Partial key match — any known key appears inside the niche string
+  const keys = Object.keys(NICHE_HIDDEN_SETTINGS);
+  const partialKey = keys.find(k => raw.includes(k));
+  if (partialKey) {
+    console.log(`[NICHE_RESOLVED] input="${niche}" resolved="${partialKey}" (partial)`);
+    return NICHE_HIDDEN_SETTINGS[partialKey];
+  }
+
+  // 3. Keyword fallbacks for compound niche labels (e.g. "HISTORY, TRUE STORIES, DOCUMENTARY")
+  const rawWords = niche.toLowerCase();
+  if (/histor|documentary|true stor|war|soldier|ancient|medieval|victorian/.test(rawWords)) {
+    console.log(`[NICHE_RESOLVED] input="${niche}" resolved="history" (keyword)`);
+    return NICHE_HIDDEN_SETTINGS["history"];
+  }
+  if (/relation|love|couple|romance|dating|partner|marriage/.test(rawWords)) {
+    console.log(`[NICHE_RESOLVED] input="${niche}" resolved="relationships" (keyword)`);
+    return NICHE_HIDDEN_SETTINGS["relationships"];
+  }
+  if (/self.?improv|motivat|mindset|disciplin|personal.?dev/.test(rawWords)) {
+    console.log(`[NICHE_RESOLVED] input="${niche}" resolved="self-improvement" (keyword)`);
+    return NICHE_HIDDEN_SETTINGS["self-improvement"];
+  }
+  if (/tiktok|storytime|story time|viral/.test(rawWords)) {
+    console.log(`[NICHE_RESOLVED] input="${niche}" resolved="tiktok-storytime" (keyword)`);
+    return NICHE_HIDDEN_SETTINGS["tiktok-storytime"];
+  }
+  if (/true.crime|crime|murder|mystery/.test(rawWords)) {
+    console.log(`[NICHE_RESOLVED] input="${niche}" resolved="true-crime" (keyword)`);
+    return NICHE_HIDDEN_SETTINGS["true-crime"];
+  }
+  if (/mental.health|anxiety|depression|wellbeing|therapy/.test(rawWords)) {
+    console.log(`[NICHE_RESOLVED] input="${niche}" resolved="mental-health" (keyword)`);
+    return NICHE_HIDDEN_SETTINGS["mental-health"];
+  }
+  if (/fitness|gym|workout|exercise|training|weight/.test(rawWords)) {
+    console.log(`[NICHE_RESOLVED] input="${niche}" resolved="fitness" (keyword)`);
+    return NICHE_HIDDEN_SETTINGS["fitness"];
+  }
+  if (/finance|money|invest|wealth|budget|trading/.test(rawWords)) {
+    console.log(`[NICHE_RESOLVED] input="${niche}" resolved="finance" (keyword)`);
+    return NICHE_HIDDEN_SETTINGS["finance"];
+  }
+  if (/food|recipe|cook|eat|cuisine|restaurant/.test(rawWords)) {
+    console.log(`[NICHE_RESOLVED] input="${niche}" resolved="food" (keyword)`);
+    return NICHE_HIDDEN_SETTINGS["food"];
+  }
+  if (/travel|trip|adventure|explore|destination/.test(rawWords)) {
+    console.log(`[NICHE_RESOLVED] input="${niche}" resolved="travel" (keyword)`);
+    return NICHE_HIDDEN_SETTINGS["travel"];
+  }
+  if (/beauty|skincare|makeup|skin|glow|cosmetic/.test(rawWords)) {
+    console.log(`[NICHE_RESOLVED] input="${niche}" resolved="beauty-skincare" (keyword)`);
+    return NICHE_HIDDEN_SETTINGS["beauty-skincare"];
+  }
+  if (/gaming|game|stream|esport|playthrough/.test(rawWords)) {
+    console.log(`[NICHE_RESOLVED] input="${niche}" resolved="gaming" (keyword)`);
+    return NICHE_HIDDEN_SETTINGS["gaming"];
+  }
+  if (/spiritual|meditation|mindful|chakra|manifest|consciou/.test(rawWords)) {
+    console.log(`[NICHE_RESOLVED] input="${niche}" resolved="spirituality" (keyword)`);
+    return NICHE_HIDDEN_SETTINGS["spirituality"];
+  }
+  if (/parent|mom|dad|child|family|baby|toddler/.test(rawWords)) {
+    console.log(`[NICHE_RESOLVED] input="${niche}" resolved="parenting" (keyword)`);
+    return NICHE_HIDDEN_SETTINGS["parenting"];
+  }
+  if (/business|entrepreneur|startup|founder|brand|market/.test(rawWords)) {
+    console.log(`[NICHE_RESOLVED] input="${niche}" resolved="business" (keyword)`);
+    return NICHE_HIDDEN_SETTINGS["business"];
+  }
+  if (/lifestyle|life|daily|routine|vlog/.test(rawWords)) {
+    console.log(`[NICHE_RESOLVED] input="${niche}" resolved="lifestyle" (keyword)`);
+    return NICHE_HIDDEN_SETTINGS["lifestyle"];
+  }
+  if (/friend|social|togeth|bond|crew/.test(rawWords)) {
+    console.log(`[NICHE_RESOLVED] input="${niche}" resolved="friendships" (keyword)`);
+    return NICHE_HIDDEN_SETTINGS["friendships"];
+  }
+
+  // 4. Default
+  console.log(`[NICHE_RESOLVED] input="${niche}" resolved="tiktok-storytime" (default)`);
+  return NICHE_HIDDEN_SETTINGS["tiktok-storytime"];
 }

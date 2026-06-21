@@ -130,24 +130,29 @@ export async function POST(req: Request) {
       model:      'claude-haiku-4-5',
       max_tokens: 1000,
       system:
-        `You are a scene director for Omnyra, an AI video studio. ` +
+        `You are a cinematographer generating 4 DIFFERENT CAMERA ANGLES of the same scene for Omnyra AI video studio. ` +
         CAUCASIAN_DEFAULT_SYSTEM_RULE + ' ' +
         (nichePrefill ? `Niche mode: ${nichePrefill} ` : '') +
-        `SUBJECT/CHARACTER: "${resolvedCharacterBrief}" — this is the person in every scene. Match their age, gender, ethnicity, and appearance EXACTLY across all 4 scenes. NEVER change ethnicity across scenes. ` +
-        `Visual style for this shoot: ${styleContext}. ` +
-        `Given a script, extract exactly 4 DISTINCT PHYSICAL SCENE MOMENTS — one per major beat. ` +
-        `CRITICAL RULES: ` +
-        `1. CHARACTER CONSISTENCY — every scene must feature the EXACT same person described in SUBJECT/CHARACTER above. Age, gender, and appearance must match precisely. ` +
-        `2. Each scene MUST reflect the ERA, SETTING, and ENVIRONMENT implied by the script. ` +
-        `3. Scene descriptions must match the VISUAL STYLE above. ` +
-        `4. Include: specific location/setting, time of day, lighting, clothing details, props, and physical action. ` +
-        `5. ZERO emotion labels — translate feelings into body language and micro-actions only. ` +
-        `6. Each description is a FLUX image generation prompt — be concrete, visual, and specific. ` +
-        `Return ONLY valid JSON array: [{"title":"short scene title","description":"2-3 sentence physical scene for image generation","ghostScore":70-100}]`,
+        `SUBJECT/CHARACTER: "${resolvedCharacterBrief}" — the same person appears in all 4 angles. Match age, gender, ethnicity EXACTLY across all 4. NEVER change ethnicity. ` +
+        `Visual style: ${styleContext}. ` +
+        `CRITICAL RULE: These are NOT sequential story beats. Do NOT write 'first this happens, then this'. ` +
+        `Instead generate 4 DIFFERENT CAMERA ANGLES of the same emotional core moment from the script. Think: 4 photographers at the same scene, each choosing a different shot. ` +
+        `ANGLE TYPES to use (one each): ` +
+        `WIDE — full environment, subject small in frame, era/location context fully visible. ` +
+        `CLOSE — face or hands only, extreme emotional detail, blurred background. ` +
+        `DETAIL — specific physical action or prop (no face needed), texture and tactile quality. ` +
+        `OVER SHOULDER — behind subject, showing what they see or hold in foreground. ` +
+        `RULES FOR EACH ANGLE: ` +
+        `1. Same character, same moment — just different camera position and focal subject. ` +
+        `2. ERA/SETTING must be accurate to the script — period costume, props, environment. ` +
+        `3. ZERO emotion labels — describe only observable physical details (Ghost Test: you are a camera, not a mind reader). ` +
+        `4. Angle title must describe the SHOT not the story: 'Wide — Empty Barracks at Dawn' not 'The Morning Before Battle'. ` +
+        `5. Description is a FLUX image generation prompt — concrete, visual, photographic. ` +
+        `Return ONLY valid JSON array: [{"title":"Angle type — specific shot description","description":"2-3 sentence FLUX image prompt with character, location, lighting, physical detail","ghostScore":70-100}]`,
       messages: [
         {
           role:    'user',
-          content: `SUBJECT: ${resolvedCharacterBrief}\n\nNiche/Tool: ${toolId}\nVisual Brief / Scene Directions:\n${prompt}\n\nExtract 4 scene moments as FLUX image generation prompts. IMPORTANT: Every scene must feature the Caucasian/white subject described above unless the brief explicitly names another ethnicity. Location (e.g. Tokyo, neon alley) does NOT determine ethnicity. If the input already contains camera angles, character descriptions, lighting and setting — use those directly and enrich them. If it is raw script dialogue with stage directions in [brackets], use those as the physical action for each scene. Always output concrete, photographic descriptions: subject appearance, exact location, time of day, lighting quality, camera framing, props. Match era and setting exactly.`,
+          content: `SUBJECT: ${resolvedCharacterBrief}\n\nNiche/Tool: ${toolId}\nScript:\n${prompt}\n\nGenerate 4 DIFFERENT CAMERA ANGLES of the same core moment from this script. NOT a storyboard sequence — all 4 images show the same moment from different vantage points.\n\nRequired angles: WIDE shot, CLOSE shot, DETAIL shot, OVER SHOULDER shot.\n\nEach must feature the same character with consistent appearance. Era/period/setting must be accurate to the script. Ghost Test: describe only what a camera sees — physical details, not emotional states.`,
         },
       ],
     });
