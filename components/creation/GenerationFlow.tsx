@@ -220,21 +220,10 @@ export default function GenerationFlow({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedScript?.script]);
 
-  // Auto-scroll to final video when it's ready + save to My Videos (client-side backup)
+  // Auto-scroll to final video when it's ready
   useEffect(() => {
     if (!finalVideo) return;
     setTimeout(() => finalVideoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 200);
-    // Fire-and-forget save to My Videos library (server already does this in compose-video,
-    // but we do it here too as a client-side safety net in case the server path was skipped)
-    (async () => {
-      try {
-        await fetch('/api/save-render', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ video_url: finalVideo, template: toolId }),
-        });
-      } catch { /* non-fatal */ }
-    })();
   }, [finalVideo]);
 
   const toggleFavorite = (id: string) => {
@@ -357,6 +346,8 @@ export default function GenerationFlow({
         body: JSON.stringify({
           prompts,
           imageUrl,
+          // Repeat the single reference image for each scene so all clips run i2v (Kling requires an image)
+          sceneImages: imageUrl ? prompts.map(() => imageUrl) : [],
           clipDuration: 6,
           goal: videoPrompt,
           voiceoverText: editedScript || selectedScript?.script || videoPrompt,

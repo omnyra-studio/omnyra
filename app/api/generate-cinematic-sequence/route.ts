@@ -712,10 +712,16 @@ export async function POST(req: Request) {
             sceneImageUrls[i] = bodySceneImages[i] ?? bodySceneImages[0] ?? null;
           }
           console.log(`[SCENE_IMAGES] using ${bodySceneImages.length} images from request body for ${prompts.length} scenes`);
+        } else if (fallbackImageUrl) {
+          // No per-scene images — use the single reference image for ALL scenes.
+          // Kling 2.6 Pro runs i2v (image-to-video); without an image every scene fails with 422.
+          for (let i = 0; i < prompts.length; i++) {
+            sceneImageUrls[i] = fallbackImageUrl;
+          }
+          console.log(`[SCENE_IMAGES] no sceneImages body — using fallbackImageUrl for all ${prompts.length} scenes (i2v)`);
         } else {
-          // Fallback: use single imageUrl for scene 0 only
-          sceneImageUrls[0] = fallbackImageUrl;
-          console.log(`[SCENE_IMAGES] no body sceneImages — using fallback imageUrl for scene 0 only`);
+          // No image at all — t2v mode (will fail with Kling i2v model; logged for visibility)
+          console.warn(`[SCENE_IMAGES] WARNING: no imageUrl and no sceneImages — Kling i2v will fail all scenes`);
         }
 
         // Throw if any scene has no image (i2v requires image)
@@ -814,11 +820,15 @@ export async function POST(req: Request) {
         if (voiceoverPromise) {
           const voResult = await voiceoverPromise;
           audio_url = voResult.audioUrl;
+          console.log(`[VOICE_RESULT] audio_url=${audio_url ? audio_url.substring(0, 80) : "MISSING — voiceover failed or text was empty"}`);
+        } else {
+          console.log(`[VOICE_RESULT] skipped — no voiceoverText provided`);
         }
 
         // ── Stitch clips + voiceover via Railway Composer ───────────────────────
         const composerUrl = process.env.COMPOSER_SERVICE_URL;
         const composerKey = process.env.COMPOSER_API_KEY ?? "";
+        console.log(`[MERGE_START] clips=${clip_urls.length} voice=${!!audio_url} ambient=${!!ambientBuffer} composer=${!!composerUrl}`);
         if (composerUrl && clip_urls.length > 0) {
           console.log(`[RAILWAY_STITCH] clips=${clip_urls.length} hasVoice=${!!audio_url} hasAmbient=${!!ambientBuffer}`);
           try {
@@ -896,6 +906,8 @@ export async function POST(req: Request) {
             } catch { /* use first clip URL */ }
           }
         }
+
+        console.log(`[MERGE_DONE] final_url=${stitched_url.substring(0, 80)} has_audio=${!!audio_url}`);
 
         const totalMs      = Date.now() - routeT0;
         const postMs       = Date.now() - postT0;
