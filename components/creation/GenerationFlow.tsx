@@ -353,6 +353,7 @@ export default function GenerationFlow({
           voiceoverText: editedScript || selectedScript?.script || videoPrompt,
           videoType,
           subjectEthnicity,
+          voiceId: selectedVoice || '',
           niche: niche || nichePrefill || undefined,
         }),
       });
@@ -534,6 +535,7 @@ export default function GenerationFlow({
             voiceoverText: editedScript || selectedScript?.script || selectedConcept.description,
             videoType,
             subjectEthnicity,
+            voiceId: selectedVoice || '',
             niche: niche || nichePrefill || undefined,
           }),
         });

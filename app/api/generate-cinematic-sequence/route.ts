@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { elevenLabsVoiceover, mergeVideoAudio, mixVoiceAndAmbient, stitchClipsWithAudio, generateAmbientSound, pickAmbientDescription } from "@/lib/services/elevenlabs";
-import { generateKlingSingleShot } from "@/lib/providers/kling-pro";
+import { generateKlingClip } from "@/lib/providers/kling-direct";
 import { getVideoProvider } from "@/lib/video-provider";
 import { supabaseAdmin } from "@/lib/supabase/admin";
 import * as fs from "fs";
@@ -45,7 +45,7 @@ import { getNicheSettings, detectEra } from "@/lib/config/nicheSettings";
 export const maxDuration = 300;
 
 const KLING_CLIP_SECS  = 10;  // Kling 2.6 Pro: 10s per scene
-const ROUTE_VERSION    = "2026-06-22-v26-vo-fix-no-loop-stitch";
+const ROUTE_VERSION    = "2026-06-22-v27-kling-direct";
 
 // ── SLA budget: Vercel maxDuration=300s; keep 30s for post-processing ─────────
 const SLA_TOTAL_MS   = 270_000; // 270s total (30s margin before Vercel 300s kills)
@@ -297,11 +297,12 @@ export async function POST(req: Request) {
   }
   console.log(`[CINEMATIC_AUTH] ok user=${user.id}`);
 
-  console.log(`[PLAN_GATE] user=${user.id} provider=kling-v3`);
+  console.log(`[PLAN_GATE] user=${user.id} provider=kling-direct-v2.6`);
 
-  const falKey = process.env.FAL_API_KEY ?? process.env.FAL_KEY ?? process.env.FALAI_API_KEY;
-  if (!falKey) {
-    return Response.json({ error: "FAL_API_KEY not configured — required for Kling 2.6 Pro video" }, { status: 500 });
+  // Video generation uses Kling direct API — no fal.ai needed for video.
+  // (fal.ai is still used by generate-scene-images for Flux image generation.)
+  if (!process.env.KLING_API_KEY && !(process.env.KLING_ACCESS_KEY && process.env.KLING_SECRET_KEY)) {
+    return Response.json({ error: "KLING_API_KEY not configured — required for Kling direct video generation" }, { status: 500 });
   }
 
   let prompts: string[];
@@ -772,16 +773,35 @@ export async function POST(req: Request) {
 
         // Strip block-style ethnicity overrides — ethnicity is already inline via applySubjectEthnicityToPrompts
         // Prepend niche video prefix + detected era for period accuracy
-        const klingScenePrompts = enforcedPrompts.map((p, i) => {
-          const clean   = stripEthnicityPrefix(p).trim();
-          // Era goes FIRST so Kling anchors on the period before reading any other detail
-          const parts   = [
-            detectedEra ? `Set in ${detectedEra}.` : null,
-            nicheSettings.videoPromptPrefix || null,
-            clean,
-          ].filter((x): x is string => !!x);
-          const final = parts.join(" ");
-          console.log(`[KLING_PROMPT_FINAL] scene=${i + 1}: ${final.substring(0, 200)}`);
+        // ── Per-scene director prompts — UNIQUE action + camera per scene ────────
+        // Format: brief anchor (era + character essence) → UNIQUE action → UNIQUE camera
+        // Each scene MUST differ in what the subject DOES and how the camera MOVES.
+        const SCENE_DIRECTIONS = [
+          // Scene 1: tension — absolute stillness, micro-movement only
+          'Subject is rigid and absolutely still. Micro-movements only: shallow visible breathing, slight hand tremor, jaw locked tight. Camera holds low and steady, drifting slowly left.',
+          // Scene 2: internal shift — first deliberate movement
+          'Subject lifts their head for the first time. Eyes move upward, throat visibly swallows, fingers slowly uncurl from their grip. One deliberate gesture breaking the stillness. Camera pushes steadily in from medium to tight on face.',
+          // Scene 3: resolve — decisive physical action
+          'Subject stands with clear purpose. Reaches for an object deliberately, shoulders squaring. One decisive physical movement. Camera pulls back slowly to reveal the full surrounding environment.',
+        ];
+        const MAX_KLING_PROMPT = 400;
+
+        // Compact anchor: era + first 3 niche terms only (not a keyword dump)
+        const nicheAnchor = nicheSettings.videoPromptPrefix
+          ? nicheSettings.videoPromptPrefix.split(',').slice(0, 3).map((s: string) => s.trim()).join(', ')
+          : '';
+        const eraAnchor = detectedEra ? `${detectedEra}.` : '';
+        const klingAnchor = [eraAnchor, nicheAnchor].filter(Boolean).join(' ');
+
+        const builtKlingPrompts: string[] = [];
+        const klingScenePrompts = enforcedPrompts.map((_p, i) => {
+          const direction = SCENE_DIRECTIONS[i % SCENE_DIRECTIONS.length];
+          const final     = [klingAnchor, direction].filter(Boolean).join(' ').slice(0, MAX_KLING_PROMPT);
+          builtKlingPrompts.push(final);
+          console.log(`[KLING_PROMPT_UNIQUE] scene=${i + 1}: ${final.substring(0, 200)}`);
+          if (i > 0) {
+            console.log(`[PROMPT_DIFF] scene=${i + 1} differs from scene 1: ${final !== builtKlingPrompts[0]}`);
+          }
           return final;
         });
 
@@ -794,19 +814,19 @@ export async function POST(req: Request) {
           console.log(`[CLIP_FIRE] scene=${i + 1} mode=${mode} imageUrl=${sceneImg?.substring(0, 80) ?? "NONE"}`);
 
           try {
-            const result = await generateKlingSingleShot({
+            const result = await generateKlingClip({
               prompt:          klingPrompt,
               negativePrompt:  sceneNegativePrompts[i] || undefined,
               imageUrl:        sceneImg?.startsWith("https://") ? sceneImg : undefined,
-              duration:        "10",
+              duration:        10,
               aspectRatio:     "9:16",
+              mode:            "pro",
               seed:            baseSeed + i,
               sceneNumber:     i + 1,
-              cfgScale:        0.5,
             });
             extractedUrls[i] = result.videoUrl;
             console.log(`[CLIP_RESULT] scene=${i + 1} success=true elapsed=${result.generationMs}ms url=${result.videoUrl.substring(0, 80)}`);
-            clipReports.push(`scene=${i + 1} | kling-2.6-pro | OK ${result.generationMs}ms | ${result.videoUrl.substring(0, 80)}`);
+            clipReports.push(`scene=${i + 1} | kling-direct-v2.6-pro | OK ${result.generationMs}ms | ${result.videoUrl.substring(0, 80)}`);
           } catch (err) {
             const reason = err instanceof Error ? err.message : String(err);
             const detail = JSON.stringify(err, Object.getOwnPropertyNames(err instanceof Error ? err : {})).substring(0, 300);

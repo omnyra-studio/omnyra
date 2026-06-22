@@ -194,6 +194,7 @@ export async function elevenLabsVoiceover(
 ): Promise<ElevenLabsVoiceoverResult> {
   const apiKey = getApiKey();
   const voiceId = params.voiceId ?? DEFAULT_VOICE_ID;
+  console.log(`[VOICE_SELECTION] requested=${params.voiceId ?? "none"} used=${voiceId} default=${DEFAULT_VOICE_ID}`);
   const text = prepareScriptForTts(params.text.trim());
   if (!text) throw new Error("Voiceover text is required");
 

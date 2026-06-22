@@ -1,32 +1,41 @@
 /**
- * Direct Kling API client — bypasses fal.ai markup (60-80% cost saving on Kling calls).
+ * Kling 2.6 Pro — direct API client.
  *
- * Auth: KLING_ACCESS_KEY + KLING_SECRET_KEY → HS256 JWT (same pattern as generate-video-kling route).
- * API:  https://api.klingai.com/v1/videos/text2video  (T2V)
- *       https://api.klingai.com/v1/videos/image2video  (I2V)
- * Poll: GET /v1/videos/{type}/{taskId}  every 3s until status=succeed|failed
+ * Auth priority:
+ *   1. KLING_API_KEY  → simple Bearer token (new portal keys: api-key-kling-...)
+ *   2. KLING_ACCESS_KEY + KLING_SECRET_KEY → HS256 JWT (legacy)
+ *
+ * Endpoints (base from KLING_API_BASE env var):
+ *   POST /v1/videos/image2video  → create i2v task
+ *   POST /v1/videos/text2video   → create t2v task
+ *   GET  /v1/videos/image2video/{task_id}  → poll
+ *   GET  /v1/videos/text2video/{task_id}   → poll
  */
 
 import crypto from "crypto";
 
-const KLING_BASE = "https://api.klingai.com";
+// ── Auth ─────────────────────────────────────────────────────────────────────
 
-// Model name map: fal-ai model ID → direct Kling model_name + mode
-const FAL_TO_DIRECT: Record<string, { model_name: string; mode: "std" | "pro" }> = {
-  "fal-ai/kling-video/v3/pro/text-to-video":      { model_name: "kling-v1-6", mode: "pro" },
-  "fal-ai/kling-video/v3/pro/image-to-video":     { model_name: "kling-v1-6", mode: "pro" },
-  "fal-ai/kling-video/v3/standard/text-to-video": { model_name: "kling-v1-6", mode: "std" },
-  "fal-ai/kling-video/v3/standard/image-to-video":{ model_name: "kling-v1-6", mode: "std" },
-  "fal-ai/kling-video/v2.1/pro/text-to-video":    { model_name: "kling-v1-6", mode: "pro" },
-  "fal-ai/kling-video/v2.1/pro/image-to-video":   { model_name: "kling-v1-6", mode: "pro" },
-  "fal-ai/kling-video/v1.6/pro/text-to-video":    { model_name: "kling-v1-6", mode: "pro" },
-  "fal-ai/kling-video/v1.6/pro/image-to-video":   { model_name: "kling-v1-6", mode: "pro" },
-  "fal-ai/kling-video/v1.6/standard/text-to-video":    { model_name: "kling-v1-6", mode: "std" },
-  "fal-ai/kling-video/v1.6/standard/image-to-video":   { model_name: "kling-v1-6", mode: "std" },
-};
+function getApiBase(): string {
+  return (process.env.KLING_API_BASE?.trim() ?? "https://api-singapore.klingai.com").replace(/\/$/, "");
+}
+
+function getAuthToken(): string {
+  // Prefer direct API key (newer portal keys)
+  const directKey = process.env.KLING_API_KEY?.trim();
+  if (directKey) return directKey;
+
+  // Fall back to JWT from access_key + secret_key
+  const accessKey = process.env.KLING_ACCESS_KEY?.trim() ?? "";
+  const secretKey = process.env.KLING_SECRET_KEY?.trim() ?? "";
+  if (!accessKey || !secretKey) {
+    throw new Error("KLING_API_KEY (or KLING_ACCESS_KEY + KLING_SECRET_KEY) not configured");
+  }
+  return generateJWT(accessKey, secretKey);
+}
 
 function generateJWT(accessKey: string, secretKey: string): string {
-  const now = Math.floor(Date.now() / 1000);
+  const now     = Math.floor(Date.now() / 1000);
   const payload = { iss: accessKey, exp: now + 1800, nbf: now - 5 };
   const header  = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
   const body    = Buffer.from(JSON.stringify(payload)).toString("base64url");
@@ -35,23 +44,156 @@ function generateJWT(accessKey: string, secretKey: string): string {
 }
 
 export function isDirectKlingAvailable(): boolean {
-  return !!(process.env.KLING_ACCESS_KEY && process.env.KLING_SECRET_KEY);
+  return !!(process.env.KLING_API_KEY || (process.env.KLING_ACCESS_KEY && process.env.KLING_SECRET_KEY));
 }
 
+// ── Response types ────────────────────────────────────────────────────────────
+
+interface KlingCreateResponse {
+  code:    number;
+  message: string;
+  data: {
+    task_id:     string;
+    task_status: string;
+  };
+}
+
+interface KlingQueryResponse {
+  code:    number;
+  message: string;
+  data: {
+    task_id:          string;
+    task_status:      string;
+    task_status_msg?: string;
+    task_result?: {
+      videos?: Array<{ id?: string; url: string; duration?: string }>;
+    };
+  };
+}
+
+// ── generateKlingClip — primary function for cinematic route ──────────────────
+
+export async function generateKlingClip(params: {
+  prompt:          string;
+  negativePrompt?: string;
+  imageUrl?:       string;
+  duration:        number;   // seconds — 5 or 10
+  aspectRatio:     string;   // "9:16" | "16:9" | "1:1"
+  mode:            "std" | "pro";
+  seed?:           number;
+  sceneNumber:     number;
+}): Promise<{ videoUrl: string; generationMs: number }> {
+  const POLL_INTERVAL_MS = 5_000;
+  const MAX_POLL_MS      = 200_000;
+
+  const startMs   = Date.now();
+  const apiBase   = getApiBase();
+  const token     = getAuthToken();
+  const hasImage  = !!params.imageUrl?.startsWith("https://");
+  const endpoint  = hasImage ? "/v1/videos/image2video" : "/v1/videos/text2video";
+  const createUrl = `${apiBase}${endpoint}`;
+
+  const body: Record<string, unknown> = {
+    model_name:      "kling-v2-6",
+    prompt:          params.prompt.slice(0, 2500),
+    negative_prompt: params.negativePrompt?.slice(0, 500) ?? "",
+    cfg_scale:       0.5,
+    mode:            params.mode,
+    duration:        String(params.duration),
+    aspect_ratio:    params.aspectRatio,
+  };
+  if (hasImage) body.image_url = params.imageUrl;
+  if (params.seed != null) body.seed = params.seed;
+
+  console.log(`[KLING_DIRECT] scene=${params.sceneNumber} POST ${endpoint} model=kling-v2-6 mode=${params.mode} dur=${params.duration}s hasImage=${hasImage}`);
+
+  const createRes = await fetch(createUrl, {
+    method:  "POST",
+    headers: {
+      "Content-Type":  "application/json",
+      "Authorization": `Bearer ${token}`,
+    },
+    body:   JSON.stringify(body),
+    signal: AbortSignal.timeout(30_000),
+  });
+
+  if (!createRes.ok) {
+    const errText = await createRes.text().catch(() => "");
+    throw new Error(`[KLING_DIRECT_CREATE_FAIL] scene=${params.sceneNumber} HTTP ${createRes.status}: ${errText.substring(0, 300)}`);
+  }
+
+  const createData = await createRes.json() as KlingCreateResponse;
+  if (createData.code !== 0) {
+    throw new Error(`[KLING_DIRECT_API_ERR] scene=${params.sceneNumber} code=${createData.code} msg=${createData.message}`);
+  }
+
+  const taskId  = createData.data.task_id;
+  const pollUrl = `${apiBase}${endpoint}/${taskId}`;
+  console.log(`[KLING_DIRECT] scene=${params.sceneNumber} task_id=${taskId} status=${createData.data.task_status}`);
+
+  const deadline = Date.now() + MAX_POLL_MS;
+
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+
+    let pollRes: Response | null = null;
+    try {
+      pollRes = await fetch(pollUrl, {
+        headers: { "Authorization": `Bearer ${getAuthToken()}` },
+        signal:  AbortSignal.timeout(15_000),
+      });
+    } catch (fetchErr) {
+      console.warn(`[KLING_POLL] scene=${params.sceneNumber} fetch error: ${fetchErr instanceof Error ? fetchErr.message : fetchErr} — retrying`);
+      continue;
+    }
+
+    if (!pollRes.ok) {
+      console.warn(`[KLING_POLL] scene=${params.sceneNumber} HTTP ${pollRes.status} — retrying`);
+      continue;
+    }
+
+    const pollData = await pollRes.json() as KlingQueryResponse;
+    const status   = pollData.data?.task_status ?? "unknown";
+    const elapsed  = Math.round((Date.now() - startMs) / 1000);
+
+    console.log(`[KLING_POLL] scene=${params.sceneNumber} task_id=${taskId} status=${status} elapsed=${elapsed}s`);
+
+    if (status === "succeed" || status === "completed") {
+      const videoUrl = pollData.data?.task_result?.videos?.[0]?.url;
+      if (!videoUrl) {
+        throw new Error(`[KLING_DIRECT] scene=${params.sceneNumber} status=${status} but no video URL`);
+      }
+      const generationMs = Date.now() - startMs;
+      console.log(`[KLING_DIRECT_DONE] scene=${params.sceneNumber} elapsed=${Math.round(generationMs / 1000)}s url=${videoUrl.substring(0, 80)}`);
+      return { videoUrl, generationMs };
+    }
+
+    if (status === "failed" || status === "error") {
+      const msg = pollData.data?.task_status_msg ?? "no reason given";
+      throw new Error(`[KLING_DIRECT_FAILED] scene=${params.sceneNumber} task_id=${taskId} status=${status} msg=${msg}`);
+    }
+    // "submitted" | "processing" — keep polling
+  }
+
+  throw new Error(`[KLING_DIRECT_TIMEOUT] scene=${params.sceneNumber} exceeded ${MAX_POLL_MS / 1000}s`);
+}
+
+// ── Legacy adapter — kept for existing callers of generateKlingDirect ─────────
+
 export interface DirectKlingInput {
-  falModelId:      string;           // e.g. "fal-ai/kling-video/v3/pro/text-to-video"
+  falModelId:      string;
   prompt:          string;
   negative_prompt: string;
   duration:        "5" | "10";
   aspect_ratio:    string;
   cfg_scale:       number;
-  image_url?:      string;           // present → I2V
+  image_url?:      string;
 }
 
 export interface DirectKlingResult {
-  video_url:    string;
-  model_used:   string;
-  mode:         string;
+  video_url:  string;
+  model_used: string;
+  mode:       string;
 }
 
 export async function generateKlingDirect(
@@ -59,89 +201,24 @@ export async function generateKlingDirect(
   timeoutMs: number,
   label: string,
 ): Promise<DirectKlingResult> {
-  const accessKey = process.env.KLING_ACCESS_KEY!;
-  const secretKey = process.env.KLING_SECRET_KEY!;
-  const token     = generateJWT(accessKey, secretKey);
+  const isI2V = !!input.image_url;
+  const mode  = input.falModelId.includes("pro") ? "pro" : "std";
 
-  const mapping   = FAL_TO_DIRECT[input.falModelId];
-  const modelName = mapping?.model_name ?? "kling-v1-6";
-  const mode      = mapping?.mode ?? (input.falModelId.includes("pro") ? "pro" : "std");
-  const isI2V     = !!input.image_url;
-  const endpoint  = isI2V
-    ? `${KLING_BASE}/v1/videos/image2video`
-    : `${KLING_BASE}/v1/videos/text2video`;
-  const pollBase  = isI2V
-    ? `${KLING_BASE}/v1/videos/image2video`
-    : `${KLING_BASE}/v1/videos/text2video`;
-
-  const headers = {
-    Authorization:  `Bearer ${token}`,
-    "Content-Type": "application/json",
-  };
-
-  // ── Submit ──────────────────────────────────────────────────────────────────
-  const body: Record<string, unknown> = {
-    model_name:      modelName,
-    mode,
+  const result = await generateKlingClip({
     prompt:          input.prompt,
-    negative_prompt: input.negative_prompt,
-    cfg_scale:       input.cfg_scale,
-    duration:        input.duration,
-    aspect_ratio:    input.aspect_ratio,
+    negativePrompt:  input.negative_prompt,
+    imageUrl:        input.image_url,
+    duration:        Number(input.duration),
+    aspectRatio:     input.aspect_ratio,
+    mode,
+    sceneNumber:     0,
+  });
+
+  void timeoutMs; void label; void isI2V;
+
+  return {
+    video_url:  result.videoUrl,
+    model_used: `direct:kling-v2-6:${mode}`,
+    mode,
   };
-  if (isI2V) body.image = input.image_url;
-
-  const submitRes = await fetch(endpoint, { method: "POST", headers, body: JSON.stringify(body) });
-  if (!submitRes.ok) {
-    const errText = await submitRes.text().catch(() => submitRes.statusText);
-    throw new Error(`[kling-direct] ${label} submit failed HTTP ${submitRes.status}: ${errText.slice(0, 200)}`);
-  }
-  const submitData = await submitRes.json() as { code?: number; message?: string; data?: { task_id?: string } };
-  if (submitData.code !== 0 || !submitData.data?.task_id) {
-    throw new Error(`[kling-direct] ${label} submit error: ${JSON.stringify(submitData).slice(0, 200)}`);
-  }
-  const taskId = submitData.data.task_id;
-  console.info(`[kling-direct] ${label} submitted taskId=${taskId} model=${modelName} mode=${mode}`);
-
-  // ── Poll ─────────────────────────────────────────────────────────────────────
-  const deadline  = Date.now() + timeoutMs;
-  const pollDelay = 3_000; // 3s between polls
-
-  while (Date.now() < deadline) {
-    await new Promise(r => setTimeout(r, pollDelay));
-
-    // Refresh JWT if close to expiry
-    const freshToken  = generateJWT(accessKey, secretKey);
-    const pollRes = await fetch(`${pollBase}/${taskId}`, {
-      headers: { Authorization: `Bearer ${freshToken}`, "Content-Type": "application/json" },
-    });
-    if (!pollRes.ok) {
-      console.warn(`[kling-direct] ${label} poll HTTP ${pollRes.status} — will retry`);
-      continue;
-    }
-    const pollData = await pollRes.json() as {
-      code?: number;
-      data?: {
-        task_status?: string;
-        task_status_msg?: string;
-        task_result?: { videos?: Array<{ url?: string }> };
-      };
-    };
-
-    const status = pollData.data?.task_status;
-    if (status === "succeed") {
-      const video_url = pollData.data?.task_result?.videos?.[0]?.url;
-      if (!video_url) throw new Error(`[kling-direct] ${label} succeed but no video URL`);
-      console.info(`[kling-direct] ${label} DONE taskId=${taskId} url=${video_url.slice(0, 60)}`);
-      return { video_url, model_used: `direct:${modelName}:${mode}`, mode };
-    }
-    if (status === "failed") {
-      const msg = pollData.data?.task_status_msg ?? "unknown failure";
-      throw new Error(`[kling-direct] ${label} task failed: ${msg}`);
-    }
-    // status: "submitted" | "processing" — keep polling
-    console.info(`[kling-direct] ${label} taskId=${taskId} status=${status} — polling...`);
-  }
-
-  throw new Error(`[kling-direct] ${label} timed out after ${timeoutMs}ms (taskId=${taskId})`);
 }
