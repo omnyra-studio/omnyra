@@ -45,7 +45,7 @@ import { getNicheSettings, detectEra } from "@/lib/config/nicheSettings";
 export const maxDuration = 300;
 
 const KLING_CLIP_SECS  = 10;  // Kling 2.6 Pro: 10s per scene
-const ROUTE_VERSION    = "2026-06-22-v24-stage-diag";
+const ROUTE_VERSION    = "2026-06-22-v25-credit-timeout-slot-fix";
 
 // ── SLA budget: Vercel maxDuration=300s; keep 30s for post-processing ─────────
 const SLA_TOTAL_MS   = 270_000; // 270s total (30s margin before Vercel 300s kills)
@@ -1080,6 +1080,18 @@ export async function POST(req: Request) {
     }, { status: 500 });
 
   } finally {
+    // Fire-and-forget local cache update
     releaseVideoSlot(user.id);
+    // Awaited DB safety net — ensures slot is cleared even if process is about to exit
+    try {
+      const { error: slotErr } = await supabaseAdmin
+        .from("rate_limit_state")
+        .update({ concurrent_video_jobs: 0 })
+        .eq("user_id", user.id);
+      if (slotErr) console.warn("[SLOT_RELEASE_DB] update failed (non-fatal):", slotErr.message);
+      else console.log("[SLOT_RELEASED] concurrent_video_jobs=0 user=" + user.id);
+    } catch (e) {
+      console.warn("[SLOT_RELEASE_DB] threw:", e instanceof Error ? e.message : e);
+    }
   }
 }

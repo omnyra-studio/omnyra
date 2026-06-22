@@ -60,11 +60,19 @@ export async function withCreditState<T>(params: {
   const txnId    = randomUUID();
   let   reserved = false;
 
-  // ── 1. Reserve atomically ─────────────────────────────────────────────────
-  const { data: reserveResult, error: reserveErr } = await supabaseAdmin.rpc(
+  // ── 1. Reserve atomically (12s timeout — Supabase RPCs can hang indefinitely) ─
+  console.log(`[CREDIT_RESERVE] start txn=${txnId} user=${params.userId} cost=${params.cost}`);
+  const reserveRpc = supabaseAdmin.rpc(
     "credit_reserve_atomic",
     { p_user_id: params.userId, p_amount: params.cost, p_txn_id: txnId },
   );
+  const { data: reserveResult, error: reserveErr } = await Promise.race([
+    reserveRpc,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`credit_reserve_atomic TIMEOUT 12s txn=${txnId}`)), 12_000),
+    ),
+  ]);
+  console.log(`[CREDIT_RESERVE] done success=${reserveResult?.success ?? false} balance=${reserveResult?.balance ?? "?"}`);
 
   if (reserveErr) {
     throw new CreditReservationError(reserveErr.message);
@@ -97,10 +105,15 @@ export async function withCreditState<T>(params: {
       ? ((runResult as CreditStateRunResult<T>).actualCost ?? params.cost)
       : params.cost;
 
-    // ── 3. Commit (always awaited) ──────────────────────────────────────────
-    const { error: commitErr } = await supabaseAdmin.rpc("credit_commit_atomic", {
-      p_txn_id:      txnId,
-      p_actual_cost: actualCost,
+    // ── 3. Commit (always awaited, 12s timeout) ────────────────────────────
+    const { error: commitErr } = await Promise.race([
+      supabaseAdmin.rpc("credit_commit_atomic", { p_txn_id: txnId, p_actual_cost: actualCost }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`credit_commit_atomic TIMEOUT 12s txn=${txnId}`)), 12_000),
+      ),
+    ]).catch(timeoutErr => {
+      console.error("[CREDIT_COMMIT_TIMEOUT]", timeoutErr instanceof Error ? timeoutErr.message : timeoutErr);
+      return { error: null }; // treat timeout as non-fatal — user got their output
     });
 
     if (commitErr) {
@@ -119,8 +132,14 @@ export async function withCreditState<T>(params: {
   } catch (err) {
     // ── 4. Rollback on any failure (always awaited) ─────────────────────────
     if (reserved) {
-      const { error: rollbackErr } = await supabaseAdmin.rpc("credit_rollback_atomic", {
-        p_txn_id: txnId,
+      const { error: rollbackErr } = await Promise.race([
+        supabaseAdmin.rpc("credit_rollback_atomic", { p_txn_id: txnId }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`credit_rollback_atomic TIMEOUT 12s txn=${txnId}`)), 12_000),
+        ),
+      ]).catch(timeoutErr => {
+        console.error("[CREDIT_ROLLBACK_TIMEOUT] MANUAL REVIEW REQUIRED", { txnId, userId: params.userId, error: timeoutErr instanceof Error ? timeoutErr.message : timeoutErr });
+        return { error: null };
       });
 
       if (rollbackErr) {

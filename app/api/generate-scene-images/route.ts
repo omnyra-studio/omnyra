@@ -146,7 +146,7 @@ export async function POST(req: Request) {
           nicheSettings.imagePromptPrefix ? `NICHE VISUAL STYLE: ${nicheSettings.imagePromptPrefix}` : null,
           nicheSettings.cinemaStyle       ? `CINEMA STYLE: ${nicheSettings.cinemaStyle}` : null,
           detectedEra
-            ? `ERA: This scene is set in ${detectedEra}. Every prop, costume, and environment must be period-accurate. No modern objects, no modern lighting, no synthetic materials.`
+            ? `ERA: This scene is set in ${detectedEra}. Every prop, costume, and environment must be period-accurate. No modern objects, no modern lighting, no synthetic materials.\nLIGHTING LAW: Use ONLY warm period sources — oil lamp, candle, bare incandescent bulb, or natural window light. NO fluorescent, NO cyan/blue/teal/neon light, NO cool-toned lighting of any kind.\nWWII/1940s MILITARY (if applicable): M1 steel round helmet (no modern attachments), olive drab wool uniform, leather boots, canvas webbing, metal dog tags. NOT kevlar, NOT body armor, NOT tactical gear, NOT chrome equipment.`
             : null,
           nicheSettings.negativePrompt
             ? `AVOID IN ALL PROMPTS: ${nicheSettings.negativePrompt}`
