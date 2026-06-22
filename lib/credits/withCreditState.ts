@@ -52,11 +52,22 @@ export interface CreditStateRunResult<T> {
 
 // ── Core wrapper ──────────────────────────────────────────────────────────────
 
+// Admin users bypass credit checks — for internal testing only
+const ADMIN_BYPASS_USERS = ['538472e6-c8f5-47ff-aab7-b9ab28a4f0c4'];
+
 export async function withCreditState<T>(params: {
   userId: string;
   cost:   number;
   run:    () => Promise<CreditStateRunResult<T> | T>;
 }): Promise<T> {
+  // Admin bypass — skip reserve/commit/rollback entirely
+  if (ADMIN_BYPASS_USERS.includes(params.userId)) {
+    console.log(`[CREDIT_RESERVE] ADMIN BYPASS user=${params.userId} cost=${params.cost} — skipping balance check`);
+    const runResult  = await params.run();
+    const isEnvelope = runResult !== null && typeof runResult === "object" && "data" in (runResult as object);
+    return isEnvelope ? (runResult as CreditStateRunResult<T>).data : (runResult as T);
+  }
+
   const txnId    = randomUUID();
   let   reserved = false;
 
