@@ -155,9 +155,9 @@ export async function POST(req: Request) {
     const speedMode    = (input.speedMode as string | undefined) ?? (lightningMode ? "ultra-draft" : "draft");
     const isUltraDraft = speedMode === "ultra-draft";
 
-    // Lightning: 2 scenes × 5s = 10s clip bed; Normal: 3 scenes × 10s = 30s clip bed.
+    // Lightning: 2 scenes × 5s = 10s clip bed; Normal: up to 5 scenes × 10s = 50s clip bed.
     // Voiceover duration drives the final output length (clips loop via stream_loop if needed).
-    const SCENE_COUNT   = Math.min((input.maxClips as number | undefined) ?? (isUltraDraft ? 2 : 3), 3);
+    const SCENE_COUNT   = Math.min((input.maxClips as number | undefined) ?? (isUltraDraft ? 2 : 5), isUltraDraft ? 3 : 5);
     const CLIP_DURATION = isUltraDraft ? 5 : 10;  // 5s clips generate ~30s faster per clip
     const TARGET_SECS   = SCENE_COUNT * CLIP_DURATION;
     const MIN_OUTPUT_SECS = isUltraDraft ? 20 : 26; // hard floor — final video never shorter than this
