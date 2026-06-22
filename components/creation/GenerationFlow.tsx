@@ -321,7 +321,7 @@ export default function GenerationFlow({
         return;
       }
 
-      const clipCount = videoType === 'quick' ? 1 : 5; // 5 × 6s = 30s
+      const clipCount = videoType === 'quick' ? 1 : 3; // 3 × 5s = 15s (fast generation)
       const prompts = splitPromptIntoClips(videoPrompt, clipCount);
 
       let imageUrl: string | null = null;
@@ -502,7 +502,7 @@ export default function GenerationFlow({
         // Cinematic / Quick: use custom prompt when provided, else derive from script beats
         const sceneDesc = selectedConcept.description;
         const overridePrompt = customVideoPrompt.trim();
-        const clipCount = videoType === 'quick' ? 1 : 5; // 5 × 6s = 30s
+        const clipCount = videoType === 'quick' ? 1 : 3; // 3 × 5s = 15s (fast generation)
         const cameraVariations = overridePrompt
           ? splitPromptIntoClips(overridePrompt, clipCount)
           : (() => {
@@ -706,7 +706,7 @@ export default function GenerationFlow({
           const composeRes = await fetch('/api/compose-video', {
             method: 'POST',
             headers: jsonHeaders,
-            body: JSON.stringify({ clipUrls, clipDuration: 10 }),
+            body: JSON.stringify({ clipUrls, clipDuration: 5 }),
           });
           if (composeRes.ok) {
             const d = await composeRes.json();
@@ -809,7 +809,7 @@ export default function GenerationFlow({
           const composeRes = await fetch('/api/compose-video', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ clipUrls, clipDuration: 10 }),
+            body: JSON.stringify({ clipUrls, clipDuration: 5 }),
           });
           if (composeRes.ok) {
             const composeData = await composeRes.json();
@@ -856,7 +856,7 @@ export default function GenerationFlow({
     }
   };
 
-  const estTime = videoType === 'avatar' ? '~2 min' : videoType === 'quick' ? '~60s' : '~4 min';
+  const estTime = videoType === 'avatar' ? '~2 min' : videoType === 'quick' ? '~30s' : '~90s';
   const isLoading = !!loadingState;
 
   const inputStyle: React.CSSProperties = {

@@ -20,7 +20,7 @@ import { analyzeScriptBeats, beatToImagePrompt, type StoryBeat } from "@/lib/sto
 
 export const maxDuration = 120;
 
-const SCENE_COUNT = 4; // 4 story beats → 4 images
+const SCENE_COUNT = 3; // 3 story beats → 3 images (speed: 25% fewer Flux calls)
 
 
 // ── Strong negative prompt for Flux ──────────────────────────────────────────
@@ -158,7 +158,7 @@ export async function POST(req: Request) {
                 prompt:                finalPrompt,
                 num_images:            1,
                 image_size:            { width: 1080, height: 1920 },
-                num_inference_steps:   8,
+                num_inference_steps:   4,
                 enable_safety_checker: true,
               }),
             });

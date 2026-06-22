@@ -41,7 +41,7 @@ Format: { "beats": [{ "beatNumber": 1, "purpose": "...", "emotion": "...", "body
 
   const result = await anthropic.messages.create({
     model: 'claude-haiku-4-5-20251001',
-    max_tokens: 1200,
+    max_tokens: 600,
     system: systemPrompt,
     messages: [{
       role: 'user',

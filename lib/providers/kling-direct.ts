@@ -83,8 +83,8 @@ export async function generateKlingClip(params: {
   seed?:           number;
   sceneNumber:     number;
 }): Promise<{ videoUrl: string; generationMs: number }> {
-  const POLL_INTERVAL_MS = 5_000;
-  const MAX_POLL_MS      = 200_000;
+  const POLL_INTERVAL_MS = 3_000;
+  const MAX_POLL_MS      = 90_000;
 
   const startMs   = Date.now();
   const apiBase   = getApiBase();

@@ -40,13 +40,13 @@ import {
 } from "@/lib/subject-appearance";
 import { parseJsonWithEthnicityFix } from "@/middleware/ethnicityFix";
 import { getNicheSettings, detectEra } from "@/lib/config/nicheSettings";
-import { analyzeScriptBeats, beatToKlingDirection, type StoryBeat } from "@/lib/storyboard-planner";
+import { beatToKlingDirection, type StoryBeat } from "@/lib/storyboard-planner";
 
 
 export const maxDuration = 300;
 
-const KLING_CLIP_SECS  = 10;  // Kling 2.6 Pro: 10s per scene
-const ROUTE_VERSION    = "2026-06-22-v28-kling-v3-stitch-fix";
+const KLING_CLIP_SECS  = 5;   // Kling v3 std: 5s per scene (faster generation, 3×5s = 15s video)
+const ROUTE_VERSION    = "2026-06-22-v29-speed-std-5s";
 
 // ── SLA budget: Vercel maxDuration=300s; keep 30s for post-processing ─────────
 const SLA_TOTAL_MS   = 270_000; // 270s total (30s margin before Vercel 300s kills)
@@ -230,11 +230,12 @@ function detectEmotionalArc(text: string): { opening: string; middle: string; cl
 }
 
 // Per-scene camera moves — each scene gets a different camera direction
+// Close-up and push-in focused — no pull-backs for emotional intimate content
 const SCENE_CAMERA_MOVES = [
-  'Camera holds low and drifts slightly left.',
-  'Camera slowly pulls back, revealing the surrounding space.',
+  'Extreme close-up, camera holds still then slow push toward subject.',
+  'Tight close-up on hands or face, shallow depth of field, slow push in.',
   'Camera stays tight on hands then rises gently to face.',
-  'Camera tilts down to hands then drifts upward to face.',
+  'Close-up tilts down to hands then drifts upward to eyes.',
   'Camera pushes toward face in a slow deliberate drift.',
 ];
 
@@ -340,15 +341,22 @@ export async function POST(req: Request) {
     subjectEthnicity = body.subjectEthnicity ?? 'caucasian';
     bodySceneImages = (body.sceneImages ?? []).filter((u): u is string => typeof u === "string" && u.startsWith("https://"));
     const rawVoiceover = body.voiceoverText?.trim() || body.script?.trim() || "";
-    // Strip stage directions, scene headers, and action lines before TTS
-    voiceoverText = rawVoiceover
-      .replace(/\[SCENE:[^\]]*\]/gi, "")
-      .replace(/\[CUT TO[^\]]*\]/gi, "")
-      .replace(/\[.*?\]/g, "")
-      .replace(/\(.*?\)/g, "")
-      .replace(/^\s*#.*$/gm, "")
-      .replace(/\n{3,}/g, "\n\n")
-      .trim() || undefined;
+    // Extract narration: prefer quoted strings (actual VO lines); fall back to stripping
+    // ALL CAPS scene headers, action lines, and bracket/paren stage directions.
+    const _quotedLines = (rawVoiceover.match(/"([^"]{10,})"/g) ?? [])
+      .map((s: string) => s.replace(/^"|"$/g, "").trim()).filter(Boolean);
+    voiceoverText = (_quotedLines.length > 0
+      ? _quotedLines.join(" ")
+      : rawVoiceover
+          .replace(/\[SCENE:[^\]]*\]/gi, "")
+          .replace(/\[CUT TO[^\]]*\]/gi, "")
+          .replace(/\[.*?\]/g, "")
+          .replace(/\(.*?\)/g, "")
+          .replace(/^\s*#.*$/gm, "")
+          // Strip ALL CAPS scene direction lines (e.g. "BARRACKS. RAIN. LAMPLIGHT.")
+          .replace(/^[A-Z][A-Z\s.,!?:—]{8,}$/gm, "")
+          .replace(/\n{3,}/g, "\n\n")
+    ).trim() || undefined;
     voiceId = body.voiceId;
     prompts      = body.prompts ?? [];
     imageUrl     = body.imageUrl;
@@ -725,8 +733,10 @@ export async function POST(req: Request) {
             })
           : null;
 
-        // Ambient sound — pick description from first scene prompt, generate in parallel
-        const ambientDesc = pickAmbientDescription(prompts[0] ?? "");
+        // Ambient sound — search all prompts + full script so keywords like "rain" are found
+        // even when they appear in scene 2+ or only in the script description.
+        const _ambientSearchText = [...prompts, script ?? "", goal ?? ""].filter(Boolean).join(" ");
+        const ambientDesc = pickAmbientDescription(_ambientSearchText);
         const ambientPromise: Promise<Buffer | null> = ambientDesc
           ? generateAmbientSound(ambientDesc, plannedTotalSec)
               .catch(err => {
@@ -795,19 +805,13 @@ export async function POST(req: Request) {
           'Subject stands with clear purpose. Reaches for an object deliberately, shoulders squaring. One decisive physical movement. Camera pulls back slowly to reveal the full surrounding environment.',
         ];
 
-        let storyBeats: StoryBeat[] | null = passedStoryBeats ?? null;
-        if (!storyBeats) {
-          const beatScript = (voiceoverText || prompts.join('. ')).trim();
-          if (beatScript.length > 40) {
-            try {
-              storyBeats = await analyzeScriptBeats(beatScript, enforcedPrompts.length, nicheSettings);
-              console.log(`[STORYBOARD] generated ${storyBeats.length} beats from script for Kling directions`);
-            } catch (beatErr) {
-              console.warn('[STORYBOARD] beat analysis failed, using fallback directions:', beatErr instanceof Error ? beatErr.message : beatErr);
-            }
-          }
-        } else {
+        // Use passed beats from scene-images when available; otherwise skip the Claude call
+        // (analyzeScriptBeats is ~3s sequential before Kling fires — use FALLBACK_DIRECTIONS instead)
+        const storyBeats: StoryBeat[] | null = passedStoryBeats ?? null;
+        if (storyBeats) {
           console.log(`[STORYBOARD] using ${storyBeats.length} beats passed from scene-images`);
+        } else {
+          console.log(`[STORYBOARD] no beats passed — using FALLBACK_DIRECTIONS for Kling motion`);
         }
 
         const builtKlingPrompts: string[] = [];
@@ -838,9 +842,9 @@ export async function POST(req: Request) {
               prompt:          klingPrompt,
               negativePrompt:  sceneNegativePrompts[i] || undefined,
               imageUrl:        sceneImg?.startsWith("https://") ? sceneImg : undefined,
-              duration:        10,
+              duration:        KLING_CLIP_SECS,
               aspectRatio:     "9:16",
-              mode:            "pro",
+              mode:            "std",
               seed:            baseSeed + i,
               sceneNumber:     i + 1,
             });
