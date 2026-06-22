@@ -83,8 +83,9 @@ export async function generateKlingClip(params: {
   seed?:           number;
   sceneNumber:     number;
 }): Promise<{ videoUrl: string; generationMs: number }> {
-  const POLL_INTERVAL_MS = 3_000;
-  const MAX_POLL_MS      = 90_000;
+  const POLL_FIRST_MS    = 1_000; // first check after 1s — clips sometimes finish fast
+  const POLL_INTERVAL_MS = 3_000; // subsequent checks every 3s
+  const MAX_POLL_MS      = 85_000; // hard cap well under the 90s user-facing limit
 
   const startMs   = Date.now();
   const apiBase   = getApiBase();
@@ -132,9 +133,11 @@ export async function generateKlingClip(params: {
   console.log(`[KLING_DIRECT] scene=${params.sceneNumber} task_id=${taskId} status=${createData.data.task_status}`);
 
   const deadline = Date.now() + MAX_POLL_MS;
+  let firstPoll  = true;
 
   while (Date.now() < deadline) {
-    await new Promise(r => setTimeout(r, POLL_INTERVAL_MS));
+    await new Promise(r => setTimeout(r, firstPoll ? POLL_FIRST_MS : POLL_INTERVAL_MS));
+    firstPoll = false;
 
     let pollRes: Response | null = null;
     try {

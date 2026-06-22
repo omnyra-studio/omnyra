@@ -526,22 +526,28 @@ export async function POST(req: Request) {
         lastStageLogged = 'ETHNICITY_done';
         console.log(`[STAGE_4_ETHNICITY] done`);
 
-        console.log(`[STAGE_5_CONTINUITY] start`);
-        try {
-          bibles = await Promise.race([
-            extractBibles(enforcedPrompts, script),
-            new Promise<never>((_, reject) => setTimeout(() => reject(new Error('[STAGE_5_CONTINUITY] TIMEOUT after 15s')), 15_000)),
-          ]);
-          if (bibles.hasCharacter || bibles.environment) {
-            const charPrefix = buildCharacterPrefix(bibles);
-            const envSuffix  = buildConsistencySuffix(bibles);
-            if (charPrefix || envSuffix) {
-              enforcedPrompts = enforcedPrompts.map(p => charPrefix + p + envSuffix);
-              console.log(`[CONTINUITY] bible_extracted hasCharacter=${bibles.hasCharacter} prefix_len=${charPrefix.length} suffix_len=${envSuffix.length}`);
+        // Skip extractBibles when no characterId — saves 5-15s sequential blocking before Kling.
+        // Character continuity bibles only matter when a saved character is loaded.
+        console.log(`[STAGE_5_CONTINUITY] start hasCharacter=${!!characterId}`);
+        if (characterId) {
+          try {
+            bibles = await Promise.race([
+              extractBibles(enforcedPrompts, script),
+              new Promise<never>((_, reject) => setTimeout(() => reject(new Error('[STAGE_5_CONTINUITY] TIMEOUT after 5s')), 5_000)),
+            ]);
+            if (bibles.hasCharacter || bibles.environment) {
+              const charPrefix = buildCharacterPrefix(bibles);
+              const envSuffix  = buildConsistencySuffix(bibles);
+              if (charPrefix || envSuffix) {
+                enforcedPrompts = enforcedPrompts.map(p => charPrefix + p + envSuffix);
+                console.log(`[CONTINUITY] bible_extracted hasCharacter=${bibles.hasCharacter} prefix_len=${charPrefix.length} suffix_len=${envSuffix.length}`);
+              }
             }
+          } catch (err) {
+            console.warn("[CONTINUITY] bible extraction failed or timed out (non-fatal):", err instanceof Error ? err.message : err);
           }
-        } catch (err) {
-          console.warn("[CONTINUITY] bible extraction failed or timed out (non-fatal):", err instanceof Error ? err.message : err);
+        } else {
+          console.log(`[STAGE_5_CONTINUITY] skipped — no characterId, saving ~10s`);
         }
         lastStageLogged = 'CONTINUITY_done';
         console.log(`[STAGE_5_CONTINUITY] done`);
