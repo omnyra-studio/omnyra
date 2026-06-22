@@ -26,7 +26,6 @@
  * Returns: { acknowledged, stage?, skipped? }
  */
 
-import { after } from "next/server";
 import ffmpegInstaller from "@ffmpeg-installer/ffmpeg";
 import ffmpeg from "fluent-ffmpeg";
 import { tmpdir } from "os";
@@ -225,33 +224,46 @@ export async function POST(req: Request) {
 
   const origin = new URL(req.url).origin;
 
-  after(async () => {
-    const completedStages = await getCompletedStages(jobId);
+  // Run all stages synchronously in this invocation (no after() — guaranteed execution).
+  // The client (generate-avatar's after()) may drop the connection after ~28s, but Vercel
+  // keeps this function alive for the full maxDuration=300s regardless of client state.
+  let currentJob = job;
+  for (let iter = 0; iter < 5; iter++) {
+    const completedStages = await getCompletedStages(currentJob.id);
 
     let currentStage: PipelineStage;
     try {
-      currentStage = resolveStageFromLedger(job.stage, completedStages);
+      currentStage = resolveStageFromLedger(currentJob.stage, completedStages);
     } catch {
-      console.log(`[avatar-worker] [${jobId}] [${workerId.slice(0, 8)}] dag: all stages done — releasing`);
-      return;
+      console.log(`[avatar-worker] [${jobId}] [${workerId.slice(0, 8)}] dag: all stages done`);
+      break;
     }
 
     const log = (msg: string) =>
       console.log(`[avatar-worker] [${jobId}] [${currentStage}] [${workerId.slice(0, 8)}] ${msg}`);
 
-    assertDirectorPipelineOnly(currentStage, `avatar-worker:after:${jobId}`);
-    log(`lease=acquired dag_stage=${currentStage}`);
+    assertDirectorPipelineOnly(currentStage, `avatar-worker:loop:${jobId}`);
+    log(`stage_start iter=${iter}`);
     const t0 = Date.now();
 
     switch (currentStage) {
-      case "tts":     await executeTtsStage(job, workerId, origin, log);     break;
-      case "animate": await executeAnimateStage(job, workerId, origin, log); break;
-      case "lipsync": await executeLipsyncStage(job, workerId, origin, log); break;
-      default:        log(`unknown stage: ${currentStage}`);
+      case "tts":     await executeTtsStage(currentJob, workerId, origin, log);     break;
+      case "animate": await executeAnimateStage(currentJob, workerId, origin, log); break;
+      case "lipsync": await executeLipsyncStage(currentJob, workerId, origin, log); break;
+      default:        log(`unknown stage: ${currentStage}`); return Response.json({ acknowledged: true });
     }
 
     log(`stage_end elapsed=${Date.now() - t0}ms`);
-  });
+
+    // Refresh job for next iteration — pick up updated stage + stage_outputs
+    const { data: refreshed } = await supabaseAdmin
+      .from("avatar_jobs")
+      .select("id, user_id, status, stage, stage_outputs, input, retry_count, retry_count_per_stage")
+      .eq("id", currentJob.id)
+      .single();
+    if (!refreshed || refreshed.status === "completed" || refreshed.status === "failed") break;
+    currentJob = refreshed as AvatarJob;
+  }
 
   return Response.json({ acknowledged: true, stage: job.stage });
 }
@@ -350,7 +362,7 @@ async function executeTtsStage(
     log(`[DIRECTOR] ERROR: ${msg} — aborting`);
     await failLedgerEntry(job.id, "tts", workerId, msg);
     const { shouldRetry } = await recordStageFailure(job.id, workerId, "tts", msg, job.retry_count_per_stage ?? {});
-    if (shouldRetry) await retrigger(origin, job.id, log);
+    void shouldRetry; // retry handled by the stage loop in POST handler
     return;
   }
   log(`[DIRECTOR] scenes=${scenes.length} elapsed=${Date.now() - directorT0}ms`);
@@ -463,7 +475,7 @@ async function executeTtsStage(
     log(`elevenlabs ERROR: ${msg}`);
     await failLedgerEntry(job.id, "tts", workerId, msg);
     const { shouldRetry } = await recordStageFailure(job.id, workerId, "tts", msg, job.retry_count_per_stage ?? {});
-    if (shouldRetry) await retrigger(origin, job.id, log);
+    void shouldRetry; // retry handled by the stage loop in POST handler
     return;
   }
 
@@ -491,7 +503,7 @@ async function executeTtsStage(
     log(`${tag}: ${msg}`);
     await failLedgerEntry(job.id, "tts", workerId, msg);
     const { shouldRetry } = await recordStageFailure(job.id, workerId, "tts", msg, job.retry_count_per_stage ?? {});
-    if (shouldRetry) await retrigger(origin, job.id, log);
+    void shouldRetry; // retry handled by the stage loop in POST handler
     return;
   }
 
@@ -520,8 +532,8 @@ async function advanceFromTts(
 
   const advanced = await advanceToNextStage(job.id, workerId, "animate", stageOutputs);
   if (!advanced) { log("lock_lost during transition — abandoning"); return; }
-  log(`advanced → animate scenes=${scenes?.length ?? "unknown"}`);
-  await retrigger(origin, job.id, log);
+  log(`advanced → animate (continuing inline)`);
+  void origin; // origin no longer needed — retrigger removed
 }
 
 // ── Stage: Animate — bypass (Kling skipped; Hedra handles image+audio directly) ─
@@ -545,8 +557,7 @@ async function executeAnimateStage(
   const stageOutputs = { ...(job.stage_outputs ?? {}) };
   const advanced = await advanceToNextStage(job.id, workerId, "lipsync", stageOutputs);
   if (!advanced) { log("lock_lost during bypass — abandoning"); return; }
-  log("advanced → lipsync (Hedra)");
-  await retrigger(origin, job.id, log);
+  log("advanced → lipsync (continuing inline)");
 }
 
 // ── Stage: Lipsync (Hedra) — image + stitched audio → talking avatar video ────
@@ -676,7 +687,7 @@ async function executeLipsyncStage(
     log(`audio concat ERROR: ${msg}`);
     await failLedgerEntry(job.id, "lipsync", workerId, msg);
     const { shouldRetry } = await recordStageFailure(job.id, workerId, "lipsync", msg, job.retry_count_per_stage ?? {});
-    if (shouldRetry) await retrigger(origin, job.id, log);
+    void shouldRetry; // retry handled by the stage loop in POST handler
     return;
   } finally {
     for (const p of cleanup) { try { unlinkSync(p); } catch { /* already gone */ } }
@@ -729,7 +740,7 @@ async function executeLipsyncStage(
     log(`[AVATAR_SOURCE] ERROR: ${msg}`);
     await failLedgerEntry(job.id, "lipsync", workerId, msg);
     const { shouldRetry } = await recordStageFailure(job.id, workerId, "lipsync", msg, job.retry_count_per_stage ?? {});
-    if (shouldRetry) await retrigger(origin, job.id, log);
+    void shouldRetry; // retry handled by the stage loop in POST handler
     return;
   }
   log(`[AVATAR_SOURCE] source=${avatarImageSource} url=${avatarImageRaw.substring(0, 80)}`);
@@ -747,7 +758,7 @@ async function executeLipsyncStage(
     log(`[HEDRA_PRECHECK_FAILED] URL signing failed: ${msg}`);
     await failLedgerEntry(job.id, "lipsync", workerId, msg);
     const { shouldRetry } = await recordStageFailure(job.id, workerId, "lipsync", `HEDRA_PRECHECK_FAILED: ${msg}`, job.retry_count_per_stage ?? {});
-    if (shouldRetry) await retrigger(origin, job.id, log);
+    void shouldRetry; // retry handled by the stage loop in POST handler
     return;
   }
 
@@ -812,7 +823,7 @@ async function executeLipsyncStage(
 
       await failLedgerEntry(job.id, "lipsync", workerId, e.message);
       const { shouldRetry } = await recordStageFailure(job.id, workerId, "lipsync", e.message, job.retry_count_per_stage ?? {});
-      if (shouldRetry) await retrigger(origin, job.id, log);
+      void shouldRetry; // retry handled by the stage loop in POST handler
       return;
     }
   }
@@ -820,7 +831,7 @@ async function executeLipsyncStage(
   // ── Inline poll for 90s, then fall back to cron ──────────────────────────
   void setPipelineStatus(job.id, "generating_avatar");
   const pollMs    = 2_000;
-  const maxPollMs = 90_000;
+  const maxPollMs = 230_000; // 230s — covers most Hedra jobs within maxDuration=300
   const pollStart = Date.now();
   let hedraVideoUrl: string | null = null;
 
