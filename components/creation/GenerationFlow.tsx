@@ -2055,20 +2055,36 @@ export default function GenerationFlow({
                   style={{ width: '100%', borderRadius: 16, background: '#000', maxHeight: 600 }}
                 />
 
-                {/* Gold download button */}
-                <a
-                  href={finalVideo}
-                  download={`omnyra-${niche ? niche.split(',')[0].trim().toLowerCase().replace(/\s+/g, '-') : toolId}-${new Date().toISOString().slice(0,10)}.mp4`}
+                {/* Gold download button — blob fetch for cross-origin download */}
+                <button
+                  onClick={async () => {
+                    if (!finalVideo) return;
+                    try {
+                      const response = await fetch(finalVideo);
+                      const blob = await response.blob();
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `omnyra-${niche ? niche.split(',')[0].trim().toLowerCase().replace(/\s+/g, '-') : toolId}-${new Date().toISOString().slice(0,10)}.mp4`;
+                      document.body.appendChild(a);
+                      a.click();
+                      document.body.removeChild(a);
+                      URL.revokeObjectURL(url);
+                    } catch (dlErr) {
+                      console.error('[DOWNLOAD] failed:', dlErr);
+                    }
+                  }}
                   style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10,
-                    width: '100%', padding: '18px', borderRadius: 14, textDecoration: 'none',
+                    width: '100%', padding: '18px', borderRadius: 14,
                     background: 'linear-gradient(135deg, #D4A843 0%, #F0C855 50%, #C8922A 100%)',
                     color: '#0D0010', fontWeight: 800, fontSize: '1rem', letterSpacing: '0.04em',
                     boxShadow: '0 4px 24px rgba(212,168,67,0.4)',
+                    border: 'none', cursor: 'pointer',
                   }}
                 >
                   ⬇ Download Video
-                </a>
+                </button>
 
                 {/* Secondary links */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 24 }}>

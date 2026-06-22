@@ -105,7 +105,7 @@ export async function generateKlingClip(params: {
   if (hasImage) body.image = params.imageUrl;
   if (params.seed != null) body.seed = params.seed;
 
-  console.log(`[KLING_DIRECT] scene=${params.sceneNumber} POST ${endpoint} model=kling-v2-6 mode=${params.mode} dur=${params.duration}s hasImage=${hasImage}`);
+  console.log(`[KLING_DIRECT] scene=${params.sceneNumber} POST ${endpoint} model=kling-v3 mode=${params.mode} dur=${params.duration}s hasImage=${hasImage}`);
 
   const createRes = await fetch(createUrl, {
     method:  "POST",
@@ -218,7 +218,7 @@ export async function generateKlingDirect(
 
   return {
     video_url:  result.videoUrl,
-    model_used: `direct:kling-v2-6:${mode}`,
+    model_used: `direct:kling-v3:${mode}`,
     mode,
   };
 }
