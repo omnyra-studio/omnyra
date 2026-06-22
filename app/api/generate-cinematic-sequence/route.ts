@@ -321,6 +321,7 @@ export async function POST(req: Request) {
   let voiceId: string | undefined;
   let bodySceneImages: string[] = [];
   let passedStoryBeats: StoryBeat[] | undefined;
+  let passedCreativeScenes: Array<{ time: string; description: string; motion: string }> | undefined;
   try {
     const body = await parseJsonWithEthnicityFix<{
       prompts?: string[];
@@ -337,6 +338,7 @@ export async function POST(req: Request) {
       voiceoverText?: string;
       voiceId?: string;
       storyBeats?: StoryBeat[];
+      creativeScenes?: Array<{ time: string; description: string; motion: string }>;
     }>(req);
     subjectEthnicity = body.subjectEthnicity ?? 'caucasian';
     bodySceneImages = (body.sceneImages ?? []).filter((u): u is string => typeof u === "string" && u.startsWith("https://"));
@@ -368,7 +370,8 @@ export async function POST(req: Request) {
     niche        = body.niche;
     isQuickMode = body.videoType === 'quick';
     passedStoryBeats = Array.isArray(body.storyBeats) && body.storyBeats.length > 0 ? body.storyBeats : undefined;
-    console.log(`[BRIEF_CONTEXT] goal="${(goal ?? "").substring(0, 120)}" characterId=${characterId ?? "none"} niche=${niche ?? "none"} ethnicity=${subjectEthnicity} storyBeats=${passedStoryBeats?.length ?? 0}`)
+    passedCreativeScenes = Array.isArray(body.creativeScenes) && body.creativeScenes.length > 0 ? body.creativeScenes : undefined;
+    console.log(`[BRIEF_CONTEXT] goal="${(goal ?? "").substring(0, 120)}" characterId=${characterId ?? "none"} niche=${niche ?? "none"} ethnicity=${subjectEthnicity} storyBeats=${passedStoryBeats?.length ?? 0} creativeScenes=${passedCreativeScenes?.length ?? 0}`)
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
@@ -819,21 +822,31 @@ export async function POST(req: Request) {
         // Use passed beats from scene-images when available; otherwise skip the Claude call
         // (analyzeScriptBeats is ~3s sequential before Kling fires — use FALLBACK_DIRECTIONS instead)
         const storyBeats: StoryBeat[] | null = passedStoryBeats ?? null;
-        if (storyBeats) {
+        if (passedCreativeScenes) {
+          console.log(`[CREATIVE_DIRECTOR] using ${passedCreativeScenes.length} AI creative director scenes for Kling motion`);
+        } else if (storyBeats) {
           console.log(`[STORYBOARD] using ${storyBeats.length} beats passed from scene-images`);
         } else {
-          console.log(`[STORYBOARD] no beats passed — using FALLBACK_DIRECTIONS for Kling motion`);
+          console.log(`[STORYBOARD] no beats or creative scenes passed — using FALLBACK_DIRECTIONS`);
         }
 
         const builtKlingPrompts: string[] = [];
         const klingScenePrompts = enforcedPrompts.map((_p, i) => {
-          const beat = storyBeats?.[i];
-          const direction = beat
-            ? beatToKlingDirection(beat)
-            : FALLBACK_DIRECTIONS[i % FALLBACK_DIRECTIONS.length];
+          let direction: string;
+          let dirSource: string;
+          if (passedCreativeScenes?.[i]?.motion) {
+            direction = passedCreativeScenes[i].motion;
+            dirSource = `creative-director scene=${i + 1} time="${passedCreativeScenes[i].time}"`;
+          } else if (storyBeats?.[i]) {
+            direction = beatToKlingDirection(storyBeats[i]);
+            dirSource = `beat purpose="${storyBeats[i].purpose}"`;
+          } else {
+            direction = FALLBACK_DIRECTIONS[i % FALLBACK_DIRECTIONS.length];
+            dirSource = "fallback";
+          }
           const final = [klingAnchor, direction].filter(Boolean).join(' ').slice(0, MAX_KLING_PROMPT);
           builtKlingPrompts.push(final);
-          console.log(`[KLING_PROMPT_UNIQUE] scene=${i + 1}${beat ? ` beat="${beat.purpose}"` : ' (fallback)'}: ${final.substring(0, 200)}`);
+          console.log(`[KLING_PROMPT_UNIQUE] scene=${i + 1} src=${dirSource}: ${final.substring(0, 200)}`);
           if (i > 0) {
             console.log(`[PROMPT_DIFF] scene=${i + 1} differs from scene 1: ${final !== builtKlingPrompts[0]}`);
           }

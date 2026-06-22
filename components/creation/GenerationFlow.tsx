@@ -523,20 +523,43 @@ export default function GenerationFlow({
         setVideoStatus('Generating cinematic sequence…');
         setVideoProgress(10);
 
+        // Call creative director first (~2s) to get niche-specific motion directions for Kling
+        type CreativeScene = { time: string; description: string; motion: string };
+        let creativeScenes: CreativeScene[] = [];
+        try {
+          const cdRes = await fetch('/api/creative-director', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              concept:   selectedConcept.description,
+              rawScript: editedScript || selectedScript?.script || selectedConcept.description,
+              niche:     niche || nichePrefill || undefined,
+            }),
+            signal: AbortSignal.timeout(8000),
+          });
+          if (cdRes.ok) {
+            const cdData = await cdRes.json() as { enhanced?: { scenes?: CreativeScene[] } };
+            if (Array.isArray(cdData.enhanced?.scenes) && cdData.enhanced.scenes.length > 0) {
+              creativeScenes = cdData.enhanced.scenes;
+            }
+          }
+        } catch { /* non-fatal — Kling falls back to FALLBACK_DIRECTIONS */ }
+
         const res = await fetch('/api/generate-cinematic-sequence', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            prompts:      cameraVariations,
-            imageUrl:     selectedConcept.imageUrl || null,
-            sceneImages:  concepts.map(c => c.imageUrl).filter(Boolean),
-            clipDuration: 6,
-            goal:         selectedConcept.description,
-            voiceoverText: editedScript || selectedScript?.script || selectedConcept.description,
+            prompts:        cameraVariations,
+            imageUrl:       selectedConcept.imageUrl || null,
+            sceneImages:    concepts.map(c => c.imageUrl).filter(Boolean),
+            clipDuration:   10,
+            goal:           selectedConcept.description,
+            voiceoverText:  editedScript || selectedScript?.script || selectedConcept.description,
             videoType,
             subjectEthnicity,
-            voiceId: selectedVoice || '',
-            niche: niche || nichePrefill || undefined,
+            voiceId:        selectedVoice || '',
+            niche:          niche || nichePrefill || undefined,
+            creativeScenes: creativeScenes.length > 0 ? creativeScenes : undefined,
           }),
         });
         const data = await res.json();
