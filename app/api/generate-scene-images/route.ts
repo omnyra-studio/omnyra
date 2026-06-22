@@ -31,33 +31,40 @@ You are a ghost floating in the room. You can see and hear everything but cannot
 
 // ── Strict angle composition rules ────────────────────────────────────────────
 
+// ── 4 camera angles of the EXACT SAME moment ─────────────────────────────────
+// These are NOT a storyboard. NOT different scenes. NOT a sequence across time.
+// They are 4 cinematographers shooting the SAME frozen instant from 4 positions.
+
 const ANGLE_RULES = {
-  WIDE:
-    `WIDE shot: Full environment visible. Character occupies less than 40% of frame — background is the star. ` +
-    `Show the full room or outdoor setting. Character seated or standing, full body visible from head to feet. ` +
-    `NO close-ups. NO objects dominating frame. NO face detail (face too small to read). ` +
-    `Camera is far back. This shot establishes place, not person.`,
+  FRONT_DIRECT:
+    `SHOT 1 — DIRECT FRONT (eye-level): Camera directly facing the subject at eye level. ` +
+    `Subject faces the camera with a contemplative, forward-looking expression. ` +
+    `Face and upper body centred in frame. Hands visible resting on knees or lap. ` +
+    `Shallow depth of field — background slightly blurred but recognisable. ` +
+    `This is the PRIMARY establishing shot — character looks directly into the lens.`,
 
-  CLOSE:
-    `CLOSE shot: Face fills 80% of frame, cropped from forehead to chin. ` +
-    `ONLY the face — expression, eyes, jaw line, skin texture. Background completely blurred (extreme bokeh). ` +
-    `ABSOLUTELY NO hands in frame. NO objects. NO pen. NO paper. NO cup. NO items near the face or mouth. ` +
-    `This is a pure face portrait — nothing else exists in this shot.`,
+  SIDE_THREE_QUARTER:
+    `SHOT 2 — 3/4 SIDE ANGLE (from right): Camera positioned 45° to the right of the subject. ` +
+    `Subject's face is in 3/4 profile — right side lit, left side in shadow. ` +
+    `Dramatic Rembrandt-style side lighting — one strong light source from the right. ` +
+    `Strong shadow on the left cheek and neck. Background in soft focus. ` +
+    `Same subject, same posture, same moment — only the camera angle has changed.`,
 
-  DETAIL:
-    `DETAIL shot: Hands and ONE object fill the entire frame — NO face visible (face must be cropped out or off-screen). ` +
-    `Camera is close to the hands. Show: hands gripping a pen pressing ON paper surface, OR hands folded flat on table, ` +
-    `OR fingers pressing flat on a surface. The object MUST be physically touching the hands or resting on a surface. ` +
-    `Camera angle is top-down (90°) or 45 degrees. Nothing floats. No faces.`,
+  WIDE_LOW:
+    `SHOT 3 — WIDE LOW ANGLE (environment): Camera set low (near floor level), angled slightly upward. ` +
+    `Full figure visible from head to feet. Full environment visible — ceiling, walls, floor, all background props. ` +
+    `Subject occupies the lower-centre of frame, environment dominates. ` +
+    `Same subject, same exact posture and expression — this shot reveals WHERE they are, not just WHO.`,
 
-  OVER_SHOULDER:
-    `OVER SHOULDER shot: Camera positioned directly behind the character's head and shoulder. ` +
-    `We see: the back of their head and neck (in soft focus foreground), their shoulder occupying left or right third of frame, ` +
-    `and what is directly in front of them (table, window, room, view) in sharp focus in the background. ` +
-    `NO face visible — camera is behind them. Character's body is a silhouette/foreground element, not the subject.`,
+  CLOSE_INTIMATE:
+    `SHOT 4 — TIGHT CLOSE-UP (face and upper body): Camera very close. ` +
+    `Face fills 60-70% of frame. Upper chest and shoulders just visible at bottom. ` +
+    `Extreme shallow depth of field — background is fully blurred bokeh. ` +
+    `Every skin texture, eye detail, jaw tension, and micro-expression is visible. ` +
+    `Same subject, same moment — maximum emotional proximity.`,
 };
 
-const SCENE_ANGLES = ["WIDE", "CLOSE", "DETAIL", "OVER_SHOULDER"] as const;
+const SCENE_ANGLES = ["FRONT_DIRECT", "SIDE_THREE_QUARTER", "WIDE_LOW", "CLOSE_INTIMATE"] as const;
 type SceneAngle = typeof SCENE_ANGLES[number];
 
 // ── Strong negative prompt for Flux ──────────────────────────────────────────
@@ -159,52 +166,55 @@ export async function POST(req: Request) {
         ).join("\n\n");
 
         // ── Claude system prompt ──────────────────────────────────────────────
-        const systemPrompt = `You are a cinematic still photographer and continuity director for short-form video content. You are also a ghost — you can see everything in the scene but cannot read minds.
+        const systemPrompt = `You are a cinematographer directing 4 camera operators to shoot the EXACT SAME FROZEN MOMENT from 4 different positions simultaneously.
 
 ${GHOST_TEST}
 
-Your task: Create exactly 4 photorealistic, cinema-grade image prompts that tell a coherent visual story from the provided script. Each prompt uses a FIXED camera angle — follow the angle rules below without deviation.
+YOUR TASK: Write 4 Flux image generation prompts — one per camera angle. All 4 prompts describe THE SAME INSTANT IN TIME. Same character, same posture, same expression, same environment, same lighting. ONLY the camera position changes.
+
+THIS IS NOT A STORYBOARD. THIS IS NOT A SEQUENCE. THIS IS NOT DIFFERENT MOMENTS.
+Four cameras. One moment. Four angles.
 
 ═══ STRICT RULES ═══
 
-RULE 1 — CHARACTER CONSISTENCY:
-Define ONE character in Scene 1 with a precise description: face shape, age in years, skin tone, hair colour and length, eye colour, exact clothing with fabric and colour, body build, posture energy.
-Copy this EXACT character description verbatim into Scenes 2, 3, and 4. Never change any detail.
-AGE ANCHOR: If the script describes a soldier, warrior, or young person — they are a YOUNG ADULT, 18–22 years old. Write "young adult male, approximately 18–20 years old" — NOT a child, NOT middle-aged, NOT elderly.
+RULE 1 — IDENTICAL CHARACTER ACROSS ALL 4 SHOTS:
+Define the character ONCE in Shot 1 with full precision: exact age in years, skin tone, hair colour and length, eye colour, exact clothing with fabric and colour, body build, posture, hands position.
+Copy this EXACT character description word-for-word into Shots 2, 3, and 4. Zero variation.
+AGE ANCHOR: Soldiers and warriors are YOUNG ADULTS, 19–22 years old. Write "young adult male, approximately 19–22 years old, fair skin, short light brown hair" — never a child, never middle-aged.
 
-RULE 2 — NO TEXT ON ANY IMAGE:
-NEVER describe readable text, visible writing, legible words, or inscriptions on any surface.
-- Paper is always "blank paper" or "paper with faint ink marks, text not legible".
-- Letters are "folded paper" or "paper pressed flat on table" — NEVER "handwritten letter" or "letter with writing".
-- Books are "closed book" or "open book with illegible pages" — NEVER show readable words.
-- Signs, labels, newspapers — always illegible, blurred, or turned away.
+RULE 2 — IDENTICAL MOMENT ACROSS ALL 4 SHOTS:
+The subject's body, posture, expression, and hand position must be the same in all 4 shots.
+If he is sitting with hands on knees in Shot 1 — he is sitting with hands on knees in Shot 2, 3, and 4.
+Only the CAMERA ANGLE changes. Nothing else.
 
-RULE 3 — NO FLOATING OBJECTS:
-Every object must be physically held in hands, resting on a surface, or worn by the character.
-- A pen is gripped in fingers pressing on paper — NEVER floating near a face or mouth.
-- A cup is held in both hands or sitting on a table — NEVER floating.
-- Objects near faces only if the character is actively eating or drinking, with hands visible.
+RULE 3 — NO TEXT ON ANY IMAGE:
+Never describe readable text, writing, or inscriptions on any surface.
+Paper = "blank paper". Letters = "folded paper". Signs = "turned away or illegible".
 
-RULE 4 — ANGLE COMPOSITIONS (MANDATORY — DO NOT DEVIATE):
+RULE 4 — NO FLOATING OBJECTS:
+Every prop is held in hands, worn by the character, or resting on a surface. Nothing floats.
+
+RULE 5 — CAMERA ANGLES (MANDATORY — DO NOT DEVIATE):
 ${angleBlock}
 
-RULE 5 — VISUAL CONSISTENCY:
-Same lighting style, colour grade, and mood across all 4 prompts. Same time of day. Same room/location for interior scenes.
+RULE 6 — IDENTICAL LIGHTING:
+Same light source, same direction, same colour temperature in every shot.
+If the light is a single bare incandescent bulb from above-left in Shot 1 — it is identical in Shots 2, 3, 4.
 
-RULE 6 — GHOST TEST:
-Describe only visible physical behaviour — body posture, hand position, eye direction, micro-expressions, object interactions. Never name an emotion.${brandSuffix ? `\n\nBRAND STYLE: ${brandSuffix}` : ""}${nicheDirective ? `\n\n${nicheDirective}` : ""}
+RULE 7 — GHOST TEST:
+Describe only visible physical behaviour. Never name an emotion.${brandSuffix ? `\n\nBRAND STYLE: ${brandSuffix}` : ""}${nicheDirective ? `\n\n${nicheDirective}` : ""}
 
 ═══ OUTPUT FORMAT ═══
-Return ONLY valid JSON — no markdown, no backticks, no explanation. Exactly this structure:
+Return ONLY valid JSON — no markdown, no backticks, no explanation:
 [
   {
-    "angle": "WIDE",
-    "prompt": "Full Flux-ready image generation prompt — include character description, angle composition, lighting, environment",
-    "description": "One sentence: what the ghost observes in this frame — physical action only",
-    "script_part": "Which moment of the script this covers (e.g. 'Opening hook — 0–3s')"
+    "angle": "FRONT_DIRECT",
+    "prompt": "Full Flux-ready prompt — character description + camera angle + lighting + environment. All in one dense paragraph.",
+    "description": "One sentence: what the ghost observes in this frame",
+    "script_part": "The single moment being captured (same text in all 4)"
   }
 ]
-Return exactly 4 objects, one per angle in this order: WIDE, CLOSE, DETAIL, OVER_SHOULDER.`;
+Return exactly 4 objects in this order: FRONT_DIRECT, SIDE_THREE_QUARTER, WIDE_LOW, CLOSE_INTIMATE.`;
 
         console.log(`[CLAUDE_SYSTEM_PROMPT] length=${systemPrompt.length} angles=${SCENE_ANGLES.join(",")}`);
 
