@@ -67,6 +67,19 @@ const ANGLE_RULES = {
 const SCENE_ANGLES = ["FRONT_DIRECT", "SIDE_THREE_QUARTER", "WIDE_LOW", "CLOSE_INTIMATE"] as const;
 type SceneAngle = typeof SCENE_ANGLES[number];
 
+// ── Military era environment — appended to every Flux prompt when active ─────
+// Flux reads the POSITIVE prompt first. Hard-naming forbidden objects as "NO X"
+// in the positive prompt is the only reliable way to suppress them (Schnell
+// ignores negative_prompt entirely — flow-matching model).
+const MILITARY_ENV_SUFFIX =
+  "Military barracks interior. Steel bunk frames with thin mattresses. Rough wool blankets. " +
+  "Bare incandescent bulb on wire OR small oil lamp on rough wood. Bare wooden plank floor or concrete floor. " +
+  "Canvas kit bags and M1 steel helmets resting on floor or hung from wooden pegs. " +
+  "Wooden footlockers at foot of bunks. Rough wooden support posts. No home furniture. " +
+  "No standing floor lamps. No lampshades of any kind. No curtains or drapes. No carpet or rugs. " +
+  "No upholstered chairs. No side tables. No picture frames. No decorative objects. " +
+  "Cold institutional military barracks, not a home or hotel room.";
+
 // ── Strong negative prompt for Flux ──────────────────────────────────────────
 
 const FLUX_NEGATIVE_BASE =
@@ -128,6 +141,7 @@ export async function POST(req: Request) {
     detectedEra = detectEra(eraSearchText);
     if (detectedEra) console.log(`[ERA_DETECTED] era="${detectedEra}" niche="${niche ?? "default"}"`);
   }
+  const isMilitaryEra = !!detectedEra && /world war|wwii|ww2|vietnam|korean/i.test(detectedEra);
 
   let brandSuffix = "";
   try {
@@ -202,7 +216,13 @@ Same light source, same direction, same colour temperature in every shot.
 If the light is a single bare incandescent bulb from above-left in Shot 1 — it is identical in Shots 2, 3, 4.
 
 RULE 7 — GHOST TEST:
-Describe only visible physical behaviour. Never name an emotion.${brandSuffix ? `\n\nBRAND STYLE: ${brandSuffix}` : ""}${nicheDirective ? `\n\n${nicheDirective}` : ""}
+Describe only visible physical behaviour. Never name an emotion.${brandSuffix ? `\n\nBRAND STYLE: ${brandSuffix}` : ""}${nicheDirective ? `\n\n${nicheDirective}` : ""}${isMilitaryEra ? `
+
+RULE 8 — MILITARY BARRACKS ENVIRONMENT (MANDATORY — WWII SETTING):
+Every prompt MUST describe a MILITARY BARRACKS interior. Include these specific physical objects:
+MUST APPEAR IN EVERY PROMPT: Steel-frame bunk beds with thin mattresses and rough wool blankets. Bare wooden plank or concrete floor. Single bare incandescent bulb hanging from wire, OR small oil lamp on rough wood surface. Canvas kit bags, steel M1 helmets, metal canteens resting on floor or hung from wooden pegs. Wooden footlockers at foot of bunks. Rough wooden support posts or bare metal uprights.
+ABSOLUTELY FORBIDDEN — if any of these appear in your prompt you have failed the task: Standing floor lamps with lampshades. Curtains, drapes, or window treatments of any kind. Upholstered chairs, armchairs, or sofas. Side tables or end tables. Carpet or rugs. Picture frames on walls. Bookshelves. Any decorative object. Modern light fixtures. Home, hotel, or office furniture of any description.
+THE SETTING IS A COLD, SPARSE, INSTITUTIONAL MILITARY BARRACKS — not a home, not a hotel, not a living room.` : ""}
 
 ═══ OUTPUT FORMAT ═══
 Return ONLY valid JSON — no markdown, no backticks, no explanation:
@@ -258,11 +278,12 @@ Return exactly 4 objects in this order: FRONT_DIRECT, SIDE_THREE_QUARTER, WIDE_L
           scenePlan.slice(0, 4).map(async (scene, i) => {
             const angle = (scene.angle ?? SCENE_ANGLES[i]) as SceneAngle;
 
-            // Compose positive prompt: scene + anti-text + angle reminder
+            // Compose positive prompt: scene + military env (when active) + anti-text
             const finalPrompt = [
               scene.prompt,
+              isMilitaryEra ? MILITARY_ENV_SUFFIX : null,
               ANTI_TEXT_SUFFIX,
-            ].join(" ");
+            ].filter(Boolean).join(" ");
 
             console.log(`[IMAGE_PROMPT_FINAL] scene=${i + 1} angle=${angle}: ${finalPrompt.substring(0, 220)}`);
 
