@@ -16,7 +16,8 @@ import { logUsageEvent } from "@/lib/cache";
 import { withCreditState, InsufficientCreditsError } from "@/lib/credits/withCreditState";
 import { CREDIT_COSTS } from "@/lib/rules/creditRules";
 import { getNicheSettings, detectEra } from "@/lib/config/nicheSettings";
-import { analyzeScriptBeats, beatToImagePrompt, type StoryBeat } from "@/lib/storyboard-planner";
+import Anthropic from "@anthropic-ai/sdk";
+import { type StoryBeat } from "@/lib/storyboard-planner";
 
 export const maxDuration = 120;
 
@@ -113,7 +114,8 @@ export async function POST(req: Request) {
   const ANTI_TEXT_SUFFIX =
     "No readable text anywhere. No visible writing. No legible words or numbers on any surface. " +
     "No text on walls, paper, books, signs, screens, clocks, or clothing. " +
-    "No clock face with numbers. No newspaper text. No letters. Blank surfaces only.";
+    "No clock face with numbers. No newspaper text. No letters. Blank surfaces only. " +
+    "NO back of head. NO rear view. NO back-facing subject. Subject always facing toward camera. Front-facing only.";
 
   try {
     const result = await withCreditState<{ scenes: Scene[]; beats: StoryBeat[] }>({
@@ -121,18 +123,51 @@ export async function POST(req: Request) {
       cost: creditCost,
       run: async () => {
 
-        // ── Step 1: Storyboard planner — analyze script into emotional beats ──
-        console.log(`[STORYBOARD] analyzing script into ${SCENE_COUNT} beats niche="${niche ?? "default"}"`);
-        const beats = await analyzeScriptBeats(
-          `${script.trim()}\n\nConcept: ${concept}\nHook: ${hook ?? ""}`.trim(),
-          SCENE_COUNT,
-          nicheSettings,
-        );
+        // ── Step 1: Generate Flux prompts directly from script — literal, not abstract ──
+        // Bypasses storyboard-planner which was abstracting away script-specific actions.
+        console.log(`[SCENE_PROMPTS] generating ${SCENE_COUNT} literal prompts from script`);
+        const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+        const promptGenRes = await anthropic.messages.create({
+          model: "claude-sonnet-4-6",
+          max_tokens: 1200,
+          system: `You are a visual director generating Flux image prompts for AI video scene images.
+Your job: read the script and output EXACTLY ${SCENE_COUNT} Flux image prompts — one per major scene moment.
 
-        // ── Step 2: Build Flux prompts from beats ─────────────────────────────
-        const beatPrompts = beats.map(beat =>
-          beatToImagePrompt(beat, characterDescription, eraPrefix, nicheSettings)
-        );
+RULES:
+- Each prompt MUST show the EXACT action described in the script for that moment
+- NEVER substitute a generic shot for a specific scripted action
+- If script says "face mid-lift: genuine strain" → write a close-up face prompt showing effort/strain
+- If script says "phone screen shows progress: honest numbers" → write prompt with phone screen visible facing camera
+- If script says "grip the handle. Lift." → write close-up hand gripping weight, arm rising
+- If script says "camera widens" → write a wide shot
+- Subject MUST always face the camera — never show back of head or rear view
+- One human subject unless script explicitly says two people
+- Real photographic quality, natural gym lighting
+- 25-40 words per prompt
+- ${characterDescription ? `Character: ${characterDescription}` : "Caucasian woman, athletic but natural-looking"}
+- Environment: gym setting${envInclude ? `, ${envInclude}` : ""}${envExclude ? `. NO ${envExclude}` : ""}
+
+OUTPUT: valid JSON only. No markdown.
+{ "prompts": ["prompt1", "prompt2", "prompt3"] }`,
+          messages: [{
+            role: "user",
+            content: `Script: ${script.trim()}\n\nConcept: ${concept}\n\nGenerate exactly ${SCENE_COUNT} Flux image prompts, one per key scene moment from this script.`,
+          }],
+        });
+
+        const promptGenText = promptGenRes.content[0]?.type === "text" ? promptGenRes.content[0].text : "";
+        const pgStart = promptGenText.indexOf("{");
+        const pgEnd   = promptGenText.lastIndexOf("}");
+        const pgParsed = JSON.parse(promptGenText.slice(pgStart, pgEnd + 1)) as { prompts?: string[] };
+        const rawPrompts: string[] = Array.isArray(pgParsed.prompts) ? pgParsed.prompts : [];
+        while (rawPrompts.length < SCENE_COUNT) rawPrompts.push(`${concept} gym scene, natural light, front-facing subject`);
+        const beatPrompts = rawPrompts.slice(0, SCENE_COUNT);
+        const beats: StoryBeat[] = beatPrompts.map((_, i) => ({
+          beatNumber: i + 1, purpose: `scene ${i + 1}`, emotion: "", bodyLanguage: "",
+          composition: "", lighting: "", keyAction: beatPrompts[i], environmentFocus: "",
+        }));
+        console.log(`[SCENE_PROMPTS] generated ${beatPrompts.length} prompts`);
+        beatPrompts.forEach((p, i) => console.log(`[SCENE_PROMPT_${i+1}] ${p.substring(0, 120)}"`));
 
         // ── Step 3: Generate all images in parallel via Fal ──────────────────
         // NOTE: fal-ai/flux/schnell uses flow matching and IGNORES negative_prompt.
@@ -158,7 +193,7 @@ export async function POST(req: Request) {
                 prompt:                finalPrompt,
                 num_images:            1,
                 image_size:            { width: 1080, height: 1920 },
-                num_inference_steps:   4,
+                num_inference_steps:   8,
                 enable_safety_checker: true,
               }),
             });
