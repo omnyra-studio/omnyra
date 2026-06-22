@@ -40,6 +40,7 @@ import {
 } from "@/lib/subject-appearance";
 import { parseJsonWithEthnicityFix } from "@/middleware/ethnicityFix";
 import { getNicheSettings, detectEra } from "@/lib/config/nicheSettings";
+import { analyzeScriptBeats, beatToKlingDirection, type StoryBeat } from "@/lib/storyboard-planner";
 
 
 export const maxDuration = 300;
@@ -318,6 +319,7 @@ export async function POST(req: Request) {
   let voiceoverText: string | undefined;
   let voiceId: string | undefined;
   let bodySceneImages: string[] = [];
+  let passedStoryBeats: StoryBeat[] | undefined;
   try {
     const body = await parseJsonWithEthnicityFix<{
       prompts?: string[];
@@ -333,6 +335,7 @@ export async function POST(req: Request) {
       subjectEthnicity?: SubjectEthnicityInput;
       voiceoverText?: string;
       voiceId?: string;
+      storyBeats?: StoryBeat[];
     }>(req);
     subjectEthnicity = body.subjectEthnicity ?? 'caucasian';
     bodySceneImages = (body.sceneImages ?? []).filter((u): u is string => typeof u === "string" && u.startsWith("https://"));
@@ -356,7 +359,8 @@ export async function POST(req: Request) {
     characterId  = body.characterId;
     niche        = body.niche;
     isQuickMode = body.videoType === 'quick';
-    console.log(`[BRIEF_CONTEXT] goal="${(goal ?? "").substring(0, 120)}" characterId=${characterId ?? "none"} niche=${niche ?? "none"} ethnicity=${subjectEthnicity}`)
+    passedStoryBeats = Array.isArray(body.storyBeats) && body.storyBeats.length > 0 ? body.storyBeats : undefined;
+    console.log(`[BRIEF_CONTEXT] goal="${(goal ?? "").substring(0, 120)}" characterId=${characterId ?? "none"} niche=${niche ?? "none"} ethnicity=${subjectEthnicity} storyBeats=${passedStoryBeats?.length ?? 0}`)
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
@@ -773,17 +777,6 @@ export async function POST(req: Request) {
 
         // Strip block-style ethnicity overrides — ethnicity is already inline via applySubjectEthnicityToPrompts
         // Prepend niche video prefix + detected era for period accuracy
-        // ── Per-scene director prompts — UNIQUE action + camera per scene ────────
-        // Format: brief anchor (era + character essence) → UNIQUE action → UNIQUE camera
-        // Each scene MUST differ in what the subject DOES and how the camera MOVES.
-        const SCENE_DIRECTIONS = [
-          // Scene 1: tension — absolute stillness, micro-movement only
-          'Subject is rigid and absolutely still. Micro-movements only: shallow visible breathing, slight hand tremor, jaw locked tight. Camera holds low and steady, drifting slowly left.',
-          // Scene 2: internal shift — first deliberate movement
-          'Subject lifts their head for the first time. Eyes move upward, throat visibly swallows, fingers slowly uncurl from their grip. One deliberate gesture breaking the stillness. Camera pushes steadily in from medium to tight on face.',
-          // Scene 3: resolve — decisive physical action
-          'Subject stands with clear purpose. Reaches for an object deliberately, shoulders squaring. One decisive physical movement. Camera pulls back slowly to reveal the full surrounding environment.',
-        ];
         const MAX_KLING_PROMPT = 400;
 
         // Compact anchor: era + first 3 niche terms only (not a keyword dump)
@@ -793,12 +786,39 @@ export async function POST(req: Request) {
         const eraAnchor = detectedEra ? `${detectedEra}.` : '';
         const klingAnchor = [eraAnchor, nicheAnchor].filter(Boolean).join(' ');
 
+        // ── Storyboard beats → script-specific Kling motion directions ────────
+        // If beats were passed from scene-images response, use them.
+        // Otherwise generate fresh beats from the script (graceful fallback to static directions).
+        const FALLBACK_DIRECTIONS = [
+          'Subject is rigid and absolutely still. Micro-movements only: shallow visible breathing, slight hand tremor, jaw locked tight. Camera holds low and steady, drifting slowly left.',
+          'Subject lifts their head for the first time. Eyes move upward, throat visibly swallows, fingers slowly uncurl from their grip. One deliberate gesture breaking the stillness. Camera pushes steadily in from medium to tight on face.',
+          'Subject stands with clear purpose. Reaches for an object deliberately, shoulders squaring. One decisive physical movement. Camera pulls back slowly to reveal the full surrounding environment.',
+        ];
+
+        let storyBeats: StoryBeat[] | null = passedStoryBeats ?? null;
+        if (!storyBeats) {
+          const beatScript = (voiceoverText || prompts.join('. ')).trim();
+          if (beatScript.length > 40) {
+            try {
+              storyBeats = await analyzeScriptBeats(beatScript, enforcedPrompts.length, nicheSettings);
+              console.log(`[STORYBOARD] generated ${storyBeats.length} beats from script for Kling directions`);
+            } catch (beatErr) {
+              console.warn('[STORYBOARD] beat analysis failed, using fallback directions:', beatErr instanceof Error ? beatErr.message : beatErr);
+            }
+          }
+        } else {
+          console.log(`[STORYBOARD] using ${storyBeats.length} beats passed from scene-images`);
+        }
+
         const builtKlingPrompts: string[] = [];
         const klingScenePrompts = enforcedPrompts.map((_p, i) => {
-          const direction = SCENE_DIRECTIONS[i % SCENE_DIRECTIONS.length];
-          const final     = [klingAnchor, direction].filter(Boolean).join(' ').slice(0, MAX_KLING_PROMPT);
+          const beat = storyBeats?.[i];
+          const direction = beat
+            ? beatToKlingDirection(beat)
+            : FALLBACK_DIRECTIONS[i % FALLBACK_DIRECTIONS.length];
+          const final = [klingAnchor, direction].filter(Boolean).join(' ').slice(0, MAX_KLING_PROMPT);
           builtKlingPrompts.push(final);
-          console.log(`[KLING_PROMPT_UNIQUE] scene=${i + 1}: ${final.substring(0, 200)}`);
+          console.log(`[KLING_PROMPT_UNIQUE] scene=${i + 1}${beat ? ` beat="${beat.purpose}"` : ' (fallback)'}: ${final.substring(0, 200)}`);
           if (i > 0) {
             console.log(`[PROMPT_DIFF] scene=${i + 1} differs from scene 1: ${final !== builtKlingPrompts[0]}`);
           }
