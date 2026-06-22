@@ -11,6 +11,8 @@ export interface NicheSettings {
   lightningModeDefault: boolean;
   eraDetection: boolean;
   emotionalArc: string;
+  environmentInclude: string;
+  environmentExclude: string;
 }
 
 export const NICHE_SETTINGS: Record<string, NicheSettings> = {
@@ -28,6 +30,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: false,
     eraDetection: true,
     emotionalArc: 'Context → Tension → Revelation',
+    environmentInclude: 'Steel-frame bunk beds, thin mattresses, rough wool blankets, bare concrete or wooden plank floor, bare incandescent bulb hanging from wire or oil lamp, canvas kit bags, steel helmets, canteens, wooden footlockers, rough wooden support posts, small high windows with no curtains, institutional military setting',
+    environmentExclude: 'Standing floor lamps, lampshades, curtains, drapes, upholstered furniture, armchairs, sofas, side tables, carpet, rugs, picture frames, home furniture, modern light fixtures, hotel room, living room, decorative items',
   },
 
   'true-stories-documentary': {
@@ -43,6 +47,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: false,
     eraDetection: true,
     emotionalArc: 'Story build → Climax → Reflection',
+    environmentInclude: 'Real unpolished locations, natural imperfections, visible wear on surfaces, authentic clutter, real-world signage, natural window light, everyday objects in use, lived-in spaces',
+    environmentExclude: 'Studio backdrops, perfect lighting, green screen, pristine sets, magazine-ready rooms, stock photo feel, overly styled environments',
   },
 
   motivation: {
@@ -58,6 +64,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: true,
     eraDetection: false,
     emotionalArc: 'Struggle → Breakthrough → Triumph',
+    environmentInclude: 'Outdoor sunrise or sunset, mountain peak, running track, empty road stretching ahead, gym at dawn, rooftop with city skyline, open field, staircase, boxing ring, weight room',
+    environmentExclude: 'Couch, bed, messy room, dark basement, cluttered desk, junk food, TV screen, gaming chair, nightclub',
   },
 
   'business-entrepreneurship': {
@@ -73,6 +81,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: true,
     eraDetection: false,
     emotionalArc: 'Problem → Strategy → Victory',
+    environmentInclude: 'Glass-walled office, conference table, whiteboard with notes, laptop open, skyline through window, co-working space, presentation screen, standing desk, modern workspace',
+    environmentExclude: 'Bedroom, kitchen, messy apartment, gaming setup, gym, playground, beach lounge, medieval castle, fantasy setting',
   },
 
   'personal-finance': {
@@ -88,6 +98,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: true,
     eraDetection: false,
     emotionalArc: 'Problem → Plan → Progress',
+    environmentInclude: 'Kitchen table with bills and calculator, notebook with handwritten budget, phone showing banking app, organised filing, piggy bank, envelopes for cash budgeting, grocery receipt',
+    environmentExclude: 'Luxury mansion, yacht, sports car, champagne, designer store, penthouse, stacks of cash, gold bars, casino chips',
   },
 
   investing: {
@@ -103,6 +115,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: true,
     eraDetection: false,
     emotionalArc: 'Research → Decision → Growth',
+    environmentInclude: 'Clean desk with monitor showing charts, financial newspaper, notebook with analysis, coffee cup, calculator, bookshelf with finance books, quiet home office',
+    environmentExclude: 'Casino, roulette wheel, lottery tickets, slot machine, stacks of cash, flashy cars, nightclub, party',
   },
 
   'side-hustles': {
@@ -118,6 +132,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: true,
     eraDetection: false,
     emotionalArc: 'Idea → Hustle → Result',
+    environmentInclude: 'Home desk with laptop and shipping supplies, packing tape, product boxes, label printer, phone with seller app, garage workspace, craft supplies, inventory shelves',
+    environmentExclude: 'Luxury car, private jet, mansion, penthouse, designer clothes, beach with cocktail, passive lounging',
   },
 
   'money-saving': {
@@ -133,6 +149,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: true,
     eraDetection: false,
     emotionalArc: 'Problem → Hack → Savings',
+    environmentInclude: 'Grocery store aisle, coupon organiser, bulk buy items, reusable containers, comparison shopping on phone, thrift store rack, clearance tags, meal prep containers',
+    environmentExclude: 'Designer store, luxury brand, premium restaurant, first class cabin, five-star hotel, expensive wine, brand new car',
   },
 
   lifestyle: {
@@ -148,6 +166,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: true,
     eraDetection: false,
     emotionalArc: 'Moment → Connection → Feeling',
+    environmentInclude: 'Real home interior, coffee shop window seat, park bench, apartment balcony, cozy bedroom corner, farmers market stall, neighbourhood street, bathroom mirror',
+    environmentExclude: 'Corporate office, laboratory, operating room, battlefield, factory floor, courtroom, fantasy realm',
   },
 
   trends: {
@@ -163,6 +183,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: true,
     eraDetection: false,
     emotionalArc: 'Hook → Show → React',
+    environmentInclude: 'Bright contemporary space, neon signs, bold wall colours, trendy cafe, pop-up store, urban street art wall, ring light setup, phone on tripod',
+    environmentExclude: 'Historical setting, dusty antique shop, rural farm, traditional formal office, dated furniture, brown earth tones, plain beige walls',
   },
 
   'health-wellness': {
@@ -178,6 +200,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: true,
     eraDetection: false,
     emotionalArc: 'Awareness → Practice → Balance',
+    environmentInclude: 'Bright kitchen with whole foods on counter, yoga mat near window, nature trail, herbal tea setup, meditation corner with cushion, farmers market produce, smoothie ingredients, morning sunlight',
+    environmentExclude: 'Heavy gym equipment, protein powder tubs, bodybuilding posters, hospital ward, surgical tools, fast food restaurant, dark bar, cigarettes',
   },
 
   fitness: {
@@ -193,6 +217,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: true,
     eraDetection: false,
     emotionalArc: 'Challenge → Effort → Achievement',
+    environmentInclude: 'Gym floor with squat rack and plates, rubber mat, dumbbells, pull-up bar, running track, outdoor park workout area, jump rope, kettlebells, gym mirror',
+    environmentExclude: 'Couch, bed, dining table, office desk, cooking kitchen, beauty vanity, meditation cushion, spa',
   },
 
   luxury: {
@@ -208,6 +234,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: false,
     eraDetection: false,
     emotionalArc: 'Aspiration → Experience → Indulgence',
+    environmentInclude: 'Marble floor, crystal chandelier, leather seating, gold accents, polished surfaces, penthouse view, designer boutique interior, champagne glass, fresh flowers in crystal vase, silk fabric, walnut wood',
+    environmentExclude: 'Broken items, rust, peeling paint, graffiti, trash, dirt, budget store, plastic furniture, worn carpet, fast food, junkyard, abandoned building, damaged vehicle',
   },
 
   sustainability: {
@@ -223,6 +251,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: true,
     eraDetection: false,
     emotionalArc: 'Awareness → Action → Impact',
+    environmentInclude: 'Community garden, compost bin, solar panels on roof, reusable bag collection, bamboo products, glass jars for storage, bicycle, farmers market, rain barrel, wildflower patch',
+    environmentExclude: 'Plastic bottles piled up, fast fashion store, disposable cups, private jet, mega yacht, excessive packaging, factory smokestacks',
   },
 
   'technology-ai': {
@@ -238,6 +268,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: true,
     eraDetection: false,
     emotionalArc: 'Problem → Innovation → Future',
+    environmentInclude: 'Multiple monitors with code or UI, mechanical keyboard, clean desk with devices, server rack lights, drone on desk, smart home devices, VR headset, circuit board close-up',
+    environmentExclude: 'Rustic cabin, farmhouse, candlelit room, handwritten notes only, medieval setting, no-technology environment, old-fashioned typewriter',
   },
 
   'nomad-lifestyle': {
@@ -253,6 +285,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: false,
     eraDetection: false,
     emotionalArc: 'Departure → Discovery → Belonging',
+    environmentInclude: 'Cafe in foreign city with laptop, backpack on hostel bed, temple steps, mountain trail vista, airport departure board, street market stall, co-working space abroad, van interior with bedding',
+    environmentExclude: 'Suburban office cubicle, commuter train, grey city car park, corporate conference room, identical apartment complex',
   },
 
   'music-dance': {
@@ -268,6 +302,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: true,
     eraDetection: false,
     emotionalArc: 'Buildup → Performance → Release',
+    environmentInclude: 'Stage with coloured lights, recording studio booth, microphone on stand, DJ turntable, dance studio mirror wall, instrument close-up, concert crowd silhouette, headphones on mixing desk',
+    environmentExclude: 'Office desk, spreadsheet on screen, kitchen counter, medical exam room, courtroom, library study table',
   },
 
   'news-politics': {
@@ -283,6 +319,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: true,
     eraDetection: true,
     emotionalArc: 'Event → Context → Impact',
+    environmentInclude: 'Government building steps, press conference podium, newsroom with monitors, protest crowd with signs, parliament chamber, courthouse exterior, press pass, microphone forest',
+    environmentExclude: 'Gaming room, anime poster, cooking show set, beauty salon, beach party, fantasy castle, cartoon world',
   },
 
   teens: {
@@ -298,6 +336,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: true,
     eraDetection: false,
     emotionalArc: 'Moment → Emotion → Growth',
+    environmentInclude: 'School hallway with lockers, bedroom with fairy lights and posters, park with friends, school cafeteria, sports field sideline, library study table, phone screen showing group chat',
+    environmentExclude: 'Bar, nightclub, alcohol bottles, cigarettes, weapons, adult workplace, casino, dark alley, anything sexually suggestive',
   },
 
   'cars-motors': {
@@ -313,6 +353,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: true,
     eraDetection: false,
     emotionalArc: 'Reveal → Action → Impact',
+    environmentInclude: 'Clean garage with tool wall, showroom floor, race track tarmac, open highway stretching ahead, car meet parking lot, engine bay close-up, polished wheel detail, driver seat cockpit view',
+    environmentExclude: 'Kitchen, yoga studio, beauty salon, office cubicle, flower garden, bedroom, classroom, hospital',
   },
 
   diy: {
@@ -328,6 +370,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: true,
     eraDetection: false,
     emotionalArc: 'Plan → Build → Reveal',
+    environmentInclude: 'Workbench with tools organised, sawdust on floor, measuring tape and pencil, clamps holding wood, paint cans and brushes, drill and screws laid out, partially built project, safety goggles',
+    environmentExclude: 'Luxury store, shopping mall, unboxing from Amazon, factory assembly line, corporate office, empty sterile room',
   },
 
   'skill-improvement': {
@@ -343,6 +387,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: true,
     eraDetection: false,
     emotionalArc: 'Question → Practice → Mastery',
+    environmentInclude: 'Desk with open textbook and notebook, laptop showing tutorial, whiteboard with diagrams, practice instrument, language flashcards, highlighted study notes, library carrel, online course on screen',
+    environmentExclude: 'Nightclub, party, gaming setup, TV with entertainment, couch lounging, bar, messy floor',
   },
 
   relationships: {
@@ -358,6 +404,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: false,
     eraDetection: false,
     emotionalArc: 'Connection → Tension → Resolution',
+    environmentInclude: 'Park bench for two, dinner table with candles, kitchen cooking together, couch with blanket, walking path, beach shoreline, car interior conversation, doorstep moment',
+    environmentExclude: 'Courtroom, lawyer office, single person angry, broken glass, slamming door, violent scene, dark lonely room',
   },
 
   dating: {
@@ -373,6 +421,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: true,
     eraDetection: false,
     emotionalArc: 'Anticipation → Meeting → Spark',
+    environmentInclude: 'Coffee shop two-top table, restaurant booth, park meeting spot, bar counter with two drinks, phone showing dating app, getting-ready mirror, walking toward each other on street',
+    environmentExclude: 'Wedding venue, baby nursery, divorce papers, courtroom, empty apartment alone crying, stalking scene',
   },
 
   friendships: {
@@ -388,6 +438,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: true,
     eraDetection: false,
     emotionalArc: 'Gathering → Moment → Bond',
+    environmentInclude: 'Living room floor with snacks, park picnic blanket, restaurant long table, hiking trail group, road trip car packed, kitchen cooking together, backyard fire pit, bowling alley',
+    environmentExclude: 'Romantic dinner for two, wedding altar, solo desk, corporate boardroom, dark lonely room, formal gala',
   },
 
   'beauty-skincare': {
@@ -403,6 +455,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: true,
     eraDetection: false,
     emotionalArc: 'Before → Process → Glow',
+    environmentInclude: 'Vanity mirror with ring light, bathroom counter with products arranged, cotton pads and serums, face close-up with dewy skin, makeup palette open, brush set, clean white towel, skincare fridge',
+    environmentExclude: 'Garage, engine grease, construction site, muddy field, sweaty gym, dark industrial space, welding sparks',
   },
 
   'food-recipes': {
@@ -418,6 +472,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: true,
     eraDetection: false,
     emotionalArc: 'Prep → Cook → Serve',
+    environmentInclude: 'Kitchen counter with ingredients prepped, cutting board with knife and vegetables, stovetop with pan and steam, oven with golden bake visible, plated dish on table, herbs and spices jars, mixing bowl mid-action',
+    environmentExclude: 'Laboratory, medical equipment, gym weights, gaming monitor, car engine, office printer, construction tools',
   },
 
   'fashion-style': {
@@ -433,6 +489,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: true,
     eraDetection: false,
     emotionalArc: 'Reveal → Showcase → Impact',
+    environmentInclude: 'Full-length mirror, clothing rack with curated pieces, urban brick wall backdrop, boutique interior, shoe collection shelf, sunglasses and accessories flat lay, street style sidewalk, studio with simple backdrop',
+    environmentExclude: 'Gym in workout clothes only, hospital gown, construction helmet, hazmat suit, medieval armour, chef apron and kitchen',
   },
 
   gaming: {
@@ -448,6 +506,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: true,
     eraDetection: false,
     emotionalArc: 'Setup → Play → Clutch',
+    environmentInclude: 'RGB-lit desk setup, dual monitors with game on screen, mechanical keyboard with coloured keys, gaming headset, controller in hand, mousepad with wrist rest, LED strip behind monitor, dark room with screen glow',
+    environmentExclude: 'Outdoor hiking trail, kitchen cooking, beauty vanity, yoga mat, formal office desk, garden with flowers, library quiet zone',
   },
 
   spirituality: {
@@ -463,6 +523,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: false,
     eraDetection: false,
     emotionalArc: 'Seeking → Stillness → Clarity',
+    environmentInclude: 'Temple interior with soft light, meditation cushion on floor, prayer beads in hands, candle arrangement, incense smoke trail, natural setting with sunbeams through trees, church pew, sacred text open on table',
+    environmentExclude: 'Nightclub, rave with strobes, horror scene, demonic imagery, loud concert, aggressive sports, casino, fast food restaurant',
   },
 
   'comedy-entertainment': {
@@ -478,6 +540,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: true,
     eraDetection: false,
     emotionalArc: 'Setup → Punchline → Reaction',
+    environmentInclude: 'Living room mid-reaction, kitchen with exaggerated mess, office with absurd situation, mirror with funny face, park with physical comedy setup, couch with snacks and surprised expression',
+    environmentExclude: 'Funeral, hospital ICU, war zone, crime scene, courtroom sentencing, cemetery, disaster aftermath',
   },
 
   'pet-care': {
@@ -493,6 +557,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: true,
     eraDetection: false,
     emotionalArc: 'Meet → Bond → Joy',
+    environmentInclude: 'Living room floor with pet toys, park grass with dog running, cat tree near window, pet bed with sleeping animal, vet exam table (friendly), food bowl being filled, garden with pet exploring, leash and collar close-up',
+    environmentExclude: 'Animal testing lab, hunting scene, cramped cage, slaughterhouse, taxidermy, animal fight ring, neglected dirty kennel',
   },
 
   'mental-health': {
@@ -508,6 +574,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: false,
     eraDetection: false,
     emotionalArc: 'Struggle → Awareness → Peace',
+    environmentInclude: 'Cozy corner with blanket and journal, window seat with rain outside, nature path alone, therapy office with comfortable chair, warm cup of tea in hands, sunrise view from bed, calm water reflection',
+    environmentExclude: 'Loud party, extreme sports, horror imagery, violent scene, chaotic crowd, aggressive confrontation, dark frightening space',
   },
 
   productivity: {
@@ -523,6 +591,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: true,
     eraDetection: false,
     emotionalArc: 'Chaos → System → Control',
+    environmentInclude: 'Clean desk with planner open, monitor with to-do app, timer visible, organised shelf with labelled boxes, morning coffee next to laptop, bullet journal with pen, standing desk, minimalist workspace',
+    environmentExclude: 'Messy room with clothes everywhere, TV on with streaming, phone showing social media scroll, unmade bed at 2pm, junk food wrappers, overflowing trash',
   },
 
   minimalism: {
@@ -538,6 +608,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: false,
     eraDetection: false,
     emotionalArc: 'Excess → Release → Calm',
+    environmentInclude: 'White wall with single framed item, empty shelf with one object, capsule wardrobe in open closet, clear desk with only laptop, single plant on windowsill, empty drawer, folded neutral clothing stack',
+    environmentExclude: 'Cluttered room, shopping bags piled, excessive decoration, maximalist colour explosion, hoarding stacks, overflowing closet, multiple trinkets',
   },
 
   weddings: {
@@ -553,6 +625,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: false,
     eraDetection: false,
     emotionalArc: 'Preparation → Moment → Celebration',
+    environmentInclude: 'Flower arch ceremony backdrop, aisle with petals, reception table with candles and place settings, dress hanging in window light, ring box open, first dance floor, bride getting-ready mirror, bouquet close-up',
+    environmentExclude: 'Divorce papers, courtroom, argument scene, black mourning clothes, empty apartment, broken items, funeral flowers',
   },
 
   sports: {
@@ -568,6 +642,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: true,
     eraDetection: false,
     emotionalArc: 'Preparation → Competition → Victory',
+    environmentInclude: 'Stadium field with markings, basketball court hardwood, swimming pool lanes, running track with starting blocks, locker room bench, trophy display, sideline bench, scoreboard',
+    environmentExclude: 'Gaming PC setup, esports arena, cooking competition, beauty pageant, office meeting, dance studio',
   },
 
   'recovery-relaxation': {
@@ -583,6 +659,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: false,
     eraDetection: false,
     emotionalArc: 'Tension → Release → Restoration',
+    environmentInclude: 'Foam roller on yoga mat, bath with candles, sauna wooden bench, ice bath tub, hammock in garden, stretching on grass, warm compress on shoulder, sleep mask on nightstand, weighted blanket',
+    environmentExclude: 'Heavy weights, sprint track, boxing ring, loud concert, high-intensity gym, competition stage, crowded bar',
   },
 
   kindness: {
@@ -598,6 +676,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: false,
     eraDetection: false,
     emotionalArc: 'Setup → Act → Reaction',
+    environmentInclude: 'Street sidewalk handoff, grocery store helping elderly, park bench sharing food, shelter volunteer line, surprise gift wrapping, hospital bedside visit, community garden helping, school classroom sharing',
+    environmentExclude: 'Staged studio, camera crew visible, forced tears, exploitation setup, brand logos prominent, scripted acting, mockery',
   },
 
   psychology: {
@@ -613,6 +693,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: false,
     eraDetection: false,
     emotionalArc: 'Observation → Analysis → Insight',
+    environmentInclude: 'Two people in conversation showing body language, therapy office with two chairs, person alone thinking on park bench, mirror reflection, crowd with one person isolated, eyes in extreme close-up, hands gesturing during conversation',
+    environmentExclude: 'Gaming setup, cooking show, fashion runway, gym floor, concert stage, beauty counter, sports arena',
   },
 
   '3d-animation': {
@@ -628,6 +710,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: true,
     eraDetection: false,
     emotionalArc: 'World build → Story → Climax',
+    environmentInclude: 'Clean 3D rendered environment, studio lighting on digital subject, geometric shapes, polygon mesh visible, stylised landscape, digital character on pedestal, Blender/Maya viewport feel',
+    environmentExclude: 'Real person in costume, cosplay outfit, Halloween dress-up, live-action photography, handheld camera shake, documentary grain, real human skin texture',
   },
 
   vfx: {
@@ -643,6 +727,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: false,
     eraDetection: false,
     emotionalArc: 'Behind scenes → Final shot → Wow',
+    environmentInclude: 'Green screen set with markers, before/after split screen, particle effect explosion, matte painting landscape, compositing layers visible, motion capture suit, film set with camera rig',
+    environmentExclude: 'Amateur phone video, selfie bathroom mirror, cooking vlog, daily routine, low production casual content, TikTok dance',
   },
 
   'medical-animation': {
@@ -658,6 +744,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: false,
     eraDetection: false,
     emotionalArc: 'Question → Explanation → Understanding',
+    environmentInclude: 'Clean molecular structure floating, cell cross-section diagram, anatomical model in white space, organ system with labels area, clean lab with microscope, DNA helix rotation, surgical tool layout on sterile tray',
+    environmentExclude: 'Gore, blood splatter, horror anatomy, zombie, monster, dark fantasy creature, dirty operating room, amateur dissection',
   },
 
   'vr-ar': {
@@ -673,6 +761,8 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     lightningModeDefault: true,
     eraDetection: false,
     emotionalArc: 'Real world → Immersive experience → Transformation',
+    environmentInclude: 'Person wearing VR headset reaching into space, holographic UI panels floating, augmented overlay on real room, digital world environment with grid floor, mixed reality hand interaction, headset reflection showing virtual content',
+    environmentExclude: 'Cooking kitchen, pet walking, garden planting, historical setting, candlelit room, rustic cabin, no-technology environment',
   },
 
 };
