@@ -297,7 +297,7 @@ export async function POST(req: Request) {
         ? "photorealistic, live action, real people, blurry, deformed, extra limbs, text, watermark, nsfw, nude"
         : [
             "nudity, nude, nsfw, sexual, explicit, bare skin, underwear",
-            "extra limbs, deformed hands, bad anatomy, mutation, disfigured",
+            "extra limbs, deformed hands, bad anatomy, mutation, disfigured, extra fingers, three hands, two left hands, malformed limbs, backwards knees, reversed joints, impossible joint angle, head facing backward, inverted feet, wrong grip, object held incorrectly, deformed object, incorrect prop shape, phone shaped like remote, distorted device, wrong object in hand, floating object, arm from wrong position",
             "text, watermark, logo, signature, frame, border",
             "cartoon, anime, illustration, painting, cgi, render",
             "blurry, out of focus, low quality, pixelated, noise",

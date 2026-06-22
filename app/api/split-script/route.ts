@@ -178,6 +178,14 @@ VISUAL PROMPT RULES — every scene needs a candid photographic motion descripti
   - Good: "A creator leans forward at a standing desk, gesturing confidently. Natural window light shifts. Camera slowly pushes in from medium to close."
   - If the scene involves two people: say "two people" or "a couple" explicitly in the prompt
 
+PROPS & OBJECTS RULE — CRITICAL:
+  - If the script mentions a character holding or using an object, you MUST specify: what hand, grip direction, and object orientation
+  - Bad: "woman holding phone at gym"
+  - Good: "woman holds smartphone screen-facing-out in right hand at her side, dumbbell in left hand, gym background"
+  - Avoid having characters hold more than one object unless the script explicitly requires it
+  - If one hand holds something, the other hand must have a clear natural position (at side, on hip, etc.)
+  - NEVER describe a phone as "device" or leave object type ambiguous — name it exactly as the script says
+
 IMAGE STYLE RULES — CRITICAL:
   - All images must look like real photographs taken by a human photographer
   - Style: candid photography, natural lighting, shot on iPhone or DSLR

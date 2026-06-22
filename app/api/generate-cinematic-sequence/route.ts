@@ -668,7 +668,12 @@ export async function POST(req: Request) {
           "extra limbs, extra fingers, extra arms, extra hands, mutated hands, deformed hands, " +
           "fused fingers, too many fingers, missing fingers, ugly hands, distorted limbs, " +
           "bad anatomy, extra legs, malformed limbs, three hands, two left hands, " +
-          "overlapping limbs, fused bodies, merged torsos, anatomical errors";
+          "overlapping limbs, fused bodies, merged torsos, anatomical errors, " +
+          "backwards knees, knees bending wrong direction, reversed joints, impossible joint angle, " +
+          "head facing backward, neck twisted 180 degrees, inverted feet, " +
+          "wrong grip, object held incorrectly, deformed object, incorrect prop shape, " +
+          "phone shaped like remote, distorted device, wrong object in hand, floating object, " +
+          "object clipping through body, arm coming from wrong position";
         const _negEmotional = _isEmotional
           ? "premature smiling, overly joyful expression too early, laughing out loud, wrong orientation, generic romance without sadness"
           : "";
