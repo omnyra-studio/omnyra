@@ -102,7 +102,7 @@ export async function generateKlingClip(params: {
     duration:        String(params.duration),
     aspect_ratio:    params.aspectRatio,
   };
-  if (hasImage) body.image_url = params.imageUrl;
+  if (hasImage) body.image = params.imageUrl;
   if (params.seed != null) body.seed = params.seed;
 
   console.log(`[KLING_DIRECT] scene=${params.sceneNumber} POST ${endpoint} model=kling-v2-6 mode=${params.mode} dur=${params.duration}s hasImage=${hasImage}`);
