@@ -828,50 +828,83 @@ async function executeLipsyncStage(
     }
   }
 
-  // ── Inline poll for 90s, then fall back to cron ──────────────────────────
+  // ── Inline poll — 4 min, 5s interval, Kling fallback on timeout/error ──────
   void setPipelineStatus(job.id, "generating_avatar");
-  const pollMs    = 2_000;
-  const maxPollMs = 230_000; // 230s — covers most Hedra jobs within maxDuration=300
-  const pollStart = Date.now();
-  let hedraVideoUrl: string | null = null;
+  const MAX_POLL_TIME_MS  = 240_000; // 4 minutes
+  const HEDRA_POLL_MS     = 5_000;   // 5s per tick
+  const HEDRA_RETRY_AFTER = 90_000;  // log retry warning past 90s
+  const HEDRA_MAX_RETRIES = 2;
 
-  while (Date.now() - pollStart < maxPollMs) {
-    await new Promise(r => setTimeout(r, pollMs));
-    const elapsedS = Math.round((Date.now() - pollStart) / 1000);
-    let pollResult: Awaited<ReturnType<typeof checkHedraGenerationStatus>>;
-    try {
-      pollResult = await checkHedraGenerationStatus(hedraGenId);
-    } catch (e) {
-      log(`[HEDRA_POLL_ERROR] elapsed=${elapsedS}s check_threw: ${(e as Error).message}`);
-      break;
-    }
-    if (pollResult.status === "complete" && pollResult.videoUrl) {
-      hedraVideoUrl = pollResult.videoUrl;
-      log(`[HEDRA_POLL_SUCCESS] elapsed=${elapsedS}s videoUrl=${pollResult.videoUrl.substring(0, 60)}`);
-      break;
-    }
-    if (pollResult.status === "error") {
-      log(`[HEDRA_POLL_ERROR] elapsed=${elapsedS}s msg=${pollResult.errorMessage ?? "unknown"}`);
-      break;
-    }
-    if (elapsedS % 10 === 0 || elapsedS <= 4) {
-      log(`[HEDRA_POLL] elapsed=${elapsedS}s status=${pollResult.status ?? "pending"} id=${hedraGenId.substring(0, 12)}`);
-    }
-  }
+  try {
+    let elapsed    = 0;
+    let attempts   = 0;
+    let successUrl: string | null = null;
 
-  if (hedraVideoUrl) {
-    await markCostCharged(job.id, "lipsync", reqHash, hedraVideoUrl);
-    await completeLedgerEntry(job.id, "lipsync", workerId, hedraVideoUrl);
-    await completeJobWithLease(job.id, workerId, hedraVideoUrl, hedraVideoUrl);
-    void saveAvatarRender(job.user_id, hedraVideoUrl, job.input.script, log);
+    while (elapsed < MAX_POLL_TIME_MS) {
+      await new Promise(r => setTimeout(r, HEDRA_POLL_MS));
+      elapsed += HEDRA_POLL_MS;
+      const elapsedS = Math.round(elapsed / 1000);
+
+      let pollResult: Awaited<ReturnType<typeof checkHedraGenerationStatus>>;
+      try {
+        pollResult = await checkHedraGenerationStatus(hedraGenId);
+      } catch (e) {
+        log(`[HEDRA_POLL_ERROR] elapsed=${elapsedS}s check_threw: ${(e as Error).message}`);
+        continue;
+      }
+
+      if (pollResult.status === "complete" && pollResult.videoUrl) {
+        successUrl = pollResult.videoUrl;
+        log(`[HEDRA_POLL_SUCCESS] elapsed=${elapsedS}s videoUrl=${pollResult.videoUrl.substring(0, 60)}`);
+        break;
+      }
+
+      if (pollResult.status === "error") {
+        throw new Error(`Hedra generation failed: ${pollResult.errorMessage ?? "unknown"}`);
+      }
+
+      if (elapsed > HEDRA_RETRY_AFTER && attempts < HEDRA_MAX_RETRIES) {
+        attempts++;
+        log(`[HEDRA_RETRY] attempt ${attempts} after ${elapsedS}s stuck in ${pollResult.status ?? "queued"}`);
+      }
+
+      if (elapsedS % 15 === 0 || elapsedS <= 10) {
+        log(`[HEDRA_POLL] elapsed=${elapsedS}s status=${pollResult.status ?? "pending"} id=${hedraGenId.substring(0, 12)}`);
+      }
+    }
+
+    if (!successUrl) {
+      throw new Error(`Hedra timeout - fallback to Kling after ${Math.round(elapsed / 1000)}s`);
+    }
+
+    // ── Hedra success ─────────────────────────────────────────────────────────
+    await markCostCharged(job.id, "lipsync", reqHash, successUrl);
+    await completeLedgerEntry(job.id, "lipsync", workerId, successUrl);
+    await completeJobWithLease(job.id, workerId, successUrl, successUrl);
+    void saveAvatarRender(job.user_id, successUrl, job.input.script, log);
     const audioDurStr = audioDurationSec != null ? audioDurationSec.toFixed(1) : "unknown";
     log(`[AVATAR_DURATION] voice=${audioDurStr}s final=${audioDurStr}s elapsed=${Math.round((Date.now() - hedraT0) / 1000)}s`);
     log(`[HEDRA_COMPLETE] pipeline COMPLETE inline elapsed_total=${Math.round((Date.now() - stageT0) / 1000)}s`);
-  } else {
-    // Cron fallback: release lease so the minute-cron can finish the job
-    await releaseLeaseAfterSubmit(job.id, workerId);
-    void setPipelineStatus(job.id, "awaiting_hedra");
-    log(`[HEDRA_CRON_FALLBACK] poll exhausted after ${Math.round((Date.now() - pollStart) / 1000)}s — lease released, cron will complete`);
+
+  } catch (hedraErr) {
+    // Hedra failed or timed out — try Kling i2v as substitute
+    log(`[HEDRA_FALLBACK] ${(hedraErr as Error).message} — attempting Kling fallback`);
+    try {
+      const klingUrl = await klingAvatarFallback({
+        imageUrl:     avatarImageRaw,
+        prompt:       hedraTextPrompt,
+        durationSecs: audioDurationSec ?? 10,
+      }, log);
+      await markCostCharged(job.id, "lipsync", reqHash, klingUrl);
+      await completeLedgerEntry(job.id, "lipsync", workerId, klingUrl);
+      await completeJobWithLease(job.id, workerId, klingUrl, klingUrl);
+      void saveAvatarRender(job.user_id, klingUrl, job.input.script, log);
+      log(`[KLING_FALLBACK_COMPLETE] pipeline COMPLETE via Kling elapsed_total=${Math.round((Date.now() - stageT0) / 1000)}s`);
+    } catch (klingErr) {
+      log(`[KLING_FALLBACK_ERROR] ${(klingErr as Error).message} — releasing to cron`);
+      await releaseLeaseAfterSubmit(job.id, workerId);
+      void setPipelineStatus(job.id, "awaiting_hedra");
+    }
   }
 }
 

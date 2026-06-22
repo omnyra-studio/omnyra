@@ -1148,8 +1148,12 @@ export default function GenerationFlow({
               <option value="TikTok">🎵 TikTok</option>
               <option value="Instagram Reels">📸 Instagram Reels</option>
               <option value="YouTube Shorts">▶️ YouTube Shorts</option>
+              <option value="YouTube Long">▶️ YouTube Long</option>
               <option value="Facebook Reels">👤 Facebook Reels</option>
               <option value="Pinterest">📌 Pinterest</option>
+              <option value="Snapchat">👻 Snapchat</option>
+              <option value="X (Twitter)">🐦 X (Twitter)</option>
+              <option value="Threads">🧵 Threads</option>
             </select>
           </div>
         </div>
