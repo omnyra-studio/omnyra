@@ -80,6 +80,7 @@ export async function generateKlingClip(params: {
   duration:        number;   // seconds — 5 or 10
   aspectRatio:     string;   // "9:16" | "16:9" | "1:1"
   mode:            "std" | "pro";
+  motionStrength?: number;   // 0.0–1.0, default 0.5 if omitted
   seed?:           number;
   sceneNumber:     number;
 }): Promise<{ videoUrl: string; generationMs: number }> {
@@ -105,6 +106,7 @@ export async function generateKlingClip(params: {
   };
   if (hasImage) body.image = params.imageUrl;
   if (params.seed != null) body.seed = params.seed;
+  if (params.motionStrength != null) body.motion_strength = params.motionStrength;
 
   console.log(`[KLING_DIRECT] scene=${params.sceneNumber} POST ${endpoint} model=kling-v3 mode=${params.mode} dur=${params.duration}s hasImage=${hasImage}`);
 

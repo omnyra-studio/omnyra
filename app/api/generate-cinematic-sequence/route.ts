@@ -830,6 +830,15 @@ export async function POST(req: Request) {
           console.log(`[STORYBOARD] no beats or creative scenes passed — using FALLBACK_DIRECTIONS`);
         }
 
+        // Per-scene camera movements — wide → medium → close-up arc across 3 scenes
+        const KLING_CAMERA_MOVES = [
+          "slow cinematic establishing push-in from wide shot",
+          "medium emotional tracking shot with gentle pan",
+          "tight close-up with subtle floating camera movement",
+        ];
+        const KLING_MOTION_QUALITY =
+          "Strong visible actions: breathing, subtle head turns, micro-expressions, continuous natural motion for the full duration. No static frames. Alive and dynamic.";
+
         const builtKlingPrompts: string[] = [];
         const klingScenePrompts = enforcedPrompts.map((_p, i) => {
           let direction: string;
@@ -844,9 +853,11 @@ export async function POST(req: Request) {
             direction = FALLBACK_DIRECTIONS[i % FALLBACK_DIRECTIONS.length];
             dirSource = "fallback";
           }
-          const final = [klingAnchor, direction].filter(Boolean).join(' ').slice(0, MAX_KLING_PROMPT);
+          const cameraMove = KLING_CAMERA_MOVES[i % KLING_CAMERA_MOVES.length];
+          const final = [klingAnchor, direction, `Camera: ${cameraMove}.`, KLING_MOTION_QUALITY]
+            .filter(Boolean).join(' ').slice(0, MAX_KLING_PROMPT);
           builtKlingPrompts.push(final);
-          console.log(`[KLING_PROMPT_UNIQUE] scene=${i + 1} src=${dirSource}: ${final.substring(0, 200)}`);
+          console.log(`[KLING_PROMPT_UNIQUE] scene=${i + 1} src=${dirSource} camera="${cameraMove}": ${final.substring(0, 200)}`);
           if (i > 0) {
             console.log(`[PROMPT_DIFF] scene=${i + 1} differs from scene 1: ${final !== builtKlingPrompts[0]}`);
           }
@@ -869,6 +880,7 @@ export async function POST(req: Request) {
               duration:        KLING_CLIP_SECS,
               aspectRatio:     "9:16",
               mode:            "std",
+              motionStrength:  0.80,
               seed:            baseSeed + i,
               sceneNumber:     i + 1,
             });
