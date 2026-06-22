@@ -1,66 +1,90 @@
 /**
- * Strip camera directions and stage directions from a script before TTS.
- * The ORIGINAL script (with directions) must still go to video prompts.
- * This function only touches what goes to ElevenLabs.
+ * Strip ALL camera directions, stage directions, scene headers, and shot labels
+ * from a script before passing it to ElevenLabs TTS.
+ *
+ * The original script (with directions) still goes to video prompts — this
+ * function only touches what goes to the voice engine.
  */
+
+// Lines that are PURE directions with no narration content — drop the whole line.
+// Matches screenplay sluglines, shot labels, action headers, etc.
+const PURE_DIRECTION_LINE_RE = new RegExp(
+  [
+    // Screenplay sluglines: INT. BARRACKS - NIGHT / EXT. FIELD - DAY
+    "^(?:INT|EXT|INT\\/EXT|EXT\\/INT)\\s*[.:]",
+    // FADE IN / FADE OUT / CUT TO / SMASH CUT / MATCH CUT / DISSOLVE
+    "^(?:FADE\\s+(?:IN|OUT|TO\\s+BLACK)|CUT\\s+TO|SMASH\\s+CUT|MATCH\\s+CUT|DISSOLVE\\s+TO|WIPE\\s+TO)",
+    // SCENE N: / Scene N / Scene N - / Scene N (
+    "^(?:SCENE|Scene)\\s+\\d+\\s*[:\\-–—(]",
+    // Shot N: / SHOT N:
+    "^(?:SHOT|Shot)\\s+\\d+",
+    // [00:00-00:10] or [00:00] timestamp lines
+    "^\\[\\d+:\\d+",
+    // Stand-alone camera directions: WIDE SHOT: / CLOSE-UP: / MEDIUM SHOT: / etc.
+    "^(?:WIDE\\s+(?:SHOT|ANGLE)|CLOSE\\s*(?:-\\s*UP|UP)|MEDIUM\\s+SHOT|LOW\\s+ANGLE|HIGH\\s+ANGLE|OVER\\s+SHOULDER|BIRD'S\\s+EYE|ESTABLISHING\\s+SHOT|TWO\\s+SHOT|REACTION\\s+SHOT|INSERT\\s+SHOT)\\s*[:\\-–—.]?\\s*$",
+    // Plain camera directions (pure, no trailing narration)
+    "^(?:CAMERA|camera)\\s+(?:PULLS?|PUSHES?|PANS?|TILTS?|TRACKS?|HOLDS?|RISES?|DROPS?)\\s*(?:[:\\-–—.]?\\s*$|\\bto\\b|\\bon\\b)",
+    // Action-only lines like "A beat." / "Silence." / "He waits." (optional — keep these)
+  ].join("|"),
+  "i"
+);
+
+// Direction phrases that can appear INLINE mid-sentence — strip the phrase, keep rest.
+const INLINE_DIRECTION_RE =
+  /,?\s*(?:zoom(?:s)?\s+(?:in|out)|camera\s+(?:pulls?\s+back|pushes?\s+in|holds?|follows?|tracks?|pans?(?:\s+left|\s+right)?|tilts?(?:\s+up|\s+down)?|rises?|drops?)|slowly\s+zooms?|smash\s+cut|rack\s+focus|pull(?:s)?\s+back|push(?:es)?\s+in|pan(?:s)?\s+(?:left|right)|tilt(?:s)?\s+(?:up|down)|tracking\s+shot|dolly\s+(?:in|out)|aerial\s+(?:shot|view)|overhead\s+shot|pov\s+shot|crane\s+shot|steadicam)[^,.!?]*/gi;
+
+// Prefixes to strip from the START of lines (direction label then narration follows).
+const DIRECTION_PREFIX_RE =
+  /^(?:(?:SHOT\s+\d+\s*[-–—:(]?|Scene\s+\d+\s*[-–—:(]?|Shot\s+\d+\s*[-–—:(]?)\s*(?:\([^)]*\)\s*)?|(?:INT|EXT|INT\/EXT)\s*[.:][^:]*:\s*|(?:WIDE\s+(?:SHOT|ANGLE)|CLOSE\s*-?\s*UP|MEDIUM\s+SHOT|LOW\s+ANGLE|HIGH\s+ANGLE|OVER\s+SHOULDER|ESTABLISHING\s+SHOT)\s*[:\-–—.]\s*|(?:V\.O\.|V\/O|voiceover|NARRATOR|VO)\s*[:(]?\s*)/i;
+
 export function stripVisualDirections(script: string): string {
-  // Step 1: Strip [bracket] directives entirely (scene headers, cut notes, etc.)
-  let cleaned = script.replace(/\[.*?\]/gi, "");
+  // Phase 1: Remove all [bracket] blocks (scene markers, cut notes, timestamps)
+  let cleaned = script.replace(/\[(?:(?!\[).)*?\]/gi, "");
 
-  // Step 2: Remove V.O. / voiceover line labels
-  cleaned = cleaned.replace(/^\s*(?:voiceover:|v\.o\.|v\/o)\s*/gim, "");
+  // Phase 2: Remove all (parenthetical) blocks
+  cleaned = cleaned.replace(/\([^)]{0,120}\)/g, "");
 
-  // Step 3: Strip inline camera direction phrases embedded mid-sentence only.
-  // Removes the camera phrase itself — leaves surrounding narration intact.
-  cleaned = cleaned.replace(
-    /,?\s*(?:zoom(?:s)? in|zoom(?:s)? out|camera (?:pulls? back|pushes? in|holds?|follows?|tracks?|pans?(?: left| right)?|tilts?(?: up| down)?)|slowly zooms?|cut(?:s)? to|smash cut|rack focus|pull(?:s)? back|push(?:es)? in|pan(?:s)? (?:left|right)|tilt(?:s)? (?:up|down)|tracking shot|dolly (?:in|out)|aerial shot|overhead shot|pov shot)[^,.!?]*/gi,
-    ""
-  );
+  // Phase 3: Inline direction phrase removal
+  cleaned = cleaned.replace(INLINE_DIRECTION_RE, "");
 
-  // Step 4: Cleanup punctuation artifacts from inline stripping
-  cleaned = cleaned
+  // Phase 4: Line-by-line pass
+  const lines = cleaned.split("\n").map(line => {
+    const t = line.trim();
+    if (!t) return "";
+
+    // Drop pure direction lines entirely
+    if (PURE_DIRECTION_LINE_RE.test(t)) return "";
+
+    // Strip direction PREFIX from lines that start with a label then have narration
+    const stripped = t.replace(DIRECTION_PREFIX_RE, "").trim();
+
+    // If stripping a prefix left meaningful content (≥5 words), keep it
+    if (stripped !== t && stripped.split(/\s+/).filter(Boolean).length >= 5) {
+      return stripped;
+    }
+    if (stripped !== t && stripped.split(/\s+/).filter(Boolean).length < 5) {
+      return ""; // too short after stripping — was a pure direction
+    }
+
+    return t;
+  });
+
+  // Phase 5: Cleanup artifacts
+  const result = lines
+    .filter(l => l.trim().length > 0)
+    .join(" ")
     .replace(/\s{2,}/g, " ")
     .replace(/,\s*,/g, ",")
     .replace(/\.\s*\./g, ".")
-    .replace(/^\s*[,.]\s*/gm, "");
-
-  // Step 5: Line-by-line pass — handle lines that START with camera direction keywords.
-  // IMPORTANT: do NOT drop the whole line — try to extract the narration that follows.
-  // e.g. "Wide shot." → pure direction → drop
-  // e.g. "Close-up on soldier's trembling hand." → extract "soldier's trembling hand." → keep
-  const DIR_START_RE = /^(?:camera\b|cut to\b|zoom\b|pan\b|tilt\b|dolly\b|tracking shot\b|wide shot\b|close.?up\b|over.?shoulder\b|overhead\b|aerial\b|pov\b)/i;
-
-  const processed = cleaned
-    .split("\n")
-    .map(line => {
-      const t = line.trim();
-      if (!t) return "";
-      if (!DIR_START_RE.test(t)) return t; // Normal narration — keep as-is
-
-      // Strip the direction keyword + any colon/dash/period separator and leading prepositions
-      const afterDir = t
-        .replace(/^(?:camera|cut to|zoom|pan|tilt|dolly|tracking shot|wide shot|close.?up|over.?shoulder|overhead|aerial|pov)\s*[:\-–—.]?\s*/i, "")
-        .replace(/^(?:on|of|to|in|at|from|through|toward)\s+/i, "")
-        .trim();
-
-      // Keep if there's 3+ words of meaningful content (genuine narration fragment)
-      const wordCount = afterDir.split(/\s+/).filter(Boolean).length;
-      return wordCount >= 3 ? afterDir : "";
-    })
-    .filter(line => line.trim().length > 0);
-
-  return processed
-    .join("\n")
-    .replace(/\s{2,}/g, " ")
+    .replace(/^\s*[,;.]\s*/, "")
     .trim();
+
+  return result;
 }
 
 /**
  * Strip visual directions with logging and safety fallback.
- * Use this at TTS call sites.
- *
- * @param script - original script (may contain [SCENE], camera directions, etc.)
- * @returns      - cleaned script safe for text-to-speech
+ * Use this at all TTS call sites.
  */
 export function prepareScriptForTts(script: string): string {
   const before = script.trim();
@@ -68,10 +92,12 @@ export function prepareScriptForTts(script: string): string {
 
   let after = stripVisualDirections(before);
 
-  if (after.length < 50) {
-    console.warn(`[TTS_STRIP_WARNING] stripped result too short (${after.length} chars) — falling back to bracket-only strip`);
+  if (after.length < 40) {
+    // Stripping was too aggressive — fall back to bracket-only strip
+    console.warn(`[TTS_STRIP_WARNING] result too short (${after.length} chars) — bracket-only fallback`);
     after = before
-      .replace(/\[.*?\]/gi, "")
+      .replace(/\[(?:(?!\[).)*?\]/gi, "")
+      .replace(/\([^)]{0,120}\)/g, "")
       .replace(/\s{2,}/g, " ")
       .trim();
   }

@@ -337,12 +337,11 @@ export async function mergeVideoAudio(params: MergeVideoAudioParams): Promise<st
     writeFileSync(videoPath, videoBuf);
     writeFileSync(audioPath, audioBuf);
 
-    // Loop video so full voiceover plays when narration is longer than the clip.
+    // Merge video + audio — no looping. Audio is trimmed to match video duration.
     const stitchT0 = Date.now();
     await new Promise<void>((resolve, reject) => {
       ffmpeg()
         .input(videoPath)
-        .inputOptions(["-stream_loop", "-1"])
         .input(audioPath)
         .outputOptions([
           "-c:v", "libx264",
@@ -384,5 +383,126 @@ export async function mergeVideoAudio(params: MergeVideoAudioParams): Promise<st
     return params.videoUrl;
   } finally {
     [videoPath, audioPath, outputPath].forEach(p => { try { unlinkSync(p); } catch {} });
+  }
+}
+
+/**
+ * FFmpeg fallback: concatenate multiple clips then merge audio.
+ * Used when Railway Composer is unavailable or fails.
+ * Audio is trimmed to match total video duration (no looping).
+ */
+export async function stitchClipsWithAudio(params: {
+  clipUrls: string[];
+  audioUrl?: string;
+  userId?: string;
+}): Promise<string> {
+  const userId = params.userId ?? "anonymous";
+  const id = randomUUID();
+  const tmpDir = tmpdir();
+  const concatListPath = join(tmpDir, `concat-list-${id}.txt`);
+  const concatOutPath  = join(tmpDir, `concat-out-${id}.mp4`);
+  const audioPath      = join(tmpDir, `concat-audio-${id}.mp3`);
+  const finalPath      = join(tmpDir, `concat-final-${id}.mp4`);
+  const clipPaths: string[] = [];
+
+  try {
+    resolveFfmpegPath();
+
+    // Download all clips in parallel
+    const clipBuffers = await Promise.all(
+      params.clipUrls.map((url, i) => fetchMediaBuffer(url, `clip${i + 1}`)),
+    );
+    for (let i = 0; i < clipBuffers.length; i++) {
+      const p = join(tmpDir, `concat-clip${i}-${id}.mp4`);
+      writeFileSync(p, clipBuffers[i]);
+      clipPaths.push(p);
+    }
+
+    // If only 1 clip and no audio, just return it directly
+    if (clipPaths.length === 1 && !params.audioUrl) {
+      return params.clipUrls[0];
+    }
+
+    // Build ffmpeg concat list
+    const concatList = clipPaths.map(p => `file '${p}'`).join("\n");
+    writeFileSync(concatListPath, concatList);
+
+    const stitchT0 = Date.now();
+
+    if (clipPaths.length > 1) {
+      // Step 1: concatenate clips
+      await new Promise<void>((resolve, reject) => {
+        ffmpeg()
+          .inputOptions(["-f", "concat", "-safe", "0"])
+          .input(concatListPath)
+          .outputOptions(["-c", "copy"])
+          .output(concatOutPath)
+          .on("end", () => resolve())
+          .on("error", (err) => reject(new Error(`FFmpeg concat: ${err.message}`)))
+          .run();
+      });
+    } else {
+      // Only 1 clip — skip concat, use directly
+      writeFileSync(concatOutPath, clipBuffers[0]);
+    }
+
+    if (!params.audioUrl) {
+      // No audio — upload stitched video and return
+      const buffer = readFileSync(concatOutPath);
+      const storePath = `final/${userId}/${Date.now()}-stitched.mp4`;
+      const { data, error } = await supabaseAdmin.storage
+        .from("renders")
+        .upload(storePath, buffer, { contentType: "video/mp4", upsert: true });
+      if (error) throw new Error(`stitch upload: ${error.message}`);
+      const { data: { publicUrl } } = supabaseAdmin.storage.from("renders").getPublicUrl(data.path);
+      console.log(`[STITCH_OK] ${clipPaths.length} clips stitched url=${publicUrl.substring(0, 80)}`);
+      return publicUrl;
+    }
+
+    // Step 2: merge audio onto stitched video
+    const audioBuf = await fetchMediaBuffer(params.audioUrl, "stitch-audio");
+    writeFileSync(audioPath, audioBuf);
+
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg()
+        .input(concatOutPath)
+        .input(audioPath)
+        .outputOptions([
+          "-c:v", "libx264",
+          "-preset", "ultrafast",
+          "-crf", "23",
+          "-threads", "0",
+          "-c:a", "aac",
+          "-b:a", "128k",
+          "-map", "0:v:0",
+          "-map", "1:a:0",
+          "-shortest",
+          "-movflags", "+faststart",
+        ])
+        .output(finalPath)
+        .on("end", () => resolve())
+        .on("error", (err) => reject(new Error(`FFmpeg audio merge: ${err.message}`)))
+        .run();
+    });
+
+    console.log(`[STITCH_DURATION] elapsed=${Date.now() - stitchT0}ms clips=${clipPaths.length}`);
+
+    const buffer = readFileSync(finalPath);
+    const storePath = `final/${userId}/${Date.now()}-stitched.mp4`;
+    const { data, error } = await supabaseAdmin.storage
+      .from("renders")
+      .upload(storePath, buffer, { contentType: "video/mp4", upsert: true });
+    if (error) throw new Error(`stitch+audio upload: ${error.message}`);
+
+    const { data: { publicUrl } } = supabaseAdmin.storage.from("renders").getPublicUrl(data.path);
+    console.log(`[STITCH_AUDIO_OK] ${clipPaths.length} clips + audio url=${publicUrl.substring(0, 80)}`);
+    return publicUrl;
+  } catch (e) {
+    console.error("[STITCH_CLIPS] failed:", e instanceof Error ? e.message : e);
+    // Return first clip URL as last resort
+    return params.clipUrls[0] ?? params.audioUrl ?? "";
+  } finally {
+    [...clipPaths, concatListPath, concatOutPath, audioPath, finalPath]
+      .forEach(p => { try { unlinkSync(p); } catch {} });
   }
 }

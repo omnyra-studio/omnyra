@@ -1,6 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
-import { elevenLabsVoiceover, mergeVideoAudio, mixVoiceAndAmbient, generateAmbientSound, pickAmbientDescription } from "@/lib/services/elevenlabs";
+import { elevenLabsVoiceover, mergeVideoAudio, mixVoiceAndAmbient, stitchClipsWithAudio, generateAmbientSound, pickAmbientDescription } from "@/lib/services/elevenlabs";
 import { generateKlingSingleShot } from "@/lib/providers/kling-pro";
 import { getVideoProvider } from "@/lib/video-provider";
 import { supabaseAdmin } from "@/lib/supabase/admin";
@@ -45,7 +45,7 @@ import { getNicheSettings, detectEra } from "@/lib/config/nicheSettings";
 export const maxDuration = 300;
 
 const KLING_CLIP_SECS  = 10;  // Kling 2.6 Pro: 10s per scene
-const ROUTE_VERSION    = "2026-06-22-v25-credit-timeout-slot-fix";
+const ROUTE_VERSION    = "2026-06-22-v26-vo-fix-no-loop-stitch";
 
 // ── SLA budget: Vercel maxDuration=300s; keep 30s for post-processing ─────────
 const SLA_TOTAL_MS   = 270_000; // 270s total (30s margin before Vercel 300s kills)
@@ -959,11 +959,20 @@ export async function POST(req: Request) {
           }
         } else {
           console.log(`[RAILWAY_STITCH] skipped — composerUrl=${!!composerUrl} clips=${clip_urls.length}`);
-          // Fallback: apply audio to first clip locally
-          if (finalAudioUrl && clip_urls.length > 0) {
+          // FFmpeg fallback: concatenate ALL clips then merge audio (no looping)
+          if (clip_urls.length > 0) {
             try {
-              stitched_url = await mergeVideoAudio({ videoUrl: clip_urls[0], audioUrl: finalAudioUrl, userId: user.id });
-            } catch { /* use first clip URL */ }
+              stitched_url = await stitchClipsWithAudio({
+                clipUrls: clip_urls,
+                audioUrl: finalAudioUrl,
+                userId:   user.id,
+              });
+              console.log(`[FFMPEG_FALLBACK_OK] clips=${clip_urls.length} url=${stitched_url.substring(0, 80)}`);
+            } catch (ffmpegErr) {
+              console.error("[FFMPEG_FALLBACK] stitchClipsWithAudio failed:", ffmpegErr instanceof Error ? ffmpegErr.message : ffmpegErr);
+              // Last resort: return first clip
+              stitched_url = clip_urls[0];
+            }
           }
         }
 
