@@ -171,30 +171,32 @@ LITERAL BRIEF RULE — CRITICAL:
   - DO NOT substitute generic "emotional" or atmospheric scenes — be LITERAL to the script
   - The Goal/Brief provides the creative context — every scene must honour it
 
-VISUAL PROMPT RULES — every scene needs a candid photographic motion description:
+VISUAL PROMPT RULES — CRITICAL: every prompt must describe the EXACT action from the script:
   - 20–30 words
-  - Must include: who (exactly as the script describes) + setting + camera movement
-  - Bad: "A person stands at a desk."
-  - Good: "A creator leans forward at a standing desk, gesturing confidently. Natural window light shifts. Camera slowly pushes in from medium to close."
-  - If the scene involves two people: say "two people" or "a couple" explicitly in the prompt
+  - Lead with the specific scripted action FIRST — what is happening, who is doing it, how
+  - Then add camera framing and lighting
+  - If the script says "face mid-lift: genuine strain" → write "extreme close-up of woman's face during dumbbell lift, jaw clenched, visible effort and strain, harsh gym overhead light"
+  - If the script says "phone screen shows progress: honest numbers" → write "woman holds smartphone screen-facing-camera showing workout data numbers, gym background, tight medium shot"
+  - If the script says "they grip the handle. Lift." → write "close-up of woman's right hand gripping barbell handle, knuckles white, arm rising with controlled effort, gym background"
+  - NEVER replace a specific scripted action with a generic gym shot
+  - NEVER use "candid" or "unposed" when the script describes a directed moment
+  - If the scene involves two people: say "two people" explicitly in the prompt
 
 PROPS & OBJECTS RULE — CRITICAL:
-  - If the script mentions a character holding or using an object, you MUST specify: what hand, grip direction, and object orientation
+  - If the script mentions a character holding or using an object, MUST specify: what hand, grip direction, and object orientation
   - Bad: "woman holding phone at gym"
   - Good: "woman holds smartphone screen-facing-out in right hand at her side, dumbbell in left hand, gym background"
-  - Avoid having characters hold more than one object unless the script explicitly requires it
-  - If one hand holds something, the other hand must have a clear natural position (at side, on hip, etc.)
-  - NEVER describe a phone as "device" or leave object type ambiguous — name it exactly as the script says
+  - Only one object per hand unless the script explicitly requires two
+  - Other hand must have a clear natural position (at side, on hip, etc.)
+  - Never use "device" — name the exact object from the script
 
-IMAGE STYLE RULES — CRITICAL:
-  - All images must look like real photographs taken by a human photographer
-  - Style: candid photography, natural lighting, shot on iPhone or DSLR
-  - NO studio lighting, NO perfect symmetry, NO AI-rendered skin texture
-  - NO hyper-realistic portraits, NO fitness model aesthetics unless explicitly requested
-  - People must look like ordinary real humans — imperfect, natural, authentic
-  - Every visual_prompt MUST include: "candid photo, natural light" or "shot on iPhone" or "documentary style"
+IMAGE STYLE RULES:
+  - Real photographic look — natural lighting, shot on DSLR or iPhone
+  - NO studio lighting unless the script describes it
+  - NO AI-rendered skin texture, NO perfect symmetry
+  - People look like real humans — imperfect, natural
   - NEVER describe a person as chiseled, athletic build, perfect, or glowing skin
-  - End every visual_prompt with: "35mm candid photography, natural light, authentic, unposed"
+  - Do NOT append style tags that contradict the scripted action (e.g. "unposed" on a directed close-up)
 
 HARD CONSTRAINTS:
   Output MUST be parseable by JSON.parse()
@@ -227,7 +229,7 @@ Return this exact JSON structure. The first character MUST be { and the last MUS
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   try {
     const response = await client.messages.create({
-      model:      "claude-haiku-4-5-20251001",
+      model:      "claude-sonnet-4-6",
       max_tokens: 1800,
       system:     systemPrompt,
       messages:   [{ role: "user", content: userPrompt }],

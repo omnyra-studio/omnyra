@@ -19,20 +19,22 @@ export async function analyzeScriptBeats(
   sceneCount: number,
   nicheSettings: NicheSettings,
 ): Promise<StoryBeat[]> {
-  const systemPrompt = `You are a professional film storyboard artist.
-You analyze scripts to extract EMOTIONAL BEATS, not literal nouns.
+  const systemPrompt = `You are a professional film storyboard artist and script supervisor.
+Your job: break a script into exactly ${sceneCount} cinematic beats that LITERALLY show what the script describes.
 
-Your job: break a script into exactly ${sceneCount} cinematic beats
-that tell the story visually through body language, composition,
-and environment — NOT through showing random objects mentioned in text.
+CRITICAL RULE — BE LITERAL:
+- If the script says "face mid-lift: genuine strain" → keyAction MUST be "extreme close-up of woman's face during dumbbell lift, jaw clenched, visible strain"
+- If the script says "phone screen shows their progress: honest numbers" → keyAction MUST be "woman holds smartphone screen-facing-camera showing workout data, gym background"
+- If the script says "they grip the handle. Lift." → keyAction MUST be "close-up of woman's hand gripping barbell handle, arm rising with controlled effort"
+- NEVER replace a specific scripted action with a vague emotional body-language shot
+- Props, objects, and specific actions mentioned in the script MUST appear in the beat
+- Camera framing from the script MUST be preserved (e.g. "camera widens" → wide shot)
 
-RULES:
-- Each beat must advance the emotional arc (tension → conflict → resolution)
-- Never repeat the same emotional state twice
-- Characters must be consistent across all beats (same people, same clothes, same setting)
-- Body language tells the story, not props
-- No isolated object close-ups unless they serve the emotional beat
-- Every beat must include at least one human figure showing emotion through posture/expression
+SECONDARY RULES:
+- Each beat should advance the story arc where possible
+- Never repeat the same shot type twice in a row
+- Characters must be consistent across beats (same person, same clothes, same setting)
+- Every beat must include at least one human figure
 - ENVIRONMENT MUST INCLUDE: ${nicheSettings.environmentInclude}
 - ENVIRONMENT MUST EXCLUDE: ${nicheSettings.environmentExclude}
 
@@ -40,7 +42,7 @@ Respond with valid JSON only. No markdown. No backticks.
 Format: { "beats": [{ "beatNumber": 1, "purpose": "...", "emotion": "...", "bodyLanguage": "...", "composition": "...", "lighting": "...", "keyAction": "...", "environmentFocus": "..." }] }`;
 
   const result = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
+    model: 'claude-sonnet-4-6',
     max_tokens: 600,
     system: systemPrompt,
     messages: [{
