@@ -45,7 +45,7 @@ import { beatToKlingDirection, type StoryBeat } from "@/lib/storyboard-planner";
 
 export const maxDuration = 300;
 
-const KLING_CLIP_SECS  = 5;   // Kling v3 std: 5s per scene (faster generation, 3×5s = 15s video)
+const KLING_CLIP_SECS  = 10;  // Kling v3: 10s per scene (3×10s = 30s video)
 const ROUTE_VERSION    = "2026-06-22-v29-speed-std-5s";
 
 // ── SLA budget: Vercel maxDuration=300s; keep 30s for post-processing ─────────

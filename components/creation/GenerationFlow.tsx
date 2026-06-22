@@ -706,7 +706,7 @@ export default function GenerationFlow({
           const composeRes = await fetch('/api/compose-video', {
             method: 'POST',
             headers: jsonHeaders,
-            body: JSON.stringify({ clipUrls, clipDuration: 5 }),
+            body: JSON.stringify({ clipUrls, clipDuration: 10 }),
           });
           if (composeRes.ok) {
             const d = await composeRes.json();
@@ -809,7 +809,7 @@ export default function GenerationFlow({
           const composeRes = await fetch('/api/compose-video', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ clipUrls, clipDuration: 5 }),
+            body: JSON.stringify({ clipUrls, clipDuration: 10 }),
           });
           if (composeRes.ok) {
             const composeData = await composeRes.json();

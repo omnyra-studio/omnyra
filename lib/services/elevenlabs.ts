@@ -298,7 +298,7 @@ export async function mixVoiceAndAmbient(params: {
         .outputOptions([
           "-filter_complex", "[1:a]volume=0.20[amb];[0:a][amb]amix=inputs=2:duration=first:dropout_transition=0[out]",
           "-map", "[out]",
-          "-c:a", "aac",
+          "-c:a", "libmp3lame",
           "-b:a", "128k",
         ])
         .output(outputPath)
