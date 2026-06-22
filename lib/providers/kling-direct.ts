@@ -94,7 +94,7 @@ export async function generateKlingClip(params: {
   const createUrl = `${apiBase}${endpoint}`;
 
   const body: Record<string, unknown> = {
-    model_name:      "kling-v2-6",
+    model_name:      "kling-v3",
     prompt:          params.prompt.slice(0, 2500),
     negative_prompt: params.negativePrompt?.slice(0, 500) ?? "",
     cfg_scale:       0.5,

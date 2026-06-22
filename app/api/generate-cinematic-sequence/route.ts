@@ -45,7 +45,7 @@ import { getNicheSettings, detectEra } from "@/lib/config/nicheSettings";
 export const maxDuration = 300;
 
 const KLING_CLIP_SECS  = 10;  // Kling 2.6 Pro: 10s per scene
-const ROUTE_VERSION    = "2026-06-22-v27-kling-direct";
+const ROUTE_VERSION    = "2026-06-22-v28-kling-v3-stitch-fix";
 
 // ── SLA budget: Vercel maxDuration=300s; keep 30s for post-processing ─────────
 const SLA_TOTAL_MS   = 270_000; // 270s total (30s margin before Vercel 300s kills)
@@ -826,7 +826,7 @@ export async function POST(req: Request) {
             });
             extractedUrls[i] = result.videoUrl;
             console.log(`[CLIP_RESULT] scene=${i + 1} success=true elapsed=${result.generationMs}ms url=${result.videoUrl.substring(0, 80)}`);
-            clipReports.push(`scene=${i + 1} | kling-direct-v2.6-pro | OK ${result.generationMs}ms | ${result.videoUrl.substring(0, 80)}`);
+            clipReports.push(`scene=${i + 1} | kling-direct-v3-pro | OK ${result.generationMs}ms | ${result.videoUrl.substring(0, 80)}`);
           } catch (err) {
             const reason = err instanceof Error ? err.message : String(err);
             const detail = JSON.stringify(err, Object.getOwnPropertyNames(err instanceof Error ? err : {})).substring(0, 300);
@@ -953,28 +953,24 @@ export async function POST(req: Request) {
                 }
               }
             } else {
-              // Railway returned HTTP error — fall through to FFmpeg merge
+              // Railway returned HTTP error — fall back to FFmpeg stitch (all clips)
               const errText = await railwayRes.text().catch(() => "");
-              console.warn(`[RAILWAY_STITCH] composer HTTP ${railwayRes.status}: ${errText.substring(0, 200)} — falling back to FFmpeg`);
-              if (finalAudioUrl) {
-                try {
-                  stitched_url = await mergeVideoAudio({ videoUrl: clip_urls[0], audioUrl: finalAudioUrl, userId: user.id });
-                  console.log(`[AUDIO_MERGE_FALLBACK_OK] railway_failed url=${stitched_url.substring(0, 80)}`);
-                } catch (ffmpegErr) {
-                  console.error("[AUDIO_MERGE_FALLBACK] ffmpeg also failed:", ffmpegErr instanceof Error ? ffmpegErr.message : ffmpegErr);
-                }
+              console.warn(`[RAILWAY_STITCH] composer HTTP ${railwayRes.status}: ${errText.substring(0, 200)} — falling back to FFmpeg stitch`);
+              try {
+                stitched_url = await stitchClipsWithAudio({ clipUrls: clip_urls, audioUrl: finalAudioUrl, userId: user.id });
+                console.log(`[FFMPEG_FALLBACK_OK] railway_error clips=${clip_urls.length} url=${stitched_url.substring(0, 80)}`);
+              } catch (ffmpegErr) {
+                console.error("[FFMPEG_FALLBACK] stitchClipsWithAudio failed:", ffmpegErr instanceof Error ? ffmpegErr.message : ffmpegErr);
               }
             }
           } catch (railwayErr) {
-            // Network-level Railway failure — fall back to FFmpeg merge
+            // Network-level Railway failure — fall back to FFmpeg stitch (all clips)
             console.warn("[RAILWAY_STITCH] network error:", railwayErr instanceof Error ? railwayErr.message : railwayErr);
-            if (finalAudioUrl) {
-              try {
-                stitched_url = await mergeVideoAudio({ videoUrl: clip_urls[0], audioUrl: finalAudioUrl, userId: user.id });
-                console.log(`[AUDIO_MERGE_FALLBACK_OK] url=${stitched_url.substring(0, 80)}`);
-              } catch (ffmpegErr) {
-                console.error("[AUDIO_MERGE_FALLBACK] ffmpeg also failed:", ffmpegErr instanceof Error ? ffmpegErr.message : ffmpegErr);
-              }
+            try {
+              stitched_url = await stitchClipsWithAudio({ clipUrls: clip_urls, audioUrl: finalAudioUrl, userId: user.id });
+              console.log(`[FFMPEG_FALLBACK_OK] railway_network_err clips=${clip_urls.length} url=${stitched_url.substring(0, 80)}`);
+            } catch (ffmpegErr) {
+              console.error("[FFMPEG_FALLBACK] stitchClipsWithAudio failed:", ffmpegErr instanceof Error ? ffmpegErr.message : ffmpegErr);
             }
           }
         } else {
