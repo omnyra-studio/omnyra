@@ -15,6 +15,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { getNicheSettings } from "@/lib/config/nicheSettings";
 import { buildBrandMemoryInjection, type BrandMemory } from "@/lib/memory/brand-memory";
 import { buildStoryMemoryInjection, type StoryMemory } from "@/lib/memory/story-memory";
+import { runAgentSwarm } from "@/lib/agents/swarm";
 import type {
   CompilerInput,
   SceneCompilerProject,
@@ -281,20 +282,92 @@ function buildFallbackScenes(
 
 // ── Main export ───────────────────────────────────────────────────────────────
 
+/** Use Agent Swarm when ENABLE_AGENT_SWARM=true in env, otherwise fallback to direct Claude call */
+const USE_SWARM = process.env.ENABLE_AGENT_SWARM === "true";
+
+/** Convert Agent Swarm output (PlannedScene + CompiledScenePrompts) into SceneNode[] */
+async function buildScenesFromSwarm(
+  input: CompilerInput,
+  sceneCount: number,
+  nicheSettings: ReturnType<typeof getNicheSettings>,
+): Promise<SceneNode[]> {
+  const characterAppearance = input.characterRef?.trim()
+    || input.concept.trim().split(/[.!?]/)[0].trim()
+    || "Caucasian person, natural-looking, realistic";
+
+  const swarm = await runAgentSwarm({
+    script:               input.script,
+    concept:              input.concept,
+    niche:                input.niche ?? "lifestyle",
+    hook:                 input.hook,
+    targetAudience:       input.targetAudience,
+    characterDescription: characterAppearance,
+    brandMemory:          input.brandMemory ?? null,
+    sceneCount,
+  });
+
+  const seed = Math.floor(10000 + Math.random() * 89999);
+
+  return swarm.plan.scenes.map((planned, i) => {
+    const compiled = swarm.prompts[i];
+    const cinSpec  = swarm.cinematography[i];
+    return {
+      scene_id:   `scene_0${i + 1}`,
+      timing:     { start: i * planned.duration_secs, end: (i + 1) * planned.duration_secs, duration: planned.duration_secs },
+      narrative_role: planned.narrative_role,
+      character_state: {
+        primary_character_id: "char_001",
+        emotion:      swarm.emotions[i]?.emotion ?? "neutral",
+        action_state: planned.emotional_beat,
+        wardrobe_lock: true,
+      },
+      environment: {
+        location:    nicheSettings.environmentInclude?.split(",")[0] ?? "appropriate setting",
+        weather:     "natural light",
+        key_objects: [],
+      },
+      camera: {
+        shot_type:     cinSpec?.shot_type ?? SHOT_PROGRESSION[i % 4],
+        movement:      cinSpec?.movement ?? "static",
+        position_lock: true,
+        transition_anchor: planned.transition_in,
+      },
+      motion_brush_instructions: [`${cinSpec?.movement ?? "subtle motion"}`],
+      dialogue:    { text: "", voice_style: "none", sync_required: false },
+      continuity: {
+        uses_previous_frame:   planned.continues_from_previous,
+        frame_anchor_strength: planned.continues_from_previous ? "high" as FrameAnchorStrength : "none" as FrameAnchorStrength,
+        seed_lock:             seed,
+        transition_instruction: planned.continues_from_previous ? `Continue from previous scene — ${planned.transition_in}` : undefined,
+      },
+      image_prompt:    compiled?.image_prompt ?? `${cinSpec?.shot_type ?? "medium shot"} — ${characterAppearance} in ${nicheSettings.environmentInclude?.split(",")[0] ?? "natural setting"}, photorealistic cinematic`,
+      video_prompt:    compiled?.video_prompt ?? nicheSettings.videoPromptPrefix,
+      negative_prompt: compiled?.negative_prompt ?? COMPILER_NEGATIVE_BASE,
+    } as SceneNode;
+  });
+}
+
 export async function compileSceneGraph(input: CompilerInput): Promise<SceneCompilerProject> {
   const sceneCount  = input.sceneCount ?? 4;
   const niche       = input.niche ?? "lifestyle";
   const aspectRatio = input.aspectRatio ?? "9:16";
   const nicheSettings = getNicheSettings(niche);
 
-  console.log(`[SCENE_COMPILER] compiling project niche=${niche} scenes=${sceneCount}`);
+  console.log(`[SCENE_COMPILER] compiling project niche=${niche} scenes=${sceneCount} swarm=${USE_SWARM}`);
+
+  const sceneBuilder = USE_SWARM
+    ? buildScenesFromSwarm(input, sceneCount, nicheSettings).catch(err => {
+        console.warn(`[SCENE_COMPILER] Swarm failed, falling back to Claude: ${(err as Error).message}`);
+        return callClaudeCompiler(input, sceneCount, nicheSettings, input.brandMemory, input.storyMemory);
+      })
+    : callClaudeCompiler(input, sceneCount, nicheSettings, input.brandMemory, input.storyMemory).catch(err => {
+        console.warn(`[SCENE_COMPILER] Claude failed, using fallback: ${(err as Error).message}`);
+        return buildFallbackScenes(input, sceneCount, nicheSettings);
+      });
 
   const [characterBank, rawScenes] = await Promise.all([
     Promise.resolve(buildCharacterBank(input)),
-    callClaudeCompiler(input, sceneCount, nicheSettings, input.brandMemory, input.storyMemory).catch(err => {
-      console.warn(`[SCENE_COMPILER] Claude failed, using fallback: ${(err as Error).message}`);
-      return buildFallbackScenes(input, sceneCount, nicheSettings);
-    }),
+    sceneBuilder,
   ]);
 
   // Ensure we have exactly sceneCount scenes
