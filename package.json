@@ -2,12 +2,19 @@
   "name": "omnyra-ai",
   "version": "0.1.0",
   "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
+    "worker:dev": "cd apps/worker && npm run dev",
+    "worker:build": "cd apps/worker && npm run build",
+    "packages:build": "turbo run build --filter=./packages/*",
     "architecture-gate": "ts-node --project tsconfig.scripts.json scripts/architecture-gate.ts",
     "freeze-schema": "ts-node --project tsconfig.scripts.json scripts/freeze-schema.ts",
     "check-schema": "ts-node --project tsconfig.scripts.json scripts/check-schema.ts",
@@ -22,6 +29,7 @@
     "@fal-ai/client": "^1.10.1",
     "@ffmpeg-installer/ffmpeg": "^1.1.0",
     "@prisma/client": "^7.8.0",
+    "@runwayml/sdk": "^4.2.0",
     "@supabase/auth-helpers-nextjs": "^0.15.0",
     "@supabase/ssr": "^0.10.3",
     "@supabase/supabase-js": "^2.105.4",
