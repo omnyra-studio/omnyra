@@ -120,12 +120,25 @@ export async function generateKlingClip(params: {
     signal: AbortSignal.timeout(30_000),
   });
 
-  if (!createRes.ok) {
-    const errText = await createRes.text().catch(() => "");
-    throw new Error(`[KLING_DIRECT_CREATE_FAIL] scene=${params.sceneNumber} HTTP ${createRes.status}: ${errText.substring(0, 300)}`);
+  // Retry once on 429 (parallel task limit) — wait 5s then retry
+  let finalCreateRes = createRes;
+  if (createRes.status === 429) {
+    console.warn(`[KLING_DIRECT] scene=${params.sceneNumber} 429 rate-limit — retrying in 5s`);
+    await new Promise(r => setTimeout(r, 5_000));
+    finalCreateRes = await fetch(createUrl, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${getAuthToken()}` },
+      body:    JSON.stringify(body),
+      signal:  AbortSignal.timeout(30_000),
+    });
   }
 
-  const createData = await createRes.json() as KlingCreateResponse;
+  if (!finalCreateRes.ok) {
+    const errText = await finalCreateRes.text().catch(() => "");
+    throw new Error(`[KLING_DIRECT_CREATE_FAIL] scene=${params.sceneNumber} HTTP ${finalCreateRes.status}: ${errText.substring(0, 300)}`);
+  }
+
+  const createData = await finalCreateRes.json() as KlingCreateResponse;
   if (createData.code !== 0) {
     throw new Error(`[KLING_DIRECT_API_ERR] scene=${params.sceneNumber} code=${createData.code} msg=${createData.message}`);
   }

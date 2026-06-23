@@ -46,7 +46,7 @@ import { analyzeScriptBeats, beatToKlingDirection, type StoryBeat } from "@/lib/
 export const maxDuration = 300;
 
 const KLING_CLIP_SECS  = 10;  // 3 × 10s = 30s total video
-const ROUTE_VERSION    = "2026-06-23-v35-v21-pro-10s";
+const ROUTE_VERSION    = "2026-06-23-v36-stagger-retry-audio";
 
 // ── SLA budget: Vercel maxDuration=300s; keep 30s for post-processing ─────────
 const SLA_TOTAL_MS   = 270_000; // 270s total (30s margin before Vercel 300s kills)
@@ -907,6 +907,8 @@ export async function POST(req: Request) {
         const slaFallbackIndices: number[] = [];
 
         await Promise.all(klingScenePrompts.map(async (klingPrompt, i) => {
+          // Stagger submissions: Kling 429s when 3 pro clips fire simultaneously
+          if (i > 0) await new Promise(r => setTimeout(r, i * 1200));
           const sceneImg = sceneImageUrls[i];
           const mode = (sceneImg?.startsWith("https://")) ? "i2v" : "t2v";
           console.log(`[CLIP_FIRE] scene=${i + 1} mode=${mode} imageUrl=${sceneImg?.substring(0, 80) ?? "NONE"}`);

@@ -469,8 +469,6 @@ export async function stitchClipsWithAudio(params: {
             "-b:a", "128k",
             "-map", "0:v:0",
             "-map", "1:a:0",
-            "-shortest",
-            "-t", "30",
             "-movflags", "+faststart",
           ])
           .output(finalPath)
@@ -491,7 +489,6 @@ export async function stitchClipsWithAudio(params: {
             "-c:v", "libx264",
             "-preset", "ultrafast",
             "-crf", "23",
-            "-t", "30",
             "-movflags", "+faststart",
           ])
           .output(finalPath)
