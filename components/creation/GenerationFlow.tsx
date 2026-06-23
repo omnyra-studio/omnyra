@@ -107,6 +107,7 @@ export default function GenerationFlow({
   const [imagePrompt,    setImagePrompt]    = useState('');
   const [showImagePrompt, setShowImagePrompt] = useState(false);
   const [storyBeats,     setStoryBeats]     = useState<StoryBeat[]>([]);
+  const [sceneGraph,     setSceneGraph]     = useState<import('@/lib/types/scene-compiler').SceneCompilerProject | null>(null);
 
   const [videoType,     setVideoType]     = useState<VideoType>('cinematic');
   const [videoUrl,      setVideoUrl]      = useState<string | null>(null);
@@ -119,6 +120,9 @@ export default function GenerationFlow({
   const [favorites,     setFavorites]     = useState<string[]>([]);
   const [stitching,     setStitching]     = useState(false);
   const [finalVideo,    setFinalVideo]    = useState<string | null>(null);
+  const [targetDuration,    setTargetDuration]    = useState<30 | 60>(30);
+  const [asyncJobId,        setAsyncJobId]        = useState<string | null>(null);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
 
   const [voices,          setVoices]          = useState<ElevenLabsVoice[]>([]);
   const [voicesLoading,   setVoicesLoading]   = useState(false);
@@ -445,9 +449,10 @@ export default function GenerationFlow({
       }),
     })
       .then(r => r.ok ? r.json() : null)
-      .then((d: { data?: { beats?: StoryBeat[] } } | null) => {
+      .then((d: { data?: { beats?: StoryBeat[]; sceneGraph?: import('@/lib/types/scene-compiler').SceneCompilerProject } } | null) => {
         const bs = d?.data?.beats;
         if (Array.isArray(bs) && bs.length > 0) setStoryBeats(bs);
+        if (d?.data?.sceneGraph) setSceneGraph(d.data.sceneGraph);
       })
       .catch(() => {});
 
@@ -590,6 +595,9 @@ export default function GenerationFlow({
             niche:          niche || nichePrefill || undefined,
             storyBeats:     storyBeats.length > 0 ? storyBeats : undefined,
             creativeScenes: creativeScenes.length > 0 ? creativeScenes : undefined,
+            sceneGraph:     sceneGraph ?? undefined,
+            targetDuration,
+            templateId:     selectedTemplateId || undefined,
           }),
         });
         const data = await res.json();
@@ -597,6 +605,15 @@ export default function GenerationFlow({
         if (!res.ok || data.error) {
           setVideoStatus('Error — ' + (data.error ?? `HTTP ${res.status}`));
           setVideoStarted(false);
+          return;
+        }
+
+        // Async 60s path — server queued the job, poll for completion
+        if (data.status === 'generating' && data.jobId) {
+          setAsyncJobId(data.jobId);
+          setVideoStatus('Generating 60s video…');
+          setVideoProgress(10);
+          startAsyncPolling(data.jobId, data.estimatedSeconds ?? 240);
           return;
         }
 
@@ -619,6 +636,46 @@ export default function GenerationFlow({
       setVideoStatus('Error — ' + msg);
       setVideoStarted(false);
     }
+  };
+
+  const startAsyncPolling = (jobId: string, estimatedSecs: number) => {
+    const startMs = Date.now();
+    const maxWaitMs = Math.max(estimatedSecs * 1000, 300_000); // at least 5 min
+    let tick = 0;
+    const interval = setInterval(async () => {
+      tick++;
+      const elapsed = Date.now() - startMs;
+      if (elapsed > maxWaitMs) {
+        clearInterval(interval);
+        setVideoStatus('Timed out — check My Videos later');
+        setVideoStarted(false);
+        return;
+      }
+      const pct = Math.min(10 + Math.round((elapsed / maxWaitMs) * 85), 94);
+      setVideoProgress(pct);
+      try {
+        const r = await fetch(`/api/cinematic-status?jobId=${jobId}`);
+        if (!r.ok) return;
+        const d = await r.json() as { status: string; videoUrl?: string | null; errorMsg?: string | null; estimatedSeconds?: number };
+        if (d.status === 'complete' && d.videoUrl) {
+          clearInterval(interval);
+          setFinalVideo(d.videoUrl);
+          setVideoStatus('Ready');
+          setVideoProgress(100);
+          setAsyncJobId(null);
+        } else if (d.status === 'failed') {
+          clearInterval(interval);
+          setVideoStatus('Error — ' + (d.errorMsg ?? 'generation failed'));
+          setVideoStarted(false);
+          setAsyncJobId(null);
+        } else if (d.status === 'stitching') {
+          setVideoStatus('Stitching 60s video…');
+        } else {
+          const remaining = d.estimatedSeconds ?? Math.max(0, Math.round((maxWaitMs - elapsed) / 1000));
+          setVideoStatus(`Generating 60s video… ~${remaining}s remaining`);
+        }
+      } catch { /* non-fatal, keep polling */ }
+    }, 15_000);
   };
 
   const startMultiClipPolling = (jobs: { jobId: string; model: string }[]) => {
@@ -1889,6 +1946,38 @@ export default function GenerationFlow({
               </div>
             )}
 
+            {/* ── 1b. Duration selector (cinematic only) ── */}
+            {videoType === 'cinematic' && !videoStarted && !finalVideo && (
+              <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
+                <button
+                  type="button"
+                  onClick={() => setTargetDuration(30)}
+                  style={{
+                    flex: 1, padding: '10px 16px', borderRadius: 8, cursor: 'pointer',
+                    background: targetDuration === 30 ? '#C9A84C' : 'transparent',
+                    border: '1px solid #C9A84C',
+                    color: targetDuration === 30 ? '#000' : '#C9A84C',
+                    fontWeight: 600, fontSize: '0.8rem',
+                  }}
+                >
+                  30s · 3 scenes · 25cr
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTargetDuration(60)}
+                  style={{
+                    flex: 1, padding: '10px 16px', borderRadius: 8, cursor: 'pointer',
+                    background: targetDuration === 60 ? '#C9A84C' : 'transparent',
+                    border: '1px solid #C9A84C',
+                    color: targetDuration === 60 ? '#000' : '#C9A84C',
+                    fontWeight: 600, fontSize: '0.8rem',
+                  }}
+                >
+                  60s · 6 scenes · 80cr
+                </button>
+              </div>
+            )}
+
             {/* ── 2. Generate Video button ── */}
             {!videoStarted && !finalVideo && (
               <button
@@ -1913,21 +2002,32 @@ export default function GenerationFlow({
             {videoStarted && !finalVideo && (clipUrls.length === 0 && !videoUrl) && (
               <div style={{ borderRadius: 16, border: '1px solid #2D1B4E', padding: 18, background: '#1A0A2E' }}>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                  <span style={{ color: '#C084FC', fontSize: '0.8rem', fontWeight: 600 }}>🎬 Cinematic video rendering…</span>
+                  <span style={{ color: '#C084FC', fontSize: '0.8rem', fontWeight: 600 }}>
+                    {asyncJobId ? '⏳ 60s video generating…' : '🎬 Cinematic video rendering…'}
+                  </span>
                   <span style={{ color: '#6B4FA8', fontSize: '0.75rem' }}>{videoStatus || 'Processing'}</span>
                 </div>
                 <div style={{ height: 6, borderRadius: 999, background: '#0D0020', overflow: 'hidden', marginBottom: 10 }}>
                   <div style={{ height: '100%', borderRadius: 999, width: `${videoProgress}%`, background: 'linear-gradient(90deg,#C084FC,#E879F9)', transition: 'width 1s' }} />
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: '#4A3060' }}>
-                  {['Script','Images','Clips','Voice','Stitch'].map((s, i) => (
-                    <span key={s} style={{ color: videoProgress > i * 20 ? '#C084FC' : '#4A3060' }}>{s}</span>
-                  ))}
-                </div>
-                <p style={{ color: '#4A3060', fontSize: '0.72rem', margin: '10px 0 0', textAlign: 'right' }}>
-                  Cinematic AI — ~2–3 minutes &nbsp;
-                  <a href="/my-videos" style={{ color: '#D4A843', textDecoration: 'none' }}>My Videos →</a>
-                </p>
+                {asyncJobId ? (
+                  <p style={{ color: '#4A3060', fontSize: '0.72rem', margin: '6px 0 0', textAlign: 'right' }}>
+                    6 × 10s clips — runs in background &nbsp;
+                    <a href="/my-videos" style={{ color: '#D4A843', textDecoration: 'none' }}>My Videos →</a>
+                  </p>
+                ) : (
+                  <>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: '#4A3060' }}>
+                      {['Script','Images','Clips','Voice','Stitch'].map((s, i) => (
+                        <span key={s} style={{ color: videoProgress > i * 20 ? '#C084FC' : '#4A3060' }}>{s}</span>
+                      ))}
+                    </div>
+                    <p style={{ color: '#4A3060', fontSize: '0.72rem', margin: '10px 0 0', textAlign: 'right' }}>
+                      Cinematic AI — ~2–3 minutes &nbsp;
+                      <a href="/my-videos" style={{ color: '#D4A843', textDecoration: 'none' }}>My Videos →</a>
+                    </p>
+                  </>
+                )}
               </div>
             )}
 
