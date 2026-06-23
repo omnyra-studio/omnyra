@@ -45,8 +45,8 @@ import { beatToKlingDirection, type StoryBeat } from "@/lib/storyboard-planner";
 
 export const maxDuration = 300;
 
-const KLING_CLIP_SECS  = 5;   // Kling v3 std: 5s clips generate in ~30-50s vs ~70-87s for 10s
-const ROUTE_VERSION    = "2026-06-23-v30-5s-240poll";
+const KLING_CLIP_SECS  = 5;   // 5s std clips generate in ~30-50s vs ~70-87s for 10s
+const ROUTE_VERSION    = "2026-06-23-v31-5s-240poll";
 
 // ── SLA budget: Vercel maxDuration=300s; keep 30s for post-processing ─────────
 const SLA_TOTAL_MS   = 270_000; // 270s total (30s margin before Vercel 300s kills)
@@ -879,7 +879,7 @@ export async function POST(req: Request) {
               imageUrl:        sceneImg?.startsWith("https://") ? sceneImg : undefined,
               duration:        KLING_CLIP_SECS,
               aspectRatio:     "9:16",
-              mode:            "std",
+              mode:            "pro",
               motionStrength:  0.80,
               seed:            baseSeed + i,
               sceneNumber:     i + 1,
