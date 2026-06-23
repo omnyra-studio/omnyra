@@ -46,7 +46,7 @@ import { analyzeScriptBeats, beatToKlingDirection, type StoryBeat } from "@/lib/
 export const maxDuration = 300;
 
 const KLING_CLIP_SECS  = 10;  // 3 × 10s = 30s total video
-const ROUTE_VERSION    = "2026-06-23-v32-10s-beats-ambient";
+const ROUTE_VERSION    = "2026-06-23-v33-std-mirror-beats";
 
 // ── SLA budget: Vercel maxDuration=300s; keep 30s for post-processing ─────────
 const SLA_TOTAL_MS   = 270_000; // 270s total (30s margin before Vercel 300s kills)
@@ -767,8 +767,31 @@ export async function POST(req: Request) {
         let sceneImageUrls: Array<string | null> = new Array(prompts.length).fill(null);
 
         if (!_isAnimated && bodySceneImages.length > 0) {
-          // Anchor ALL scenes to the first/best image for visual consistency
-          const mainImage = bodySceneImages[0] ?? null;
+          // Mirror fal.media image to Supabase before sending to Kling.
+          // Kling's Singapore servers can't reliably fetch fal.media CDN URLs → "Internal error".
+          let mainImage = bodySceneImages[0] ?? null;
+          if (mainImage?.includes("fal.media") || mainImage?.includes("fal.run")) {
+            try {
+              const imgRes = await fetch(mainImage, { signal: AbortSignal.timeout(15_000) });
+              if (imgRes.ok) {
+                const imgBuf = Buffer.from(await imgRes.arrayBuffer());
+                const ext = mainImage.endsWith(".png") ? "png" : "jpg";
+                const mirrorPath = `${user.id}/kling-mirrors/${Date.now()}.${ext}`;
+                const { error: upErr } = await supabaseAdmin.storage
+                  .from("renders")
+                  .upload(mirrorPath, imgBuf, { contentType: `image/${ext}`, upsert: true });
+                if (!upErr) {
+                  const { data: { publicUrl } } = supabaseAdmin.storage.from("renders").getPublicUrl(mirrorPath);
+                  console.log(`[IMAGE_MIRROR] fal→supabase ok: ${publicUrl.substring(0, 80)}`);
+                  mainImage = publicUrl;
+                } else {
+                  console.warn(`[IMAGE_MIRROR] supabase upload failed: ${upErr.message} — using original fal URL`);
+                }
+              }
+            } catch (mirrorErr) {
+              console.warn(`[IMAGE_MIRROR] fetch failed (non-fatal): ${mirrorErr instanceof Error ? mirrorErr.message : mirrorErr} — using original fal URL`);
+            }
+          }
           for (let i = 0; i < prompts.length; i++) {
             sceneImageUrls[i] = mainImage;
           }
@@ -895,7 +918,7 @@ export async function POST(req: Request) {
               imageUrl:        sceneImg?.startsWith("https://") ? sceneImg : undefined,
               duration:        KLING_CLIP_SECS,
               aspectRatio:     "9:16",
-              mode:            "pro",
+              mode:            "std",
               motionStrength:  0.80,
               seed:            baseSeed + i,
               sceneNumber:     i + 1,
