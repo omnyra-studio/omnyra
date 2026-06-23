@@ -24,6 +24,7 @@ export interface NicheSettings {
   emotionalArc: string;
   environmentInclude: string;
   environmentExclude: string;
+  voiceoverTemplate?: string;
   playbook: NichePlaybook;
 }
 
@@ -44,6 +45,7 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     emotionalArc: 'Challenge → Effort → Achievement',
     environmentInclude: 'Gym floor with squat rack and plates, rubber mat, dumbbells, pull-up bar, running track, outdoor park workout area, jump rope, kettlebells, gym mirror',
     environmentExclude: 'Couch, bed, dining table, office desk, cooking kitchen, beauty vanity, meditation cushion, spa',
+    voiceoverTemplate: "Stop skipping the gym. Here's the 3-move workout that changed everything for me. [Move 1] for [reps]. [Move 2] for [reps]. [Move 3] for [reps]. No equipment needed. Do this every morning and watch what happens in 30 days.",
     playbook: {
       hookStyles: ['Day 1 vs Day 30', 'This changed my body', 'Try this workout'],
       pacing: 'Fast cuts, high energy, 1-2 second shots',
@@ -71,6 +73,7 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     emotionalArc: 'Problem → Plan → Progress',
     environmentInclude: 'Home desk with laptop showing earnings, shipping supplies and label printer, phone with banking app, notebook with budget, piggy bank, grocery receipt, organised filing',
     environmentExclude: 'Luxury car, private jet, mansion, penthouse, casino chips, passive beach lounging, pyramid scheme whiteboard',
+    voiceoverTemplate: "I made an extra $[amount] this month with zero experience. Here's exactly how: [Step 1]. [Step 2]. [Step 3]. You don't need followers, investment, or special skills. This is the side hustle nobody's talking about yet.",
     playbook: {
       hookStyles: ['I made $X with $0', 'The side hustle no one talks about', 'Avoid this mistake'],
       pacing: 'Clear step-by-step with text overlays',
@@ -98,6 +101,7 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     emotionalArc: 'Struggle → Breakthrough → Triumph',
     environmentInclude: 'Outdoor sunrise or sunset, mountain peak, running track, empty road stretching ahead, gym at dawn, rooftop with city skyline, open field, staircase, boxing ring, weight room',
     environmentExclude: 'Couch, bed, messy room, dark basement, cluttered desk, junk food, TV screen, gaming chair, nightclub',
+    voiceoverTemplate: "Most people quit right before the breakthrough. They give up on day 29 of a 30-day challenge. They stop one rejection away from a yes. The only difference between those who make it and those who don't? They kept going. Don't stop now.",
     playbook: {
       hookStyles: ['The harsh truth', 'Never give up story', 'Powerful quote'],
       pacing: 'Building intensity to emotional peak',
@@ -125,6 +129,7 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     emotionalArc: 'Aspiration → Experience → Indulgence',
     environmentInclude: 'Marble floor, crystal chandelier, leather seating, gold accents, polished surfaces, penthouse view, designer boutique interior, champagne glass, fresh flowers in crystal vase, silk fabric, walnut wood',
     environmentExclude: 'Broken items, rust, peeling paint, graffiti, trash, dirt, budget store, plastic furniture, worn carpet, fast food, junkyard, abandoned building',
+    voiceoverTemplate: "This is what $[price] per night looks like in [location]. From the moment you walk in — [detail 1]. The view: [detail 2]. And the [highlight]? Absolutely unreal. If you know, you know. And if you don't — now you do.",
     playbook: {
       hookStyles: ['POV: Living like this', 'Dream home tour'],
       pacing: 'Slow, luxurious',
@@ -152,6 +157,7 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     emotionalArc: 'Problem → Innovation → Future',
     environmentInclude: 'Multiple monitors with code or UI, mechanical keyboard, clean desk with devices, server rack lights, drone on desk, smart home devices, VR headset, circuit board close-up',
     environmentExclude: 'Rustic cabin, farmhouse, candlelit room, handwritten notes only, medieval setting, no-technology environment, old-fashioned typewriter',
+    voiceoverTemplate: "This new AI tool just made [task] 10x faster. Here's how it works: [Step 1]. [Step 2]. And this part blew my mind — [unexpected feature]. I've been using it for [timeframe] and I'm never going back. Link in bio.",
     playbook: {
       hookStyles: ['This changes everything', 'New AI just dropped'],
       pacing: 'Fast, demo-focused',
@@ -179,6 +185,7 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     emotionalArc: 'Struggle → Awareness → Peace',
     environmentInclude: 'Cozy corner with blanket and journal, window seat with rain outside, nature path alone, therapy office with comfortable chair, warm cup of tea in hands, sunrise view from bed, calm water reflection',
     environmentExclude: 'Loud party, extreme sports, horror imagery, violent scene, chaotic crowd, aggressive confrontation, dark frightening space',
+    voiceoverTemplate: "If you've been feeling [emotion] lately, I need you to hear this. You're not broken. You're not weak. You're human. Here's the one thing that helped me get through [struggle]: [insight]. Give yourself permission to [action]. You deserve to feel better.",
     playbook: {
       hookStyles: ["You're not alone", 'One thing that helped me'],
       pacing: 'Calm and gentle',
@@ -206,6 +213,7 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     emotionalArc: 'Connection → Tension → Resolution',
     environmentInclude: 'Park bench for two, dinner table with candles, kitchen cooking together, couch with blanket, walking path, beach shoreline, car interior conversation, doorstep moment',
     environmentExclude: 'Courtroom, lawyer office, single person angry, broken glass, slamming door, violent scene, dark lonely room',
+    voiceoverTemplate: "If your partner does [green flag], keep them. Here are 5 signs you've found the right one. [Sign 1]. [Sign 2]. [Sign 3]. [Sign 4]. And the biggest one? [Sign 5]. Real love isn't perfect — it's consistent. Tag someone who needs to hear this.",
     playbook: {
       hookStyles: ['The sign they\'re the one', 'Relationship red flags'],
       pacing: 'Emotional storytelling',
@@ -233,6 +241,7 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     emotionalArc: 'Context → Tension → Revelation',
     environmentInclude: 'Steel-frame bunk beds, thin mattresses, rough wool blankets, bare concrete or wooden plank floor, bare incandescent bulb hanging from wire or oil lamp, canvas kit bags, steel helmets, canteens, wooden footlockers, rough wooden support posts, small high windows with no curtains, institutional military setting',
     environmentExclude: 'Standing floor lamps, lampshades, curtains, drapes, upholstered furniture, armchairs, sofas, side tables, carpet, rugs, picture frames, home furniture, modern light fixtures, hotel room, living room, decorative items',
+    voiceoverTemplate: "In [year], [person or group] faced an impossible choice. [Setup the stakes]. What happened next changed history forever. [Key event 1]. [Key event 2]. And the outcome? [Revelation]. Most people have never heard this story. Until now.",
     playbook: {
       hookStyles: ['The forgotten story of...', 'What really happened'],
       pacing: 'Cinematic and measured',
@@ -260,6 +269,7 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     emotionalArc: 'Before → Process → Glow',
     environmentInclude: 'Vanity mirror with ring light, bathroom counter with products arranged, cotton pads and serums, face close-up with dewy skin, makeup palette open, brush set, clean white towel, skincare fridge',
     environmentExclude: 'Garage, engine grease, construction site, muddy field, sweaty gym, dark industrial space, welding sparks',
+    voiceoverTemplate: "I tried [product/routine] for 30 days. Here's what actually happened to my skin. Week 1: [observation]. Week 2: [change]. By week 4: [result]. The one product I'll never stop using? [Product]. Your skin will thank you.",
     playbook: {
       hookStyles: ['This changed my skin', '5-minute glow up'],
       pacing: 'Fast transformation',
@@ -287,6 +297,7 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     emotionalArc: 'Chaos → System → Control',
     environmentInclude: 'Clean desk with planner open, monitor with to-do app, timer visible, organised shelf with labelled boxes, morning coffee next to laptop, bullet journal with pen, standing desk, minimalist workspace',
     environmentExclude: 'Messy room with clothes everywhere, TV on with streaming, phone showing social media scroll, unmade bed at 2pm, junk food wrappers, overflowing trash',
+    voiceoverTemplate: "I stopped multitasking and got 3x more done. Here's the system: [Rule 1]. [Rule 2]. [Rule 3]. The tool that made it all click: [tool]. Your mornings will never be the same. Save this before you forget it.",
     playbook: {
       hookStyles: ['Do this instead of scrolling', 'Productivity hack'],
       pacing: 'Clear and actionable',
@@ -314,6 +325,7 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     emotionalArc: 'Problem → Strategy → Victory',
     environmentInclude: 'Glass-walled office, conference table, whiteboard with notes, laptop open, skyline through window, co-working space, presentation screen, standing desk, modern workspace',
     environmentExclude: 'Bedroom, kitchen, messy apartment, gaming setup, gym, playground, beach lounge, medieval castle, fantasy setting',
+    voiceoverTemplate: "I started with [starting point] and built it to [milestone]. Here's what nobody tells you about entrepreneurship. Lesson 1: [hard truth]. Lesson 2: [counterintuitive insight]. Lesson 3: [key unlock]. The business school won't teach you this. But the market will.",
     playbook: {
       hookStyles: ['How I built $X business', 'Lessons from failure'],
       pacing: 'Story + lessons',
@@ -341,6 +353,7 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     emotionalArc: 'Meet → Bond → Joy',
     environmentInclude: 'Living room floor with pet toys, park grass with dog running, cat tree near window, pet bed with sleeping animal, vet exam table (friendly), food bowl being filled, garden with pet exploring, leash and collar close-up',
     environmentExclude: 'Animal testing lab, hunting scene, cramped cage, slaughterhouse, taxidermy, animal fight ring, neglected dirty kennel',
+    voiceoverTemplate: "Every [pet owner] needs to know this. [Tip 1] — I wish someone told me sooner. [Tip 2] — vets rarely mention this one. And [Tip 3]? Game changer for [behavior problem]. Your [pet] will be so much happier. Trust me.",
     playbook: {
       hookStyles: ['Cute + useful tip', 'Every pet owner needs this'],
       pacing: 'Fun and light',
@@ -368,6 +381,7 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     emotionalArc: 'Moment → Emotion → Growth',
     environmentInclude: 'School hallway with lockers, bedroom with fairy lights and posters, park with friends, school cafeteria, sports field sideline, library study table, phone screen showing group chat',
     environmentExclude: 'Bar, nightclub, alcohol bottles, cigarettes, weapons, adult workplace, casino, dark alley, anything sexually suggestive',
+    voiceoverTemplate: "POV: [relatable teen scenario]. We've all been there. [Situation 1]. [Situation 2]. And don't even get me started on [funny situation]. Being a teen is wild but honestly? [Positive spin]. Tag your bestie who gets it.",
     playbook: {
       hookStyles: ['Relatable teen struggles', 'POV: School'],
       pacing: 'Very fast',
@@ -395,6 +409,7 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     emotionalArc: 'Prep → Cook → Serve',
     environmentInclude: 'Kitchen counter with ingredients prepped, cutting board with knife and vegetables, stovetop with pan and steam, oven with golden bake visible, plated dish on table, herbs and spices jars, mixing bowl mid-action',
     environmentExclude: 'Laboratory, medical equipment, gym weights, gaming monitor, car engine, office printer, construction tools',
+    voiceoverTemplate: "This [dish] takes 10 minutes and tastes like you ordered it from a restaurant. Here's how: [Step 1]. [Step 2]. Secret ingredient: [ingredient]. Final step: [step]. Plate it, taste it, send it to someone you want to impress. You're welcome.",
     playbook: {
       hookStyles: ['5-minute recipe', 'Viral food hack'],
       pacing: 'Step-by-step fast',
@@ -422,6 +437,7 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     emotionalArc: 'Plan → Build → Reveal',
     environmentInclude: 'Workbench with tools organised, sawdust on floor, measuring tape, clamps, paint cans, drill and screws, grocery store showing deals, organised pantry, phone showing discount app',
     environmentExclude: 'Luxury store, shopping mall, unboxing, factory, corporate office, fine dining, designer boutique',
+    voiceoverTemplate: "Don't spend $[price] on this. Make it yourself for $[fraction]. Here's what you need: [materials]. Step 1: [step]. Step 2: [step]. Total time: [time]. Total cost: $[amount]. I'm never buying [thing] again and neither should you.",
     playbook: {
       hookStyles: ['Save $X with this hack', '5-minute DIY'],
       pacing: 'Very fast, satisfying transformations',
@@ -431,6 +447,118 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
       recommendedLength: '15-30s',
       keyElements: ['Hands-on', 'Cost saving proof'],
       retentionHooks: ['Before/after transformation', 'Dollar amount saved', 'Satisfying build reveal'],
+    },
+  },
+
+  gaming: {
+    name: 'Gaming',
+    key: 'gaming',
+    triggerKeywords: ['gaming', 'gamer', 'game', 'esports', 'fps', 'rpg', 'mmorpg', 'twitch', 'stream', 'rank', 'ranked', 'gameplay', 'loadout', 'meta', 'console', 'pc gaming', 'xbox', 'playstation', 'nintendo', 'fortnite', 'minecraft', 'valorant', 'cod', 'league of legends'],
+    negativeKeywords: ['cooking', 'outdoor nature', 'historical war documentary', 'meditation'],
+    imagePromptPrefix: 'Dynamic gaming environment. Person at high-end gaming setup — RGB keyboard, multiple monitors showing game, headset on. Intense focused expression.',
+    videoPromptPrefix: 'Intense focused gaming movement. Eyes tracking screen, hands on mouse and keyboard, visible controller input, reaction moments, leaning forward.',
+    negativePrompt: 'blurry, low graphics, toxic behavior, spoilers, generic office, outdoors without gaming context, low quality, poor lighting, boring setup',
+    cinemaStyle: 'Dynamic vibrant RGB lighting, dramatic monitor glow, fast cuts on gameplay highlights, shallow DOF on player reaction',
+    defaultDuration: 10,
+    lightningModeDefault: true,
+    eraDetection: false,
+    emotionalArc: 'Challenge → Skill → Victory',
+    environmentInclude: 'Gaming desk with RGB lighting, multiple monitors showing gameplay, mechanical keyboard, gaming mouse, headset, gaming chair, controller, streaming setup, capture card',
+    environmentExclude: 'Office cubicle, outdoor field, kitchen, cooking setup, meditation space, blank white room',
+    voiceoverTemplate: "Here's how to dominate in [game] as a beginner. Step one: [strategy]. Step two: [tip]. Use this loadout and watch your rank climb. Let's get into the gameplay.",
+    playbook: {
+      hookStyles: ['Rank up fast', 'This broke my game', 'The pro trick nobody uses'],
+      pacing: 'Fast cuts, reaction-focused',
+      visualStyle: 'RGB dynamic, monitor glow, gameplay overlay',
+      narrationTone: 'Excited, knowledgeable, casual',
+      ctaExamples: ['Drop your main in comments', 'Follow for daily strats'],
+      recommendedLength: '20-45s',
+      keyElements: ['Gameplay highlights', 'Strategy reveal', 'Victory moment'],
+      retentionHooks: ['Clutch moment opener', 'Rank reveal', 'Unexpected pro tip'],
+    },
+  },
+
+  'product-reviews': {
+    name: 'Product Reviews & Launches',
+    key: 'product-reviews',
+    triggerKeywords: ['product review', 'unboxing', 'launch', 'honest review', 'worth it', 'tested', 'review', 'gadget review', 'buying guide', 'pros and cons', 'verdict', 'first look', 'hands on'],
+    negativeKeywords: ['fake', 'scam', 'misleading', 'clickbait'],
+    imagePromptPrefix: 'Clean product presentation. Product centered on neutral surface, unboxed, well-lit. Person examining or using product. Professional and trustworthy setting.',
+    videoPromptPrefix: 'Deliberate product demonstration. Unboxing, inspecting, holding, using, demonstrating features. Hands moving purposefully around the product.',
+    negativePrompt: 'fake review, broken product, misleading angle, hidden defect, sponsored bias obvious, cluttered messy background, blurry product, low quality, overly staged',
+    cinemaStyle: 'Clean neutral tones, product lighting, crisp close-ups on features, honest unboxing aesthetic',
+    defaultDuration: 10,
+    lightningModeDefault: true,
+    eraDetection: false,
+    emotionalArc: 'Curiosity → Discovery → Verdict',
+    environmentInclude: 'Clean table or desk with product as hero, white or neutral background, good product lighting, packaging open beside product, hands holding product, close-up on key features',
+    environmentExclude: 'Cluttered messy room, broken items, misleading visuals, casino, other distracting products',
+    voiceoverTemplate: "I bought the [product] so you don't have to. Here's what I love: [pros]. What surprised me: [unexpected detail]. The one downside: [con]. Is it worth the money? Here's my honest verdict.",
+    playbook: {
+      hookStyles: ['I bought it so you don\'t have to', 'Honest review after 30 days', 'Worth it or waste of money?'],
+      pacing: 'Feature-by-feature, clear verdict',
+      visualStyle: 'Clean unboxing, close-up features, comparison shots',
+      narrationTone: 'Honest, measured, trustworthy',
+      ctaExamples: ['Comment your questions', 'Link in bio'],
+      recommendedLength: '30-60s',
+      keyElements: ['Unboxing', 'Feature demo', 'Final verdict'],
+      retentionHooks: ['Price reveal hook', 'Unexpected flaw reveal', 'Before/after usage comparison'],
+    },
+  },
+
+  'faceless-stoic': {
+    name: 'Faceless Motivation / Stoic',
+    key: 'faceless-stoic',
+    triggerKeywords: ['stoic', 'stoicism', 'faceless', 'marcus aurelius', 'discipline', 'silence', 'solitude', 'control what you can', 'obstacle is the way', 'memento mori', 'no excuses', 'hard work', 'dark motivation', 'sigma', 'monk mode', 'masculinity', 'iron mind'],
+    negativeKeywords: ['luxury flexing', 'dancing', 'party', 'comedy', 'gossip'],
+    imagePromptPrefix: 'Dramatic faceless or silhouetted figure. Epic landscape — mountain peak, open road at dawn, stormy coastline, dark forest clearing. No identifiable face. Power and solitude.',
+    videoPromptPrefix: 'Slow deliberate movement in epic landscape. Silhouette walking forward, standing at edge, hands at sides. No face visible. Environmental motion — wind, rain, mist.',
+    negativePrompt: 'luxury flex, dancing, party, comedy sketch, gossip, bright happy colors, celebrity face, smiling selfie, victim mentality, emotional drama, loud hype, chaotic background, low quality',
+    cinemaStyle: 'Dark cinematic, desaturated with single warm accent, epic wide shots, slow motion, heavy shadow, atmospheric mist or rain',
+    defaultDuration: 10,
+    lightningModeDefault: false,
+    eraDetection: false,
+    emotionalArc: 'Struggle → Clarity → Resolve',
+    environmentInclude: 'Mountain peak at sunrise, open empty road stretching ahead, dark forest path with single light source, stormy coastline, abandoned track field at dawn, silhouette against epic sky',
+    environmentExclude: 'Luxury cars, parties, celebrity brands, bright cheerful setting, dancing, comedy props, busy social scene',
+    voiceoverTemplate: "The obstacle is the way. You don't control what happens to you — only how you respond. Most people quit when it gets hard. The few who don't become unstoppable. Discipline is not punishment. Discipline is freedom.",
+    playbook: {
+      hookStyles: ['The hard truth no one tells you', 'Silence is a weapon', 'While you were sleeping'],
+      pacing: 'Slow, building intensity, dramatic pauses',
+      visualStyle: 'Dark cinematic, silhouettes, epic landscapes, quote overlays',
+      narrationTone: 'Deep, measured, powerful, philosophical',
+      ctaExamples: ['Share with someone who needs this', 'Follow for daily discipline'],
+      recommendedLength: '30-60s',
+      keyElements: ['Epic visuals', 'Philosophical quotes', 'No face shown'],
+      retentionHooks: ['Powerful opening silence', 'Quote drop over epic visual', 'Slow reveal of landscape'],
+    },
+  },
+
+  'animation-3d': {
+    name: '3D Animation',
+    key: 'animation-3d',
+    triggerKeywords: ['3d animation', 'animated', 'animation', 'pixar', 'cartoon', '3d render', 'cgi', 'character animation', 'animated story', 'digital world', 'animated character', 'blender', 'render'],
+    negativeKeywords: ['live action', 'real person', 'documentary', 'photorealistic human', 'news'],
+    imagePromptPrefix: 'High-quality 3D animated scene. Pixar/Disney quality characters and environments. Detailed textures, cinematic lighting, expressive character faces. Clearly animated stylized art style.',
+    videoPromptPrefix: 'Fluid 3D character animation. Expressive character movements, squash and stretch, secondary motion on hair and clothing. Rich animated environment.',
+    negativePrompt: 'blurry, low poly, rigid stiff movement, bad rigging, flat lighting, texture errors, clipping, unanimated background, real photo mixed with animation, inconsistent style, low quality render',
+    cinemaStyle: 'Vibrant saturated animated palette, cinematic depth of field, dramatic animated lighting, expressive character close-ups, rich world-building environments',
+    defaultDuration: 10,
+    lightningModeDefault: false,
+    eraDetection: false,
+    emotionalArc: 'Setup → Conflict → Resolution',
+    environmentInclude: 'Richly detailed animated world, expressive character close-ups, animated environmental effects — wind, rain, light beams, particle effects, animated foliage, cinematic depth with foreground elements',
+    environmentExclude: 'Real photography mixed in, low-poly game assets, flat shading, static background, unanimated crowd, broken character rigs, inconsistent art style',
+    voiceoverTemplate: "In a world where [setup], our hero faces [challenge]. But everything changes when [turning point]. Watch what happens when someone refuses to give up. [Story beats]. Because the greatest stories aren't given — they're earned.",
+    playbook: {
+      hookStyles: ['In a world where...', 'The story they never told', 'Watch what happens next'],
+      pacing: 'Cinematic story beats',
+      visualStyle: 'Rich 3D world, expressive characters, dramatic lighting',
+      narrationTone: 'Epic storytelling, emotional, cinematic',
+      ctaExamples: ['Who should the next story be about?', 'Share with a dreamer'],
+      recommendedLength: '45-90s',
+      keyElements: ['Character arc', 'World-building', 'Emotional climax'],
+      retentionHooks: ['Stunning world reveal', 'Character transformation moment', 'Unexpected plot twist'],
     },
   },
 
@@ -450,6 +578,7 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     emotionalArc: 'Moment → Connection → Feeling',
     environmentInclude: 'Real home interior, coffee shop window seat, park bench, apartment balcony, cozy bedroom corner, farmers market stall, neighbourhood street, bathroom mirror',
     environmentExclude: 'Corporate office, laboratory, operating room, battlefield, factory floor, courtroom, fantasy realm',
+    voiceoverTemplate: "This is my [morning/evening] routine and it changed everything. First: [habit 1]. Then: [habit 2]. And this one — [habit 3] — I've been doing every single day. It's the small things that add up. What's your non-negotiable daily habit?",
     playbook: {
       hookStyles: ['Day in my life', 'You need to try this'],
       pacing: 'Relaxed but engaging',
