@@ -46,7 +46,7 @@ import { analyzeScriptBeats, beatToKlingDirection, type StoryBeat } from "@/lib/
 export const maxDuration = 300;
 
 const KLING_CLIP_SECS  = 10;  // 3 × 10s = 30s total video
-const ROUTE_VERSION    = "2026-06-23-v34-pro-mirror-supabase";
+const ROUTE_VERSION    = "2026-06-23-v35-v21-pro-10s";
 
 // ── SLA budget: Vercel maxDuration=300s; keep 30s for post-processing ─────────
 const SLA_TOTAL_MS   = 270_000; // 270s total (30s margin before Vercel 300s kills)
