@@ -129,4 +129,7 @@ export interface CompilerInput {
   referenceImages?: string[];  // uploaded image URLs for character bank
   aspectRatio?:     string;
   sceneCount?:      number;    // default 4
+  // 3-layer memory injection (optional — omit to use defaults)
+  brandMemory?:     import("@/lib/memory/brand-memory").BrandMemory;
+  storyMemory?:     import("@/lib/memory/story-memory").StoryMemory;
 }

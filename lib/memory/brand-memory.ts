@@ -14,6 +14,27 @@ export interface SocialPlatformEntry {
   url:      string;
 }
 
+// ── Brand Memory Layer — Layer 1 of 3-layer memory system ────────────────────
+// Controls character identity and global visual rules.
+// Injected into EVERY scene prompt. Never affects UI.
+
+export interface BrandCharacter {
+  character_id:    string;         // "char_001"
+  name:            string;
+  face_embeddings: string[];       // reference image URLs
+  appearance_lock: string;         // "blue jacket, black jeans, short brown hair"
+  age_lock:        string;         // "mid 20s"
+  body_type_lock:  string;         // "lean athletic"
+}
+
+export interface GlobalVisualRules {
+  style:           string;   // "cinematic realism"
+  lighting:        string;   // "roger deakins golden hour soft contrast"
+  color_grade:     string;   // "teal orange cinematic"
+  fps:             number;
+  camera_language: string;   // "slow cinematic tracking, shallow depth of field"
+}
+
 export interface BrandMemory {
   brandName:           string | null;
   toneKeywords:        string[];
@@ -25,9 +46,50 @@ export interface BrandMemory {
   klingStyleSuffix:    string;   // ready-to-append Kling prompt fragment
   fluxStyleSuffix:     string;   // ready-to-append Flux image prompt fragment
   negativeStyleSuffix: string;   // ready-to-append negative prompt fragment
-  socialPlatforms:     SocialPlatformEntry[];  // connected social accounts
-  socialContext:       string;   // ready-to-inject AI context fragment
+  socialPlatforms:     SocialPlatformEntry[];
+  socialContext:       string;
+  // Layer 1 extensions
+  characters:          BrandCharacter[];
+  globalVisualRules:   GlobalVisualRules;
+  forbiddenChanges:    string[];  // e.g. "no face drift", "no outfit changes unless defined"
 }
+
+// ── Brand Memory injection builder ───────────────────────────────────────────
+// Produces the BRAND LOCK block injected into every scene prompt.
+
+export function buildBrandMemoryInjection(mem: BrandMemory): string {
+  const parts: string[] = [];
+
+  if (mem.characters.length > 0) {
+    const charLines = mem.characters.map(c =>
+      `${c.name}: ${c.appearance_lock}, ${c.age_lock}, ${c.body_type_lock}. ` +
+      (c.face_embeddings.length > 0 ? `Reference images: ${c.face_embeddings.length} provided.` : ""),
+    ).join(" | ");
+    parts.push(`CHARACTERS: ${charLines}`);
+  }
+
+  const vr = mem.globalVisualRules;
+  if (vr.style) {
+    parts.push(
+      `VISUAL LOCK: ${vr.style}. Lighting: ${vr.lighting}. ` +
+      `Color: ${vr.color_grade}. Camera: ${vr.camera_language}.`,
+    );
+  }
+
+  if (mem.forbiddenChanges.length > 0) {
+    parts.push(`FORBIDDEN: ${mem.forbiddenChanges.join("; ")}.`);
+  }
+
+  return parts.filter(Boolean).join("\n");
+}
+
+const DEFAULT_GLOBAL_VISUAL_RULES: GlobalVisualRules = {
+  style:           "cinematic realism",
+  lighting:        "Roger Deakins golden hour, soft high-contrast shadows",
+  color_grade:     "teal orange cinematic grade",
+  fps:             24,
+  camera_language: "slow cinematic tracking, shallow depth of field",
+};
 
 // ── FIX: centralized suffix builders (deduped, used across engines)
 function buildKlingStyleSuffix(visualStyle: string | null, toneKeywords: string[] | null): string {
@@ -72,6 +134,14 @@ const EMPTY_BRAND: BrandMemory = {
   negativeStyleSuffix: "",
   socialPlatforms:     [],
   socialContext:       "",
+  characters:          [],
+  globalVisualRules:   DEFAULT_GLOBAL_VISUAL_RULES,
+  forbiddenChanges:    [
+    "no face drift across scenes",
+    "no outfit changes unless explicitly defined",
+    "no lighting override unless scene specifies",
+    "no style deviation from global visual rules",
+  ],
 };
 
 // Simple in-memory TTL cache for scalability (brand loads are hot path in every generation)
@@ -227,6 +297,19 @@ function buildFromBrain(brain: any, profile: any): BrandMemory {
     negativeStyleSuffix,
     socialPlatforms,
     socialContext,
+    characters:       [],  // populated from character_bank when user has saved characters
+    globalVisualRules: {
+      style:           visualStyle ?? DEFAULT_GLOBAL_VISUAL_RULES.style,
+      lighting:        DEFAULT_GLOBAL_VISUAL_RULES.lighting,
+      color_grade:     DEFAULT_GLOBAL_VISUAL_RULES.color_grade,
+      fps:             DEFAULT_GLOBAL_VISUAL_RULES.fps,
+      camera_language: DEFAULT_GLOBAL_VISUAL_RULES.camera_language,
+    },
+    forbiddenChanges: [
+      "no face drift across scenes",
+      "no outfit changes unless explicitly defined",
+      ...(record.negative_style_terms?.map(t => `no ${t}`) ?? []),
+    ],
   };
 }
 

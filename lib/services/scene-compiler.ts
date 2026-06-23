@@ -13,6 +13,8 @@
 
 import Anthropic from "@anthropic-ai/sdk";
 import { getNicheSettings } from "@/lib/config/nicheSettings";
+import { buildBrandMemoryInjection, type BrandMemory } from "@/lib/memory/brand-memory";
+import { buildStoryMemoryInjection, type StoryMemory } from "@/lib/memory/story-memory";
 import type {
   CompilerInput,
   SceneCompilerProject,
@@ -68,6 +70,8 @@ async function callClaudeCompiler(
   input: CompilerInput,
   sceneCount: number,
   nicheSettings: ReturnType<typeof getNicheSettings>,
+  brandMemory?: BrandMemory,
+  storyMemory?: StoryMemory,
 ): Promise<SceneNode[]> {
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -75,11 +79,20 @@ async function callClaudeCompiler(
     || input.concept.trim().split(/[.!?]/)[0].trim()
     || "Caucasian person, natural-looking, realistic";
 
+  // ── Layer 1: Brand Memory injection ─────────────────────────────────────────
+  const brandBlock = brandMemory ? buildBrandMemoryInjection(brandMemory) : "";
+
+  // ── Layer 2: Story Memory injection ──────────────────────────────────────────
+  const storyBlock = storyMemory ? buildStoryMemoryInjection(storyMemory) : "";
+
+  const memoryPreamble = [brandBlock, storyBlock].filter(Boolean).join("\n\n");
+
   const systemPrompt = `You are Omnyra's Scene Compiler — a visual director that converts scripts into a deterministic scene graph.
 
 Your output is a JSON scene graph used directly by video render pipelines (Flux Dev for images, Kling for video).
 Every field you write becomes a machine instruction. Be precise, specific, and visually concrete.
 
+${memoryPreamble ? `=== INJECTED MEMORY LAYERS (MANDATORY — override nothing here) ===\n${memoryPreamble}\n=== END MEMORY LAYERS ===\n` : ""}
 SCENE STRUCTURE — always output exactly ${sceneCount} scenes in this order:
 ${NARRATIVE_ROLES.slice(0, sceneCount).map((role, i) => `  Scene ${i + 1}: "${role}" — ${narrativeRoleDescription(role)}`).join("\n")}
 
@@ -278,7 +291,7 @@ export async function compileSceneGraph(input: CompilerInput): Promise<SceneComp
 
   const [characterBank, rawScenes] = await Promise.all([
     Promise.resolve(buildCharacterBank(input)),
-    callClaudeCompiler(input, sceneCount, nicheSettings).catch(err => {
+    callClaudeCompiler(input, sceneCount, nicheSettings, input.brandMemory, input.storyMemory).catch(err => {
       console.warn(`[SCENE_COMPILER] Claude failed, using fallback: ${(err as Error).message}`);
       return buildFallbackScenes(input, sceneCount, nicheSettings);
     }),
