@@ -40,13 +40,13 @@ import {
 } from "@/lib/subject-appearance";
 import { parseJsonWithEthnicityFix } from "@/middleware/ethnicityFix";
 import { getNicheSettings, detectEra } from "@/lib/config/nicheSettings";
-import { beatToKlingDirection, type StoryBeat } from "@/lib/storyboard-planner";
+import { analyzeScriptBeats, beatToKlingDirection, type StoryBeat } from "@/lib/storyboard-planner";
 
 
 export const maxDuration = 300;
 
-const KLING_CLIP_SECS  = 5;   // 5s std clips generate in ~30-50s vs ~70-87s for 10s
-const ROUTE_VERSION    = "2026-06-23-v31-5s-240poll";
+const KLING_CLIP_SECS  = 10;  // 3 × 10s = 30s total video
+const ROUTE_VERSION    = "2026-06-23-v32-10s-beats-ambient";
 
 // ── SLA budget: Vercel maxDuration=300s; keep 30s for post-processing ─────────
 const SLA_TOTAL_MS   = 270_000; // 270s total (30s margin before Vercel 300s kills)
@@ -749,7 +749,9 @@ export async function POST(req: Request) {
 
         // Ambient sound — search all prompts + full script so keywords like "rain" are found
         // even when they appear in scene 2+ or only in the script description.
-        const _ambientSearchText = [...prompts, script ?? "", goal ?? ""].filter(Boolean).join(" ");
+        // Include voiceoverText — frontend doesn't send body.script, so rain/war keywords
+        // only exist in voiceoverText (the full script text passed for TTS).
+        const _ambientSearchText = [...prompts, script ?? "", goal ?? "", voiceoverText ?? ""].filter(Boolean).join(" ");
         const ambientDesc = pickAmbientDescription(_ambientSearchText);
         const ambientPromise: Promise<Buffer | null> = ambientDesc
           ? generateAmbientSound(ambientDesc, plannedTotalSec)
@@ -765,11 +767,12 @@ export async function POST(req: Request) {
         let sceneImageUrls: Array<string | null> = new Array(prompts.length).fill(null);
 
         if (!_isAnimated && bodySceneImages.length > 0) {
-          // Use images passed directly from the frontend (one per scene angle)
+          // Anchor ALL scenes to the first/best image for visual consistency
+          const mainImage = bodySceneImages[0] ?? null;
           for (let i = 0; i < prompts.length; i++) {
-            sceneImageUrls[i] = bodySceneImages[i] ?? bodySceneImages[0] ?? null;
+            sceneImageUrls[i] = mainImage;
           }
-          console.log(`[SCENE_IMAGES] using ${bodySceneImages.length} images from request body for ${prompts.length} scenes`);
+          console.log(`[SCENE_IMAGES] pinning all ${prompts.length} scenes to first image (i2v consistency)`);
         } else if (fallbackImageUrl) {
           // No per-scene images — use the single reference image for ALL scenes.
           // Kling 2.6 Pro runs i2v (image-to-video); without an image every scene fails with 422.
@@ -819,15 +822,28 @@ export async function POST(req: Request) {
           'Subject stands with clear purpose. Reaches for an object deliberately, shoulders squaring. One decisive physical movement. Camera pulls back slowly to reveal the full surrounding environment.',
         ];
 
-        // Use passed beats from scene-images when available; otherwise skip the Claude call
-        // (analyzeScriptBeats is ~3s sequential before Kling fires — use FALLBACK_DIRECTIONS instead)
-        const storyBeats: StoryBeat[] | null = passedStoryBeats ?? null;
+        // Use passed beats from scene-images when available; if nothing passed, call analyzeScriptBeats
+        // inline now (~3s) — worth it vs FALLBACK_DIRECTIONS which ignore the script entirely.
+        let storyBeats: StoryBeat[] | null = passedStoryBeats ?? null;
         if (passedCreativeScenes) {
           console.log(`[CREATIVE_DIRECTOR] using ${passedCreativeScenes.length} AI creative director scenes for Kling motion`);
         } else if (storyBeats) {
           console.log(`[STORYBOARD] using ${storyBeats.length} beats passed from scene-images`);
         } else {
-          console.log(`[STORYBOARD] no beats or creative scenes passed — using FALLBACK_DIRECTIONS`);
+          // Frontend fires generate-scene-images as fire-and-forget; beats often missing due to race.
+          // Fall back to inline beat generation from the script so Kling motion matches the narrative.
+          const beatScriptText = voiceoverText || goal || prompts.join(" ");
+          if (beatScriptText) {
+            try {
+              storyBeats = await analyzeScriptBeats(beatScriptText, prompts.length, nicheSettings);
+              console.log(`[STORYBOARD] inline beat generation OK — ${storyBeats.length} beats`);
+            } catch (beatErr) {
+              console.warn(`[STORYBOARD] inline beat generation failed (non-fatal):`, beatErr instanceof Error ? beatErr.message : beatErr);
+              console.log(`[STORYBOARD] falling back to FALLBACK_DIRECTIONS`);
+            }
+          } else {
+            console.log(`[STORYBOARD] no script text — using FALLBACK_DIRECTIONS`);
+          }
         }
 
         // Per-scene camera movements — wide → medium → close-up arc across 3 scenes
@@ -837,7 +853,7 @@ export async function POST(req: Request) {
           "tight close-up with subtle floating camera movement",
         ];
         const KLING_MOTION_QUALITY =
-          "Strong visible actions: breathing, subtle head turns, micro-expressions, continuous natural motion for the full duration. No static frames. Alive and dynamic.";
+          "Strong continuous motion from the same main image. 10-second clip. Natural actions: breathing, head turns, hand movements, emotional expression, lip sync. No static pose. Alive for full 10 seconds.";
 
         const builtKlingPrompts: string[] = [];
         const klingScenePrompts = enforcedPrompts.map((_p, i) => {

@@ -38,6 +38,11 @@ interface Props {
   cinematicOnly?: boolean;
 }
 
+interface StoryBeat {
+  beatNumber: number; purpose: string; emotion: string; bodyLanguage: string;
+  composition: string; lighting: string; keyAction: string; environmentFocus: string;
+}
+
 interface ElevenLabsVoice {
   voice_id: string;
   name: string;
@@ -101,6 +106,7 @@ export default function GenerationFlow({
   const [imagesGenerated, setImagesGenerated] = useState(false);
   const [imagePrompt,    setImagePrompt]    = useState('');
   const [showImagePrompt, setShowImagePrompt] = useState(false);
+  const [storyBeats,     setStoryBeats]     = useState<StoryBeat[]>([]);
 
   const [videoType,     setVideoType]     = useState<VideoType>('cinematic');
   const [videoUrl,      setVideoUrl]      = useState<string | null>(null);
@@ -426,6 +432,25 @@ export default function GenerationFlow({
   const handleGenerateScenes = async () => {
     if (!selectedScript) return;
     setLoadingState('Generating your scenes…');
+
+    // Fire story beat analysis in background — populates storyBeats for cinematic route
+    const scriptText = editedScript || selectedScript.script || '';
+    fetch('/api/generate-scene-images', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        script:  scriptText,
+        concept: selectedScript.hook || scriptText.split(/[.!?]/)[0] || scriptText,
+        niche:   niche || nichePrefill || undefined,
+      }),
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then((d: { data?: { beats?: StoryBeat[] } } | null) => {
+        const bs = d?.data?.beats;
+        if (Array.isArray(bs) && bs.length > 0) setStoryBeats(bs);
+      })
+      .catch(() => {});
+
     try {
       const res = await fetch('/api/generate-concepts', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -551,7 +576,11 @@ export default function GenerationFlow({
           body: JSON.stringify({
             prompts:        cameraVariations,
             imageUrl:       selectedConcept.imageUrl || null,
-            sceneImages:    concepts.map(c => c.imageUrl).filter(Boolean),
+            // Use only the SELECTED image for all scenes — same starting frame, different motion.
+            // Previously sent all concept images which caused different images per scene.
+            sceneImages:    selectedConcept.imageUrl
+              ? Array(cameraVariations.length).fill(selectedConcept.imageUrl)
+              : concepts.map(c => c.imageUrl).filter(Boolean),
             clipDuration:   10,
             goal:           selectedConcept.description,
             voiceoverText:  editedScript || selectedScript?.script || selectedConcept.description,
@@ -559,6 +588,7 @@ export default function GenerationFlow({
             subjectEthnicity,
             voiceId:        selectedVoice || '',
             niche:          niche || nichePrefill || undefined,
+            storyBeats:     storyBeats.length > 0 ? storyBeats : undefined,
             creativeScenes: creativeScenes.length > 0 ? creativeScenes : undefined,
           }),
         });
