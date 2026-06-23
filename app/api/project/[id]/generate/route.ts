@@ -10,7 +10,7 @@
  */
 
 import { NextRequest, NextResponse } from "next/server";
-import { createServerComponentClient } from "@supabase/auth-helpers-nextjs";
+import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { runAgentSwarm, type SwarmInput } from "@/lib/agents/swarm";
 import { loadBrandMemory } from "@/lib/memory/brand-memory";
@@ -41,7 +41,12 @@ export async function POST(
   const projectId = params.id;
 
   // ── Auth ─────────────────────────────────────────────────────────────────────
-  const supabase = createServerComponentClient({ cookies });
+  const cookieStore = await cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    { cookies: { getAll: () => cookieStore.getAll(), setAll: () => {} } },
+  );
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -65,7 +70,7 @@ export async function POST(
   try {
     // ── Step 1: Load memory ───────────────────────────────────────────────────
     const brandMemory = await loadBrandMemory(user.id, brandId);
-    const storyMemory = initStoryMemory(projectId, hook ?? concept, "emotional journey");
+    const storyMemory = initStoryMemory(projectId, null, "emotional journey");
 
     // ── Step 2: Run Agent Swarm ───────────────────────────────────────────────
     const swarmInput: SwarmInput = {

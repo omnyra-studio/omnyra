@@ -26,6 +26,7 @@ import { compileSceneGraph, buildFluxPromptFromScene } from "@/lib/services/scen
 import type { SceneCompilerProject } from "@/lib/types/scene-compiler";
 import { loadBrandMemory } from "@/lib/memory/brand-memory";
 import { initStoryMemory } from "@/lib/memory/story-memory";
+import { ghostEI } from "@/lib/services/emotional-intelligence";
 
 export const maxDuration = 120;
 
@@ -75,20 +76,23 @@ export async function POST(req: Request) {
       cost:   creditCost,
       run:    async () => {
 
-        // ── Step 1: Load memory layers (non-blocking) ───────────────────────
-        const [brandMemory] = await Promise.all([
+        // ── Step 1: Load memory layers + Ghost EI (parallel) ───────────────
+        const [brandMemory, eiResult] = await Promise.all([
           loadBrandMemory(user.id).catch(() => null),
+          ghostEI.analyzeEmotionalDepth(script.trim(), niche ?? "lifestyle"),
         ]);
         const storyMemory = initStoryMemory(
           `proj_${Date.now()}`,
           null,
-          "hook → development → climax → resolution",
+          eiResult.emotionalArc,
         );
 
-        // ── Step 2: Compile scene graph with memory layers injected ─────────
+        console.log(`[EI_LAYER] emotion="${eiResult.dominantEmotion}" arc="${eiResult.emotionalArc}" microBeats=${eiResult.microBeats.length}`);
+
+        // ── Step 2: Compile scene graph with EI-enhanced script ────────────
         console.log(`[SCENE_IMAGES] compiling scene graph niche=${niche ?? "default"} scenes=${SCENE_COUNT} brand=${brandMemory?.brandName ?? "none"}`);
         const sceneGraph = await compileSceneGraph({
-          script:          script.trim(),
+          script:          eiResult.enhancedScript,
           concept:         concept.trim(),
           hook:            hook,
           targetAudience:  targetAudience,
@@ -158,6 +162,7 @@ export async function POST(req: Request) {
           lighting:         sceneGraph.global_style.lighting,
           keyAction:        scene.video_prompt,
           environmentFocus: scene.environment.location,
+          cameraShot:       scene.camera.movement,
         }));
 
         return { data: { scenes: imageResults, beats, sceneGraph } };

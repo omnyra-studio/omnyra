@@ -43,12 +43,27 @@ import { parseJsonWithEthnicityFix } from "@/middleware/ethnicityFix";
 import { getNicheSettings, detectEra, type NicheSettings } from "@/lib/config/nicheSettings";
 import { analyzeScriptBeats, buildKlingPrompt, type StoryBeat } from "@/lib/storyboard-planner";
 import { findTemplate, buildTemplateVideoPrompt } from "@/lib/templates";
+import { initStoryMemory, advanceStoryMemory, buildStoryContextPrefix } from "@/lib/memory/story-memory";
+import { buildKlingPromptFromScene, attachLastFrame } from "@/lib/services/scene-compiler";
+import type { SceneCompilerProject } from "@/lib/types/scene-compiler";
+import { detectFrameDrift, buildRetryPrompt } from "@/lib/services/drift-detector";
+import { isMultiSpeakerScript, generateMultiSpeakerVoiceover } from "@/lib/services/multi-speaker";
+import {
+  createInitialSnapshot,
+  buildNextScene,
+  attachLastFrameToSnapshot,
+  validate as validateContinuity,
+  buildPromptFromSnapshot,
+  detectDrift,
+} from "@/lib/services/continuity-engine";
+import type { ContinuitySnapshot, BrandMemoryV2 } from "@/lib/types/continuity";
+import { ghostEI } from "@/lib/services/emotional-intelligence";
 
 
 export const maxDuration = 300;
 
 const KLING_CLIP_SECS  = 10;  // 3 × 10s = 30s total video
-const ROUTE_VERSION    = "2026-06-23-v39-scene-compiler";
+const ROUTE_VERSION    = "2026-06-23-v40-continuity-engine";
 
 // Absolute generation constraints — injected into storyboard planner system prompt
 // and distilled into per-scene Kling prompts for Scene 2+.
@@ -891,18 +906,32 @@ export async function POST(req: Request) {
         console.log(`[MOTION_PROMPT] provider=kling-2.6-pro-multishot scenes=${enforcedPrompts.length}`);
 
         // Fire voiceover + ambient in parallel when narration text is provided
+        // Multi-speaker path: detect [Speaker: Name] labels and generate separate voice tracks
         const seqId = `seq-${user.id}-${Date.now()}`;
-        const voiceoverPromise = voiceoverText
-          ? elevenLabsVoiceover({
-              text:    voiceoverText,
-              voiceId,
-              userId:  user.id,
-              jobId:   seqId,
-            }).catch(err => {
-              console.warn("[cinematic-seq] voiceover failed (non-fatal):", err instanceof Error ? err.message : err);
-              return { audioUrl: undefined as string | undefined, duration: plannedTotalSec };
-            })
+        const isMultiSpeaker = voiceoverText ? isMultiSpeakerScript(voiceoverText) : false;
+        const voiceoverPromise: Promise<{ audioUrl?: string; duration: number }> | null = voiceoverText
+          ? (isMultiSpeaker
+              ? generateMultiSpeakerVoiceover({
+                  script:  voiceoverText,
+                  userId:  user.id,
+                  jobId:   seqId,
+                }).then(r => r ? { audioUrl: r.audioUrl, duration: r.duration } : { audioUrl: undefined, duration: plannedTotalSec })
+                  .catch(err => {
+                    console.warn("[cinematic-seq] multi-speaker failed (non-fatal):", err instanceof Error ? err.message : err);
+                    return { audioUrl: undefined, duration: plannedTotalSec };
+                  })
+              : elevenLabsVoiceover({
+                  text:    voiceoverText,
+                  voiceId,
+                  userId:  user.id,
+                  jobId:   seqId,
+                }).catch(err => {
+                  console.warn("[cinematic-seq] voiceover failed (non-fatal):", err instanceof Error ? err.message : err);
+                  return { audioUrl: undefined as string | undefined, duration: plannedTotalSec };
+                }))
           : null;
+
+        if (isMultiSpeaker) console.log(`[MULTI_SPEAK] detected multi-speaker script — using per-character voice tracks`);
 
         // Ambient sound — search all prompts + full script so keywords like "rain" are found
         // even when they appear in scene 2+ or only in the script description.
@@ -1010,6 +1039,54 @@ export async function POST(req: Request) {
           }
         }
 
+        // Resolve template (server-side only — internal prompts never reach client)
+        const activeTemplate = findTemplate(templateId);
+        if (activeTemplate) {
+          console.log(`[TEMPLATE] id=${activeTemplate.id} name="${activeTemplate.name}"`);
+        }
+        const templateNegative = activeTemplate?.negative_prompt ?? '';
+
+        // Story Memory — initialise narrative continuity state from beat 0
+        let storyMem = initStoryMemory(
+          user.id,
+          storyBeats?.[0] ?? null,
+          nicheSettings.emotionalArc ?? "challenge → effort → resolution",
+        );
+
+        // Continuity Engine v2 — snapshot-driven state machine
+        // Brand memory is cast to v2 format; falls back gracefully if absent
+        const brandMemoryV2: BrandMemoryV2 = {
+          characters: brandMemory?.characters?.map((c: { character_id: string; name?: string; referenceImages?: string[]; appearance_lock?: string; wardrobeLock?: string }) => ({
+            id:              c.character_id ?? "char_001",
+            name:            c.name ?? "Protagonist",
+            referenceImages: c.referenceImages ?? [],
+            appearanceLock:  { face: c.appearance_lock ?? goal ?? "", body: "", hair: "" },
+            wardrobeLock:    { default: c.wardrobeLock ?? "" },
+            voiceId:         "",
+            styleProfile:    { lighting: nicheSettings.cinemaStyle ?? "Roger Deakins golden hour", colorGrade: "teal orange cinematic", cinematicStyle: "cinematic realism" },
+          })) ?? [{
+            id: "char_001", name: "Protagonist", referenceImages: [],
+            appearanceLock: { face: goal ?? "Caucasian person, natural-looking", body: "", hair: "" },
+            wardrobeLock:   { default: "" },
+            voiceId:        "",
+            styleProfile:   { lighting: "Roger Deakins golden hour", colorGrade: "teal orange cinematic", cinematicStyle: "cinematic realism" },
+          }],
+          globalStyle: { fps: 24, lighting: nicheSettings.cinemaStyle ?? "golden hour", colorGrade: "teal orange cinematic" },
+        };
+        let continuitySnapshot: ContinuitySnapshot = createInitialSnapshot(
+          user.id,
+          brandMemoryV2,
+          nicheSettings.environmentInclude?.split(",")[0] ?? "appropriate setting",
+          storyBeats?.[0]?.emotion ?? "authentic",
+        );
+        const snapValidation = validateContinuity(continuitySnapshot);
+        if (!snapValidation.passed) {
+          console.warn(`[CONTINUITY_ENGINE] initial snapshot invalid: ${snapValidation.errors.join(", ")}`);
+        } else {
+          console.log("[CONTINUITY_ENGINE] initial snapshot validated — state machine active");
+        }
+        console.log(`[STORY_MEM] init arc="${storyMem.story_arc}" emotion="${storyMem.current_state.emotion}"`);
+
         // Build per-scene Kling prompts.
         // Scene 1: if a template is active, use its full video_prompt (unified story context).
         //           Otherwise use storyboard beat / creative-director / fallback.
@@ -1057,13 +1134,6 @@ export async function POST(req: Request) {
         const extractedUrls: Array<string | null> = new Array(prompts.length).fill(null);
         const slaFallbackIndices: number[] = [];
 
-        // Resolve template (server-side only — prompts/negatives never reach client)
-        const activeTemplate = findTemplate(templateId);
-        if (activeTemplate) {
-          console.log(`[TEMPLATE] id=${activeTemplate.id} name="${activeTemplate.name}"`);
-        }
-        const templateNegative = activeTemplate?.negative_prompt ?? '';
-
         // Absolute continuity constraint (distilled for Kling 500-char prompt limit)
         // Full constraint system is in the GENERATION_CONSTRAINTS block below.
         const CONTINUITY_PREFIX =
@@ -1073,56 +1143,102 @@ export async function POST(req: Request) {
           "Resume motion naturally after 2-second freeze. " +
           "Continuity overrides creativity.\n";
 
+        // Drift tracking — updated per-scene, applied to the next
+        let driftMotionStrength = 0.80;
+        let driftPromptPrefix   = '';
+
         for (let i = 0; i < klingScenePrompts.length; i++) {
           if (i > 0) await new Promise(r => setTimeout(r, 1200));
 
-          // For Scene 2+, try to extract last frame of the previous successful clip
+          // For Scene 2+, extract last frame of the previous successful clip
           let sceneImg = sceneImageUrls[i];
+          const originalRefImg = sceneImageUrls[0] ?? null;
+
           if (i > 0) {
             const prevUrl = extractedUrls[i - 1];
             if (prevUrl) {
               const lastFrame = await extractLastFrame(prevUrl, user.id, i - 1);
               if (lastFrame) {
                 sceneImg = lastFrame;
-                // Update scene compiler continuity metadata so downstream knows the frame URL
                 if (passedSceneGraph) attachLastFrame(passedSceneGraph, i, lastFrame);
-                console.log(`[CHAIN] scene=${i + 1} using last frame of scene ${i} as reference url=${lastFrame.substring(0, 80)}`);
+                // Continuity Engine: attach frame to current snapshot, then advance to next scene
+                continuitySnapshot = attachLastFrameToSnapshot(continuitySnapshot, lastFrame);
+                console.log(`[CHAIN] scene=${i + 1} chained from scene ${i} url=${lastFrame.substring(0, 80)}`);
+
+                // Drift detection: compare last frame vs original reference (non-blocking within stagger)
+                if (originalRefImg?.startsWith("https://")) {
+                  const drift = await detectFrameDrift(lastFrame, originalRefImg, i, driftMotionStrength);
+                  if (drift) {
+                    driftMotionStrength = drift.adjustment.newMotionStrength;
+                    driftPromptPrefix   = drift.adjustment.prefixOverride ?? '';
+                  }
+                }
               } else {
-                console.warn(`[CHAIN] scene=${i + 1} last-frame extraction failed — falling back to original reference image`);
+                console.warn(`[CHAIN] scene=${i + 1} last-frame failed — using original ref`);
               }
             } else {
-              console.warn(`[CHAIN] scene=${i + 1} previous clip failed — using original reference image`);
+              console.warn(`[CHAIN] scene=${i + 1} prev clip failed — using original ref`);
             }
           }
 
-          // Prepend continuity instruction for scenes 2+
+          // Prepend drift correction + story context + continuity for scenes 2+
+          const storyCtx = i > 0 ? buildStoryContextPrefix(storyMem) : '';
           const klingPrompt = i === 0
             ? klingScenePrompts[i]
-            : (CONTINUITY_PREFIX + klingScenePrompts[i]).slice(0, 500);
+            : (driftPromptPrefix + storyCtx + CONTINUITY_PREFIX + klingScenePrompts[i]).slice(0, 500);
 
-          const mode = (sceneImg?.startsWith("https://")) ? "i2v" : "t2v";
-          console.log(`[CLIP_FIRE] scene=${i + 1} mode=${mode} chained=${i > 0} imageUrl=${sceneImg?.substring(0, 80) ?? "NONE"}`);
+          const mode = sceneImg?.startsWith("https://") ? "i2v" : "t2v";
+          console.log(`[CLIP_FIRE] scene=${i + 1} mode=${mode} motion=${driftMotionStrength.toFixed(2)} imageUrl=${sceneImg?.substring(0, 80) ?? "NONE"}`);
+
+          const klingParams = {
+            negativePrompt:  sceneNegativePrompts[i] || undefined,
+            imageUrl:        sceneImg?.startsWith("https://") ? sceneImg : undefined,
+            duration:        KLING_CLIP_SECS,
+            aspectRatio:     "9:16" as const,
+            mode:            "pro" as const,
+            motionStrength:  driftMotionStrength,
+            seed:            baseSeed + i,
+            sceneNumber:     i + 1,
+          };
 
           try {
-            const result = await generateKlingClip({
-              prompt:          klingPrompt,
-              negativePrompt:  sceneNegativePrompts[i] || undefined,
-              imageUrl:        sceneImg?.startsWith("https://") ? sceneImg : undefined,
-              duration:        KLING_CLIP_SECS,
-              aspectRatio:     "9:16",
-              mode:            "pro",
-              motionStrength:  0.80,
-              seed:            baseSeed + i,
-              sceneNumber:     i + 1,
-            });
+            const result = await generateKlingClip({ prompt: klingPrompt, ...klingParams });
             extractedUrls[i] = result.videoUrl;
-            console.log(`[CLIP_RESULT] scene=${i + 1} success=true elapsed=${result.generationMs}ms url=${result.videoUrl.substring(0, 80)}`);
-            clipReports.push(`scene=${i + 1} | kling-direct-v3-pro | OK ${result.generationMs}ms | ${result.videoUrl.substring(0, 80)}`);
+            storyMem = advanceStoryMemory(storyMem, storyBeats?.[i] ?? null, result.videoUrl);
+            // Continuity Engine: advance snapshot to next scene state
+            if (i < klingScenePrompts.length - 1) {
+              const nextBeat    = storyBeats?.[i + 1]?.emotion;
+              continuitySnapshot = buildNextScene(continuitySnapshot, undefined, nextBeat ?? undefined, undefined);
+              const snapCheck    = validateContinuity(continuitySnapshot);
+              if (!snapCheck.passed) {
+                console.warn(`[CONTINUITY_ENGINE] snapshot scene=${i + 2} invalid: ${snapCheck.errors.join(", ")}`);
+              }
+            }
+            // Reset drift prefix after a successful clip — let the detector re-evaluate next frame
+            driftPromptPrefix = '';
+            console.log(`[CLIP_OK] scene=${i + 1} ${result.generationMs}ms emotion="${storyMem.current_state.emotion}" url=${result.videoUrl.substring(0, 80)}`);
+            clipReports.push(`scene=${i + 1} | kling-pro | OK ${result.generationMs}ms`);
           } catch (err) {
             const reason = err instanceof Error ? err.message : String(err);
-            const detail = JSON.stringify(err, Object.getOwnPropertyNames(err instanceof Error ? err : {})).substring(0, 300);
-            console.error(`[CLIP_FAIL] scene=${i + 1} mode=${mode} reason="${reason}" detail=${detail}`);
-            clipReports.push(`scene=${i + 1} | kling-2.6-pro | FAIL | ${reason}`);
+            console.warn(`[CLIP_FAIL] scene=${i + 1} attempt=1 reason="${reason.substring(0, 120)}" — retrying`);
+
+            // Auto-regen: single retry with reduced motion + stricter continuity lock
+            try {
+              const retryPrompt = buildRetryPrompt(klingPrompt, 1);
+              const retryResult = await generateKlingClip({
+                prompt:         retryPrompt,
+                ...klingParams,
+                motionStrength: Math.max(0.40, driftMotionStrength - 0.20),
+              });
+              extractedUrls[i] = retryResult.videoUrl;
+              storyMem = advanceStoryMemory(storyMem, storyBeats?.[i] ?? null, retryResult.videoUrl);
+              console.log(`[CLIP_RETRY_OK] scene=${i + 1} ${retryResult.generationMs}ms url=${retryResult.videoUrl.substring(0, 80)}`);
+              clipReports.push(`scene=${i + 1} | kling-pro | RETRY_OK ${retryResult.generationMs}ms`);
+            } catch (retryErr) {
+              const retryReason = retryErr instanceof Error ? retryErr.message : String(retryErr);
+              console.error(`[CLIP_FAIL_FINAL] scene=${i + 1} both attempts failed: ${retryReason.substring(0, 120)}`);
+              clipReports.push(`scene=${i + 1} | kling-pro | FAIL_FINAL | ${retryReason}`);
+            }
           }
         }
 
