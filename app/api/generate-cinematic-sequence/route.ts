@@ -45,8 +45,8 @@ import { beatToKlingDirection, type StoryBeat } from "@/lib/storyboard-planner";
 
 export const maxDuration = 300;
 
-const KLING_CLIP_SECS  = 10;  // Kling v3: 10s per scene (3×10s = 30s video)
-const ROUTE_VERSION    = "2026-06-22-v29-speed-std-5s";
+const KLING_CLIP_SECS  = 5;   // Kling v3 std: 5s clips generate in ~30-50s vs ~70-87s for 10s
+const ROUTE_VERSION    = "2026-06-23-v30-5s-240poll";
 
 // ── SLA budget: Vercel maxDuration=300s; keep 30s for post-processing ─────────
 const SLA_TOTAL_MS   = 270_000; // 270s total (30s margin before Vercel 300s kills)
@@ -991,7 +991,7 @@ export async function POST(req: Request) {
               method:  "POST",
               headers: composerKey ? { "x-api-key": composerKey } : {},
               body:    form,
-              signal:  AbortSignal.timeout(90_000),
+              signal:  AbortSignal.timeout(20_000), // Railway always SIGKILL — fail fast, fall through to FFmpeg
             });
 
             if (railwayRes.ok) {

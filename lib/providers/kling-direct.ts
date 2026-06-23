@@ -86,7 +86,7 @@ export async function generateKlingClip(params: {
 }): Promise<{ videoUrl: string; generationMs: number }> {
   const POLL_FIRST_MS    = 1_000; // first check after 1s — clips sometimes finish fast
   const POLL_INTERVAL_MS = 3_000; // subsequent checks every 3s
-  const MAX_POLL_MS      = 85_000; // hard cap well under the 90s user-facing limit
+  const MAX_POLL_MS      = 240_000; // 240s — covers slow Kling jobs within 300s route budget
 
   const startMs   = Date.now();
   const apiBase   = getApiBase();
