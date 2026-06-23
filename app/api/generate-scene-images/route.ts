@@ -21,7 +21,7 @@ import { type StoryBeat } from "@/lib/storyboard-planner";
 
 export const maxDuration = 120;
 
-const SCENE_COUNT = 3; // 3 story beats → 3 images (speed: 25% fewer Flux calls)
+const SCENE_COUNT = 4; // 4 story beats → 4 visually distinct scene images
 
 
 // ── Strong negative prompt for Flux ──────────────────────────────────────────
@@ -42,10 +42,14 @@ const FLUX_NEGATIVE_BASE =
   // Quality
   "blurry, low quality, watermark, logo, signature, cartoon, anime, CGI, " +
   "airbrushed, oversaturated, stock photo pose, studio backdrop, " +
-  // Face / mouth particle artifacts
-  "particles from mouth, sand from mouth, water from mouth, smoke from mouth, " +
-  "liquid from eyes, glowing eyes, supernatural effects, magical aura, " +
-  "floating debris near face, elements touching face unnaturally";
+  // Omnyra strict safety — body horror / particle artifacts / surreal
+  "surreal, bizarre, horror, body horror, melting face, melting skin, " +
+  "sand from mouth, blood from mouth, water from mouth, liquid from mouth, " +
+  "sand from eyes, blood from eyes, liquid from eyes, tears of sand, tears of glitter, " +
+  "crystals from face, glitter tears, sand tears, unnatural tears, " +
+  "particles from mouth, smoke from mouth, floating debris near face, " +
+  "glowing eyes, supernatural effects, magical aura, elements touching face unnaturally, " +
+  "disturbing imagery, grotesque, nightmarish, unsettling anatomy";
 
 // ── POST handler ──────────────────────────────────────────────────────────────
 
@@ -116,14 +120,20 @@ export async function POST(req: Request) {
     : null;
 
   const ANTI_TEXT_SUFFIX =
+    // Text suppression
     "No readable text anywhere. No visible writing. No legible words or numbers on any surface. " +
-    "No text on walls, paper, books, signs, screens, clocks, or clothing. " +
-    "No clock face with numbers. No newspaper text. No letters. Blank surfaces only. " +
-    "NO back of head. NO rear view. NO back-facing subject. Subject always facing toward camera. Front-facing only. " +
-    // Flux artifact prevention — particles/materials must not emanate from mouth, eyes, or face
-    "NO particles from mouth. NO sand from mouth. NO water from mouth. NO smoke from mouth. NO breath visible. " +
-    "NO liquid from eyes. NO glowing eyes. NO supernatural effects. NO magical aura. NO floating debris near face. " +
-    "NO elements touching face unnaturally. Clean natural face, mouth closed or naturally open, no foreign materials.";
+    "No text on walls, paper, books, signs, screens, clocks, or clothing. Blank surfaces only. " +
+    // Camera direction
+    "NO back of head. NO rear view. Subject always facing toward camera. Front-facing only. " +
+    // Omnyra strict safety — photorealistic only, no horror or surreal artifacts
+    "Photorealistic and beautiful. Natural expressions and emotions only. " +
+    "Clean cinematic lighting. Correct human anatomy and physics. " +
+    "NO surreal elements. NO body horror. NO melting faces or skin. NO horror imagery. " +
+    "NO sand from mouth or eyes. NO water from mouth. NO blood from mouth or nose. NO liquid from eyes. " +
+    "NO tears made of sand, glitter, or crystals — only realistic water tears if any. " +
+    "NO particles from mouth. NO smoke from mouth. NO breath visible. " +
+    "NO glowing eyes. NO supernatural effects. NO magical aura. NO floating debris near face. " +
+    "NO elements touching face unnaturally. Clean natural face, no foreign materials on skin.";
 
   try {
     const result = await withCreditState<{ scenes: Scene[]; beats: StoryBeat[] }>({
@@ -137,32 +147,45 @@ export async function POST(req: Request) {
         const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
         const promptGenRes = await anthropic.messages.create({
           model: "claude-sonnet-4-6",
-          max_tokens: 1200,
-          system: `You are a visual director generating Flux image prompts for AI video scene images.
-Your job: read the script and output EXACTLY ${SCENE_COUNT} Flux image prompts — one per major scene moment.
+          max_tokens: 1600,
+          system: `You are a visual director generating Flux Realism image prompts for an AI video.
+Read the script carefully, then output EXACTLY ${SCENE_COUNT} prompts — one per distinct story beat.
 
-RULES:
-- Each prompt MUST show the EXACT action described in the script for that moment
-- NEVER substitute a generic shot for a specific scripted action
-- If script says "face mid-lift: genuine strain" → write a close-up face prompt showing effort/strain
-- If script says "phone screen shows progress: honest numbers" → write prompt with phone screen visible facing camera
-- If script says "grip the handle. Lift." → write close-up hand gripping weight, arm rising
-- If script says "camera widens" → write a wide shot
-- Subject MUST always face the camera — never show back of head or rear view
-- One human subject unless script explicitly says two people
-- Real photographic quality, natural lighting
-- 25-40 words per prompt
-- ${characterDescription ? `Character: ${characterDescription}` : "Caucasian person, natural-looking"}
-- Environment: ${envInclude ? envInclude : "appropriate setting for the script"}${envExclude ? `. NO ${envExclude}` : ""}
-- NEVER describe particles/materials coming from the subject's mouth, eyes, or face
-- NEVER describe supernatural glows, auras, or magical effects
-- Describe only natural realistic human poses and expressions
+SCENE STRUCTURE (follow this order):
+- Scene 1 (OPENING HOOK): The very first visual moment that grabs attention. Match the script's opening.
+- Scene 2 (BUILDUP): The second distinct action or emotional beat from the script.
+- Scene 3 (PEAK / KEY MOMENT): The most important or dramatic moment of the script.
+- Scene 4 (RESOLUTION / CLOSE): The final emotional payoff or call-to-action moment.
 
-OUTPUT: valid JSON only. No markdown.
-{ "prompts": ["prompt1", "prompt2", "prompt3"] }`,
+CRITICAL DIVERSITY RULE — each prompt MUST be visually different:
+- Different shot distance per scene (e.g. wide, medium, close-up, extreme close-up)
+- Different subject action per scene (e.g. standing, moving, reacting, looking)
+- Different emotional expression per scene (e.g. determined, surprised, warm, proud)
+- Never describe the same pose or framing twice across the 4 prompts
+
+SCRIPT FIDELITY:
+- Each prompt MUST show the EXACT action/emotion described in that part of the script
+- If script says "face showing genuine strain" → close-up face, visible effort, brow furrowed
+- If script says "wide shot of street" → full environment wide shot
+- If script says "hands grip" → extreme close-up on hands gripping
+- If script says "walking together" → two people side by side mid-shot
+- NEVER replace a specific scripted moment with a generic substitute
+
+TECHNICAL RULES:
+- Subject ALWAYS faces the camera — never back of head, never rear view
+- ${characterDescription ? `Character: ${characterDescription}` : "Caucasian person, realistic, natural-looking"}
+- ${envInclude ? `Environment elements to include: ${envInclude}` : "Setting appropriate to the script"}
+- ${envExclude ? `EXCLUDE from every scene: ${envExclude}` : ""}
+- Real photographic quality, cinematic lighting, no studio backdrop
+- 30-50 words per prompt — be specific and visual
+- NEVER describe particles, smoke, sand, liquid, or any material coming from a person's mouth, eyes, or face
+- NEVER describe glowing eyes, supernatural effects, magical aura, or body horror
+
+OUTPUT: valid JSON only. No markdown. No explanation.
+{ "prompts": ["scene1_prompt", "scene2_prompt", "scene3_prompt", "scene4_prompt"] }`,
           messages: [{
             role: "user",
-            content: `Script: ${script.trim()}\n\nConcept: ${concept}\n\nGenerate exactly ${SCENE_COUNT} Flux image prompts, one per key scene moment from this script.`,
+            content: `Script: ${script.trim()}\n\nConcept: ${concept}${hook ? `\n\nHook: ${hook}` : ""}\n\nGenerate exactly ${SCENE_COUNT} VISUALLY DISTINCT Flux image prompts covering 4 different beats of this script. Each must show a different moment, different shot distance, and different action.`,
           }],
         });
 
@@ -185,16 +208,21 @@ OUTPUT: valid JSON only. No markdown.
         const imageResults: Scene[] = await Promise.all(
           beatPrompts.map(async (beatPrompt, i) => {
             const beat = beats[i];
+            // Keep the final prompt focused on the beat — don't dilute with envInclude
+            // (Claude already wove environment context into each beat prompt above)
+            const COMPACT_SAFETY =
+              "No text or writing anywhere. Subject facing camera. Photorealistic. Clean natural human anatomy. " +
+              "No particles from mouth. No sand or liquid from face. No supernatural effects. No glowing eyes.";
             const finalPrompt = [
               beatPrompt,
-              envInclude ? envInclude + "." : null,
               envExcludeAsPositive,
-              ANTI_TEXT_SUFFIX,
+              COMPACT_SAFETY,
             ].filter(Boolean).join(" ");
 
             console.log(`[IMAGE_PROMPT_FINAL] scene=${i + 1} beat=${beat.beatNumber}: ${finalPrompt.substring(0, 220)}`);
 
-            const res = await fetch("https://fal.run/fal-ai/flux/schnell", {
+            // Flux Dev follows prompts properly (28 steps vs Schnell's 4)
+            const res = await fetch("https://fal.run/fal-ai/flux/dev", {
               method: "POST",
               headers: {
                 Authorization: `Key ${falKey}`,
@@ -204,7 +232,8 @@ OUTPUT: valid JSON only. No markdown.
                 prompt:                finalPrompt,
                 num_images:            1,
                 image_size:            { width: 1080, height: 1920 },
-                num_inference_steps:   8,
+                num_inference_steps:   28,
+                guidance_scale:        3.5,
                 enable_safety_checker: true,
               }),
             });
