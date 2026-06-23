@@ -41,7 +41,11 @@ const FLUX_NEGATIVE_BASE =
   "malformed limbs, three hands, two left hands, overlapping limbs, merged torsos, " +
   // Quality
   "blurry, low quality, watermark, logo, signature, cartoon, anime, CGI, " +
-  "airbrushed, oversaturated, stock photo pose, studio backdrop";
+  "airbrushed, oversaturated, stock photo pose, studio backdrop, " +
+  // Face / mouth particle artifacts
+  "particles from mouth, sand from mouth, water from mouth, smoke from mouth, " +
+  "liquid from eyes, glowing eyes, supernatural effects, magical aura, " +
+  "floating debris near face, elements touching face unnaturally";
 
 // ── POST handler ──────────────────────────────────────────────────────────────
 
@@ -115,7 +119,11 @@ export async function POST(req: Request) {
     "No readable text anywhere. No visible writing. No legible words or numbers on any surface. " +
     "No text on walls, paper, books, signs, screens, clocks, or clothing. " +
     "No clock face with numbers. No newspaper text. No letters. Blank surfaces only. " +
-    "NO back of head. NO rear view. NO back-facing subject. Subject always facing toward camera. Front-facing only.";
+    "NO back of head. NO rear view. NO back-facing subject. Subject always facing toward camera. Front-facing only. " +
+    // Flux artifact prevention — particles/materials must not emanate from mouth, eyes, or face
+    "NO particles from mouth. NO sand from mouth. NO water from mouth. NO smoke from mouth. NO breath visible. " +
+    "NO liquid from eyes. NO glowing eyes. NO supernatural effects. NO magical aura. NO floating debris near face. " +
+    "NO elements touching face unnaturally. Clean natural face, mouth closed or naturally open, no foreign materials.";
 
   try {
     const result = await withCreditState<{ scenes: Scene[]; beats: StoryBeat[] }>({
@@ -142,10 +150,13 @@ RULES:
 - If script says "camera widens" → write a wide shot
 - Subject MUST always face the camera — never show back of head or rear view
 - One human subject unless script explicitly says two people
-- Real photographic quality, natural gym lighting
+- Real photographic quality, natural lighting
 - 25-40 words per prompt
-- ${characterDescription ? `Character: ${characterDescription}` : "Caucasian woman, athletic but natural-looking"}
-- Environment: gym setting${envInclude ? `, ${envInclude}` : ""}${envExclude ? `. NO ${envExclude}` : ""}
+- ${characterDescription ? `Character: ${characterDescription}` : "Caucasian person, natural-looking"}
+- Environment: ${envInclude ? envInclude : "appropriate setting for the script"}${envExclude ? `. NO ${envExclude}` : ""}
+- NEVER describe particles/materials coming from the subject's mouth, eyes, or face
+- NEVER describe supernatural glows, auras, or magical effects
+- Describe only natural realistic human poses and expressions
 
 OUTPUT: valid JSON only. No markdown.
 { "prompts": ["prompt1", "prompt2", "prompt3"] }`,

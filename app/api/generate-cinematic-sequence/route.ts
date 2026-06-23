@@ -46,7 +46,7 @@ import { analyzeScriptBeats, beatToKlingDirection, type StoryBeat } from "@/lib/
 export const maxDuration = 300;
 
 const KLING_CLIP_SECS  = 10;  // 3 × 10s = 30s total video
-const ROUTE_VERSION    = "2026-06-23-v36-stagger-retry-audio";
+const ROUTE_VERSION    = "2026-06-23-v37-no-sand-face";
 
 // ── SLA budget: Vercel maxDuration=300s; keep 30s for post-processing ─────────
 const SLA_TOTAL_MS   = 270_000; // 270s total (30s margin before Vercel 300s kills)
@@ -682,7 +682,11 @@ export async function POST(req: Request) {
           "head facing backward, neck twisted 180 degrees, inverted feet, " +
           "wrong grip, object held incorrectly, deformed object, incorrect prop shape, " +
           "phone shaped like remote, distorted device, wrong object in hand, floating object, " +
-          "object clipping through body, arm coming from wrong position";
+          "object clipping through body, arm coming from wrong position, " +
+          // Particle / material artifacts — Kling animates sand/water/smoke from face when mentioned in prompt
+          "sand falling from face, sand from mouth, particles from mouth, liquid from mouth, " +
+          "water dripping from face, smoke from mouth, material pouring from face, " +
+          "sand pouring from lips, debris falling from chin, particles emanating from face";
         const _negEmotional = _isEmotional
           ? "premature smiling, overly joyful expression too early, laughing out loud, wrong orientation, generic romance without sadness"
           : "";
