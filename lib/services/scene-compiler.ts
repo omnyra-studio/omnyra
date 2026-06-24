@@ -187,10 +187,19 @@ Generate exactly ${sceneCount} scenes. Each scene must visually match a DIFFEREN
   let raw = rawText.replace(/```json|```/g, "").trim();
   const start = raw.indexOf("{");
   const end   = raw.lastIndexOf("}");
-  if (start === -1 || end === -1) throw new Error("[SCENE_COMPILER] Claude returned no JSON");
+  if (start === -1 || end === -1) {
+    console.error(`[SCENE_COMPILER] No JSON boundary found. Raw (first 300): ${rawText.substring(0, 300)}`);
+    throw new Error("[SCENE_COMPILER] Claude returned no JSON");
+  }
   raw = raw.slice(start, end + 1).replace(/,\s*([}\]])/g, "$1");
 
-  const parsed = JSON.parse(raw) as { scenes?: unknown[] };
+  let parsed: { scenes?: unknown[] };
+  try {
+    parsed = JSON.parse(raw) as { scenes?: unknown[] };
+  } catch (err) {
+    console.error(`[SCENE_COMPILER] JSON.parse failed: ${(err as Error).message}. Raw (first 300): ${raw.substring(0, 300)}`);
+    throw new Error(`[SCENE_COMPILER] JSON parse error: ${(err as Error).message}`);
+  }
   if (!Array.isArray(parsed.scenes) || parsed.scenes.length === 0) {
     throw new Error("[SCENE_COMPILER] Claude returned empty scene graph");
   }
