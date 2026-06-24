@@ -104,7 +104,7 @@ async function downloadVideo(url: string, niche: string | null, createdAt: strin
 
 // ─── Video Modal ──────────────────────────────────────────────────────────────
 
-function VideoModal({ url, niche, createdAt, onClose }: { url: string; niche: string | null; createdAt: string; onClose: () => void }) {
+function VideoModal({ url, niche, createdAt, videoId, onClose }: { url: string; niche: string | null; createdAt: string; videoId: string; onClose: () => void }) {
   return (
     <div
       style={{
@@ -142,6 +142,16 @@ function VideoModal({ url, niche, createdAt, onClose }: { url: string; niche: st
             }}
           >⬇ Download</button>
           <Link
+            href={`/generate?continueFrom=${videoId}`}
+            style={{
+              flex: 1, background: "rgba(78,203,140,0.12)",
+              border: "1px solid rgba(78,203,140,0.35)",
+              borderRadius: 10, padding: "10px 0",
+              color: "#4ECB8C", fontWeight: 700, fontSize: 14,
+              textDecoration: "none", textAlign: "center", display: "block",
+            }}
+          >↪ Continue</Link>
+          <Link
             href="/create"
             style={{
               flex: 1, background: "rgba(192,132,252,0.12)",
@@ -165,7 +175,7 @@ function VideoCard({
   onDelete,
 }: {
   video: VideoItem;
-  onPlay: (url: string, niche: string | null, createdAt: string) => void;
+  onPlay: (url: string, niche: string | null, createdAt: string, id: string) => void;
   onDelete: (id: string, source: string) => void;
 }) {
   const isComplete = video.status === "complete" || video.status === "completed";
@@ -266,7 +276,7 @@ function VideoCard({
           position: "relative", aspectRatio: "9/16", overflow: "hidden",
           cursor: canPlay ? "pointer" : "default", background: "rgba(0,0,0,0.3)",
         }}
-        onClick={() => canPlay && video.video_url && onPlay(video.video_url, video.niche ?? null, video.created_at)}
+        onClick={() => canPlay && video.video_url && onPlay(video.video_url, video.niche ?? null, video.created_at, video.id)}
       >
         {video.thumbnail_url ? (
           // Static image thumbnail — faster than loading a video element
@@ -355,6 +365,16 @@ function VideoCard({
               }}
             >⬇ Download</button>
           )}
+          <Link
+            href={`/generate?continueFrom=${video.id}`}
+            style={{
+              flex: 1, background: "rgba(78,203,140,0.08)",
+              border: "1px solid rgba(78,203,140,0.25)",
+              color: "#4ECB8C", borderRadius: 8, padding: "7px 0",
+              textAlign: "center", fontSize: 13, fontWeight: 700,
+              textDecoration: "none", display: "block",
+            }}
+          >↪ Continue</Link>
           <button
             onClick={() => onDelete(video.id, video.source)}
             style={{
@@ -379,6 +399,7 @@ export default function MyVideosPage() {
   const [playingUrl,    setPlayingUrl]    = useState<string | null>(null);
   const [playingNiche,  setPlayingNiche]  = useState<string | null>(null);
   const [playingDate,   setPlayingDate]   = useState<string>("");
+  const [playingId,     setPlayingId]     = useState<string>("");
   const [hasSavedProject, setHasSavedProject] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -475,10 +496,11 @@ export default function MyVideosPage() {
     setVideos((prev) => prev.filter((v) => v.id !== id));
   }
 
-  function handlePlay(url: string, niche: string | null, createdAt: string) {
+  function handlePlay(url: string, niche: string | null, createdAt: string, id: string) {
     setPlayingUrl(url);
     setPlayingNiche(niche);
     setPlayingDate(createdAt);
+    setPlayingId(id);
   }
 
   function handleNewProject() {
@@ -499,6 +521,7 @@ export default function MyVideosPage() {
           url={playingUrl}
           niche={playingNiche}
           createdAt={playingDate}
+          videoId={playingId}
           onClose={() => setPlayingUrl(null)}
         />
       )}

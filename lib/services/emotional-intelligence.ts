@@ -170,6 +170,39 @@ Maintain smooth camera that follows the emotional journey.
 Naturalistic lighting. High emotional authenticity.
 Subject always faces camera. No text overlays.`;
   }
+
+  async enhanceContinuation(
+    continuationIdea:    string,
+    previousStoryMemory: Record<string, unknown> | null,
+  ): Promise<string> {
+    const contextBlock = previousStoryMemory
+      ? `Previous story memory:\n${JSON.stringify(previousStoryMemory, null, 2)}\n\n`
+      : "";
+
+    try {
+      const res = await this.client.messages.create({
+        model:      "claude-haiku-4-5-20251001",
+        max_tokens: 300,
+        system: `You are an Emotional Intelligence Layer for story continuation.
+Rules:
+- Maintain the same emotional tone and character personalities
+- Deepen the existing arc — do not restart it
+- Focus on micro-emotions: glances, pauses, small gestures
+- Keep dialogue realistic, no clichés
+- Output ONLY the continuation script (60–120 words), no commentary`,
+        messages: [{
+          role:    "user",
+          content: `${contextBlock}Continue this story naturally: "${continuationIdea}"`,
+        }],
+      });
+
+      const text = res.content[0]?.type === "text" ? res.content[0].text.trim() : "";
+      return text || continuationIdea;
+    } catch (err) {
+      console.warn("[EI_CONTINUATION] failed, using raw idea:", (err as Error).message);
+      return continuationIdea;
+    }
+  }
 }
 
 // Singleton for import convenience

@@ -48,6 +48,8 @@ import { buildKlingPromptFromScene, attachLastFrame } from "@/lib/services/scene
 import type { SceneCompilerProject } from "@/lib/types/scene-compiler";
 import { detectFrameDrift, buildRetryPrompt } from "@/lib/services/drift-detector";
 import { isMultiSpeakerScript, generateMultiSpeakerVoiceover } from "@/lib/services/multi-speaker";
+import { generateRunwayClip } from "@/lib/services/runway";
+import { selectVideoProvider, inferMotionComplexity } from "@/lib/services/model-router";
 import {
   createInitialSnapshot,
   buildNextScene,
@@ -58,12 +60,17 @@ import {
 } from "@/lib/services/continuity-engine";
 import type { ContinuitySnapshot, BrandMemoryV2 } from "@/lib/types/continuity";
 import { ghostEI } from "@/lib/services/emotional-intelligence";
+import { buildTransitionBridge } from "@/lib/services/hard-mode-compiler";
+import { saveSnapshot } from "@/lib/services/snapshot-replay";
+import { SaaSMetrics } from "@/lib/saas/saas-metrics";
+
+const saasMetrics = new SaaSMetrics();
 
 
 export const maxDuration = 300;
 
 const KLING_CLIP_SECS  = 10;  // 3 × 10s = 30s total video
-const ROUTE_VERSION    = "2026-06-23-v40-continuity-engine";
+const ROUTE_VERSION    = "2026-06-24-v41-runway-10s";
 
 // Absolute generation constraints — injected into storyboard planner system prompt
 // and distilled into per-scene Kling prompts for Scene 2+.
@@ -483,6 +490,7 @@ export async function POST(req: Request) {
   try {
     const body = await parseJsonWithEthnicityFix<{
       prompts?: string[];
+      scenePrompts?: string[];  // 3 Runway-ready prompts from script picker — takes priority over prompts
       imageUrl?: string | null;
       sceneImages?: string[];
       clipDuration?: number;
@@ -493,7 +501,7 @@ export async function POST(req: Request) {
       niche?: string;
       videoType?: 'quick' | 'cinematic' | 'avatar';
       subjectEthnicity?: SubjectEthnicityInput;
-      voiceoverText?: string;
+      voiceoverText?: string;  // narration only (spoken words) — do NOT strip or reparse
       voiceId?: string;
       storyBeats?: StoryBeat[];
       creativeScenes?: Array<{ time: string; description: string; motion: string }>;
@@ -503,30 +511,40 @@ export async function POST(req: Request) {
     }>(req);
     subjectEthnicity = body.subjectEthnicity ?? 'caucasian';
     bodySceneImages = (body.sceneImages ?? []).filter((u): u is string => typeof u === "string" && u.startsWith("https://"));
-    const rawVoiceover = body.voiceoverText?.trim() || body.script?.trim() || "";
-    // Extract narration: prefer quoted strings (actual VO lines); fall back to stripping
-    // ALL CAPS scene headers, action lines, and bracket/paren stage directions.
-    const _quotedLines = (rawVoiceover.match(/"([^"]{10,})"/g) ?? [])
-      .map((s: string) => s.replace(/^"|"$/g, "").trim()).filter(Boolean);
-    voiceoverText = (_quotedLines.length > 0
-      ? _quotedLines.join(" ")
-      : rawVoiceover
-          .replace(/\[SCENE:[^\]]*\]/gi, "")
-          .replace(/\[CUT TO[^\]]*\]/gi, "")
-          .replace(/\[.*?\]/g, "")
-          .replace(/\(.*?\)/g, "")
-          .replace(/^\s*#.*$/gm, "")
-          // Strip ALL CAPS scene direction lines (e.g. "BARRACKS. RAIN. LAMPLIGHT.")
-          .replace(/^[A-Z][A-Z\s.,!?:—]{8,}$/gm, "")
-          .replace(/\n{3,}/g, "\n\n")
-    ).trim() || undefined;
+
+    // When scenePrompts are passed (from script picker), use them directly — no stripping needed.
+    // voiceoverText in this case is already the clean narration (spoken words only).
+    const hasScenePrompts = Array.isArray(body.scenePrompts) && body.scenePrompts.length >= 3;
+    if (hasScenePrompts) {
+      voiceoverText = body.voiceoverText?.trim() || undefined;
+      console.log(`[SCRIPT_PICKER] scenePrompts=${body.scenePrompts!.length} narration_len=${voiceoverText?.length ?? 0}`);
+    } else {
+      const rawVoiceover = body.voiceoverText?.trim() || body.script?.trim() || "";
+      // Extract narration: prefer quoted strings (actual VO lines); fall back to stripping
+      // ALL CAPS scene headers, action lines, and bracket/paren stage directions.
+      const _quotedLines = (rawVoiceover.match(/"([^"]{10,})"/g) ?? [])
+        .map((s: string) => s.replace(/^"|"$/g, "").trim()).filter(Boolean);
+      voiceoverText = (_quotedLines.length > 0
+        ? _quotedLines.join(" ")
+        : rawVoiceover
+            .replace(/\[SCENE:[^\]]*\]/gi, "")
+            .replace(/\[CUT TO[^\]]*\]/gi, "")
+            .replace(/\[.*?\]/g, "")
+            .replace(/\(.*?\)/g, "")
+            .replace(/^\s*#.*$/gm, "")
+            .replace(/^[A-Z][A-Z\s.,!?:—]{8,}$/gm, "")
+            .replace(/\n{3,}/g, "\n\n")
+      ).trim() || undefined;
+    }
+
     voiceId = body.voiceId;
-    prompts      = body.prompts ?? [];
+    // scenePrompts from picker override generic prompts — each maps to one Runway clip
+    prompts      = hasScenePrompts ? body.scenePrompts!.slice(0, 3) : (body.prompts ?? []);
     imageUrl     = body.imageUrl;
     clipDuration = body.clipDuration;
     sceneTypes   = body.sceneTypes;
     script       = body.script;
-    goal         = body.goal;
+    goal         = body.goal ?? (hasScenePrompts ? undefined : body.prompts?.[0]);
     characterId  = body.characterId;
     niche        = body.niche;
     isQuickMode = body.videoType === 'quick';
@@ -535,7 +553,7 @@ export async function POST(req: Request) {
     passedSceneGraph = body.sceneGraph ?? undefined;
     if (body.targetDuration === 60) targetDuration = 60;
     templateId = body.templateId;
-    console.log(`[BRIEF_CONTEXT] goal="${(goal ?? "").substring(0, 120)}" characterId=${characterId ?? "none"} niche=${niche ?? "none"} ethnicity=${subjectEthnicity} storyBeats=${passedStoryBeats?.length ?? 0} creativeScenes=${passedCreativeScenes?.length ?? 0} templateId=${templateId ?? "none"}`)
+    console.log(`[BRIEF_CONTEXT] goal="${(goal ?? "").substring(0, 120)}" scenePrompts=${hasScenePrompts} characterId=${characterId ?? "none"} niche=${niche ?? "none"} ethnicity=${subjectEthnicity} storyBeats=${passedStoryBeats?.length ?? 0} creativeScenes=${passedCreativeScenes?.length ?? 0} templateId=${templateId ?? "none"}`)
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
@@ -593,16 +611,19 @@ export async function POST(req: Request) {
     return Response.json({ error: "prompts required" }, { status: 400 });
   }
 
-  // Inject creative brief into scene 1 — strip any ethnicity middleware prefix first
-  if (goal?.trim() && prompts.length > 0) {
+  // Inject creative brief into scene 1 — skip when scenePrompts came from script picker
+  // (those prompts are already complete Runway descriptions, goal text would corrupt them)
+  const _hasScenePrompts = prompts.length >= 3 && !goal;
+  if (!_hasScenePrompts && goal?.trim() && prompts.length > 0) {
     let goalText = goal.trim();
-    // Strip ethnicity middleware prefix if it leaked through
     const ethnicityPrefixRe = /^\[(?:MANDATORY ETHNICITY OVERRIDE|ETHNICITY DEFAULT RULE)[^\]]*\][\s\S]*?\n\n/i;
     goalText = goalText.replace(ethnicityPrefixRe, "").trim();
     if (goalText) {
       prompts[0] = `${goalText.slice(0, 200)}, ${prompts[0]}`;
       console.log(`[BRIEF_INJECT] scene=1 prompt="${prompts[0].substring(0, 120)}"`);
     }
+  } else if (_hasScenePrompts) {
+    console.log(`[BRIEF_INJECT] skipped — scenePrompts from script picker used as-is`);
   }
 
   // ── Abuse protection (video-specific: cooldown + concurrent job limit) ────
@@ -1024,9 +1045,14 @@ export async function POST(req: Request) {
         ];
 
         // Use passed beats; otherwise generate inline (~3s) — worth it vs ignoring the script.
+        // Skip beat generation when Runway is the primary provider: Runway follows prompts
+        // directly and the Kling beat format (generic camera directions) degrades quality on Runway.
+        const useRunwayDirect = !!process.env.RUNWAYML_API_SECRET;
         let storyBeats: StoryBeat[] | null = passedStoryBeats ?? null;
         if (storyBeats) {
           console.log(`[STORYBOARD] using ${storyBeats.length} beats passed from scene-images`);
+        } else if (useRunwayDirect) {
+          console.log(`[STORYBOARD] skipped — Runway provider uses prompts directly for better fidelity`);
         } else {
           const beatScriptText = voiceoverText || goal || prompts.join(" ");
           if (beatScriptText) {
@@ -1111,8 +1137,10 @@ export async function POST(req: Request) {
             final = [eraAnchor, passedCreativeScenes[i].motion].filter(Boolean).join('\n').slice(0, MAX_KLING_PROMPT);
             dirSource = `creative-director scene=${i + 1}`;
           } else {
-            final = FALLBACK_DIRECTIONS[i % FALLBACK_DIRECTIONS.length];
-            dirSource = "fallback";
+            // Use the caller's actual prompt (after ethnicity/arc/continuity injection)
+            // FALLBACK_DIRECTIONS are generic placeholders that ignore the user's script
+            final = _p.slice(0, MAX_KLING_PROMPT);
+            dirSource = "user-prompt";
           }
 
           builtKlingPrompts.push(final);
@@ -1132,6 +1160,7 @@ export async function POST(req: Request) {
         }
 
         const extractedUrls: Array<string | null> = new Array(prompts.length).fill(null);
+        const sceneProviders: string[]             = new Array(prompts.length).fill('kling');
         const slaFallbackIndices: number[] = [];
 
         // Absolute continuity constraint (distilled for Kling 500-char prompt limit)
@@ -1183,29 +1212,53 @@ export async function POST(req: Request) {
 
           // Prepend drift correction + story context + continuity for scenes 2+
           const storyCtx = i > 0 ? buildStoryContextPrefix(storyMem) : '';
+          const transitionBridge = (i > 0 && continuitySnapshot.story.activeBeat)
+            ? buildTransitionBridge(continuitySnapshot.story.activeBeat)
+            : '';
           const klingPrompt = i === 0
             ? klingScenePrompts[i]
-            : (driftPromptPrefix + storyCtx + CONTINUITY_PREFIX + klingScenePrompts[i]).slice(0, 500);
+            : (driftPromptPrefix + storyCtx + CONTINUITY_PREFIX + klingScenePrompts[i] + transitionBridge).slice(0, 500);
 
           const mode = sceneImg?.startsWith("https://") ? "i2v" : "t2v";
-          console.log(`[CLIP_FIRE] scene=${i + 1} mode=${mode} motion=${driftMotionStrength.toFixed(2)} imageUrl=${sceneImg?.substring(0, 80) ?? "NONE"}`);
+
+          // Model router: select best provider per scene based on narrative role + motion
+          const sceneNarrativeRole = passedSceneGraph?.scene_graph?.[i]?.narrative_role
+            ?? (i === 0 ? "hook" : i === klingScenePrompts.length - 1 ? "resolution" : "development");
+          const routerDecision = selectVideoProvider({
+            narrativeRole:    sceneNarrativeRole,
+            motionComplexity: inferMotionComplexity(klingScenePrompts[i]),
+            durationSeconds:  KLING_CLIP_SECS,
+            budgetMode:       false,
+            hasReferenceImage: mode === "i2v",
+          });
+          console.log(`[CLIP_FIRE] scene=${i + 1} mode=${mode} provider=${routerDecision.provider} role=${sceneNarrativeRole} motion=${driftMotionStrength.toFixed(2)} imageUrl=${sceneImg?.substring(0, 80) ?? "NONE"}`);
 
           const klingParams = {
             negativePrompt:  sceneNegativePrompts[i] || undefined,
-            imageUrl:        sceneImg?.startsWith("https://") ? sceneImg : undefined,
+            imageUrl:        mode === "i2v" ? sceneImg : undefined,
             duration:        KLING_CLIP_SECS,
             aspectRatio:     "9:16" as const,
-            mode:            "pro" as const,
+            mode:            (routerDecision.klingMode === "standard" ? "std" : "pro") as "pro" | "std",
             motionStrength:  driftMotionStrength,
             seed:            baseSeed + i,
             sceneNumber:     i + 1,
           };
 
           try {
-            const result = await generateKlingClip({ prompt: klingPrompt, ...klingParams });
-            extractedUrls[i] = result.videoUrl;
+            const result = routerDecision.provider === "runway"
+              ? await generateRunwayClip({
+                  prompt:      klingPrompt,
+                  imageUrl:    mode === "i2v" ? sceneImg : undefined,
+                  duration:    KLING_CLIP_SECS as 5 | 10,
+                  aspectRatio: "9:16",
+                })
+              : await generateKlingClip({ prompt: klingPrompt, ...klingParams });
+
+            extractedUrls[i]  = result.videoUrl;
+            sceneProviders[i] = routerDecision.provider;
             storyMem = advanceStoryMemory(storyMem, storyBeats?.[i] ?? null, result.videoUrl);
-            // Continuity Engine: advance snapshot to next scene state
+            // Continuity Engine: persist snapshot then advance to next scene state
+            void saveSnapshot(user.id, i, i, continuitySnapshot);
             if (i < klingScenePrompts.length - 1) {
               const nextBeat    = storyBeats?.[i + 1]?.emotion;
               continuitySnapshot = buildNextScene(continuitySnapshot, undefined, nextBeat ?? undefined, undefined);
@@ -1216,28 +1269,30 @@ export async function POST(req: Request) {
             }
             // Reset drift prefix after a successful clip — let the detector re-evaluate next frame
             driftPromptPrefix = '';
-            console.log(`[CLIP_OK] scene=${i + 1} ${result.generationMs}ms emotion="${storyMem.current_state.emotion}" url=${result.videoUrl.substring(0, 80)}`);
-            clipReports.push(`scene=${i + 1} | kling-pro | OK ${result.generationMs}ms`);
+            console.log(`[CLIP_OK] scene=${i + 1} ${result.generationMs}ms provider=${routerDecision.provider} emotion="${storyMem.current_state.emotion}" url=${result.videoUrl.substring(0, 80)}`);
+            clipReports.push(`scene=${i + 1} | ${routerDecision.provider} | OK ${result.generationMs}ms`);
           } catch (err) {
             const reason = err instanceof Error ? err.message : String(err);
-            console.warn(`[CLIP_FAIL] scene=${i + 1} attempt=1 reason="${reason.substring(0, 120)}" — retrying`);
+            console.warn(`[CLIP_FAIL] scene=${i + 1} provider=${routerDecision.provider} attempt=1 reason="${reason.substring(0, 120)}" — retrying with kling`);
 
-            // Auto-regen: single retry with reduced motion + stricter continuity lock
+            // Auto-regen: single retry always on Kling (reliable fallback)
             try {
-              const retryPrompt = buildRetryPrompt(klingPrompt, 1);
               const retryResult = await generateKlingClip({
-                prompt:         retryPrompt,
+                prompt:         buildRetryPrompt(klingPrompt, 1),
                 ...klingParams,
+                mode:           "pro",
                 motionStrength: Math.max(0.40, driftMotionStrength - 0.20),
               });
-              extractedUrls[i] = retryResult.videoUrl;
+              extractedUrls[i]  = retryResult.videoUrl;
+              sceneProviders[i] = 'kling'; // retry always falls back to kling
               storyMem = advanceStoryMemory(storyMem, storyBeats?.[i] ?? null, retryResult.videoUrl);
-              console.log(`[CLIP_RETRY_OK] scene=${i + 1} ${retryResult.generationMs}ms url=${retryResult.videoUrl.substring(0, 80)}`);
-              clipReports.push(`scene=${i + 1} | kling-pro | RETRY_OK ${retryResult.generationMs}ms`);
+              void saveSnapshot(user.id, i, i, continuitySnapshot);
+              console.log(`[CLIP_RETRY_OK] scene=${i + 1} kling-retry ${retryResult.generationMs}ms url=${retryResult.videoUrl.substring(0, 80)}`);
+              clipReports.push(`scene=${i + 1} | kling-retry | RETRY_OK ${retryResult.generationMs}ms`);
             } catch (retryErr) {
               const retryReason = retryErr instanceof Error ? retryErr.message : String(retryErr);
               console.error(`[CLIP_FAIL_FINAL] scene=${i + 1} both attempts failed: ${retryReason.substring(0, 120)}`);
-              clipReports.push(`scene=${i + 1} | kling-pro | FAIL_FINAL | ${retryReason}`);
+              clipReports.push(`scene=${i + 1} | kling-retry | FAIL_FINAL | ${retryReason}`);
             }
           }
         }
@@ -1449,10 +1504,11 @@ export async function POST(req: Request) {
             clips_generated:     successfulClips,
             clip_duration:       clipDurationSecs,
             total_duration:      successfulClips * clipDurationSecs,
-            providers:           ["kling-v3"],
+            providers:           clip_urls.map((_, idx) => sceneProviders[idx] ?? 'kling'),
             motion_coverage:     motionCoverage,
             model_used:          "kling-2.6-pro",
-            kling_scenes:        successfulClips,
+            kling_scenes:        sceneProviders.filter(p => p === 'kling').length,
+            runway_scenes:       sceneProviders.filter(p => p === 'runway').length,
             continuity_score:    continuityScore,
             skipped_scenes:      skippedScenes,
             sla_compliant:       slaCompliant,
@@ -1461,7 +1517,10 @@ export async function POST(req: Request) {
               generation_ms:      genElapsed,
               post_processing_ms: postMs,
               scene_count:        prompts.length,
-              provider_mix:       { kling: successfulClips },
+              provider_mix: {
+                kling:  sceneProviders.filter(p => p === 'kling').length,
+                runway: sceneProviders.filter(p => p === 'runway').length,
+              },
               bottleneck_stage:   bottleneckStage,
             },
             timing_ms: { generation: genElapsed, total: totalMs },
@@ -1472,7 +1531,11 @@ export async function POST(req: Request) {
     });
 
     // Auto-save to My Videos (fire-and-forget; failure is non-fatal)
-    const payload = responsePayload as { clip_urls?: string[]; stitched_url?: string };
+    const payload = responsePayload as {
+      clip_urls?: string[]; stitched_url?: string;
+      clips_succeeded?: number; total_duration?: number;
+      runway_scenes?: number;
+    };
     const saveUrl = payload.stitched_url ?? payload.clip_urls?.[0];
     if (saveUrl) {
       void saveRenderToLibrary({
@@ -1484,6 +1547,18 @@ export async function POST(req: Request) {
         thumbnail_url: capturedThumbnailUrl,
       }).catch(err => console.warn("[cinematic-sequence] auto-save failed:", err));
     }
+
+    // Record generation metrics (fire-and-forget)
+    void saasMetrics.record({
+      userId:       user.id,
+      type:         'cinematic',
+      provider:     (payload.runway_scenes ?? 0) > 0 ? 'runway+kling' : 'kling',
+      niche:        niche ?? undefined,
+      durationSecs: payload.total_duration ?? 30,
+      creditsUsed:  estimatedCost,
+      generationMs: Date.now() - routeT0,
+      success:      !!(payload.clip_urls?.length),
+    }).catch(() => {});
 
     return Response.json(responsePayload);
 

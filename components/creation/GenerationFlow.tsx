@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import TemplateSelector from '@/components/creation/TemplateSelector';
+import NicheCardSelector from '@/components/creation/NicheCardSelector';
 import { createClient } from '@/lib/supabase/client';
 import { splitPromptIntoClips } from '@/lib/seedance/split-prompt';
 import {
@@ -1152,88 +1154,11 @@ export default function GenerationFlow({
           />
         </div>
 
-        {/* Niche + Platform row */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <div>
-            <label style={{ color: '#C4B5D0', fontSize: '0.75rem', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'block', marginBottom: 8 }}>
-              Niche / Industry
-            </label>
-            <select
-              value={niche}
-              onChange={e => setNiche(e.target.value)}
-              disabled={isLoading}
-              style={{
-                width: '100%', background: '#0D0020', border: '1px solid #2D1B4E',
-                borderRadius: 10, padding: '12px 16px',
-                color: niche ? '#F5EFE6' : '#9B72CF', fontSize: '0.9rem',
-                fontFamily: 'inherit', cursor: isLoading ? 'not-allowed' : 'pointer',
-                appearance: 'none' as const,
-                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%239B72CF' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
-                backgroundRepeat: 'no-repeat', backgroundPosition: 'right 14px center',
-                opacity: isLoading ? 0.6 : 1, boxSizing: 'border-box' as const,
-              }}
-            >
-              <option value="" disabled>Select your niche...</option>
-              <optgroup label="── STORYTELLING ──">
-                <option value="history">History</option>
-                <option value="true-stories-documentary">True Stories · Documentary</option>
-                <option value="news-politics">News &amp; Politics</option>
-                <option value="psychology">Psychology</option>
-                <option value="kindness">Random Acts of Kindness</option>
-              </optgroup>
-              <optgroup label="── MONEY ──">
-                <option value="business-entrepreneurship">Business · Entrepreneurship</option>
-                <option value="personal-finance">Personal Finance</option>
-                <option value="investing">Investing</option>
-                <option value="side-hustles">Side Hustles</option>
-                <option value="money-saving">Money Saving Hacks</option>
-              </optgroup>
-              <optgroup label="── LIFESTYLE ──">
-                <option value="lifestyle">Lifestyle · Daily Life · Vlog</option>
-                <option value="motivation">Motivation</option>
-                <option value="trends">Trends</option>
-                <option value="nomad-lifestyle">Nomad Lifestyle &amp; Cultures</option>
-                <option value="sustainability">Sustainability &amp; Eco Living</option>
-                <option value="minimalism">Minimalism &amp; Decluttering</option>
-                <option value="productivity">Productivity &amp; Time Management</option>
-              </optgroup>
-              <optgroup label="── RELATIONSHIPS ──">
-                <option value="relationships">Relationships &amp; Love</option>
-                <option value="dating">Dating &amp; Advice</option>
-                <option value="friendships">Friendships &amp; Social Life</option>
-                <option value="weddings">Weddings &amp; Events</option>
-                <option value="teens">Teens &amp; Teen Life</option>
-              </optgroup>
-              <optgroup label="── WELLNESS ──">
-                <option value="health-wellness">Health &amp; Wellness</option>
-                <option value="fitness">Fitness</option>
-                <option value="mental-health">Mental Health &amp; Mindfulness</option>
-                <option value="recovery-relaxation">Recovery &amp; Relaxation</option>
-                <option value="spirituality">Spirituality &amp; Faith</option>
-                <option value="skill-improvement">Skill Improvement &amp; Education</option>
-              </optgroup>
-              <optgroup label="── CONTENT ──">
-                <option value="beauty-skincare">Beauty · Skincare · Makeup</option>
-                <option value="food-recipes">Food · Recipes · Cooking</option>
-                <option value="fashion-style">Fashion &amp; Style</option>
-                <option value="music-dance">Music &amp; Dance</option>
-                <option value="gaming">Gaming</option>
-                <option value="cars-motors">Cars &amp; Motors</option>
-                <option value="diy">DIY</option>
-                <option value="pet-care">Pet Care &amp; Animals</option>
-                <option value="comedy-entertainment">Comedy &amp; Entertainment</option>
-                <option value="sports">Sports &amp; Athletics</option>
-                <option value="luxury">Luxury · Designer · High-End</option>
-              </optgroup>
-              <optgroup label="── CREATIVE ──">
-                <option value="3d-animation">3D Animation</option>
-                <option value="vfx">Visual Effects (VFX)</option>
-                <option value="medical-animation">Medical &amp; Scientific Animation</option>
-                <option value="vr-ar">Virtual Reality &amp; AR</option>
-                <option value="technology-ai">Technology &amp; AI</option>
-              </optgroup>
-            </select>
-          </div>
+        {/* Niche card grid — full width */}
+        <NicheCardSelector selected={niche} onSelect={setNiche} disabled={isLoading} />
+
+        {/* Platform row */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 16 }}>
           <div>
             <label style={{ color: '#C4B5D0', fontSize: '0.75rem', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'block', marginBottom: 8 }}>
               Target Platform
@@ -1946,7 +1871,20 @@ export default function GenerationFlow({
               </div>
             )}
 
-            {/* ── 1b. Duration selector (cinematic only) ── */}
+            {/* ── 1b. Template selector (cinematic only) ── */}
+            {videoType === 'cinematic' && !videoStarted && !finalVideo && (
+              <div style={{ marginBottom: 12 }}>
+                <p style={{ color: '#888', fontSize: '0.72rem', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 6 }}>
+                  Style Template
+                </p>
+                <TemplateSelector
+                  selectedId={selectedTemplateId}
+                  onSelect={setSelectedTemplateId}
+                />
+              </div>
+            )}
+
+            {/* ── 1c. Duration selector (cinematic only) ── */}
             {videoType === 'cinematic' && !videoStarted && !finalVideo && (
               <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
                 <button
@@ -2242,6 +2180,52 @@ export default function GenerationFlow({
                 >
                   ⬇ Download Video
                 </button>
+
+                {/* Continue This Story — gold accent button */}
+                {videoType === 'cinematic' && (
+                  <button
+                    onClick={async () => {
+                      const idea = window.prompt('How should the story continue? (leave blank for automatic)') ?? '';
+                      if (idea === null) return; // cancelled
+                      try {
+                        const res = await fetch('/api/project/generate-continuation', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            previousVideoUrl: finalVideo,
+                            continuationIdea: idea,
+                            duration: 60,
+                          }),
+                        });
+                        const data = await res.json();
+                        if (data.success && data.continuationPayload) {
+                          setPrompt(data.continuationPayload.prompt ?? idea);
+                          setFinalVideo(null);
+                          setVideoStarted(false);
+                          setVideoProgress(0);
+                          setVideoStatus('');
+                          setClipUrls([]);
+                          alert('Story continuation ready — review the script above and click Generate to continue.');
+                        } else {
+                          alert(data.error ?? 'Continuation failed — try again.');
+                        }
+                      } catch (e) {
+                        console.error('[CONTINUE_STORY]', e);
+                        alert('Something went wrong. Please try again.');
+                      }
+                    }}
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                      width: '100%', padding: '15px',
+                      background: 'linear-gradient(135deg, #B8860B 0%, #FFD700 50%, #B8860B 100%)',
+                      color: '#000', fontWeight: 700, fontSize: '0.9rem',
+                      borderRadius: 14, border: 'none', cursor: 'pointer',
+                      boxShadow: '0 2px 16px rgba(255,215,0,0.3)',
+                    }}
+                  >
+                    ✨ Continue This Story
+                  </button>
+                )}
 
                 {/* Secondary links */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 24 }}>

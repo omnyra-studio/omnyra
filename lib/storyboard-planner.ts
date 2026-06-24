@@ -12,6 +12,7 @@ export interface StoryBeat {
   lighting: string;
   keyAction: string;
   environmentFocus: string;
+  cameraShot: string;
 }
 
 export async function analyzeScriptBeats(
@@ -19,27 +20,56 @@ export async function analyzeScriptBeats(
   sceneCount: number,
   nicheSettings: NicheSettings,
 ): Promise<StoryBeat[]> {
-  const systemPrompt = `You are a professional film storyboard artist and script supervisor.
+  const nicheHistoryRule = nicheSettings.key === "history"
+    ? "\n- HISTORY NICHE: authentic period uniforms, period-accurate props and settings, zero modern items."
+    : "";
+
+  const systemPrompt = `You are a professional cinematic photographer and storyboard artist for Omnyra.
 Your job: break a script into exactly ${sceneCount} cinematic beats that LITERALLY show what the script describes.
+Generate photorealistic, emotionally powerful scene descriptions suitable for short-form video.
 
-CRITICAL RULE — BE LITERAL:
-- If the script says "face mid-lift: genuine strain" → keyAction MUST be "extreme close-up of woman's face during dumbbell lift, jaw clenched, visible strain"
-- If the script says "phone screen shows their progress: honest numbers" → keyAction MUST be "woman holds smartphone screen-facing-camera showing workout data, gym background"
-- If the script says "they grip the handle. Lift." → keyAction MUST be "close-up of woman's hand gripping barbell handle, arm rising with controlled effort"
-- NEVER replace a specific scripted action with a vague emotional body-language shot
-- Props, objects, and specific actions mentioned in the script MUST appear in the beat
-- Camera framing from the script MUST be preserved (e.g. "camera widens" → wide shot)
+STRICT SAFETY RULES (NEVER BREAK — these prevent AI image artifacts):
+- NO surreal, bizarre, or horror elements of any kind
+- NO sand, water, blood, or any liquid coming out of mouth, eyes, or nose
+- NO body horror, melting faces, or unnatural substances on the body
+- NO tears made of sand, glitter, crystals, or anything except realistic water
+- NO supernatural effects, magical auras, glowing eyes, or floating particles near the face
+- Keep human anatomy and physics correct at all times
+- Natural expressions and emotions only — no exaggerated distortion
+- Clean, beautiful, cinematic lighting — no colored smoke or bizarre atmosphere${nicheHistoryRule}
 
-SECONDARY RULES:
-- Each beat should advance the story arc where possible
-- Never repeat the same shot type twice in a row
-- Characters must be consistent across beats (same person, same clothes, same setting)
-- Every beat must include at least one human figure
+ONE ACTION PER SHOT (CRITICAL):
+Each beat's keyAction must describe EXACTLY ONE physical action. Not two. Not three. ONE.
+WRONG: 'Soldier trembles while looking up and reaching for helmet while tears fall'
+RIGHT: 'Soldier's hand trembles over paper, pen still.'
+The action must be completable in 5-10 seconds of video. If you can't mime it in one gesture, it's too complex.
+
+CAMERA SHOT RULE (CRITICAL):
+Each beat must include an exact cameraShot field:
+- Shot size: extreme close-up / close-up / medium close-up / medium / wide
+- Movement: static / slow push in / slow pull back / slow pan left / slow pan right
+- ONE movement only. Never combine pan + push in the same shot.
+WRONG cameraShot: 'Cinematic dynamic camera movement'
+RIGHT cameraShot: 'Medium close-up, slow push in, focused on hands'
+
+LITERAL ACCURACY RULES:
+- NEVER replace a specific scripted action with a vague emotional shot
+- Props and specific actions mentioned in the script MUST appear in the beat
+- Camera framing from the script MUST be preserved
+
+CONTINUITY RULES (ABSOLUTE — match the generation constraint system):
+- Each beat advances the story arc as a temporally linked sequence, NOT independent shots
+- Never repeat the same shot size twice in a row
+- Same character, same clothes, same lighting vector across ALL beats — identity MUST NOT drift
+- Every beat includes at least one human figure facing the camera
+- Beat N+1 must be continuable from the final frame of Beat N — no re-staging allowed
+- Emotional state must transition as a gradient — no emotional jumps between beats
+- All motion must be physically continuous — no limb teleportation or posture resets
 - ENVIRONMENT MUST INCLUDE: ${nicheSettings.environmentInclude}
 - ENVIRONMENT MUST EXCLUDE: ${nicheSettings.environmentExclude}
 
 Respond with valid JSON only. No markdown. No backticks.
-Format: { "beats": [{ "beatNumber": 1, "purpose": "...", "emotion": "...", "bodyLanguage": "...", "composition": "...", "lighting": "...", "keyAction": "...", "environmentFocus": "..." }] }`;
+Format: { "beats": [{ "beatNumber": 1, "purpose": "...", "emotion": "...", "bodyLanguage": "...", "composition": "...", "lighting": "...", "keyAction": "...", "environmentFocus": "...", "cameraShot": "..." }] }`;
 
   const result = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
@@ -97,5 +127,15 @@ export function beatToImagePrompt(
 }
 
 export function beatToKlingDirection(beat: StoryBeat): string {
+  if (beat.cameraShot) return `${beat.cameraShot}. ${beat.keyAction}`.trim();
   return `${beat.keyAction} ${beat.bodyLanguage}`.trim();
+}
+
+export function buildKlingPrompt(beat: StoryBeat, eraPrefix: string): string {
+  const lines = [
+    eraPrefix || '',
+    beat.cameraShot + '.',
+    beat.keyAction + '.',
+  ].filter(Boolean);
+  return lines.join('\n').slice(0, 500);
 }

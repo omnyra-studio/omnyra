@@ -4,6 +4,9 @@
   "installCommand": "npm install",
   "functions": {
     "app/api/generate-cinematic-sequence/route.ts": { "maxDuration": 300, "includeFiles": "node_modules/ffmpeg-static/**" },
+    "app/api/project/[id]/generate-scenes/route.ts": { "maxDuration": 60 },
+    "app/api/project/create/route.ts": { "maxDuration": 30 },
+    "app/api/cron/improve-prompts/route.ts": { "maxDuration": 60 },
     "app/api/avatar-worker/route.ts": { "maxDuration": 300 },
     "app/api/workers/avatar/route.ts": { "maxDuration": 300 },
     "app/api/workers/shot/route.ts": { "maxDuration": 300 },
@@ -14,6 +17,7 @@
     "app/api/run-cinematic/route.ts": { "maxDuration": 300 },
     "app/api/generate-scene-images/route.ts": { "maxDuration": 120 },
     "app/api/hedra-cron/route.ts": { "maxDuration": 60 },
+    "app/api/cron/kling-completion/route.ts": { "maxDuration": 300, "includeFiles": "node_modules/ffmpeg-static/**" },
     "app/api/generate-video-sequence/route.ts": { "maxDuration": 300 },
     "app/api/generate-video-kling/route.ts": { "maxDuration": 300 },
     "app/api/generate-video-fal/route.ts": { "maxDuration": 300 },
@@ -25,9 +29,12 @@
     "app/api/clone-voice/route.js": { "maxDuration": 60 },
     "app/api/enhance-prompt/route.js": { "maxDuration": 30 },
     "app/api/generate-image/route.js": { "maxDuration": 60 },
-    "app/api/voices/route.js": { "maxDuration": 30 }
+    "app/api/voices/route.js": { "maxDuration": 30 },
+    "app/api/project/generate-continuation/route.ts": { "maxDuration": 30 }
   },
   "crons": [
-    { "path": "/api/cron/scrape-trends", "schedule": "0 6 * * *" }
+    { "path": "/api/cron/scrape-trends",       "schedule": "0 6 * * *" },
+    { "path": "/api/cron/kling-completion",    "schedule": "*/1 * * * *" },
+    { "path": "/api/cron/improve-prompts",     "schedule": "0 3 * * *" }
   ]
 }

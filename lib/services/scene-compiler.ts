@@ -183,12 +183,14 @@ Generate exactly ${sceneCount} scenes. Each scene must visually match a DIFFEREN
     messages:   [{ role: "user", content: userMessage }],
   });
 
-  const raw = res.content[0]?.type === "text" ? res.content[0].text : "";
+  const rawText = res.content[0]?.type === "text" ? res.content[0].text : "";
+  let raw = rawText.replace(/```json|```/g, "").trim();
   const start = raw.indexOf("{");
   const end   = raw.lastIndexOf("}");
   if (start === -1 || end === -1) throw new Error("[SCENE_COMPILER] Claude returned no JSON");
+  raw = raw.slice(start, end + 1).replace(/,\s*([}\]])/g, "$1");
 
-  const parsed = JSON.parse(raw.slice(start, end + 1)) as { scenes?: unknown[] };
+  const parsed = JSON.parse(raw) as { scenes?: unknown[] };
   if (!Array.isArray(parsed.scenes) || parsed.scenes.length === 0) {
     throw new Error("[SCENE_COMPILER] Claude returned empty scene graph");
   }

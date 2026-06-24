@@ -196,6 +196,88 @@ export async function generateKlingClip(params: {
   throw new Error(`[KLING_DIRECT_TIMEOUT] scene=${params.sceneNumber} exceeded ${MAX_POLL_MS / 1000}s`);
 }
 
+// ── submitKlingTask — submit-only (no polling) for async 60s pipeline ────────
+
+export async function submitKlingTask(params: {
+  prompt:          string;
+  negativePrompt?: string;
+  imageUrl?:       string;
+  duration:        number;
+  aspectRatio:     string;
+  mode:            "std" | "pro";
+  motionStrength?: number;
+  seed?:           number;
+}): Promise<{ taskId: string; endpoint: string }> {
+  const apiBase   = getApiBase();
+  const token     = getAuthToken();
+  const hasImage  = !!params.imageUrl?.startsWith("https://");
+  const endpoint  = hasImage ? "/v1/videos/image2video" : "/v1/videos/text2video";
+
+  const body: Record<string, unknown> = {
+    model_name:      "kling-v2-1",
+    prompt:          params.prompt.slice(0, 2500),
+    negative_prompt: params.negativePrompt?.slice(0, 500) ?? "",
+    cfg_scale:       0.5,
+    mode:            params.mode,
+    duration:        String(params.duration),
+    aspect_ratio:    params.aspectRatio,
+  };
+  if (hasImage) body.image = params.imageUrl;
+  if (params.seed != null) body.seed = params.seed;
+  if (params.motionStrength != null) body.motion_strength = params.motionStrength;
+
+  const res = await fetch(`${apiBase}${endpoint}`, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+    body:    JSON.stringify(body),
+    signal:  AbortSignal.timeout(30_000),
+  });
+
+  if (res.status === 429) {
+    await new Promise(r => setTimeout(r, 5_000));
+    const retry = await fetch(`${apiBase}${endpoint}`, {
+      method:  "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${getAuthToken()}` },
+      body:    JSON.stringify(body),
+      signal:  AbortSignal.timeout(30_000),
+    });
+    if (!retry.ok) {
+      const t = await retry.text().catch(() => "");
+      throw new Error(`[KLING_SUBMIT_FAIL] HTTP ${retry.status}: ${t.substring(0, 200)}`);
+    }
+    const d = await retry.json() as KlingCreateResponse;
+    if (d.code !== 0) throw new Error(`[KLING_SUBMIT_API_ERR] code=${d.code} msg=${d.message}`);
+    console.log(`[KLING_SUBMIT] task_id=${d.data.task_id} endpoint=${endpoint}`);
+    return { taskId: d.data.task_id, endpoint };
+  }
+
+  if (!res.ok) {
+    const t = await res.text().catch(() => "");
+    throw new Error(`[KLING_SUBMIT_FAIL] HTTP ${res.status}: ${t.substring(0, 200)}`);
+  }
+  const d = await res.json() as KlingCreateResponse;
+  if (d.code !== 0) throw new Error(`[KLING_SUBMIT_API_ERR] code=${d.code} msg=${d.message}`);
+  console.log(`[KLING_SUBMIT] task_id=${d.data.task_id} endpoint=${endpoint}`);
+  return { taskId: d.data.task_id, endpoint };
+}
+
+export async function pollKlingTaskOnce(taskId: string, endpoint: string): Promise<{
+  status: string;
+  videoUrl?: string;
+}> {
+  const apiBase = getApiBase();
+  const token   = getAuthToken();
+  const res = await fetch(`${apiBase}${endpoint}/${taskId}`, {
+    headers: { "Authorization": `Bearer ${token}` },
+    signal:  AbortSignal.timeout(15_000),
+  });
+  if (!res.ok) return { status: "unknown" };
+  const d = await res.json() as KlingQueryResponse;
+  const status   = d.data?.task_status ?? "unknown";
+  const videoUrl = d.data?.task_result?.videos?.[0]?.url;
+  return { status, videoUrl };
+}
+
 // ── Legacy adapter — kept for existing callers of generateKlingDirect ─────────
 
 export interface DirectKlingInput {

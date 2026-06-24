@@ -401,9 +401,10 @@ export async function mergeVideoAudio(params: MergeVideoAudioParams): Promise<st
  * Used when Railway Composer is unavailable or fails.
  */
 export async function stitchClipsWithAudio(params: {
-  clipUrls: string[];
-  audioUrl?: string;
-  userId?: string;
+  clipUrls:    string[];
+  audioUrl?:   string;
+  userId?:     string;
+  maxDuration?: number;  // hard cap in seconds — defaults to 30
 }): Promise<string> {
   const userId = params.userId ?? "anonymous";
   const id = randomUUID();
@@ -451,7 +452,11 @@ export async function stitchClipsWithAudio(params: {
     console.log(`[STITCH] concat list written:\n${concatList}`);
 
     // ── Step 4: Single-pass ffmpeg — concat clips + merge audio ─────────────
-    console.log(`[STITCH] running ffmpeg concat + audio merge hasAudio=${hasAudio}`);
+    const tLimit = String(params.maxDuration ?? 30);
+    console.log(`[STITCH] running ffmpeg concat + audio merge hasAudio=${hasAudio} maxDuration=${tLimit}s`);
+
+    const totalDuration = params.maxDuration ?? 30;
+    const fadeFilter = `fade=t=in:st=0:d=0.5,fade=t=out:st=${totalDuration - 0.5}:d=0.5`;
 
     if (hasAudio) {
       // Concat + audio in one pass
@@ -462,14 +467,16 @@ export async function stitchClipsWithAudio(params: {
           .input(audioPath)
           .outputOptions([
             "-c:v", "libx264",
-            "-preset", "ultrafast",
-            "-crf", "23",
+            "-preset", "slow",
+            "-crf", "18",
             "-threads", "0",
             "-c:a", "aac",
-            "-b:a", "128k",
+            "-b:a", "192k",
+            "-vf", fadeFilter,
             "-map", "0:v:0",
             "-map", "1:a:0",
             "-shortest",
+            "-t", tLimit,
             "-movflags", "+faststart",
           ])
           .output(finalPath)
@@ -488,8 +495,10 @@ export async function stitchClipsWithAudio(params: {
           .inputOptions(["-f", "concat", "-safe", "0"])
           .outputOptions([
             "-c:v", "libx264",
-            "-preset", "ultrafast",
-            "-crf", "23",
+            "-preset", "slow",
+            "-crf", "18",
+            "-vf", fadeFilter,
+            "-t", tLimit,
             "-movflags", "+faststart",
           ])
           .output(finalPath)
