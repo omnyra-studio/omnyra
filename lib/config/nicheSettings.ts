@@ -12,6 +12,24 @@ export interface NichePlaybook {
 export interface NicheSettings {
   name: string;
   key: string;
+  /**
+   * Classification priority — HIGHER number = HIGHER priority in tie-breaking.
+   * When two niches score within TIE_THRESHOLD of the top score, the highest
+   * priority niche wins. Prevents high-sensitivity categories from being displaced
+   * by overlapping keywords in adjacent categories.
+   *
+   *  12 — mental_health        (highest sensitivity: wellness/motivation overlap)
+   *  10 — finance_investing    (protect from side_hustles overlap)
+   *   9 — tech_ai              (strong keyword dominance)
+   *   8 — side_hustles, relationships_dating
+   *   7 — motivation_success, faceless_stoic
+   *   6 — health_fitness, product_reviews, animation_3d
+   *   5 — beauty_skincare, gaming, tech_ai
+   *   4 — food_recipes, pets
+   *   3 — luxury_lifestyle
+   *   1 — lifestyle (fallback only — never shown in dropdown)
+   */
+  priority: number;
   triggerKeywords: string[];
   negativeKeywords: string[];
   imagePromptPrefix: string;
@@ -30,11 +48,12 @@ export interface NicheSettings {
 
 export const NICHE_SETTINGS: Record<string, NicheSettings> = {
 
-  motivation: {
+  motivation_success: {
     name: 'Motivation / Success',
-    key: 'motivation',
-    triggerKeywords: ['motivation', 'motivational', 'inspiration', 'empowering', 'inspirational', 'overcome obstacles', 'mindset shift', 'discipline', 'transformation', 'breakthrough', 'never give up', 'grind', 'hustle', 'push through', 'no excuses', 'rise up', 'keep going', 'beast mode', 'mindset', 'winner', 'success'],
-    negativeKeywords: ['depressing', 'failure', 'lazy', 'low energy', 'chaotic', 'defeatist', 'depression', 'giving up', 'quitting'],
+    key: 'motivation_success',
+    priority: 7,
+    triggerKeywords: ['motivation', 'motivational', 'inspiration', 'empowering', 'inspirational', 'overcome obstacles', 'mindset shift', 'discipline', 'transformation', 'breakthrough', 'never give up', 'grind', 'hustle', 'push through', 'no excuses', 'rise up', 'keep going', 'beast mode', 'mindset', 'winner', 'success', 'success mindset', 'self improvement', 'productivity', 'focus', 'ambition'],
+    negativeKeywords: ['depression', 'hopeless', 'failure story', 'burnout crisis', 'depressing', 'lazy', 'low energy', 'chaotic', 'defeatist', 'giving up', 'quitting'],
     imagePromptPrefix: 'Aspirational and powerful. Person demonstrating effort, focus, determination through physical action. Golden hour or dramatic contrast lighting.',
     videoPromptPrefix: 'Cinematic motivational moment. Last frame reference: maintain character pose, clothing, and golden hour lighting exactly. Motion: deliberate forward walk, arms swinging with purpose, rising from ground. Roger Deakins golden hour backlighting, high contrast shadows. Camera: slow push-in building to emotional close-up.',
     negativePrompt: 'lazy, sitting idle, dark depressing, cluttered mess, giving up, slouching, defeated, crying alone',
@@ -58,11 +77,12 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     },
   },
 
-  'personal-finance': {
+  finance_investing: {
     name: 'Personal Finance & Investing',
-    key: 'personal-finance',
-    triggerKeywords: ['personal finance', 'investing', 'compound interest', 'financial freedom', 'wealth building', 'passive income', 'smart investing', 'budget', 'saving money', 'debt free', 'stocks', 'index fund', 'retirement', 'net worth'],
-    negativeKeywords: ['get rich quick', 'scam', 'risky gamble', 'confusing', 'unrealistic', 'gambling', 'betting', 'pyramid'],
+    key: 'finance_investing',
+    priority: 10,
+    triggerKeywords: ['personal finance', 'investing', 'compound interest', 'financial freedom', 'wealth building', 'passive income', 'smart investing', 'budget', 'saving money', 'debt free', 'stocks', 'index fund', 'retirement', 'net worth', 'crypto', 'portfolio', 'wealth building'],
+    negativeKeywords: ['get rich quick', 'guaranteed profit', 'scam', 'gambling', 'guaranteed returns', 'pyramid'],
     imagePromptPrefix: 'Clean professional financial setting. Laptop with investment dashboard, home office, charts showing growth. Real person managing their finances.',
     videoPromptPrefix: 'Cinematic finance moment. Last frame continuity: preserve character, home office environment, and warm practical lighting. Motion: deliberate working actions — typing, reviewing charts, phone earnings check. Roger Deakins warm practical indoor light. Camera: purposeful tracking following the work flow naturally.',
     negativePrompt: 'luxury mansion, yacht, lamborghini, casino, private jet, unrealistic wealth, pyramid scheme, gambling',
@@ -86,11 +106,12 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     },
   },
 
-  'side-hustles': {
+  side_hustles: {
     name: 'Side Hustles & Money Making',
-    key: 'side-hustles',
-    triggerKeywords: ['side hustle', 'make money online', 'passive income', 'from home', 'scalable', 'easy side hustle', 'extra money', 'freelance', 'dropshipping', 'reselling', 'digital products', 'online income'],
-    negativeKeywords: ['saturated', 'overnight success', 'complicated', 'illegal', 'scam', 'get rich quick', 'pyramid'],
+    key: 'side_hustles',
+    priority: 8,
+    triggerKeywords: ['side hustle', 'make money online', 'passive income', 'from home', 'scalable', 'easy side hustle', 'extra money', 'freelance', 'dropshipping', 'reselling', 'digital products', 'online income', 'earn from home', 'extra income', 'digital business', 'income stream', 'freelancing'],
+    negativeKeywords: ['illegal scheme', 'saturated market claim', 'instant wealth', 'illegal', 'pyramid'],
     imagePromptPrefix: 'Clean home office or laptop environment. Person working on their side business from home. Phone showing earnings, packaging orders, or working on creative projects.',
     videoPromptPrefix: 'Cinematic side hustle moment. Continue from last frame: preserve character, home environment, and warm practical lighting. Motion: working actions — order packing, laptop earnings check, phone showing income notification. Roger Deakins warm indoor window light. Camera: following the hustle flow.',
     negativePrompt: 'luxury mansion, yacht, unrealistic wealth, pyramid scheme, casino, misleading income screenshots',
@@ -114,11 +135,12 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     },
   },
 
-  'health-fitness': {
+  health_fitness: {
     name: 'Health & Fitness',
-    key: 'health-fitness',
-    triggerKeywords: ['health', 'fitness', 'workout', 'gym', 'exercise', 'home workout', 'transformation', 'sustainable fitness', 'energy boost', 'discipline', 'lift', 'squat', 'deadlift', 'cardio', 'hiit', 'muscle', 'weight loss', 'training'],
-    negativeKeywords: ['extreme diet', 'injury', 'unrealistic body', 'bad form', 'sedentary', 'lazy'],
+    key: 'health_fitness',
+    priority: 6,
+    triggerKeywords: ['health', 'fitness', 'workout', 'gym', 'exercise', 'home workout', 'transformation', 'sustainable fitness', 'energy boost', 'discipline', 'lift', 'squat', 'deadlift', 'cardio', 'hiit', 'muscle', 'weight loss', 'training', 'fat loss', 'muscle gain', 'fitness plan', 'calories', 'protein', 'training routine', 'fitness transformation', 'gym routine', 'strength'],
+    negativeKeywords: ['extreme diet', 'eating disorder', 'injury instructions', 'unrealistic body', 'injury advice'],
     imagePromptPrefix: 'Gym or outdoor training environment. Athletic person mid-exercise. Visible effort, form, and determination. Energetic and aspirational.',
     videoPromptPrefix: 'Motivational fitness transformation. Last frame reference: maintain identical character, athletic clothing, and lighting exactly. Motion: explosive athletic effort — peak lift, powerful run stride, jump form. Roger Deakins dramatic natural lighting. Camera: slow-motion on peak effort, dynamic pull-back to reveal full athletic form.',
     negativePrompt: 'sedentary, sitting, desk, office, cooking, sleeping, relaxing, spa, meditation cushion, pajamas, extreme diet pills',
@@ -142,11 +164,12 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     },
   },
 
-  'beauty-skincare': {
+  beauty_skincare: {
     name: 'Beauty / Skincare / Makeup',
-    key: 'beauty-skincare',
-    triggerKeywords: ['beauty', 'skincare', 'makeup', 'glowing skin', 'skincare routine', 'glass skin', 'natural beauty', 'self-care', 'foundation', 'lipstick', 'serum', 'moisturizer', 'glow', 'routine', 'concealer', 'contour', 'eyeshadow', 'blush', 'cleanser', 'spf'],
-    negativeKeywords: ['caked makeup', 'toxic', 'heavy filters', 'unrealistic', 'mechanic', 'engine', 'welding', 'war'],
+    key: 'beauty_skincare',
+    priority: 5,
+    triggerKeywords: ['beauty', 'skincare', 'makeup', 'glowing skin', 'skincare routine', 'glass skin', 'natural beauty', 'self-care', 'foundation', 'lipstick', 'serum', 'moisturizer', 'glow', 'routine', 'concealer', 'contour', 'eyeshadow', 'blush', 'cleanser', 'spf', 'makeup routine', 'beauty tips', 'acne treatment', 'cosmetics'],
+    negativeKeywords: ['heavy filter', 'fake results', 'body shame', 'caked makeup', 'toxic', 'heavy filters', 'unrealistic'],
     imagePromptPrefix: 'Clean beauty environment. Vanity mirror, bright even lighting, products arranged neatly, skin close-ups. Person applying or showcasing product with dewy glowing result.',
     videoPromptPrefix: 'Luxurious beauty routine. Last frame continuity: preserve character, skincare products, and flattering lighting exactly. Motion: precise hand gestures — serum application, smooth blending, gentle tapping on dewy skin. Roger Deakins warm ring-light quality lighting. Camera: extreme close-up on skin texture and product application, pull back to glowing reveal.',
     negativePrompt: 'dirty, greasy, mechanic, engine, war, blood, sweat, mud, construction site, welding, gym sweat, caked on heavy makeup',
@@ -170,11 +193,12 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     },
   },
 
-  'food-recipes': {
+  food_recipes: {
     name: 'Food & Recipes',
-    key: 'food-recipes',
-    triggerKeywords: ['food', 'recipe', 'cooking', 'baking', 'meal prep', 'easy recipes', 'appetizing', 'comfort food', 'high protein', 'chef', 'kitchen', 'ingredient', 'dish', 'dessert', 'pasta', 'steak', 'salad', 'breakfast', 'dinner'],
-    negativeKeywords: ['messy', 'burnt', 'bland', 'expensive ingredients', 'diet pill', 'war', 'gaming'],
+    key: 'food_recipes',
+    priority: 4,
+    triggerKeywords: ['food', 'recipe', 'cooking', 'baking', 'meal prep', 'easy recipes', 'appetizing', 'comfort food', 'high protein', 'chef', 'kitchen', 'ingredient', 'dish', 'dessert', 'pasta', 'steak', 'salad', 'breakfast', 'dinner', 'easy dinner', 'high protein meal', 'food hacks'],
+    negativeKeywords: ['burnt food', 'unsafe cooking', 'gross food', 'messy', 'bland', 'expensive ingredients'],
     imagePromptPrefix: 'Kitchen or dining environment. Ingredients on counter, cooking in progress, finished plated dish. Warm steam, fresh textures, vibrant food colours.',
     videoPromptPrefix: 'Cinematic recipe moment. Last frame reference: preserve chef character, kitchen environment, and warm practical lighting. Motion: skilled chopping rhythm, stirring bubbling pot, precise plating. Roger Deakins warm overhead kitchen light with visible steam and food texture. Camera: close-up on food action, pull back to reveal complete finished dish.',
     negativePrompt: 'laboratory, medical, gaming setup, office desk, gym, car, battle, weapon, dirty environment, messy burnt food',
@@ -198,11 +222,12 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     },
   },
 
-  'product-reviews': {
-    name: 'Product Reviews',
-    key: 'product-reviews',
-    triggerKeywords: ['product review', 'honest review', 'unboxing', 'worth the money', 'before after', 'premium quality', 'tested', 'review', 'gadget review', 'buying guide', 'pros and cons', 'verdict', 'first look'],
-    negativeKeywords: ['fake review', 'broken', 'misleading', 'sponsored bias', 'scam', 'clickbait'],
+  product_reviews: {
+    name: 'Product Reviews & Launches',
+    key: 'product_reviews',
+    priority: 6,
+    triggerKeywords: ['product review', 'honest review', 'unboxing', 'worth the money', 'before after', 'premium quality', 'tested', 'review', 'gadget review', 'buying guide', 'pros and cons', 'verdict', 'first look', 'worth it', 'best product', 'comparison', 'test results'],
+    negativeKeywords: ['fake review', 'sponsored manipulation', 'misleading ad', 'fake review', 'sponsored bias', 'clickbait'],
     imagePromptPrefix: 'Clean product presentation. Product centered on neutral surface, unboxed, well-lit. Person examining or using product. Professional and trustworthy setting.',
     videoPromptPrefix: 'Honest product review moment. Last frame continuity: keep product, reviewer character, and clean studio setting consistent. Motion: deliberate unboxing reveal, product rotation for full view, key feature demonstration. Roger Deakins clean neutral studio light. Camera: close-up on product detail, pull back to reviewer honest reaction.',
     negativePrompt: 'fake review, broken product, misleading angle, hidden defect, sponsored bias obvious, cluttered messy background, blurry product',
@@ -226,11 +251,12 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     },
   },
 
-  'faceless-stoic': {
-    name: 'Faceless Motivation / Stoic',
-    key: 'faceless-stoic',
-    triggerKeywords: ['stoic', 'stoicism', 'faceless', 'marcus aurelius', 'discipline', 'silence', 'solitude', 'control what you can', 'obstacle is the way', 'memento mori', 'no excuses', 'hard work', 'dark motivation', 'sigma', 'monk mode', 'masculinity', 'iron mind', 'let them go', 'inner peace', 'mental resilience'],
-    negativeKeywords: ['victim mentality', 'drama', 'loud hype', 'chaotic', 'luxury flexing', 'dancing', 'party', 'comedy', 'gossip'],
+  faceless_stoic: {
+    name: 'Faceless Motivation / Stoic Content',
+    key: 'faceless_stoic',
+    priority: 7,
+    triggerKeywords: ['stoic', 'stoicism', 'faceless', 'marcus aurelius', 'discipline', 'silence', 'solitude', 'control what you can', 'obstacle is the way', 'memento mori', 'no excuses', 'hard work', 'dark motivation', 'sigma', 'monk mode', 'masculinity', 'iron mind', 'let them go', 'inner peace', 'mental resilience', 'discipline mindset', 'silent motivation', 'detachment'],
+    negativeKeywords: ['drama', 'victim mindset', 'chaotic energy', 'victim mentality', 'loud hype', 'luxury flexing', 'dancing', 'party', 'comedy', 'gossip'],
     imagePromptPrefix: 'Dramatic faceless or silhouetted figure. Epic landscape — mountain peak, open road at dawn, stormy coastline, dark forest clearing. No identifiable face. Power and solitude.',
     videoPromptPrefix: 'Faceless stoic cinematic moment. Last frame reference: preserve silhouette position, coat, and moody landscape lighting exactly. Motion: slow deliberate forward walk, wind through coat fabric, rain streaking, mist rolling across landscape. Roger Deakins moody desaturated backlighting, single warm accent. Camera: ultra-slow pull-back revealing full epic landscape scale.',
     negativePrompt: 'luxury flex, dancing, party, comedy sketch, gossip, bright happy colors, celebrity face, smiling selfie, victim mentality, emotional drama, loud hype, chaotic background',
@@ -254,11 +280,12 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     },
   },
 
-  luxury: {
+  luxury_lifestyle: {
     name: 'Luxury Lifestyle',
-    key: 'luxury',
-    triggerKeywords: ['luxury', 'luxury aesthetic', 'dream life', 'high-end', 'elegant', 'aspirational', 'designer', 'premium', 'exclusive', 'penthouse', 'rolex', 'gucci', 'ferrari', 'lamborghini', 'yacht', 'private jet', 'first class', 'fine dining', 'champagne'],
-    negativeKeywords: ['tacky', 'cheap', 'classist flex', 'budget', 'thrift', 'frugal', 'broken', 'damaged', 'poverty'],
+    key: 'luxury_lifestyle',
+    priority: 3,
+    triggerKeywords: ['luxury', 'luxury aesthetic', 'dream life', 'high-end', 'elegant', 'aspirational', 'designer', 'premium', 'exclusive', 'penthouse', 'rolex', 'gucci', 'ferrari', 'lamborghini', 'yacht', 'private jet', 'first class', 'fine dining', 'champagne', 'high-end lifestyle', 'wealth aesthetic', 'expensive lifestyle'],
+    negativeKeywords: ['cheap look', 'fake luxury', 'class criticism', 'tacky', 'budget', 'frugal', 'broken', 'damaged'],
     imagePromptPrefix: 'Pristine luxury environment. Immaculate interiors, polished surfaces, premium materials — marble, leather, crystal, gold accents. Everything clean, new, aspirational.',
     videoPromptPrefix: 'Aspirational luxury lifestyle. Last frame continuity: preserve elegant character and premium environment perfectly. Motion: slow deliberate luxury gestures — champagne reach, marble floor walk, ocean view gaze. Roger Deakins golden hour through floor-to-ceiling glass. Camera: smooth slow dolly tracking elegant movement with shallow depth of field.',
     negativePrompt: 'blur, tacky, cheap looking, poor taste, unstable motion, low quality, broken, damaged, rusted, cluttered, poverty, discount, fast food',
@@ -282,11 +309,12 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     },
   },
 
-  'technology-ai': {
+  tech_ai: {
     name: 'Technology & AI',
-    key: 'technology-ai',
-    triggerKeywords: ['technology', 'tech', 'ai', 'artificial intelligence', 'future tech', 'ai explained', 'innovation', 'futuristic', 'game-changing', 'robot', 'gadget', 'app', 'software', 'coding', 'machine learning', 'automation', 'drone', 'smart home'],
-    negativeKeywords: ['outdated', 'buggy', 'overhyped', 'medieval', 'ancient', 'historical', 'cooking', 'beauty'],
+    key: 'tech_ai',
+    priority: 9,
+    triggerKeywords: ['technology', 'tech', 'ai', 'artificial intelligence', 'future tech', 'ai explained', 'innovation', 'futuristic', 'game-changing', 'robot', 'gadget', 'app', 'software', 'coding', 'machine learning', 'automation', 'drone', 'smart home', 'startup', 'GPT', 'future tech'],
+    negativeKeywords: ['outdated tech', 'buggy system', 'useless tool', 'outdated', 'medieval', 'ancient', 'historical'],
     imagePromptPrefix: 'Modern tech environment. Clean desk with multiple monitors, code on screen, devices, modern workspace. Person interacting with technology.',
     videoPromptPrefix: 'Futuristic tech explainer. Last frame continuity: maintain professional character, tech environment, and neon-accented lighting exactly. Motion: precise hands on holographic interface, screen swipes, data point gestures. Blade Runner–Deakins neon-clean hybrid lighting. Camera: controlled orbit around the demonstration, slow push-in on key screen reveal.',
     negativePrompt: 'blur, outdated, buggy visuals, chaotic, low quality, distortion, medieval, ancient, rustic, farmhouse, candle, handwritten',
@@ -310,11 +338,12 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     },
   },
 
-  relationships: {
-    name: 'Relationships / Dating',
-    key: 'relationships',
-    triggerKeywords: ['relationship', 'dating', 'healthy relationships', 'dating advice', 'communication', 'red flags', 'love', 'couple', 'marriage', 'partner', 'romance', 'anniversary', 'soulmate', 'boyfriend', 'girlfriend', 'green flags', 'attachment style'],
-    negativeKeywords: ['toxic', 'manipulation', 'drama', 'divorce lawyer', 'custody battle', 'revenge', 'cheating exposed'],
+  relationships_dating: {
+    name: 'Relationships & Dating',
+    key: 'relationships_dating',
+    priority: 8,
+    triggerKeywords: ['relationship', 'dating', 'healthy relationships', 'dating advice', 'communication', 'red flags', 'love', 'couple', 'marriage', 'partner', 'romance', 'anniversary', 'soulmate', 'boyfriend', 'girlfriend', 'green flags', 'attachment style', 'breakup', 'attraction'],
+    negativeKeywords: ['toxic manipulation', 'control tactics', 'emotional abuse advice', 'manipulation tactics', 'coercion', 'revenge', 'cheating exposed'],
     imagePromptPrefix: 'Intimate warm setting. Two people sharing a genuine moment. Home, park, restaurant, beach. Authentic connection visible in body language.',
     videoPromptPrefix: 'Heartfelt relationship moment. Last frame reference: preserve both characters, warm intimate setting, and golden light perfectly. Motion: gentle hand reach, natural lean-in, shared glance with authentic smile. Roger Deakins soft warm golden light. Camera: intimate smooth tracking during conversation, gentle push-in on the emotional connection.',
     negativePrompt: 'blur, toxic drama, exaggerated motion, arguing, fighting, screaming, violence, courtroom, lawyer, angry, revenge',
@@ -338,11 +367,12 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     },
   },
 
-  'mental-health': {
-    name: 'Mental Health',
-    key: 'mental-health',
-    triggerKeywords: ['mental health', 'anxiety relief', 'mindfulness', 'self-love', 'inner peace', 'calm', 'therapy', 'self care', 'boundaries', 'healing', 'trauma', 'burnout', 'overwhelm', 'coping', 'breathing exercise', 'journaling'],
-    negativeKeywords: ['triggering', 'dark', 'dismissive', 'party', 'rave', 'extreme sport', 'horror', 'violence'],
+  mental_health: {
+    name: 'Mental Health & Wellness',
+    key: 'mental_health',
+    priority: 12,
+    triggerKeywords: ['mental health', 'anxiety relief', 'mindfulness', 'self-love', 'inner peace', 'calm', 'therapy', 'self care', 'boundaries', 'healing', 'trauma', 'burnout', 'overwhelm', 'coping', 'breathing exercise', 'journaling', 'anxiety', 'stress relief', 'stress', 'emotional wellbeing', 'emotional balance', 'self love'],
+    negativeKeywords: ['self harm', 'triggering content', 'graphic distress', 'triggering', 'dark', 'horror', 'violence'],
     imagePromptPrefix: 'Calm safe environment. Soft lighting, comfortable space, journal and pen, nature, warm blanket, tea. Person in peaceful introspective moment.',
     videoPromptPrefix: 'Calming mental health moment. Last frame continuity: preserve serene character, peaceful space, and soft diffused lighting exactly. Motion: gentle breathing — chest rising slowly, hands softly releasing tension, subtle peaceful head tilt. Roger Deakins soft diffused natural morning light. Camera: ultra-slow push-in to peaceful face.',
     negativePrompt: 'blur, triggering visuals, dark tones, chaotic motion, loud, aggressive, party, horror, violence, screaming, chaos',
@@ -369,8 +399,9 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
   gaming: {
     name: 'Gaming',
     key: 'gaming',
-    triggerKeywords: ['gaming', 'gamer', 'game', 'epic gameplay', 'tips', 'strategies', 'immersive', 'pro moves', 'esports', 'fps', 'rpg', 'twitch', 'stream', 'ranked', 'gameplay', 'loadout', 'meta', 'console', 'pc gaming', 'fortnite', 'minecraft', 'valorant'],
-    negativeKeywords: ['toxic', 'low quality', 'spoilers', 'cooking', 'outdoor nature', 'meditation'],
+    priority: 5,
+    triggerKeywords: ['gaming', 'gamer', 'game', 'epic gameplay', 'tips', 'strategies', 'immersive', 'pro moves', 'esports', 'fps', 'rpg', 'twitch', 'stream', 'ranked', 'gameplay', 'loadout', 'meta', 'console', 'pc gaming', 'fortnite', 'minecraft', 'valorant', 'walkthrough', 'strategy', 'pro plays', 'gaming tips'],
+    negativeKeywords: ['toxic gaming', 'spoilers', 'low effort gameplay', 'toxic', 'low quality'],
     imagePromptPrefix: 'Dynamic gaming environment. Person at high-end gaming setup — RGB keyboard, multiple monitors showing game, headset on. Intense focused expression.',
     videoPromptPrefix: 'Cinematic gaming moment. Last frame reference: maintain game world, character, and dynamic RGB lighting exactly. Motion: intense focused hands on controller/keyboard, rapid eye tracking, dramatic victory reaction. Dynamic RGB monitor glow with Deakins cinematic lighting. Camera: fast controlled track on player reaction, cut to gameplay highlight.',
     negativePrompt: 'blur, low graphics, chaotic jitter, low quality, toxic behavior, spoilers, generic office, static boring setup',
@@ -397,8 +428,9 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
   pets: {
     name: 'Pets',
     key: 'pets',
-    triggerKeywords: ['pet', 'pets', 'cute pets', 'training', 'wholesome', 'adoption', 'heartwarming', 'dog', 'cat', 'puppy', 'kitten', 'animal', 'vet', 'rescue', 'breed', 'leash', 'collar', 'treat', 'pet food', 'bird', 'hamster'],
-    negativeKeywords: ['cruelty', 'aggression', 'neglect', 'hunting', 'slaughter', 'animal testing', 'fight', 'abuse'],
+    priority: 4,
+    triggerKeywords: ['pet', 'pets', 'cute pets', 'training', 'wholesome', 'adoption', 'heartwarming', 'dog', 'cat', 'puppy', 'kitten', 'animal', 'vet', 'rescue', 'breed', 'leash', 'collar', 'treat', 'pet food', 'bird', 'hamster', 'dog training', 'cat behavior', 'animal care', 'wholesome pets'],
+    negativeKeywords: ['animal abuse', 'neglect', 'harmful behavior', 'cruelty', 'aggression', 'hunting', 'slaughter', 'animal testing', 'fight'],
     imagePromptPrefix: 'Pet-friendly environment. Home, park, vet clinic, garden. Animal as primary subject — adorable, healthy, active. Human-animal bond visible.',
     videoPromptPrefix: 'Wholesome pet moment. Last frame reference: preserve pet appearance, owner, and home environment exactly. Motion: joyful pet movement — running, tail wagging, trick execution, excited greeting jump. Roger Deakins warm natural sunlight through window. Camera: gentle handheld following pet movement, close-up on expressive animal eyes and face.',
     negativePrompt: 'blur, aggression, poor conditions, unnatural motion, hunting, animal harm, cramped cages, abuse, neglect, taxidermy',
@@ -422,11 +454,12 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
     },
   },
 
-  '3d-animation': {
+  animation_3d: {
     name: '3D Animation',
-    key: '3d-animation',
-    triggerKeywords: ['3d animation', 'pixar style', 'detailed textures', 'cinematic 3d', 'animated', 'animation', 'pixar', 'cartoon', '3d render', 'cgi', 'character animation', 'animated story', 'digital world', 'blender', 'render'],
-    negativeKeywords: ['low poly', 'rigid', 'bad rigging', 'live action', 'real person', 'documentary', 'photorealistic human', 'news'],
+    key: 'animation_3d',
+    priority: 6,
+    triggerKeywords: ['3d animation', 'pixar style', 'detailed textures', 'cinematic 3d', 'animated', 'animation', 'pixar', 'cartoon', '3d render', 'cgi', 'character animation', 'animated story', 'digital world', 'blender', 'render', 'cinematic render', 'motion design'],
+    negativeKeywords: ['low poly', 'bad rigging', 'unfinished animation', 'low poly', 'rigid', 'live action', 'real person', 'documentary'],
     imagePromptPrefix: 'High-quality 3D animated scene. Pixar/Disney quality characters and environments. Detailed textures, cinematic lighting, expressive character faces. Clearly animated stylized art style.',
     videoPromptPrefix: 'Pixar-quality 3D animated scene. Last frame continuity: maintain character model, world geometry, and lighting rig exactly. Motion: expressive character — squash-and-stretch walk cycle, secondary hair and cloth simulation, rich emotional facial expression. Physically accurate cinematic lighting with Deakins-inspired shadows. Camera: smooth tracking following character arc.',
     negativePrompt: 'blur, low poly, rigid movement, bad rigging, flat lighting, low quality, texture errors, clipping, unanimated background, real photo mixed with animation, inconsistent style',
@@ -454,6 +487,7 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
   lifestyle: {
     name: 'Lifestyle · Daily Life',
     key: 'lifestyle',
+    priority: 1,
     triggerKeywords: ['lifestyle', 'daily life', 'vlog', 'day in my life', 'routine', 'morning', 'evening', 'get ready', 'haul', 'apartment', 'room tour', 'aesthetic'],
     negativeKeywords: ['war', 'battle', 'medieval', 'historical', 'surgery', 'medical'],
     imagePromptPrefix: 'Authentic everyday moments. Real environments — home, cafe, street, park. Natural and relatable person in natural setting.',
@@ -481,7 +515,32 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
 
 };
 
-// ── Legacy alias ───────────────────────────────────────────────────────────────
+// ── Legacy aliases — maps old hyphenated/short keys to new underscore keys ────
+// Enables backward compatibility when old keys arrive from cached clients or DB.
+const KEY_ALIASES: Record<string, string> = {
+  // old key           → new key
+  'motivation':          'motivation_success',
+  'personal-finance':    'finance_investing',
+  'side-hustles':        'side_hustles',
+  'health-fitness':      'health_fitness',
+  'beauty-skincare':     'beauty_skincare',
+  'food-recipes':        'food_recipes',
+  'product-reviews':     'product_reviews',
+  'faceless-stoic':      'faceless_stoic',
+  'luxury':              'luxury_lifestyle',
+  'technology-ai':       'tech_ai',
+  'relationships':       'relationships_dating',
+  'mental-health':       'mental_health',
+  '3d-animation':        'animation_3d',
+  // also handle personal-finance-side-hustles (was a bug, now aliases to finance)
+  'personal-finance-side-hustles': 'finance_investing',
+  // short forms
+  'fitness':             'health_fitness',
+  'pet-care':            'pets',
+  'animation-3d':        'animation_3d',
+};
+
+// ── Legacy alias export ───────────────────────────────────────────────────────
 export const NICHE_HIDDEN_SETTINGS = NICHE_SETTINGS;
 
 // ── Era detection ─────────────────────────────────────────────────────────────
@@ -510,7 +569,26 @@ export function detectEra(text: string): string | null {
   return null;
 }
 
-// ── Niche resolver — exact match first, then score-based ─────────────────────
+// ── Niche classifier — 4-step priority-aware routing ────────────────────────
+//
+// Step 1  Score every niche (+2 per trigger keyword match)
+// Step 2  Negative filter (any match → score = -999, niche is excluded)
+// Step 3  Tie-break by priority (higher priority wins within TIE_THRESHOLD)
+// Step 4  Output top category only (classifyNiche() for multi-tag output)
+
+const TIE_THRESHOLD = 4; // scores within this many points are considered a tie
+
+function scoreNiche(settings: NicheSettings, raw: string): number {
+  // Negative keyword check — any match collapses score to -999 (excluded)
+  for (const neg of settings.negativeKeywords) {
+    if (raw.includes(neg.toLowerCase())) return -999;
+  }
+  let score = 0;
+  for (const kw of settings.triggerKeywords) {
+    if (raw.includes(kw.toLowerCase())) score += 2;
+  }
+  return score;
+}
 
 export function getNicheSettings(input: string | null | undefined): NicheSettings {
   if (!input?.trim()) {
@@ -520,48 +598,100 @@ export function getNicheSettings(input: string | null | undefined): NicheSetting
 
   const raw = (input || '').toLowerCase().trim();
 
-  // 1. Exact key match — covers all 15 niches
+  // Step 1: Exact key match (UI always sends a valid key — fast path)
   if (NICHE_SETTINGS[raw]) {
     console.log(`[NICHE_RESOLVED] input="${input}" resolved="${raw}" (exact)`);
     return NICHE_SETTINGS[raw];
   }
 
-  console.log('[NICHE_DEBUG] available keys:', Object.keys(NICHE_SETTINGS).join(', '));
-  console.log('[NICHE_DEBUG] received:', raw);
-
-  // 2. Score-based match using triggerKeywords (+12) and negativeKeywords (-20)
-  let bestMatch: NicheSettings | null = null;
-  let highestScore = 0;
-
-  for (const settings of Object.values(NICHE_SETTINGS)) {
-    let score = 0;
-    for (const kw of settings.triggerKeywords) {
-      if (raw.includes(kw.toLowerCase())) score += 12;
-    }
-    for (const neg of settings.negativeKeywords) {
-      if (raw.includes(neg.toLowerCase())) score -= 20;
-    }
-    if (score > highestScore) {
-      highestScore = score;
-      bestMatch = settings;
-    }
+  // Step 2: Legacy alias map (backward compat — old hyphenated or short keys)
+  const aliased = KEY_ALIASES[raw];
+  if (aliased && NICHE_SETTINGS[aliased]) {
+    console.log(`[NICHE_RESOLVED] input="${input}" resolved="${aliased}" (alias)`);
+    return NICHE_SETTINGS[aliased];
   }
 
-  if (bestMatch && highestScore >= 10) {
-    console.log(`[NICHE_RESOLVED] input="${input}" resolved="${bestMatch.key}" score=${highestScore}`);
-    return bestMatch;
+  // Step 3: Normalize hyphens → underscores and re-try exact match
+  const normalized = raw.replace(/-/g, '_');
+  if (NICHE_SETTINGS[normalized]) {
+    console.log(`[NICHE_RESOLVED] input="${input}" resolved="${normalized}" (normalized)`);
+    return NICHE_SETTINGS[normalized];
   }
 
-  // 3. Partial key match — any known key appears inside the input string
+  // Step 4: Score-based match with priority tie-breaking
+  const scored = Object.values(NICHE_SETTINGS)
+    .map(s => ({ settings: s, score: scoreNiche(s, raw) }))
+    .filter(x => x.score > 0)
+    .sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      return b.settings.priority - a.settings.priority;
+    });
+
+  if (scored.length > 0) {
+    const topScore = scored[0].score;
+    const tied = scored.filter(x => topScore - x.score <= TIE_THRESHOLD);
+    const winner = tied.reduce((best, x) =>
+      x.settings.priority > best.settings.priority ? x : best
+    , tied[0]);
+
+    console.log(
+      `[NICHE_RESOLVED] input="${input}" resolved="${winner.settings.key}" ` +
+      `score=${winner.score} priority=${winner.settings.priority}` +
+      (tied.length > 1 ? ` (beat ${tied.length - 1} tied)` : '')
+    );
+    return winner.settings;
+  }
+
+  // Step 5: Partial key match (input contains a known key substring)
   const partialKey = Object.keys(NICHE_SETTINGS).find(k => raw.includes(k));
   if (partialKey) {
     console.log(`[NICHE_RESOLVED] input="${input}" resolved="${partialKey}" (partial)`);
     return NICHE_SETTINGS[partialKey];
   }
 
-  // 4. Default
+  // Step 6: Default fallback
   console.log(`[NICHE_RESOLVED] input="${input}" resolved="lifestyle" (default fallback)`);
   return NICHE_SETTINGS['lifestyle'];
+}
+
+// ── Multi-tag classifier ──────────────────────────────────────────────────────
+//
+// Returns primary category + secondary matches for AI routing context.
+// Use when you need semantic context beyond a single niche.
+//
+// Example: { primary: 'mental_health', secondary: ['motivation_success', 'relationships_dating'] }
+
+export interface NicheClassification {
+  primary:   string;
+  secondary: string[];
+  scores:    Record<string, number>;
+}
+
+export function classifyNiche(input: string): NicheClassification {
+  const raw = (input || '').toLowerCase().trim();
+
+  const scored = Object.values(NICHE_SETTINGS)
+    .filter(s => s.key !== 'lifestyle')
+    .map(s => ({ key: s.key, score: scoreNiche(s, raw), priority: s.priority }))
+    .filter(x => x.score > 0)
+    .sort((a, b) => b.score !== a.score ? b.score - a.score : b.priority - a.priority);
+
+  if (scored.length === 0) {
+    return { primary: 'lifestyle', secondary: [], scores: {} };
+  }
+
+  const topScore = scored[0].score;
+  const topGroup = scored.filter(x => topScore - x.score <= TIE_THRESHOLD);
+  const primary  = topGroup.reduce((best, x) => x.priority > best.priority ? x : best, topGroup[0]);
+
+  const secondary = scored
+    .filter(x => x.key !== primary.key && x.score > 0)
+    .slice(0, 3)
+    .map(x => x.key);
+
+  const scores = Object.fromEntries(scored.map(x => [x.key, x.score]));
+  console.log(`[NICHE_CLASSIFY] primary="${primary.key}" secondary=[${secondary.join(',')}]`);
+  return { primary: primary.key, secondary, scores };
 }
 
 // ── Convenience: get all public niches for dropdown ──────────────────────────
@@ -571,3 +701,29 @@ export function getPublicNiches(): Array<{ key: string; name: string }> {
     .filter(n => n.key !== 'lifestyle')
     .map(n => ({ key: n.key, name: n.name }));
 }
+
+// ── CATEGORIES — single source of truth (Upgrade 3) ──────────────────────────
+//
+// Import this in any file that needs to reference the 15 valid display labels.
+// Frontend and backend both use this — no drift possible.
+// The KEY_TO_LABEL map in /api/v1/classify/route.ts is derived from this.
+
+export const CATEGORIES = [
+  'Motivation / Success',
+  'Personal Finance & Investing',
+  'Side Hustles & Money Making',
+  'Health & Fitness',
+  'Beauty / Skincare / Makeup',
+  'Food & Recipes',
+  'Product Reviews & Launches',
+  'Faceless Motivation / Stoic Content',
+  'Luxury Lifestyle',
+  'Technology & AI',
+  'Relationships & Dating',
+  'Mental Health & Wellness',
+  'Gaming',
+  'Pets',
+  '3D Animation',
+] as const;
+
+export type Category = typeof CATEGORIES[number];

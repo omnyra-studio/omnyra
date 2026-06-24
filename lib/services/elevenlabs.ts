@@ -3,6 +3,7 @@
  * Video: Seedance Fast via fal.ai (lib/providers/seedance.ts). TTS stays on ElevenLabs.
  */
 
+import type { EditingPlan, CutType } from "@/lib/cinema/types";
 import { cleanEnv, supabaseAdmin } from "@/lib/supabase/admin";
 import { ENHANCED_CINEMATIC_RE, buildSeedanceElevenLabsPrompt } from "@/lib/motion-prompt";
 import { SEEDANCE_FAL_FAST_MODEL } from "@/lib/providers/seedance";
@@ -395,16 +396,107 @@ export async function mergeVideoAudio(params: MergeVideoAudioParams): Promise<st
   }
 }
 
+// ── xfade duration (seconds) per CutType ─────────────────────────────────────
+const XFADE_S: Record<CutType, number> = {
+  'crossfade': 0.8,
+  'fade-in':   0.5,
+  'fade-out':  0.5,
+  'hold':      1.2,
+  'l-cut':     0.3,
+  'j-cut':     0.3,
+  'hard-cut':  0.02,  // imperceptible — effectively a hard cut
+  'match-cut': 0.02,
+  'smash-cut': 0.02,
+};
+
+async function probeDuration(clipPath: string): Promise<number> {
+  return new Promise(resolve => {
+    ffmpeg.ffprobe(clipPath, (err, data) => {
+      if (err || typeof data?.format?.duration !== 'number') {
+        resolve(6); // fallback: assume 6s clips
+      } else {
+        resolve(data.format.duration as number);
+      }
+    });
+  });
+}
+
+async function runXfadeStitch(params: {
+  clipPaths:   string[];
+  editingPlan: EditingPlan;
+  audioPath:   string | null;
+  maxDuration: number;
+  finalPath:   string;
+}): Promise<void> {
+  const { clipPaths, editingPlan, audioPath, maxDuration, finalPath } = params;
+  const durations = await Promise.all(clipPaths.map(probeDuration));
+
+  const instructions = editingPlan.instructions.filter(i => i.toBeatIndex !== null);
+
+  // Build xfade filter_complex chain
+  let filterStr = '';
+  let prevLabel = '[0:v]';
+  let cumulativeOffset = 0;
+
+  for (let i = 0; i < clipPaths.length - 1; i++) {
+    const inst       = instructions.find(x => x.fromBeatIndex === i);
+    const xfadeSec   = inst ? (XFADE_S[inst.cutType] ?? 0.02) : 0.02;
+    const outLabel   = `xf${i}`;
+    cumulativeOffset += durations[i] - xfadeSec;
+    filterStr += `${prevLabel}[${i + 1}:v]xfade=transition=fade:duration=${xfadeSec}:offset=${cumulativeOffset.toFixed(3)}[${outLabel}];`;
+    prevLabel = `[${outLabel}]`;
+  }
+
+  // Opening/closing video fades on the final chained output
+  const openD = (editingPlan.openingFadeMs / 1000).toFixed(2);
+  const closeD = (editingPlan.closingFadeMs / 1000).toFixed(2);
+  const fadeOut = Math.max(0, maxDuration - editingPlan.closingFadeMs / 1000).toFixed(2);
+  filterStr += `${prevLabel}fade=t=in:st=0:d=${openD},fade=t=out:st=${fadeOut}:d=${closeD}[vout]`;
+
+  await new Promise<void>((resolve, reject) => {
+    let cmd = ffmpeg();
+    clipPaths.forEach(p => { cmd = cmd.input(p); });
+    if (audioPath) cmd = cmd.input(audioPath);
+
+    const outputOpts = [
+      '-filter_complex', filterStr,
+      '-map', '[vout]',
+      '-c:v', 'libx264',
+      '-preset', 'slow',
+      '-crf', '18',
+      '-threads', '0',
+      '-t', String(maxDuration),
+      '-movflags', '+faststart',
+    ];
+
+    if (audioPath) {
+      outputOpts.push('-map', `${clipPaths.length}:a:0`, '-c:a', 'aac', '-b:a', '192k', '-shortest');
+    }
+
+    cmd
+      .outputOptions(outputOpts)
+      .output(finalPath)
+      .on('end', () => resolve())
+      .on('error', (err) => {
+        console.error(`[STITCH_XFADE_ERR] ${err.message}`);
+        reject(new Error(`FFmpeg xfade: ${err.message}`));
+      })
+      .run();
+  });
+}
+
 /**
  * FFmpeg fallback: concatenate multiple clips then merge audio in a single pass.
  * All clips and audio are downloaded to /tmp before ffmpeg is invoked.
+ * When editingPlan is provided, uses xfade filter chain for proper cut types.
  * Used when Railway Composer is unavailable or fails.
  */
 export async function stitchClipsWithAudio(params: {
   clipUrls:    string[];
   audioUrl?:   string;
   userId?:     string;
-  maxDuration?: number;  // hard cap in seconds — defaults to 30
+  maxDuration?: number;   // hard cap in seconds — defaults to 30
+  editingPlan?: EditingPlan;
 }): Promise<string> {
   const userId = params.userId ?? "anonymous";
   const id = randomUUID();
@@ -444,6 +536,34 @@ export async function stitchClipsWithAudio(params: {
     // If only 1 clip and no audio, just return it directly
     if (clipPaths.length === 1 && !hasAudio) {
       return params.clipUrls[0];
+    }
+
+    // ── Step 3: xfade path (when editingPlan provided) ───────────────────────
+    if (params.editingPlan && clipPaths.length > 1) {
+      console.log(`[STITCH] using xfade path (${clipPaths.length} clips)`);
+      try {
+        await runXfadeStitch({
+          clipPaths,
+          editingPlan: params.editingPlan,
+          audioPath:   hasAudio ? audioPath : null,
+          maxDuration: params.maxDuration ?? 30,
+          finalPath,
+        });
+        // skip to upload step below — fall through
+        const xfadeBuf = readFileSync(finalPath);
+        if (xfadeBuf.length < 1000) throw new Error(`xfade output only ${xfadeBuf.length} bytes`);
+        const storePath = `final/${userId}/${Date.now()}-stitched.mp4`;
+        const { data: xd, error: xe } = await supabaseAdmin.storage
+          .from("renders")
+          .upload(storePath, xfadeBuf, { contentType: "video/mp4", upsert: true });
+        if (xe) throw new Error(`[STITCH] xfade upload failed: ${xe.message}`);
+        const { data: { publicUrl: xUrl } } = supabaseAdmin.storage.from("renders").getPublicUrl(xd.path);
+        console.log(`[STITCH_XFADE_OK] ${clipPaths.length} clips url=${xUrl.substring(0, 80)}`);
+        return xUrl;
+      } catch (xErr) {
+        console.warn(`[STITCH] xfade failed, falling back to concat: ${xErr instanceof Error ? xErr.message : xErr}`);
+        // fall through to concat path
+      }
     }
 
     // ── Step 3: Write concat list ────────────────────────────────────────────

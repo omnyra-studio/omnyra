@@ -63,6 +63,7 @@ import { ghostEI } from "@/lib/services/emotional-intelligence";
 import { buildTransitionBridge } from "@/lib/services/hard-mode-compiler";
 import { saveSnapshot } from "@/lib/services/snapshot-replay";
 import { SaaSMetrics } from "@/lib/saas/saas-metrics";
+import type { CinemaPipelineResult } from "@/lib/cinema/types";
 
 const saasMetrics = new SaaSMetrics();
 
@@ -921,6 +922,35 @@ export async function POST(req: Request) {
         lastStageLogged = 'PROMPT_ARC_done';
         console.log(`[STAGE_7_PROMPT_ARC] done`);
 
+        // ── Cinema Director Pipeline ──────────────────────────────────────────
+        // Replaces paragraph-splitting with structured narrative beat planning.
+        // Beat Director → Shot Planner → Story Validator → Repetition Detector
+        //   → Scene Graph → Prompt Compiler → RenderContracts
+        // Falls back to legacy prompts if pipeline errors.
+        console.log(`[STAGE_7B_CINEMA] start scenes=${prompts.length}`);
+        let cinemaPipeline: CinemaPipelineResult | null = null;
+        try {
+          const { runCinemaPipeline } = await import("@/lib/cinema/pipeline");
+          cinemaPipeline = await runCinemaPipeline({
+            idea:         (goal ?? voiceoverText ?? enforcedPrompts.join(" ")).slice(0, 800),
+            script:       voiceoverText ?? script ?? undefined,
+            niche:        niche ?? nicheSettings.key,
+            sceneCount:   prompts.length,
+            nicheSettings,
+          });
+          if (cinemaPipeline.renderContracts.length !== prompts.length) {
+            console.warn(`[CINEMA_PIPELINE] scene count mismatch expected=${prompts.length} got=${cinemaPipeline.renderContracts.length} — falling back`);
+            cinemaPipeline = null;
+          }
+        } catch (pipeErr) {
+          console.warn(`[CINEMA_PIPELINE] failed — falling back to legacy prompts:`, pipeErr instanceof Error ? pipeErr.message : pipeErr);
+        }
+        lastStageLogged = 'CINEMA_PIPELINE_done';
+        console.log(`[STAGE_7B_CINEMA] done pipeline=${cinemaPipeline ? 'OK' : 'fallback'}`);
+
+        // Per-beat narration replaces full screenplay text for ElevenLabs (more impactful)
+        const resolvedVoiceover = cinemaPipeline?.compositeNarration?.trim() || voiceoverText;
+
         const sourceImages: Array<string | null> = new Array(prompts.length).fill(null);
         const clipReports: string[] = [];
 
@@ -929,11 +959,11 @@ export async function POST(req: Request) {
         // Fire voiceover + ambient in parallel when narration text is provided
         // Multi-speaker path: detect [Speaker: Name] labels and generate separate voice tracks
         const seqId = `seq-${user.id}-${Date.now()}`;
-        const isMultiSpeaker = voiceoverText ? isMultiSpeakerScript(voiceoverText) : false;
-        const voiceoverPromise: Promise<{ audioUrl?: string; duration: number }> | null = voiceoverText
+        const isMultiSpeaker = resolvedVoiceover ? isMultiSpeakerScript(resolvedVoiceover) : false;
+        const voiceoverPromise: Promise<{ audioUrl?: string; duration: number }> | null = resolvedVoiceover
           ? (isMultiSpeaker
               ? generateMultiSpeakerVoiceover({
-                  script:  voiceoverText,
+                  script:  resolvedVoiceover,
                   userId:  user.id,
                   jobId:   seqId,
                 }).then(r => r ? { audioUrl: r.audioUrl, duration: r.duration } : { audioUrl: undefined, duration: plannedTotalSec })
@@ -942,7 +972,7 @@ export async function POST(req: Request) {
                     return { audioUrl: undefined, duration: plannedTotalSec };
                   })
               : elevenLabsVoiceover({
-                  text:    voiceoverText,
+                  text:    resolvedVoiceover,
                   voiceId,
                   userId:  user.id,
                   jobId:   seqId,
@@ -1048,9 +1078,15 @@ export async function POST(req: Request) {
         // Skip beat generation when Runway is the primary provider: Runway follows prompts
         // directly and the Kling beat format (generic camera directions) degrades quality on Runway.
         const useRunwayDirect = !!process.env.RUNWAYML_API_SECRET;
+        // Cinema Pipeline beats take priority over legacy storyboard analysis.
+        // If cinema pipeline ran successfully, skip analyzeScriptBeats entirely.
         let storyBeats: StoryBeat[] | null = passedStoryBeats ?? null;
         if (storyBeats) {
           console.log(`[STORYBOARD] using ${storyBeats.length} beats passed from scene-images`);
+        } else if (cinemaPipeline) {
+          const { toStoryBeats } = await import("@/lib/cinema/pipeline");
+          storyBeats = toStoryBeats(cinemaPipeline.beats);
+          console.log(`[STORYBOARD] using ${storyBeats.length} cinema-pipeline beats`);
         } else if (useRunwayDirect) {
           console.log(`[STORYBOARD] skipped — Runway provider uses prompts directly for better fidelity`);
         } else {
@@ -1114,15 +1150,25 @@ export async function POST(req: Request) {
         console.log(`[STORY_MEM] init arc="${storyMem.story_arc}" emotion="${storyMem.current_state.emotion}"`);
 
         // Build per-scene Kling prompts.
-        // Scene 1: if a template is active, use its full video_prompt (unified story context).
-        //           Otherwise use storyboard beat / creative-director / fallback.
-        // Scenes 2+: beat/fallback prompt only — CONTINUITY_PREFIX is added at generation time.
+        // Priority order:
+        //   1. Cinema Pipeline RenderContracts (new — structured, never raw screenplay)
+        //   2. Scene Compiler (passedSceneGraph — structured)
+        //   3. Template prompt (activeTemplate)
+        //   4. Cinema pipeline beats via buildKlingPrompt
+        //   5. Creative Director scenes
+        //   6. Legacy user prompt fallback
         const builtKlingPrompts: string[] = [];
         const klingScenePrompts = enforcedPrompts.map((_p, i) => {
           let final: string;
           let dirSource: string;
 
-          if (passedSceneGraph?.scene_graph?.[i]) {
+          if (cinemaPipeline?.renderContracts?.[i]) {
+            // Cinema Pipeline: structured render contract — never contains raw screenplay
+            const rc = cinemaPipeline.renderContracts[i];
+            const charSuffix = charMemory ? `, ${buildKlingCharacterSuffix(charMemory)}` : '';
+            final = `${rc.prompt}${charSuffix}`.slice(0, MAX_KLING_PROMPT);
+            dirSource = `cinema-pipeline role=${rc.narrativeRole} shot=${cinemaPipeline.shots[i]?.shotType ?? 'unknown'} emotion="${rc.emotion}"`;
+          } else if (passedSceneGraph?.scene_graph?.[i]) {
             // Scene Compiler — deterministic structured prompts with continuity metadata
             final = buildKlingPromptFromScene(passedSceneGraph.scene_graph[i], passedSceneGraph).slice(0, MAX_KLING_PROMPT);
             dirSource = `scene-compiler role=${passedSceneGraph.scene_graph[i].narrative_role} shot=${passedSceneGraph.scene_graph[i].camera?.shot_type}`;
@@ -1137,8 +1183,6 @@ export async function POST(req: Request) {
             final = [eraAnchor, passedCreativeScenes[i].motion].filter(Boolean).join('\n').slice(0, MAX_KLING_PROMPT);
             dirSource = `creative-director scene=${i + 1}`;
           } else {
-            // Use the caller's actual prompt (after ethnicity/arc/continuity injection)
-            // FALLBACK_DIRECTIONS are generic placeholders that ignore the user's script
             final = _p.slice(0, MAX_KLING_PROMPT);
             dirSource = "user-prompt";
           }
@@ -1221,9 +1265,16 @@ export async function POST(req: Request) {
 
           const mode = sceneImg?.startsWith("https://") ? "i2v" : "t2v";
 
-          // Model router: select best provider per scene based on narrative role + motion
-          const sceneNarrativeRole = passedSceneGraph?.scene_graph?.[i]?.narrative_role
-            ?? (i === 0 ? "hook" : i === klingScenePrompts.length - 1 ? "resolution" : "development");
+          // Model router: narrative role now comes from cinema pipeline when available
+          // Cinema pipeline uses 7-value set; map to router's 4-value set.
+          const cinemaRole = cinemaPipeline?.renderContracts?.[i]?.narrativeRole;
+          const sceneNarrativeRole: "hook" | "development" | "climax" | "resolution" =
+            cinemaRole === 'establish' || cinemaRole === 'introduce' ? 'hook'
+            : cinemaRole === 'conflict' || cinemaRole === 'reaction'  ? 'development'
+            : cinemaRole === 'climax'                                  ? 'climax'
+            : cinemaRole === 'resolution'                              ? 'resolution'
+            : (passedSceneGraph?.scene_graph?.[i]?.narrative_role as "hook" | "development" | "climax" | "resolution" | undefined)
+              ?? (i === 0 ? "hook" : i === klingScenePrompts.length - 1 ? "resolution" : "development");
           const routerDecision = selectVideoProvider({
             narrativeRole:    sceneNarrativeRole,
             motionComplexity: inferMotionComplexity(klingScenePrompts[i]),
@@ -1233,8 +1284,12 @@ export async function POST(req: Request) {
           });
           console.log(`[CLIP_FIRE] scene=${i + 1} mode=${mode} provider=${routerDecision.provider} role=${sceneNarrativeRole} motion=${driftMotionStrength.toFixed(2)} imageUrl=${sceneImg?.substring(0, 80) ?? "NONE"}`);
 
+          // Merge cinema pipeline negative prompt with base negatives
+          const cinemaNeg = cinemaPipeline?.renderContracts?.[i]?.negativePrompt ?? '';
+          const finalNegativePrompt = [sceneNegativePrompts[i], cinemaNeg].filter(Boolean).join(', ') || undefined;
+
           const klingParams = {
-            negativePrompt:  sceneNegativePrompts[i] || undefined,
+            negativePrompt:  finalNegativePrompt,
             imageUrl:        mode === "i2v" ? sceneImg : undefined,
             duration:        KLING_CLIP_SECS,
             aspectRatio:     "9:16" as const,
@@ -1419,7 +1474,7 @@ export async function POST(req: Request) {
               const errText = await railwayRes.text().catch(() => "");
               console.warn(`[RAILWAY_STITCH] composer HTTP ${railwayRes.status}: ${errText.substring(0, 200)} — falling back to FFmpeg stitch`);
               try {
-                stitched_url = await stitchClipsWithAudio({ clipUrls: clip_urls, audioUrl: finalAudioUrl, userId: user.id });
+                stitched_url = await stitchClipsWithAudio({ clipUrls: clip_urls, audioUrl: finalAudioUrl, userId: user.id, editingPlan: cinemaPipeline?.editingPlan });
                 console.log(`[FFMPEG_FALLBACK_OK] railway_error clips=${clip_urls.length} url=${stitched_url.substring(0, 80)}`);
               } catch (ffmpegErr) {
                 console.error("[FFMPEG_FALLBACK] stitchClipsWithAudio failed:", ffmpegErr instanceof Error ? ffmpegErr.message : ffmpegErr);
@@ -1429,7 +1484,7 @@ export async function POST(req: Request) {
             // Network-level Railway failure — fall back to FFmpeg stitch (all clips)
             console.warn("[RAILWAY_STITCH] network error:", railwayErr instanceof Error ? railwayErr.message : railwayErr);
             try {
-              stitched_url = await stitchClipsWithAudio({ clipUrls: clip_urls, audioUrl: finalAudioUrl, userId: user.id });
+              stitched_url = await stitchClipsWithAudio({ clipUrls: clip_urls, audioUrl: finalAudioUrl, userId: user.id, editingPlan: cinemaPipeline?.editingPlan });
               console.log(`[FFMPEG_FALLBACK_OK] railway_network_err clips=${clip_urls.length} url=${stitched_url.substring(0, 80)}`);
             } catch (ffmpegErr) {
               console.error("[FFMPEG_FALLBACK] stitchClipsWithAudio failed:", ffmpegErr instanceof Error ? ffmpegErr.message : ffmpegErr);
@@ -1441,9 +1496,10 @@ export async function POST(req: Request) {
           if (clip_urls.length > 0) {
             try {
               stitched_url = await stitchClipsWithAudio({
-                clipUrls: clip_urls,
-                audioUrl: finalAudioUrl,
-                userId:   user.id,
+                clipUrls:    clip_urls,
+                audioUrl:    finalAudioUrl,
+                userId:      user.id,
+                editingPlan: cinemaPipeline?.editingPlan,
               });
               console.log(`[FFMPEG_FALLBACK_OK] clips=${clip_urls.length} url=${stitched_url.substring(0, 80)}`);
             } catch (ffmpegErr) {
