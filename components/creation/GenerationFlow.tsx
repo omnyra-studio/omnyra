@@ -6,6 +6,8 @@ import NicheCardSelector from '@/components/creation/NicheCardSelector';
 import { createClient } from '@/lib/supabase/client';
 import { splitPromptIntoClips } from '@/lib/seedance/split-prompt';
 import { NICHE_TOOLS } from '@/lib/tools-config';
+import UpgradeModal from '@/components/UpgradeModal';
+import { canAccess60s } from '@/lib/utils/tier-utils';
 import {
   SUBJECT_ETHNICITY_OPTIONS,
   type SubjectEthnicity,
@@ -127,6 +129,7 @@ export default function GenerationFlow({
   const [asyncJobId,        setAsyncJobId]        = useState<string | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [userPlan,          setUserPlan]          = useState<'free' | 'starter' | 'creator' | 'studio'>('free');
+  const [showUpgradeModal,  setShowUpgradeModal]  = useState(false);
 
   const [voices,          setVoices]          = useState<ElevenLabsVoice[]>([]);
   const [voicesLoading,   setVoicesLoading]   = useState(false);
@@ -1902,20 +1905,18 @@ export default function GenerationFlow({
                 </button>
                 <button
                   type="button"
-                  onClick={() => userPlan === 'creator' || userPlan === 'studio' ? setTargetDuration(60) : undefined}
-                  disabled={userPlan === 'free' || userPlan === 'starter'}
-                  title={userPlan === 'free' || userPlan === 'starter' ? 'Creator plan or above required' : undefined}
+                  onClick={() => canAccess60s(userPlan) ? setTargetDuration(60) : setShowUpgradeModal(true)}
                   style={{
                     flex: 1, padding: '10px 16px', borderRadius: 8,
-                    cursor: userPlan === 'free' || userPlan === 'starter' ? 'not-allowed' : 'pointer',
-                    opacity: userPlan === 'free' || userPlan === 'starter' ? 0.45 : 1,
+                    cursor: 'pointer',
+                    opacity: canAccess60s(userPlan) ? 1 : 0.55,
                     background: targetDuration === 60 ? '#C9A84C' : 'transparent',
                     border: '1px solid #C9A84C',
                     color: targetDuration === 60 ? '#000' : '#C9A84C',
                     fontWeight: 600, fontSize: '0.8rem',
                   }}
                 >
-                  60s · 6 scenes · 65cr {(userPlan === 'free' || userPlan === 'starter') && '🔒'}
+                  60s · 6 scenes · 65cr {!canAccess60s(userPlan) && '🔒'}
                 </button>
               </div>
             )}
@@ -2346,6 +2347,12 @@ export default function GenerationFlow({
           </div>
         </>
       )}
+
+      <UpgradeModal
+        isOpen={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        feature="60s videos"
+      />
     </div>
   );
 }

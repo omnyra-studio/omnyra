@@ -50,6 +50,7 @@ import { detectFrameDrift, buildRetryPrompt } from "@/lib/services/drift-detecto
 import { isMultiSpeakerScript, generateMultiSpeakerVoiceover } from "@/lib/services/multi-speaker";
 import { generateRunwayClip } from "@/lib/services/runway";
 import { selectVideoProvider, inferMotionComplexity, assertProviderConfig } from "@/lib/services/model-router";
+import { TIER_LIMITS, type UserTier } from "@/lib/types/tiers";
 import {
   createInitialSnapshot,
   buildNextScene,
@@ -462,7 +463,14 @@ export async function POST(req: Request) {
   }
   console.log(`[CINEMATIC_AUTH] ok user=${user.id}`);
 
-  console.log(`[PLAN_GATE] user=${user.id} provider=kling-direct-v2.6`);
+  // ── Tier gate ────────────────────────────────────────────────────────────────
+  let userTier: UserTier = 'free';
+  try {
+    const { data: profile } = await supabase
+      .from('profiles').select('plan').eq('id', user.id).single();
+    if (profile?.plan) userTier = profile.plan as UserTier;
+  } catch { /* non-fatal — defaults to free (most restrictive) */ }
+  console.log(`[TIER_GATE] user=${user.id} tier=${userTier}`);
 
   // Video generation uses Kling direct API â€” no fal.ai needed for video.
   // (fal.ai is still used by generate-scene-images for Flux image generation.)
@@ -552,7 +560,18 @@ export async function POST(req: Request) {
     passedStoryBeats = Array.isArray(body.storyBeats) && body.storyBeats.length > 0 ? body.storyBeats : undefined;
     passedCreativeScenes = Array.isArray(body.creativeScenes) && body.creativeScenes.length > 0 ? body.creativeScenes : undefined;
     passedSceneGraph = body.sceneGraph ?? undefined;
-    if (body.targetDuration === 60) targetDuration = 60;
+    if (body.targetDuration === 60) {
+      const limits = TIER_LIMITS[userTier];
+      if (limits.maxDurationSeconds < 60) {
+        console.warn(`[TIER_GATE] 60s blocked tier=${userTier}`);
+        return Response.json({
+          error: 'Duration not available on your plan',
+          requiredTier: 'creator',
+          message: 'Upgrade to Creator or Studio to generate 60-second videos',
+        }, { status: 403 });
+      }
+      targetDuration = 60;
+    }
     templateId = body.templateId;
     console.log(`[BRIEF_CONTEXT] goal="${(goal ?? "").substring(0, 120)}" scenePrompts=${hasScenePrompts} characterId=${characterId ?? "none"} niche=${niche ?? "none"} ethnicity=${subjectEthnicity} storyBeats=${passedStoryBeats?.length ?? 0} creativeScenes=${passedCreativeScenes?.length ?? 0} templateId=${templateId ?? "none"}`)
   } catch {
