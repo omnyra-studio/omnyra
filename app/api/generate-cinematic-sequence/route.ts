@@ -50,6 +50,7 @@ import { detectFrameDrift, buildRetryPrompt } from "@/lib/services/drift-detecto
 import { isMultiSpeakerScript, generateMultiSpeakerVoiceover } from "@/lib/services/multi-speaker";
 import { generateRunwayClip } from "@/lib/services/runway";
 import { selectVideoProvider, inferMotionComplexity, assertProviderConfig } from "@/lib/services/model-router";
+import { chooseRunwayModel } from "@/lib/ai/runway-router";
 import { TIER_LIMITS, type UserTier } from "@/lib/types/tiers";
 import {
   createInitialSnapshot,
@@ -497,6 +498,7 @@ export async function POST(req: Request) {
   let passedSceneGraph: SceneCompilerProject | undefined;
   let targetDuration = 30;
   let templateId: string | undefined;
+  let speedMode: 'fast' | 'quality' = 'fast';
   try {
     const body = await parseJsonWithEthnicityFix<{
       prompts?: string[];
@@ -518,6 +520,7 @@ export async function POST(req: Request) {
       targetDuration?: number;
       templateId?: string;
       sceneGraph?: SceneCompilerProject;
+      speedMode?: 'fast' | 'quality';
     }>(req);
     subjectEthnicity = body.subjectEthnicity ?? 'caucasian';
     bodySceneImages = (body.sceneImages ?? []).filter((u): u is string => typeof u === "string" && u.startsWith("https://"));
@@ -574,6 +577,7 @@ export async function POST(req: Request) {
       targetDuration = 60;
     }
     templateId = body.templateId;
+    speedMode  = body.speedMode ?? 'fast';
     console.log(`[BRIEF_CONTEXT] goal="${(goal ?? "").substring(0, 120)}" scenePrompts=${hasScenePrompts} characterId=${characterId ?? "none"} niche=${niche ?? "none"} ethnicity=${subjectEthnicity} storyBeats=${passedStoryBeats?.length ?? 0} creativeScenes=${passedCreativeScenes?.length ?? 0} templateId=${templateId ?? "none"}`)
   } catch {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
@@ -907,6 +911,18 @@ export async function POST(req: Request) {
           return [_negBase, _negEmotional, sadGuard, subjectEthnicityNegative].filter(Boolean).join(", ");
         });
 
+        // Scene Compiler per-scene negative prompts — injected first so story-specific exclusions
+        // (e.g. "adult woman" for a child character story) take effect before niche/brand layers
+        if (passedSceneGraph?.scene_graph?.length) {
+          for (let i = 0; i < sceneNegativePrompts.length; i++) {
+            const compilerNeg = passedSceneGraph.scene_graph[i]?.negative_prompt?.trim();
+            if (compilerNeg) {
+              sceneNegativePrompts[i] = [compilerNeg, sceneNegativePrompts[i]].filter(Boolean).join(", ");
+            }
+          }
+          console.log(`[COMPILER_NEG] injected scene-compiler negative_prompt into ${sceneNegativePrompts.length} scenes`);
+        }
+
         // Animated style: suppress photorealism + live-action with stronger terms
         if (_isAnimated) {
           const negAnim = "photorealistic, realistic humans, live action, real people, photograph, photo, human skin texture, detailed pores, realistic faces, 35mm film, documentary style, human actors, candid photography, stock photo, blurry, deformed, extra limbs, text, watermark, low quality, ugly, bad anatomy, 3d render artifacts";
@@ -1044,7 +1060,7 @@ export async function POST(req: Request) {
               const fluxRes = await fetch('https://fal.run/fal-ai/flux/dev', {
                 method: 'POST',
                 headers: { Authorization: `Key ${falKey}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt: imagePrompt, num_images: 1, image_size: { width: 1080, height: 1920 }, num_inference_steps: 28, guidance_scale: 3.5, enable_safety_checker: true }),
+                body: JSON.stringify({ prompt: imagePrompt + ', no visible text or writing, family friendly', negative_prompt: [passedSceneGraph?.scene_graph?.[0]?.negative_prompt, 'text, words, writing, signs, letters, numbers, captions, watermarks, gibberish text, banners, placards, marijuana, drugs, weed, cannabis, alcohol, cigarettes, weapons, violence, drug paraphernalia, nudity, nsfw'].filter(Boolean).join(', '), num_images: 1, image_size: { width: 1080, height: 1920 }, num_inference_steps: 28, guidance_scale: 3.5, enable_safety_checker: true }),
                 signal: AbortSignal.timeout(45_000),
               });
               if (fluxRes.ok) {
@@ -1129,7 +1145,10 @@ export async function POST(req: Request) {
         // Use passed beats; otherwise generate inline (~3s) â€” worth it vs ignoring the script.
         // Skip beat generation when Runway is the primary provider: Runway follows prompts
         // directly and the Kling beat format (generic camera directions) degrades quality on Runway.
-        const useRunwayDirect = !!process.env.RUNWAYML_API_SECRET;
+        // Runway is gated to creator+ tiers. Free/starter fall back to Kling.
+        const tierAllowsRunway = TIER_LIMITS[userTier].runwayAccess;
+        const useRunwayDirect  = !!process.env.RUNWAYML_API_SECRET && tierAllowsRunway;
+        if (!tierAllowsRunway) console.log(`[TIER_GATE] Runway blocked for tier=${userTier} — using Kling`);
         // Cinema Pipeline beats take priority over legacy storyboard analysis.
         // If cinema pipeline ran successfully, skip analyzeScriptBeats entirely.
         let storyBeats: StoryBeat[] | null = passedStoryBeats ?? null;
@@ -1334,7 +1353,7 @@ export async function POST(req: Request) {
             narrativeRole:    sceneNarrativeRole,
             motionComplexity: inferMotionComplexity(klingScenePrompts[i]),
             durationSeconds:  KLING_CLIP_SECS,
-            budgetMode:       false,
+            budgetMode:       !tierAllowsRunway,  // forces Kling for free/starter
             hasReferenceImage: mode === "i2v",
           });
           const imgSource = bodySceneImages.length > 0 ? 'user-selected' : (cinemaPipeline ? 'flux-fallback' : 'imageUrl-fallback');
@@ -1357,12 +1376,14 @@ export async function POST(req: Request) {
           };
 
           try {
+            const runwayRouting = chooseRunwayModel(voiceoverText ?? klingPrompt, userTier, speedMode);
             const result = routerDecision.provider === "runway"
               ? await generateRunwayClip({
                   prompt:      klingPrompt,
                   imageUrl:    mode === "i2v" ? sceneImg : undefined,
                   duration:    KLING_CLIP_SECS as 5 | 10,
                   aspectRatio: "9:16",
+                  model:       runwayRouting.model,
                 })
               : await generateKlingClip({ prompt: klingPrompt, ...klingParams });
 

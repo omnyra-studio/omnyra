@@ -18,6 +18,7 @@ export interface RunwayClipParams {
   imageUrl?:   string;   // public HTTPS URL — required for i2v, omit for t2v
   duration:    5 | 10;
   aspectRatio: "9:16" | "16:9";
+  model?:      "gen4_turbo" | "gen3a_turbo"; // default: gen4_turbo
 }
 
 export interface RunwayClipResult {
@@ -38,17 +39,17 @@ function getClient(): RunwayML {
 export async function generateRunwayClip(
   params: RunwayClipParams,
 ): Promise<RunwayClipResult> {
-  const { prompt, imageUrl, duration, aspectRatio } = params;
+  const { prompt, imageUrl, duration, aspectRatio, model: requestedModel = "gen4_turbo" } = params;
 
   const client = getClient();
   const ratio  = toRunwayRatio(aspectRatio);
   const t0     = Date.now();
 
-  // gen4_turbo supports both i2v (with promptImage) and t2v (without).
-  // Omit promptImage entirely when no imageUrl is provided — empty string causes 400.
+  // Both gen4_turbo and gen3a_turbo support i2v (promptImage) and t2v (no promptImage).
+  // Omit promptImage entirely when no imageUrl — empty string causes 400.
   const createPayload = imageUrl
-    ? { model: "gen4_turbo" as const, promptText: prompt, ratio, duration, promptImage: imageUrl }
-    : { model: "gen4_turbo" as const, promptText: prompt, ratio, duration };
+    ? { model: requestedModel as "gen4_turbo", promptText: prompt, ratio, duration, promptImage: imageUrl }
+    : { model: requestedModel as "gen4_turbo", promptText: prompt, ratio, duration };
 
   const submitted = await client.imageToVideo.create(
     createPayload as Parameters<typeof client.imageToVideo.create>[0],
@@ -56,7 +57,7 @@ export async function generateRunwayClip(
   const taskId    = submitted.id;
 
   console.log(
-    `[RUNWAY] submitted task=${taskId} model=gen4_turbo ratio=${ratio} duration=${duration}s i2v=${!!imageUrl}`,
+    `[RUNWAY] submitted task=${taskId} model=${requestedModel} ratio=${ratio} duration=${duration}s i2v=${!!imageUrl}`,
   );
 
   // Poll until terminal state

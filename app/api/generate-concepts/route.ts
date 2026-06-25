@@ -22,7 +22,7 @@ async function generateConceptImage(
   resolvedEthnicity: ReturnType<typeof resolveSubjectEthnicity>,
 ): Promise<string> {
   const locked = applySubjectEthnicityLock(`${stylePrefix}, ${description}`, resolvedEthnicity);
-  const fullPrompt = `${locked.prompt}, ${ratioPrompt}, natural dramatic lighting, sharp focus, high detail, cinematic color grade`;
+  const fullPrompt = `${locked.prompt}, ${ratioPrompt}, natural dramatic lighting, sharp focus, high detail, cinematic color grade, no visible text or writing, family friendly, suitable for all audiences`;
   const fullNegative = [negativeStyle, locked.negativeAddon].filter(Boolean).join(', ');
   try {
     const res = await fetch('https://fal.run/fal-ai/flux/schnell', {
@@ -98,8 +98,8 @@ export async function POST(req: Request) {
                                      'cinematic lifestyle photography, environmental wide shot, golden hour, person in real setting, NOT a portrait';
 
   // Negative prompt to prevent wrong style bleeding
-  // Base negative — block explicit content only; swimwear/bikini allowed (Hedra rejects those at their end regardless)
-  const baseNegative = 'nudity, topless, lingerie, explicit sexual content, nsfw';
+  // Base negative — block explicit content, text/signs, and drug paraphernalia
+  const baseNegative = 'nudity, topless, lingerie, explicit sexual content, nsfw, text, words, writing, signs, letters, numbers, captions, watermarks, gibberish text, banners, placards, marijuana, drugs, weed, cannabis, alcohol, cigarettes, weapons, violence, drug paraphernalia';
   const negativeStyle =
     visualStyle === 'Lifestyle' ? `${baseNegative}, portrait, headshot, talking head, studio background, direct camera stare, mugshot` :
     visualStyle === 'UGC'       ? `${baseNegative}, studio lighting, professional photography, clean background` :

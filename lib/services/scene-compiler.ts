@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Scene Compiler Service
  *
  * Converts free-form user input into a deterministic SceneCompilerProject.
@@ -120,38 +120,41 @@ async function callClaudeCompiler(
   const SCHEMA_EXAMPLE = '{"scenes":[{"scene_id":"scene_01","timing":{"start":0,"end":10,"duration":10},"narrative_role":"hook","character_state":{"primary_character_id":"char_001","emotion":"string","action_state":"string","wardrobe_lock":true},"environment":{"location":"string","weather":"string","key_objects":["string"]},"camera":{"shot_type":"wide shot","movement":"string","position_lock":true},"motion_brush_instructions":["string"],"dialogue":{"text":"","voice_style":"none","sync_required":false},"continuity":{"uses_previous_frame":false,"frame_anchor_strength":"high","seed_lock":12345},"image_prompt":"string","video_prompt":"string","negative_prompt":"string"}]}';
 
   const systemPrompt = [
-    "You are Omnyra's Scene Compiler. Output ONLY a valid JSON object. No markdown. No code fences. No explanation. Respond with compact, single-line JSON. No newlines inside string values. No explanations. Use only plain ASCII characters in all string values - no em-dashes, curly quotes, or special punctuation. Keep all string values under 80 characters.",
+    "You are a professional cinematic director. Output ONLY a valid JSON object. No markdown. No code fences. No explanation. Compact single-line JSON only. No newlines inside string values. Plain ASCII only - no em-dashes, curly quotes, or special punctuation. All string values under 80 characters.",
     memoryPreamble ? `MEMORY LAYERS:\n${memoryPreamble}` : "",
+    `You are creating scenes for this EXACT story:\n"${input.script.trim()}"`,
+    `Primary character: ${characterAppearance}. Always front-facing, wardrobe consistent across all scenes. Do NOT change or replace this character.`,
     `Output exactly ${sceneCount} scenes. Shot order: ${SHOT_PROGRESSION.slice(0, sceneCount).join(", ")}.`,
-    `Character: ${characterAppearance}. Always front-facing. Wardrobe consistent across all scenes.`,
-    'image_prompt rules: 30-45 words. Start with shot type. Describe action from script beat. End with "photorealistic, cinematic, front-facing subject". No particles/smoke/liquid from face. No supernatural effects.',
+    "image_prompt rules: 30-45 words. Start with shot type. Show the EXACT action from this story beat. End with \"photorealistic, cinematic, front-facing subject\". No particles/smoke from face. No supernatural effects.",
     "video_prompt rules: 15-25 words. Motion only. No static descriptions.",
+    "negative_prompt rules: List what must NOT appear. Always include: \"wrong age, wrong character, blurry, deformed, text, watermark, extra limbs\". Add story-specific exclusions (e.g. if story is about a child: add \"adult woman, teenager, old person\").",
     `JSON schema (compact, single line):\n${SCHEMA_EXAMPLE}`,
   ].filter(Boolean).join("\n\n");
 
-  const userMessage = `Script: ${input.script.trim()}
+  const userMessage = `Story: ${input.script.trim()}
 
 Concept: ${input.concept}${input.hook ? `\nHook: ${input.hook}` : ""}${input.targetAudience ? `\nTarget audience: ${input.targetAudience}` : ""}
 
-Generate exactly ${sceneCount} scenes. Each scene must visually match a DIFFERENT beat of this script. Different shot distances, different actions, different emotional expressions. The 4 scenes together should tell the complete story of the script.`;
+Generate exactly ${sceneCount} scenes. Each scene must visually match a DIFFERENT beat of this exact story. Different shot distances, different actions, different emotional expressions. Together they tell the complete story arc.`;
 
   const res = await anthropic.messages.create({
-    model:      “claude-haiku-4-5-20251001”,
-    max_tokens: 3000,
-    system:     systemPrompt,
-    messages:   [{ role: “user”, content: userMessage }],
+    model:       "claude-sonnet-4-6",
+    max_tokens:  3000,
+    temperature: 0.7,
+    system:      systemPrompt,
+    messages:    [{ role: "user", content: userMessage }],
   });
 
-  if (res.stop_reason === “max_tokens”) {
+  if (res.stop_reason === "max_tokens") {
     console.error(`[SCENE_COMPILER] response truncated at max_tokens=3000 — JSON will be incomplete`);
-    throw new Error(“[SCENE_COMPILER] Claude truncated — compact JSON required”);
+    throw new Error("[SCENE_COMPILER] Claude truncated — compact JSON required");
   }
 
-  const rawText = res.content[0]?.type === “text” ? res.content[0].text : “”;
+  const rawText = res.content[0]?.type === "text" ? res.content[0].text : "";
   const parsed  = parseClaudeResponse(rawText) as { scenes?: unknown[] };
 
   if (!Array.isArray(parsed.scenes) || parsed.scenes.length === 0) {
-    throw new Error(“[SCENE_COMPILER] Claude returned empty scene graph”);
+    throw new Error("[SCENE_COMPILER] Claude returned empty scene graph");
   }
 
   return parsed.scenes as SceneNode[];
@@ -418,4 +421,74 @@ export function buildFluxPromptFromScene(
     appearance ? `Character: ${appearance}.` : "",
     COMPACT_SAFETY,
   ].filter(Boolean).join(" ").slice(0, 3000);
+}
+
+// ── Simplified scene compiler (generate page) ─────────────────────────────────
+
+export interface SimpleScene {
+  scene_id:           string;
+  timing:             { start: number; end: number; duration: number };
+  narrative_role:     string;
+  visual_description: string;
+  first_frame_image_id: string | null;
+}
+
+export async function compileScenes(
+  goal: string,
+  numScenes: number = 3,
+  totalDuration: number = 30,
+): Promise<{ scenes: SimpleScene[] }> {
+  const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+  const systemPrompt = `You are a professional cinematic director. Create exactly ${numScenes} scenes for a ${totalDuration}s video.
+
+Rules:
+- Return ONLY valid JSON. No explanations, no markdown, no extra text.
+- Every scene must be exactly 10 seconds.
+- Use compact JSON. No newlines inside string values.
+- All scenes must share consistent visual style and character.
+- Use only plain ASCII characters. No em-dashes, curly quotes, or special punctuation.
+
+Output exactly this structure:
+{"scenes":[{"scene_id":"scene_01","timing":{"start":0,"end":10,"duration":10},"narrative_role":"hook","visual_description":"detailed visual prompt for Flux image generation","first_frame_image_id":null}]}`;
+
+  try {
+    const res = await anthropic.messages.create({
+      model:       "claude-sonnet-4-6",
+      max_tokens:  3000,
+      temperature: 0.7,
+      system:      systemPrompt,
+      messages:    [{ role: "user", content: `User goal: ${goal}` }],
+    });
+
+    if (res.stop_reason === "max_tokens") {
+      throw new Error("response truncated");
+    }
+
+    const rawText = res.content[0]?.type === "text" ? res.content[0].text : "";
+    let cleaned = rawText.replace(/```json|```/g, "").replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "").trim();
+    const start = cleaned.indexOf("{");
+    const end   = cleaned.lastIndexOf("}") + 1;
+    if (start === -1 || end === 0) throw new Error("No JSON found");
+    return JSON.parse(cleaned.substring(start, end)) as { scenes: SimpleScene[] };
+  } catch (e) {
+    console.error("[SCENE_COMPILER] compileScenes failed, using fallback:", (e as Error).message);
+    return createFallbackScenes(goal, numScenes);
+  }
+}
+
+function createFallbackScenes(goal: string, numScenes: number): { scenes: SimpleScene[] } {
+  console.info("[SCENE_COMPILER] Using reliable fallback scenes");
+  const roles = ["hook", "development", "climax", "resolution"];
+  const scenes: SimpleScene[] = [];
+  for (let i = 1; i <= numScenes; i++) {
+    scenes.push({
+      scene_id:             `scene_0${i}`,
+      timing:               { start: (i - 1) * 10, end: i * 10, duration: 10 },
+      narrative_role:       roles[i - 1] ?? "development",
+      visual_description:   `Cinematic shot of person in peaceful setting, ${goal.toLowerCase()}`,
+      first_frame_image_id: null,
+    });
+  }
+  return { scenes };
 }

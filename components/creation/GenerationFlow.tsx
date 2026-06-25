@@ -114,6 +114,7 @@ export default function GenerationFlow({
   const [videoProgress, setVideoProgress] = useState(0);
   const [videoStarted,  setVideoStarted]  = useState(false);
   const [videoModel,    setVideoModel]    = useState<string | null>(null);
+  const [speedMode,     setSpeedMode]     = useState<'fast' | 'quality'>('fast');
   const [selectedVoice, setSelectedVoice] = useState('');
   const [favorites,     setFavorites]     = useState<string[]>([]);
   const [stitching,     setStitching]     = useState(false);
@@ -376,6 +377,7 @@ export default function GenerationFlow({
           subjectEthnicity,
           voiceId: selectedVoice || '',
           niche: niche || nichePrefill || undefined,
+          speedMode,
         }),
       });
       const data = await res.json();
@@ -609,6 +611,7 @@ export default function GenerationFlow({
             sceneGraph:     sceneGraph ?? undefined,
             targetDuration,
             templateId:     selectedTemplateId || undefined,
+            speedMode,
           }),
         });
         const data = await res.json();
@@ -1937,6 +1940,34 @@ export default function GenerationFlow({
                   }}
                 >
                   60s · 6 scenes · 65cr {!canAccess60s(userPlan) && '🔒'}
+                </button>
+              </div>
+            )}
+
+            {/* ── Fast / Quality toggle ── */}
+            {!videoStarted && !finalVideo && videoType !== 'avatar' && (
+              <div style={{ display: 'flex', background: 'rgba(255,255,255,0.04)', borderRadius: 999, padding: 4, gap: 2, border: '1px solid rgba(167,139,250,0.15)' }}>
+                <button
+                  onClick={() => setSpeedMode('fast')}
+                  style={{
+                    flex: 1, padding: '8px 0', borderRadius: 999, border: 'none', cursor: 'pointer',
+                    background: speedMode === 'fast' ? 'linear-gradient(105deg,#5A3400,#CFA42F)' : 'transparent',
+                    color: speedMode === 'fast' ? '#0D0010' : '#888',
+                    fontWeight: 700, fontSize: '0.78rem', transition: 'all 0.2s',
+                  }}
+                >
+                  ⚡ Fast
+                </button>
+                <button
+                  onClick={() => setSpeedMode('quality')}
+                  style={{
+                    flex: 1, padding: '8px 0', borderRadius: 999, border: 'none', cursor: 'pointer',
+                    background: speedMode === 'quality' ? 'linear-gradient(105deg,#5A3400,#CFA42F)' : 'transparent',
+                    color: speedMode === 'quality' ? '#0D0010' : '#888',
+                    fontWeight: 700, fontSize: '0.78rem', transition: 'all 0.2s',
+                  }}
+                >
+                  ✨ Quality
                 </button>
               </div>
             )}
