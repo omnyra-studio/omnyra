@@ -36,6 +36,9 @@ function getClient(): RunwayML {
   return new RunwayML({ apiKey });
 }
 
+const MAX_SUBMIT_ATTEMPTS = 2;
+const RETRY_DELAY_MS      = 3_500;
+
 export async function generateRunwayClip(
   params: RunwayClipParams,
 ): Promise<RunwayClipResult> {
@@ -51,10 +54,28 @@ export async function generateRunwayClip(
     ? { model: requestedModel as "gen4_turbo", promptText: prompt, ratio, duration, promptImage: imageUrl }
     : { model: requestedModel as "gen4_turbo", promptText: prompt, ratio, duration };
 
-  const submitted = await client.imageToVideo.create(
-    createPayload as Parameters<typeof client.imageToVideo.create>[0],
-  );
-  const taskId    = submitted.id;
+  // Submit with retry — handles 429 rate-limit and transient network errors
+  let submitted: { id: string };
+  for (let attempt = 1; attempt <= MAX_SUBMIT_ATTEMPTS; attempt++) {
+    try {
+      submitted = await client.imageToVideo.create(
+        createPayload as Parameters<typeof client.imageToVideo.create>[0],
+      );
+      break;
+    } catch (err) {
+      const status = (err as { status?: number }).status;
+      const isRateLimit = status === 429;
+      const isRetryable = isRateLimit || status === 503 || status === 502;
+      if (attempt < MAX_SUBMIT_ATTEMPTS && isRetryable) {
+        const delay = isRateLimit ? 3_500 : RETRY_DELAY_MS;
+        console.warn(`[RUNWAY] submit attempt ${attempt} failed status=${status} — retrying in ${delay}ms`);
+        await new Promise<void>(r => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+  const taskId = submitted!.id;
 
   console.log(
     `[RUNWAY] submitted task=${taskId} model=${requestedModel} ratio=${ratio} duration=${duration}s i2v=${!!imageUrl}`,
