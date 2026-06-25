@@ -1023,7 +1023,7 @@ export default function GenerationFlow({
         </h1>
         <p style={{ color: '#BBA8C8', fontSize: 14, lineHeight: 1.65, margin: '0 0 30px', textAlign: 'center' }}>
           {cinematicOnly
-            ? 'Paste any prompt — rough idea or full Seedance 2.0 format. Omnyra generates 3 × 10s Kling Pro clips and stitches them into a 30s cinematic sequence.'
+            ? 'Paste any prompt — rough idea or full cinematic format. Omnyra generates 3 × 10s Runway Gen-4 clips and stitches them into a 30s cinematic sequence.'
             : flowMode === 'guided'
               ? 'Describe your goal. Omnyra analyzes trends, audience patterns, and your creative history to build strategy versions with hooks, viral scores, and predictions.'
               : 'Paste any prompt — rough idea, Seedance 2.0 format, or production-ready shot list. Omnyra sends it straight to video generation.'}
@@ -1093,7 +1093,7 @@ export default function GenerationFlow({
               <span style={{ fontSize: '1.1rem' }}>🎬</span>
               <div>
                 <p style={{ color: '#D4A843', fontWeight: 700, fontSize: '0.85rem', margin: 0 }}>30s Cinematic Video</p>
-                <p style={{ color: '#8B6FA8', fontSize: '0.75rem', margin: '2px 0 0' }}>3 × 10s Kling v3 clips · stitched sequence · 25 credits</p>
+                <p style={{ color: '#8B6FA8', fontSize: '0.75rem', margin: '2px 0 0' }}>3 × 10s Runway Gen-4 clips · stitched sequence · 25 credits</p>
               </div>
             </div>
 
@@ -1654,7 +1654,7 @@ export default function GenerationFlow({
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                     {([
                       { id: 'quick'     as VideoType, icon: '⚡', label: '10s Draft',       sub: 'fal.ai · Fast preview',  credits: '10 credits', tier: 'All tiers', fullWidth: false },
-                      { id: 'cinematic' as VideoType, icon: '🎬', label: 'Cinematic Scene',  sub: '30s · Kling v3',          credits: '25 credits', tier: 'Creator+',  fullWidth: false },
+                      { id: 'cinematic' as VideoType, icon: '🎬', label: 'Cinematic Scene',  sub: '30s · Runway Gen-4',      credits: '25 credits', tier: 'Creator+',  fullWidth: false },
                       { id: 'avatar'    as VideoType, icon: '👤', label: 'Avatar Video',     sub: '30s · Hedra lip-sync',    credits: '40 credits', tier: 'Creator+',  fullWidth: true  },
                     ]).map(type => (
                       <div

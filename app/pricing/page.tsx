@@ -46,7 +46,7 @@ const PLANS = [
       "Unlimited scripts & captions",
       "100 images / month",
       "40 voice clips / month",
-      "5 × Cinematic 30s videos / month (Kling Pro)",
+      "5 × Cinematic 30s videos / month (Runway Gen-4)",
       "2 avatar generations / month",
     ],
     unavailable: [],
