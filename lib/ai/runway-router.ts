@@ -29,7 +29,7 @@ export async function generateWithRetry(
       const res = await fetch("https://api.runwayml.com/v1/inference", {
         method:  "POST",
         headers: {
-          "Authorization": `Bearer ${process.env.RUNWAY_API_KEY}`,
+          "Authorization": `Bearer ${process.env.RUNWAYML_API_SECRET}`,
           "Content-Type":  "application/json",
         },
         body: JSON.stringify({
