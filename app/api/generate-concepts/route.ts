@@ -1,5 +1,6 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { cleanEnv } from '@/lib/supabase/admin';
+import { getFluxHardNegative } from '@/lib/services/scene-compiler';
 import {
   buildCharacterBriefFromEthnicity,
   CAUCASIAN_DEFAULT_SYSTEM_RULE,
@@ -99,7 +100,7 @@ export async function POST(req: Request) {
 
   // Negative prompt to prevent wrong style bleeding
   // Base negative — block explicit content, text/signs, and drug paraphernalia
-  const baseNegative = 'nudity, topless, lingerie, explicit sexual content, nsfw, text, words, writing, signs, letters, numbers, captions, watermarks, gibberish text, banners, placards, marijuana, drugs, weed, cannabis, alcohol, cigarettes, weapons, violence, drug paraphernalia';
+  const baseNegative = [getFluxHardNegative(), 'nudity, topless, lingerie, explicit sexual content, nsfw, text, words, writing, signs, letters, numbers, captions, watermarks, gibberish text, banners, placards, marijuana, drugs, weed, cannabis, alcohol, cigarettes, weapons, violence, drug paraphernalia'].join(', ');
   const negativeStyle =
     visualStyle === 'Lifestyle' ? `${baseNegative}, portrait, headshot, talking head, studio background, direct camera stare, mugshot` :
     visualStyle === 'UGC'       ? `${baseNegative}, studio lighting, professional photography, clean background` :

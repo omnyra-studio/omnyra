@@ -123,11 +123,12 @@ async function callClaudeCompiler(
     "You are a professional cinematic director. Output ONLY a valid JSON object. No markdown. No code fences. No explanation. Compact single-line JSON only. No newlines inside string values. Plain ASCII only - no em-dashes, curly quotes, or special punctuation. All string values under 80 characters.",
     memoryPreamble ? `MEMORY LAYERS:\n${memoryPreamble}` : "",
     `You are creating scenes for this EXACT story:\n"${input.script.trim()}"`,
-    `Primary character: ${characterAppearance}. Always front-facing, wardrobe consistent across all scenes. Do NOT change or replace this character.`,
+    `Primary character: ${characterAppearance}. If the story involves a child girl, she must be described as: "fair-skinned blonde girl aged 8-9, wearing a dress or skirt, clearly female, long blonde hair". Always front-facing, wardrobe consistent across all scenes. Do NOT change or replace this character.`,
+    `If the story involves a homeless person, scenes 1 and 4 MUST include: "elderly homeless man seated on concrete pavement, weathered face, worn clothing, cardboard sign beside him".`,
     `Output exactly ${sceneCount} scenes. Shot order: ${SHOT_PROGRESSION.slice(0, sceneCount).join(", ")}.`,
-    "image_prompt rules: 30-45 words. Start with shot type. Show the EXACT action from this story beat. End with \"photorealistic, cinematic, front-facing subject\". No particles/smoke from face. No supernatural effects.",
+    "image_prompt rules: 30-45 words. Start with shot type. Show the EXACT action from this story beat. If coins appear, describe them as \"small ordinary coins, loose change, regular currency coins\" - NEVER bitcoin or crypto. End with \"photorealistic, cinematic, front-facing subject\". No particles/smoke from face. No supernatural effects.",
     "video_prompt rules: 15-25 words. Motion only. No static descriptions.",
-    "negative_prompt rules: List what must NOT appear. Always include: \"wrong age, wrong character, blurry, deformed, text, watermark, extra limbs\". Add story-specific exclusions (e.g. if story is about a child: add \"adult woman, teenager, old person\").",
+    "negative_prompt rules: List what must NOT appear. ALWAYS include ALL of these: \"boy, male child, masculine child, short hair on child, hoodie on child, adult woman, teenager, bitcoin, cryptocurrency, crypto coins, gold coins with symbols, coin logos, bitcoin symbol, BTC, wrong age, wrong character, blurry, deformed, text, watermark, extra limbs\".",
     `JSON schema (compact, single line):\n${SCHEMA_EXAMPLE}`,
   ].filter(Boolean).join("\n\n");
 
@@ -405,6 +406,13 @@ export function buildKlingPromptFromScene(
   ].filter(Boolean).join(" ").slice(0, 2500);
 }
 
+// Negative terms always appended to every Flux call regardless of scene compiler output
+const FLUX_HARD_NEGATIVE =
+  "boy, male child, masculine child, short hair on child, hoodie on child, " +
+  "bitcoin, cryptocurrency, crypto coins, gold coins with symbols, coin logos, bitcoin symbol, BTC, " +
+  "adult woman replacing child, teenager replacing child, wrong character, " +
+  "text, writing, watermark, extra limbs, deformed, blurry, low quality";
+
 /** Build the full Flux image prompt from a scene node */
 export function buildFluxPromptFromScene(
   scene: SceneNode,
@@ -423,71 +431,90 @@ export function buildFluxPromptFromScene(
   ].filter(Boolean).join(" ").slice(0, 3000);
 }
 
+/** Returns the hard-blocked negative prompt to merge into every Flux generation call */
+export function getFluxHardNegative(): string {
+  return FLUX_HARD_NEGATIVE;
+}
+
 // ── Simplified scene compiler (generate page) ─────────────────────────────────
 
 export interface SimpleScene {
-  scene_id:           string;
-  timing:             { start: number; end: number; duration: number };
-  narrative_role:     string;
-  visual_description: string;
-  first_frame_image_id: string | null;
+  scene_id:             string;
+  timing:               { start: number; end: number; duration: number };
+  narrative_role?:      string;
+  visual_description:   string;
+  negative_prompt?:     string;
+  first_frame_image_id?: string | null;
 }
 
 export async function compileScenes(
   goal: string,
   numScenes: number = 3,
-  totalDuration: number = 30,
 ): Promise<{ scenes: SimpleScene[] }> {
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-  const systemPrompt = `You are a professional cinematic director. Create exactly ${numScenes} scenes for a ${totalDuration}s video.
+  const systemPrompt = `You are a professional cinematic director.
+
+Create exactly ${numScenes} scenes for this user goal: "${goal}"
 
 Rules:
-- Return ONLY valid JSON. No explanations, no markdown, no extra text.
-- Every scene must be exactly 10 seconds.
+- Return ONLY valid JSON. No other text.
+- Each scene is exactly 10 seconds.
 - Use compact JSON. No newlines inside string values.
-- All scenes must share consistent visual style and character.
-- Use only plain ASCII characters. No em-dashes, curly quotes, or special punctuation.
+- Make the scenes visually coherent and tell the story from the goal.
 
 Output exactly this structure:
-{"scenes":[{"scene_id":"scene_01","timing":{"start":0,"end":10,"duration":10},"narrative_role":"hook","visual_description":"detailed visual prompt for Flux image generation","first_frame_image_id":null}]}`;
+{
+  "scenes": [
+    {
+      "scene_id": "scene_01",
+      "timing": {"start": 0, "end": 10, "duration": 10},
+      "visual_description": "detailed visual prompt for image generation",
+      "negative_prompt": "adult woman, old person, blurry, deformed hands, extra limbs, text, logo, watermark, low quality"
+    }
+  ]
+}`;
 
   try {
     const res = await anthropic.messages.create({
       model:       "claude-sonnet-4-6",
-      max_tokens:  3000,
-      temperature: 0.7,
+      max_tokens:  2800,
+      temperature: 0.6,
       system:      systemPrompt,
-      messages:    [{ role: "user", content: `User goal: ${goal}` }],
+      messages:    [{ role: "user", content: goal }],
     });
 
-    if (res.stop_reason === "max_tokens") {
-      throw new Error("response truncated");
-    }
+    let raw = res.content[0]?.type === "text" ? res.content[0].text : "";
 
-    const rawText = res.content[0]?.type === "text" ? res.content[0].text : "";
-    let cleaned = rawText.replace(/```json|```/g, "").replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, "").trim();
-    const start = cleaned.indexOf("{");
-    const end   = cleaned.lastIndexOf("}") + 1;
-    if (start === -1 || end === 0) throw new Error("No JSON found");
-    return JSON.parse(cleaned.substring(start, end)) as { scenes: SimpleScene[] };
+    // Aggressive sanitization — strip markdown fences and all control characters
+    raw = raw
+      .replace(/```json|```/g, "")
+      .replace(/[\x00-\x1F]/g, "")
+      .trim();
+
+    const start = raw.indexOf("{");
+    const end   = raw.lastIndexOf("}") + 1;
+
+    if (start === -1) throw new Error("No JSON found");
+
+    const parsed = JSON.parse(raw.substring(start, end)) as { scenes: SimpleScene[] };
+    console.info("[SCENE_COMPILER] Success for prompt");
+    return parsed;
   } catch (e) {
     console.error("[SCENE_COMPILER] compileScenes failed, using fallback:", (e as Error).message);
-    return createFallbackScenes(goal, numScenes);
+    return createGenericFallback(goal, numScenes);
   }
 }
 
-function createFallbackScenes(goal: string, numScenes: number): { scenes: SimpleScene[] } {
+function createGenericFallback(goal: string, numScenes: number): { scenes: SimpleScene[] } {
   console.info("[SCENE_COMPILER] Using reliable fallback scenes");
-  const roles = ["hook", "development", "climax", "resolution"];
   const scenes: SimpleScene[] = [];
   for (let i = 1; i <= numScenes; i++) {
     scenes.push({
-      scene_id:             `scene_0${i}`,
-      timing:               { start: (i - 1) * 10, end: i * 10, duration: 10 },
-      narrative_role:       roles[i - 1] ?? "development",
-      visual_description:   `Cinematic shot of person in peaceful setting, ${goal.toLowerCase()}`,
-      first_frame_image_id: null,
+      scene_id:          `scene_0${i}`,
+      timing:            { start: (i - 1) * 10, end: i * 10, duration: 10 },
+      visual_description: `Cinematic scene illustrating "${goal}", emotional storytelling, golden hour lighting, realistic`,
+      negative_prompt:   "adult woman, old person, blurry, deformed, text, logo, watermark, low quality",
     });
   }
   return { scenes };

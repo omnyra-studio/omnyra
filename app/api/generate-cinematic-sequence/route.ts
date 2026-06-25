@@ -44,7 +44,7 @@ import { getNicheSettings, detectEra, type NicheSettings } from "@/lib/config/ni
 import { analyzeScriptBeats, buildKlingPrompt, type StoryBeat } from "@/lib/storyboard-planner";
 import { findTemplate, buildTemplateVideoPrompt } from "@/lib/templates";
 import { initStoryMemory, advanceStoryMemory, buildStoryContextPrefix } from "@/lib/memory/story-memory";
-import { buildKlingPromptFromScene, attachLastFrame } from "@/lib/services/scene-compiler";
+import { buildKlingPromptFromScene, attachLastFrame, getFluxHardNegative } from "@/lib/services/scene-compiler";
 import type { SceneCompilerProject } from "@/lib/types/scene-compiler";
 import { detectFrameDrift, buildRetryPrompt } from "@/lib/services/drift-detector";
 import { isMultiSpeakerScript, generateMultiSpeakerVoiceover } from "@/lib/services/multi-speaker";
@@ -1060,7 +1060,7 @@ export async function POST(req: Request) {
               const fluxRes = await fetch('https://fal.run/fal-ai/flux/dev', {
                 method: 'POST',
                 headers: { Authorization: `Key ${falKey}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt: imagePrompt + ', no visible text or writing, family friendly', negative_prompt: [passedSceneGraph?.scene_graph?.[0]?.negative_prompt, 'text, words, writing, signs, letters, numbers, captions, watermarks, gibberish text, banners, placards, marijuana, drugs, weed, cannabis, alcohol, cigarettes, weapons, violence, drug paraphernalia, nudity, nsfw'].filter(Boolean).join(', '), num_images: 1, image_size: { width: 1080, height: 1920 }, num_inference_steps: 28, guidance_scale: 3.5, enable_safety_checker: true }),
+                body: JSON.stringify({ prompt: imagePrompt + ', no visible text or writing, family friendly', negative_prompt: [getFluxHardNegative(), passedSceneGraph?.scene_graph?.[0]?.negative_prompt, 'text, words, writing, signs, letters, numbers, captions, watermarks, gibberish text, banners, placards, marijuana, drugs, weed, cannabis, alcohol, cigarettes, weapons, violence, drug paraphernalia, nudity, nsfw'].filter(Boolean).join(', '), num_images: 1, image_size: { width: 1080, height: 1920 }, num_inference_steps: 28, guidance_scale: 3.5, enable_safety_checker: true }),
                 signal: AbortSignal.timeout(45_000),
               });
               if (fluxRes.ok) {
