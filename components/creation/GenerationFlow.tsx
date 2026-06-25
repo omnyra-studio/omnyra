@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef } from 'react';
 import TemplateSelector from '@/components/creation/TemplateSelector';
-import NicheCardSelector from '@/components/creation/NicheCardSelector';
 import { createClient } from '@/lib/supabase/client';
 import { splitPromptIntoClips } from '@/lib/seedance/split-prompt';
 import { NICHE_TOOLS } from '@/lib/tools-config';
@@ -1164,31 +1163,50 @@ export default function GenerationFlow({
           />
         </div>
 
-        {/* Niche card grid — full width */}
-        <NicheCardSelector selected={niche} onSelect={setNiche} disabled={isLoading} />
-
-        {/* Platform row */}
+        {/* Niche + Platform row */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 16 }}>
           <div>
-            <label style={{ color: '#C4B5D0', fontSize: '0.75rem', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'block', marginBottom: 8 }}>
+            <label style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', color: '#a78bfa', marginBottom: 6, textTransform: 'uppercase', display: 'block' }}>
+              Video Niche
+            </label>
+            <select
+              value={niche}
+              onChange={e => setNiche(e.target.value)}
+              disabled={isLoading}
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: 8, color: '#e0d0ff', padding: '10px 12px', fontSize: 14, width: '100%', opacity: isLoading ? 0.6 : 1 }}
+            >
+              <option value="">— Select niche —</option>
+              <option value="motivation">Motivation / Success</option>
+              <option value="finance">Personal Finance &amp; Investing</option>
+              <option value="side-hustles">Side Hustles &amp; Money Making</option>
+              <option value="fitness">Health &amp; Fitness</option>
+              <option value="beauty">Beauty / Skincare / Makeup</option>
+              <option value="food">Food &amp; Recipes</option>
+              <option value="product-reviews">Product Reviews &amp; Launches</option>
+              <option value="faceless">Faceless Motivation / Stoic Content</option>
+              <option value="luxury">Luxury Lifestyle</option>
+              <option value="tech">Technology &amp; AI</option>
+              <option value="relationships">Relationships &amp; Dating</option>
+              <option value="mental-health">Mental Health &amp; Wellness</option>
+              <option value="gaming">Gaming</option>
+              <option value="pets">Pets</option>
+              <option value="animation">3D Animation</option>
+              <option value="history">History / True Stories / Documentary</option>
+              <option value="travel">Travel</option>
+              <option value="comedy">Comedy &amp; Entertainment</option>
+              <option value="education">Education &amp; Tutorials</option>
+              <option value="spirituality">Spirituality &amp; Mindset</option>
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 600, letterSpacing: '0.08em', color: '#a78bfa', marginBottom: 6, textTransform: 'uppercase', display: 'block' }}>
               Target Platform
             </label>
             <select
               value={platform}
               onChange={e => setPlatform(e.target.value)}
               disabled={isLoading || toolId === 'tiktok-story'}
-              style={{
-                width: '100%', background: '#0D0020', border: '1px solid #2D1B4E',
-                borderRadius: 10, padding: '12px 16px',
-                color: '#F5EFE6', fontSize: '0.9rem',
-                fontFamily: 'inherit',
-                cursor: (isLoading || toolId === 'tiktok-story') ? 'not-allowed' : 'pointer',
-                appearance: 'none' as const,
-                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%239B72CF' d='M6 8L1 3h10z'/%3E%3C/svg%3E")`,
-                backgroundRepeat: 'no-repeat', backgroundPosition: 'right 14px center',
-                opacity: (isLoading || toolId === 'tiktok-story') ? 0.7 : 1,
-                boxSizing: 'border-box' as const,
-              }}
+              style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(167,139,250,0.3)', borderRadius: 8, color: '#e0d0ff', padding: '10px 12px', fontSize: 14, width: '100%', cursor: (isLoading || toolId === 'tiktok-story') ? 'not-allowed' : 'pointer', opacity: (isLoading || toolId === 'tiktok-story') ? 0.7 : 1 }}
             >
               <option value="TikTok">🎵 TikTok</option>
               <option value="Instagram Reels">📸 Instagram Reels</option>
