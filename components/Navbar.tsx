@@ -35,7 +35,7 @@ export default function Navbar() {
           <Link href="/tools" className="text-purple-300 hover:text-white transition-colors text-sm font-medium">
             Tools
           </Link>
-          <Link href="/create" className="text-purple-300 hover:text-white transition-colors text-sm font-medium">
+          <Link href="/dashboard" className="text-purple-300 hover:text-white transition-colors text-sm font-medium">
             Create
           </Link>
           <Link href="/dashboard" className="text-purple-300 hover:text-white transition-colors text-sm font-medium">

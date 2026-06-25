@@ -57,12 +57,6 @@ interface ElevenLabsVoice {
 
 type VideoType = 'quick' | 'cinematic' | 'avatar';
 
-const VIDEO_TYPES: Array<{ id: VideoType; label: string; desc: string; duration: string; cr: number; badge: string }> = [
-  { id: 'quick',     label: '10s Draft',       desc: 'fal.ai fast gen',    duration: '10s',  cr: 10, badge: '⚡' },
-  { id: 'cinematic', label: 'Cinematic Scene',  desc: 'Kling v3',           duration: '30s',  cr: 25, badge: '🎬' },
-  { id: 'avatar',    label: 'Avatar Video',     desc: 'Hedra talking head', duration: '~30s', cr: 40, badge: '👤' },
-];
-
 const GoldDivider = () => (
   <div style={{ margin: '48px 0', display: 'flex', alignItems: 'center', gap: 16 }}>
     <div style={{ flex: 1, height: 1, background: 'linear-gradient(90deg, transparent, rgba(212,168,67,0.4))' }} />
@@ -1793,27 +1787,35 @@ export default function GenerationFlow({
               <p style={{ color: '#B09FC0', fontSize: '0.875rem', margin: 0 }}>Choose your video type, generate, then add a voice.</p>
             </div>
 
-            {/* ── 1. Video Type Selector (only before generation starts) ── */}
+            {/* ── 1. Target Platform + Niche (replaces video type grid) ── */}
             {!videoStarted && !finalVideo && (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
-                {VIDEO_TYPES.map(vt => (
-                  <button
-                    key={vt.id}
-                    onClick={() => setVideoType(vt.id)}
-                    style={{
-                      borderRadius: 14, padding: '14px 10px', textAlign: 'left',
-                      background: videoType === vt.id ? 'rgba(212,168,67,0.1)' : '#0D0020',
-                      border: `1px solid ${videoType === vt.id ? '#D4A843' : '#2D1B4E'}`,
-                      cursor: 'pointer', transition: 'all 0.15s',
-                      boxShadow: videoType === vt.id ? '0 0 12px rgba(212,168,67,0.2)' : 'none',
-                    }}
+              <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <p style={{ color: '#888', fontSize: '0.68rem', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 5 }}>Target Platform</p>
+                  <select
+                    value={platform}
+                    onChange={e => setPlatform(e.target.value)}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: 8, background: '#0A0018', border: '1px solid #2D1B4E', color: '#E8DEFF', fontSize: '0.82rem', outline: 'none' }}
                   >
-                    <div style={{ fontSize: '1.3rem', marginBottom: 6 }}>{vt.badge}</div>
-                    <p style={{ color: '#F5EFE6', fontSize: '0.8rem', fontWeight: 700, margin: '0 0 3px' }}>{vt.label}</p>
-                    <p style={{ color: '#9370DB', fontSize: '0.7rem', margin: '0 0 6px' }}>{vt.desc}</p>
-                    <span style={{ color: '#D4A843', fontSize: '0.68rem', background: 'rgba(212,168,67,0.08)', borderRadius: 6, padding: '2px 7px' }}>{vt.cr}cr</span>
-                  </button>
-                ))}
+                    <option value="TikTok">TikTok</option>
+                    <option value="Instagram">Instagram Reels</option>
+                    <option value="YouTube">YouTube Shorts</option>
+                    <option value="Facebook">Facebook</option>
+                  </select>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <p style={{ color: '#888', fontSize: '0.68rem', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 5 }}>Video Niche</p>
+                  <select
+                    value={niche}
+                    onChange={e => setNiche(e.target.value)}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: 8, background: '#0A0018', border: '1px solid #2D1B4E', color: '#E8DEFF', fontSize: '0.82rem', outline: 'none' }}
+                  >
+                    <option value="">— Select niche —</option>
+                    {NICHE_TOOLS.map(t => (
+                      <option key={t.id} value={t.id}>{t.icon} {t.title}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
             )}
 
@@ -1918,38 +1920,6 @@ export default function GenerationFlow({
                 >
                   60s · 6 scenes · 65cr {!canAccess60s(userPlan) && '🔒'}
                 </button>
-              </div>
-            )}
-
-            {/* ── 1c. Target Platform + Niche dropdowns (cinematic only) ── */}
-            {videoType === 'cinematic' && !videoStarted && !finalVideo && (
-              <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-                <div style={{ flex: 1 }}>
-                  <p style={{ color: '#888', fontSize: '0.68rem', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 5 }}>Target Platform</p>
-                  <select
-                    value={platform}
-                    onChange={e => setPlatform(e.target.value)}
-                    style={{ width: '100%', padding: '9px 12px', borderRadius: 8, background: '#0A0018', border: '1px solid #2D1B4E', color: '#E8DEFF', fontSize: '0.82rem', outline: 'none' }}
-                  >
-                    <option value="TikTok">TikTok</option>
-                    <option value="Instagram">Instagram Reels</option>
-                    <option value="YouTube">YouTube Shorts</option>
-                    <option value="Facebook">Facebook</option>
-                  </select>
-                </div>
-                <div style={{ flex: 1 }}>
-                  <p style={{ color: '#888', fontSize: '0.68rem', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 5 }}>Video Niche</p>
-                  <select
-                    value={niche}
-                    onChange={e => setNiche(e.target.value)}
-                    style={{ width: '100%', padding: '9px 12px', borderRadius: 8, background: '#0A0018', border: '1px solid #2D1B4E', color: '#E8DEFF', fontSize: '0.82rem', outline: 'none' }}
-                  >
-                    <option value="">— Select niche —</option>
-                    {NICHE_TOOLS.map(t => (
-                      <option key={t.id} value={t.id}>{t.icon} {t.title}</option>
-                    ))}
-                  </select>
-                </div>
               </div>
             )}
 
