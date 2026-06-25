@@ -471,6 +471,7 @@ export async function POST(req: Request) {
     if (profile?.plan) userTier = profile.plan as UserTier;
   } catch { /* non-fatal — defaults to free (most restrictive) */ }
   console.log(`[TIER_GATE] user=${user.id} tier=${userTier}`);
+  console.info('[ENV_CHECK] RUNWAY_KEY_PRESENT=', !!process.env.RUNWAYML_API_SECRET);
 
   // Video generation uses Kling direct API â€” no fal.ai needed for video.
   // (fal.ai is still used by generate-scene-images for Flux image generation.)
@@ -1018,16 +1019,49 @@ export async function POST(req: Request) {
               })
           : Promise.resolve(null);
 
-        // â”€â”€ Per-scene image assignment â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-        // Priority: body.sceneImages[] (all concept images from frontend) â†’ imageUrl fallback
+        // ── Per-scene image assignment ────────────────────────────────────────────────────────────
+        // Priority: cinema-pipeline beat[0] → body.sceneImages[] → imageUrl fallback
         const fallbackImageUrl: string | null = _isAnimated ? null : (imageUrl ?? null);
         let sceneImageUrls: Array<string | null> = new Array(prompts.length).fill(null);
 
-        if (!_isAnimated && bodySceneImages.length > 0) {
-          // Mirror fal.media image to Supabase before sending to Kling.
-          // Kling's Singapore servers can't reliably fetch fal.media CDN URLs â†’ "Internal error".
-          let mainImage = bodySceneImages[0] ?? null;
-          if (mainImage?.includes("fal.media") || mainImage?.includes("fal.run")) {
+        let mainImage: string | null = null;
+
+        // When the cinema pipeline ran, generate scene 1 image from its beat[0] render contract
+        // so the reference image is narrative-accurate to the script — not the raw user brief.
+        if (!_isAnimated && cinemaPipeline) {
+          const falKey = process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY;
+          if (falKey) {
+            try {
+              const rc0 = cinemaPipeline.renderContracts[0];
+              const imagePrompt = [rc0.environment, rc0.lighting, rc0.cameraState, rc0.characterState, 'photorealistic, cinematic still frame, 9:16 vertical'].filter(Boolean).join('. ');
+              console.info('[IMAGE_PROMPT_USED]', imagePrompt);
+              const fluxRes = await fetch('https://fal.run/fal-ai/flux/dev', {
+                method: 'POST',
+                headers: { Authorization: `Key ${falKey}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ prompt: imagePrompt, num_images: 1, image_size: { width: 1080, height: 1920 }, num_inference_steps: 28, guidance_scale: 3.5, enable_safety_checker: true }),
+                signal: AbortSignal.timeout(45_000),
+              });
+              if (fluxRes.ok) {
+                const fluxData = await fluxRes.json() as { images?: { url: string }[] };
+                mainImage = fluxData.images?.[0]?.url ?? null;
+                if (mainImage) console.log(`[SCENE_IMAGES] cinema-pipeline image generated url=${mainImage.substring(0, 80)}`);
+              } else {
+                console.warn(`[SCENE_IMAGES] flux generation failed HTTP ${fluxRes.status} — falling back to bodySceneImages`);
+              }
+            } catch (fluxErr) {
+              console.warn(`[SCENE_IMAGES] flux generation error (non-fatal): ${fluxErr instanceof Error ? fluxErr.message : String(fluxErr)} — falling back to bodySceneImages`);
+            }
+          }
+        }
+
+        // Fall back to concept image from frontend if cinema-pipeline image not available
+        if (!mainImage && !_isAnimated && bodySceneImages.length > 0) {
+          mainImage = bodySceneImages[0] ?? null;
+        }
+
+        if (!_isAnimated && mainImage) {
+          // Mirror fal.media image to Supabase before sending to Kling/Runway.
+          if (mainImage.includes("fal.media") || mainImage.includes("fal.run")) {
             try {
               const imgRes = await fetch(mainImage, { signal: AbortSignal.timeout(15_000) });
               if (imgRes.ok) {
@@ -1039,30 +1073,27 @@ export async function POST(req: Request) {
                   .upload(mirrorPath, imgBuf, { contentType: `image/${ext}`, upsert: true });
                 if (!upErr) {
                   const { data: { publicUrl } } = supabaseAdmin.storage.from("renders").getPublicUrl(mirrorPath);
-                  console.log(`[IMAGE_MIRROR] falâ†’supabase ok: ${publicUrl.substring(0, 80)}`);
+                  console.log(`[IMAGE_MIRROR] fal→supabase ok: ${publicUrl.substring(0, 80)}`);
                   mainImage = publicUrl;
                 } else {
-                  console.warn(`[IMAGE_MIRROR] supabase upload failed: ${upErr.message} â€” using original fal URL`);
+                  console.warn(`[IMAGE_MIRROR] supabase upload failed: ${upErr.message} — using original fal URL`);
                 }
               }
             } catch (mirrorErr) {
-              console.warn(`[IMAGE_MIRROR] fetch failed (non-fatal): ${mirrorErr instanceof Error ? mirrorErr.message : mirrorErr} â€” using original fal URL`);
+              console.warn(`[IMAGE_MIRROR] fetch failed (non-fatal): ${mirrorErr instanceof Error ? mirrorErr.message : mirrorErr} — using original fal URL`);
             }
           }
           for (let i = 0; i < prompts.length; i++) {
             sceneImageUrls[i] = mainImage;
           }
-          console.log(`[SCENE_IMAGES] pinning all ${prompts.length} scenes to first image (i2v consistency)`);
+          console.log(`[SCENE_IMAGES] pinning all ${prompts.length} scenes to ${cinemaPipeline ? 'cinema-pipeline' : 'concept'} image (i2v consistency)`);
         } else if (fallbackImageUrl) {
-          // No per-scene images â€” use the single reference image for ALL scenes.
-          // Kling 2.6 Pro runs i2v (image-to-video); without an image every scene fails with 422.
           for (let i = 0; i < prompts.length; i++) {
             sceneImageUrls[i] = fallbackImageUrl;
           }
-          console.log(`[SCENE_IMAGES] no sceneImages body â€” using fallbackImageUrl for all ${prompts.length} scenes (i2v)`);
+          console.log(`[SCENE_IMAGES] no sceneImages body — using fallbackImageUrl for all ${prompts.length} scenes (i2v)`);
         } else {
-          // No image at all â€” t2v mode (will fail with Kling i2v model; logged for visibility)
-          console.warn(`[SCENE_IMAGES] WARNING: no imageUrl and no sceneImages â€” Kling i2v will fail all scenes`);
+          console.warn(`[SCENE_IMAGES] WARNING: no imageUrl and no sceneImages — Kling i2v will fail all scenes`);
         }
 
         // Throw if any scene has no image (i2v requires image)
