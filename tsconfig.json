@@ -37,6 +37,8 @@
   "exclude": [
     "node_modules",
     "archive",
-    "supabase/functions"
+    "supabase/functions",
+    "packages",
+    "apps"
   ]
 }
