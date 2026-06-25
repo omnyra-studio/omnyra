@@ -88,87 +88,18 @@ async function callClaudeCompiler(
 
   const memoryPreamble = [brandBlock, storyBlock].filter(Boolean).join("\n\n");
 
-  const systemPrompt = `You are Omnyra's Scene Compiler — a visual director that converts scripts into a deterministic scene graph.
+  const systemPrompt = `You are Omnyra's Scene Compiler. Output ONLY a valid JSON object. No markdown. No code fences. No explanation. No newlines inside string values. Use only plain ASCII characters in all string values — no em-dashes, curly quotes, or special punctuation. Keep all string values under 80 characters.
 
-Your output is a JSON scene graph used directly by video render pipelines (Flux Dev for images, Kling for video).
-Every field you write becomes a machine instruction. Be precise, specific, and visually concrete.
+${memoryPreamble ? `MEMORY LAYERS:\n${memoryPreamble}\n` : ""}Output exactly ${sceneCount} scenes. Shot order: ${SHOT_PROGRESSION.slice(0, sceneCount).join(", ")}.
 
-${memoryPreamble ? `=== INJECTED MEMORY LAYERS (MANDATORY — override nothing here) ===\n${memoryPreamble}\n=== END MEMORY LAYERS ===\n` : ""}
-SCENE STRUCTURE — always output exactly ${sceneCount} scenes in this order:
-${NARRATIVE_ROLES.slice(0, sceneCount).map((role, i) => `  Scene ${i + 1}: "${role}" — ${narrativeRoleDescription(role)}`).join("\n")}
+Character: ${characterAppearance}. Always front-facing. Wardrobe consistent across all scenes.
 
-SHOT DIVERSITY — each scene MUST use a different shot distance:
-${SHOT_PROGRESSION.slice(0, sceneCount).map((shot, i) => `  Scene ${i + 1}: ${shot}`).join("\n")}
+image_prompt rules: 30-45 words. Start with shot type. Describe action from script beat. End with "photorealistic, cinematic, front-facing subject". No particles/smoke/liquid from face. No supernatural effects.
 
-CHARACTER RULES:
-- Primary character: ${characterAppearance}
-- Maintain identical appearance across all scenes (wardrobe_lock: true)
-- Subject always faces the camera — never show back of head
-- One subject unless script explicitly describes two people
+video_prompt rules: 15-25 words. Motion only. No static descriptions.
 
-ENVIRONMENT:
-- Include: ${nicheSettings.environmentInclude || "setting appropriate to script"}
-- Exclude: ${nicheSettings.environmentExclude || "nothing specific"}
-
-IMAGE PROMPT RULES (used by Flux Dev — must follow prompts precisely):
-- 35–55 words per image_prompt
-- Begin with the shot type: e.g. "Wide shot —" or "Close-up —"
-- Describe the EXACT action from that story beat — no generic substitutes
-- Include lighting from global_style
-- End with: "photorealistic, cinematic, front-facing subject"
-- NEVER describe particles/smoke/liquid from face/mouth/eyes
-- NEVER describe supernatural effects, glowing eyes, magical auras
-
-VIDEO PROMPT RULES (used by Kling i2v — motion instructions):
-- 20–35 words per video_prompt
-- Describe the MOTION only — what physically moves, how, at what speed
-- Reference: "${nicheSettings.videoPromptPrefix.substring(0, 120)}"
-- Include camera movement from the scene's camera spec
-- NO static descriptions — every word must imply motion
-
-CONTINUITY RULES:
-- Scene 1: uses_previous_frame: false
-- Scenes 2–${sceneCount}: uses_previous_frame: true, frame_anchor_strength: "high"
-- All scenes share the same seed_lock value (pick a random 5-digit number, use it consistently)
-- For scenes 2+: transition_instruction must describe pose continuation from prior scene's end
-
-OUTPUT: valid JSON only. No markdown. No explanation.
-{
-  "scenes": [
-    {
-      "scene_id": "scene_01",
-      "timing": { "start": 0, "end": 10, "duration": 10 },
-      "narrative_role": "hook",
-      "character_state": {
-        "primary_character_id": "char_001",
-        "emotion": "string",
-        "action_state": "string",
-        "wardrobe_lock": true
-      },
-      "environment": {
-        "location": "string",
-        "weather": "string",
-        "key_objects": ["string"]
-      },
-      "camera": {
-        "shot_type": "wide shot",
-        "movement": "string",
-        "position_lock": true,
-        "transition_anchor": "string"
-      },
-      "motion_brush_instructions": ["string"],
-      "dialogue": { "text": "", "voice_style": "none", "sync_required": false },
-      "continuity": {
-        "uses_previous_frame": false,
-        "frame_anchor_strength": "high",
-        "seed_lock": 12345
-      },
-      "image_prompt": "string",
-      "video_prompt": "string",
-      "negative_prompt": "string"
-    }
-  ]
-}`;
+JSON schema (compact, single line, no extra whitespace):
+{"scenes":[{"scene_id":"scene_01","timing":{"start":0,"end":10,"duration":10},"narrative_role":"hook","character_state":{"primary_character_id":"char_001","emotion":"string","action_state":"string","wardrobe_lock":true},"environment":{"location":"string","weather":"string","key_objects":["string"]},"camera":{"shot_type":"wide shot","movement":"string","position_lock":true},"motion_brush_instructions":["string"],"dialogue":{"text":"","voice_style":"none","sync_required":false},"continuity":{"uses_previous_frame":false,"frame_anchor_strength":"high","seed_lock":12345},"image_prompt":"string","video_prompt":"string","negative_prompt":"string"}]}``;
 
   const userMessage = `Script: ${input.script.trim()}
 
@@ -177,14 +108,25 @@ Concept: ${input.concept}${input.hook ? `\nHook: ${input.hook}` : ""}${input.tar
 Generate exactly ${sceneCount} scenes. Each scene must visually match a DIFFERENT beat of this script. Different shot distances, different actions, different emotional expressions. The 4 scenes together should tell the complete story of the script.`;
 
   const res = await anthropic.messages.create({
-    model:      "claude-sonnet-4-6",
-    max_tokens: 2400,
+    model:      "claude-haiku-4-5-20251001",
+    max_tokens: 1500,
     system:     systemPrompt,
     messages:   [{ role: "user", content: userMessage }],
   });
 
+  if (res.stop_reason === "max_tokens") {
+    console.error(`[SCENE_COMPILER] response truncated at max_tokens=1500 — JSON will be incomplete`);
+    throw new Error("[SCENE_COMPILER] Claude truncated — compact JSON required");
+  }
+
   const rawText = res.content[0]?.type === "text" ? res.content[0].text : "";
-  let raw = rawText.replace(/```json|```/g, "").trim();
+  let raw = rawText
+    .replace(/```json|```/g, "")
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
+    .replace(/—|–/g, "-")   // em-dash, en-dash → hyphen
+    .replace(/[“”]/g, '"')  // curly double quotes → straight
+    .replace(/[‘’]/g, "'")  // curly single quotes → straight
+    .trim();
   const start = raw.indexOf("{");
   const end   = raw.lastIndexOf("}");
   if (start === -1 || end === -1) {
@@ -197,7 +139,7 @@ Generate exactly ${sceneCount} scenes. Each scene must visually match a DIFFEREN
   try {
     parsed = JSON.parse(raw) as { scenes?: unknown[] };
   } catch (err) {
-    console.error(`[SCENE_COMPILER] JSON.parse failed: ${(err as Error).message}. Raw (first 300): ${raw.substring(0, 300)}`);
+    console.error(`[SCENE_COMPILER] JSON.parse failed: ${(err as Error).message}. Raw (first 500): ${raw.substring(0, 500)}`);
     throw new Error(`[SCENE_COMPILER] JSON parse error: ${(err as Error).message}`);
   }
   if (!Array.isArray(parsed.scenes) || parsed.scenes.length === 0) {
@@ -285,8 +227,8 @@ function buildFallbackScenes(
       frame_anchor_strength: i > 0 ? "high" : "none" as FrameAnchorStrength,
       seed_lock:             seed,
     },
-    image_prompt:    `${shots[i]} — ${characterAppearance} in ${nicheSettings.environmentInclude?.split(",")[0] ?? "natural setting"}, ${role} moment, ${nicheSettings.cinemaStyle}, photorealistic, cinematic, front-facing subject`,
-    video_prompt:    `${nicheSettings.videoPromptPrefix} Natural forward motion, ${shots[i]} camera ${i === 0 ? "pushing in slowly" : "holding steady"}.`,
+    image_prompt:    `${shots[i]} — ${characterAppearance}, ${role} moment from script, ${nicheSettings.cinemaStyle}, photorealistic, cinematic, front-facing subject`,
+    video_prompt:    `Natural forward motion, ${shots[i]} camera ${i === 0 ? "pushing in slowly" : "holding steady"}, cinematic pacing.`,
     negative_prompt: COMPILER_NEGATIVE_BASE + ", " + (nicheSettings.negativePrompt ?? ""),
   }));
 }
