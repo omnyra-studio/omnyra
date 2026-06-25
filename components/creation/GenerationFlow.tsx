@@ -5,6 +5,7 @@ import TemplateSelector from '@/components/creation/TemplateSelector';
 import NicheCardSelector from '@/components/creation/NicheCardSelector';
 import { createClient } from '@/lib/supabase/client';
 import { splitPromptIntoClips } from '@/lib/seedance/split-prompt';
+import { NICHE_TOOLS } from '@/lib/tools-config';
 import {
   SUBJECT_ETHNICITY_OPTIONS,
   type SubjectEthnicity,
@@ -125,6 +126,7 @@ export default function GenerationFlow({
   const [targetDuration,    setTargetDuration]    = useState<30 | 60>(30);
   const [asyncJobId,        setAsyncJobId]        = useState<string | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
+  const [userPlan,          setUserPlan]          = useState<'free' | 'starter' | 'creator' | 'studio'>('free');
 
   const [voices,          setVoices]          = useState<ElevenLabsVoice[]>([]);
   const [voicesLoading,   setVoicesLoading]   = useState(false);
@@ -154,6 +156,17 @@ export default function GenerationFlow({
       const stored = localStorage.getItem('omnyra_voice_favorites');
       if (stored) setFavorites(JSON.parse(stored));
     } catch {}
+  }, []);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (!user) return;
+      supabase.from('profiles').select('plan').eq('id', user.id).single()
+        .then(({ data }) => {
+          if (data?.plan) setUserPlan(data.plan as 'free' | 'starter' | 'creator' | 'studio');
+        });
+    });
   }, []);
 
   useEffect(() => {
@@ -1871,22 +1884,9 @@ export default function GenerationFlow({
               </div>
             )}
 
-            {/* ── 1b. Template selector (cinematic only) ── */}
+            {/* ── 1b. Duration selector (cinematic only) ── */}
             {videoType === 'cinematic' && !videoStarted && !finalVideo && (
-              <div style={{ marginBottom: 12 }}>
-                <p style={{ color: '#888', fontSize: '0.72rem', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 6 }}>
-                  Style Template
-                </p>
-                <TemplateSelector
-                  selectedId={selectedTemplateId}
-                  onSelect={setSelectedTemplateId}
-                />
-              </div>
-            )}
-
-            {/* ── 1c. Duration selector (cinematic only) ── */}
-            {videoType === 'cinematic' && !videoStarted && !finalVideo && (
-              <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
                 <button
                   type="button"
                   onClick={() => setTargetDuration(30)}
@@ -1902,17 +1902,53 @@ export default function GenerationFlow({
                 </button>
                 <button
                   type="button"
-                  onClick={() => setTargetDuration(60)}
+                  onClick={() => userPlan === 'creator' || userPlan === 'studio' ? setTargetDuration(60) : undefined}
+                  disabled={userPlan === 'free' || userPlan === 'starter'}
+                  title={userPlan === 'free' || userPlan === 'starter' ? 'Creator plan or above required' : undefined}
                   style={{
-                    flex: 1, padding: '10px 16px', borderRadius: 8, cursor: 'pointer',
+                    flex: 1, padding: '10px 16px', borderRadius: 8,
+                    cursor: userPlan === 'free' || userPlan === 'starter' ? 'not-allowed' : 'pointer',
+                    opacity: userPlan === 'free' || userPlan === 'starter' ? 0.45 : 1,
                     background: targetDuration === 60 ? '#C9A84C' : 'transparent',
                     border: '1px solid #C9A84C',
                     color: targetDuration === 60 ? '#000' : '#C9A84C',
                     fontWeight: 600, fontSize: '0.8rem',
                   }}
                 >
-                  60s · 6 scenes · 80cr
+                  60s · 6 scenes · 65cr {(userPlan === 'free' || userPlan === 'starter') && '🔒'}
                 </button>
+              </div>
+            )}
+
+            {/* ── 1c. Target Platform + Niche dropdowns (cinematic only) ── */}
+            {videoType === 'cinematic' && !videoStarted && !finalVideo && (
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+                <div style={{ flex: 1 }}>
+                  <p style={{ color: '#888', fontSize: '0.68rem', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 5 }}>Target Platform</p>
+                  <select
+                    value={platform}
+                    onChange={e => setPlatform(e.target.value)}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: 8, background: '#0A0018', border: '1px solid #2D1B4E', color: '#E8DEFF', fontSize: '0.82rem', outline: 'none' }}
+                  >
+                    <option value="TikTok">TikTok</option>
+                    <option value="Instagram">Instagram Reels</option>
+                    <option value="YouTube">YouTube Shorts</option>
+                    <option value="Facebook">Facebook</option>
+                  </select>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <p style={{ color: '#888', fontSize: '0.68rem', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 5 }}>Video Niche</p>
+                  <select
+                    value={niche}
+                    onChange={e => setNiche(e.target.value)}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: 8, background: '#0A0018', border: '1px solid #2D1B4E', color: '#E8DEFF', fontSize: '0.82rem', outline: 'none' }}
+                  >
+                    <option value="">— Select niche —</option>
+                    {NICHE_TOOLS.map(t => (
+                      <option key={t.id} value={t.id}>{t.icon} {t.title}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
             )}
 
