@@ -557,6 +557,14 @@ const KEY_ALIASES: Record<string, string> = {
   'skincare':            'beauty_skincare',
   'gaming':              'gaming',
   'animation':           'animation_3d',
+  // tool IDs from /tools page — map to richest matching AI settings
+  'friendships':         'relationships_dating',
+  'spirituality':        'mental_health',
+  'self-improvement':    'motivation_success',
+  'fashion':             'beauty_skincare',
+  'business':            'finance_investing',
+  'travel':              'luxury_lifestyle',
+  'parenting':           'relationships_dating',
 };
 
 // ── Legacy alias export ───────────────────────────────────────────────────────

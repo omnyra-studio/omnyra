@@ -1,4 +1,4 @@
-import { createServerClient } from "@supabase/ssr";
+﻿import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 import { elevenLabsVoiceover, mergeVideoAudio, mixVoiceAndAmbient, stitchClipsWithAudio, generateAmbientSound, pickAmbientDescription } from "@/lib/services/elevenlabs";
 import { generateKlingClip, submitKlingTask } from "@/lib/providers/kling-direct";
@@ -70,21 +70,21 @@ const saasMetrics = new SaaSMetrics();
 
 export const maxDuration = 300;
 
-const KLING_CLIP_SECS  = 10;  // 3 × 10s = 30s total video
+const KLING_CLIP_SECS  = 10;  // 3 Ã— 10s = 30s total video
 const ROUTE_VERSION    = "2026-06-24-v41-runway-10s";
 
-// Absolute generation constraints — injected into storyboard planner system prompt
+// Absolute generation constraints â€” injected into storyboard planner system prompt
 // and distilled into per-scene Kling prompts for Scene 2+.
-// INTERNAL — never send to client.
+// INTERNAL â€” never send to client.
 const GENERATION_CONSTRAINTS = `ABSOLUTE GENERATION CONSTRAINTS
 
 1. GLOBAL VISUAL LOCK: Identical character identity across ALL scenes. Face, bone structure, age, proportions MUST NOT drift. Clothing identical unless explicitly changed. Lighting style consistent throughout.
 
 2. FRAME CONTINUITY LOCK: Each scene begins from the exact final frame of the previous scene. Preserve pose exactly for first 2 seconds. Preserve camera position, angle, focal length, depth of field. Do NOT reinterpret the scene start.
 
-3. CAMERA STATE LOCK: Camera carries forward — position (x,y,z), movement vector, zoom level, lens type. Scene transitions MUST NOT reset camera unless explicitly instructed. First 2 seconds: camera is STATIC and identical to previous scene endpoint.
+3. CAMERA STATE LOCK: Camera carries forward â€” position (x,y,z), movement vector, zoom level, lens type. Scene transitions MUST NOT reset camera unless explicitly instructed. First 2 seconds: camera is STATIC and identical to previous scene endpoint.
 
-4. TEMPORAL BRIDGING: Phase 1 (0–2s): freeze continuation of last frame, no new motion. Phase 2 (after 2s): motion resumes smoothly from frozen state, natural physics only.
+4. TEMPORAL BRIDGING: Phase 1 (0â€“2s): freeze continuation of last frame, no new motion. Phase 2 (after 2s): motion resumes smoothly from frozen state, natural physics only.
 
 5. SCENE MEMORY INHERITANCE: Inherit last_frame_description, character emotional state, object positions, lighting vector, camera vector. NEVER reset scene context.
 
@@ -92,18 +92,18 @@ const GENERATION_CONSTRAINTS = `ABSOLUTE GENERATION CONSTRAINTS
 
 7. MOTION CONSISTENCY: All motion physically continuous. No limb teleportation, no posture resets, no re-staging between scenes.
 
-8. FAILURE CONDITION: If any rule cannot be followed — prioritize frame continuity over creativity. Reduce motion complexity rather than break continuity.`;
+8. FAILURE CONDITION: If any rule cannot be followed â€” prioritize frame continuity over creativity. Reduce motion complexity rather than break continuity.`;
 
 void GENERATION_CONSTRAINTS; // available for storyboard planner injection
 
-// ── SLA budget: Vercel maxDuration=300s; keep 30s for post-processing ─────────
+// â”€â”€ SLA budget: Vercel maxDuration=300s; keep 30s for post-processing â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const SLA_TOTAL_MS   = 270_000; // 270s total (30s margin before Vercel 300s kills)
-const SLA_GEN_MS     = 240_000; // clip generation allocation — fal.ai needs ~200s/clip parallel
+const SLA_GEN_MS     = 240_000; // clip generation allocation â€” fal.ai needs ~200s/clip parallel
 const SLA_POST_MS    =  30_000; // post-processing + continuity reserve
 // Absolute deadline for generation to finish (30s reserved for post)
 // Computed per-request as: routeT0 + SLA_TOTAL_MS - SLA_POST_MS
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// â”€â”€ Types â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 void getVideoProvider; // retained for potential future routing
 
@@ -116,11 +116,11 @@ class AllClipsFailedError extends Error {
   }
 }
 
-// ── Storage upload helper ─────────────────────────────────────────────────────
+// â”€â”€ Storage upload helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-// ── Last-frame extraction for clip chaining ───────────────────────────────────
+// â”€â”€ Last-frame extraction for clip chaining â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-// Resolve ffmpeg binary — mirrors clip-stitcher.ts pattern:
+// Resolve ffmpeg binary â€” mirrors clip-stitcher.ts pattern:
 // Vercel's node_modules FS is read-only; copying to /tmp and chmod 755 is the
 // only reliable way to get an executable binary in a serverless environment.
 function resolveFfmpegBinary(): string | null {
@@ -147,7 +147,7 @@ function resolveFfmpegBinary(): string | null {
       console.warn("[cinematic-seq] ffmpeg-static not executable:", (e2 as Error).message.substring(0, 80));
     }
   }
-  console.error("[cinematic-seq] CRITICAL: no executable ffmpeg — last-frame chaining will fail");
+  console.error("[cinematic-seq] CRITICAL: no executable ffmpeg â€” last-frame chaining will fail");
   return null;
 }
 const _ffmpegBinary = resolveFfmpegBinary();
@@ -168,7 +168,7 @@ async function extractLastFrame(videoUrl: string, userId: string, clipIndex: num
     fs.writeFileSync(videoPath, videoBuffer);
     console.log(`${label} wrote ${videoBuffer.byteLength} bytes to ${videoPath}`);
 
-    // -sseof is an INPUT option — must come before the input file on the command line.
+    // -sseof is an INPUT option â€” must come before the input file on the command line.
     // fluent-ffmpeg's .inputOptions() places flags before -i, so this is correct.
     await new Promise<void>((resolve, reject) => {
       ffmpeg()
@@ -204,7 +204,7 @@ async function extractLastFrame(videoUrl: string, userId: string, clipIndex: num
   }
 }
 
-// ── Couple detection ──────────────────────────────────────────────────────────
+// â”€â”€ Couple detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const COUPLE_RE = /\b(couple|two people|both of them|together|partner|dancing with|walking with|holding hands|hand in hand|each other|lovers|husband|wife|boyfriend|girlfriend|fiancee?|spouse|relationship|romance|romantic)\b/i;
 
@@ -216,7 +216,7 @@ function detectAnimatedStyle(text: string): boolean {
   return ANIMATED_RE.test(text);
 }
 
-// ── Clip generators ───────────────────────────────────────────────────────────
+// â”€â”€ Clip generators â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 const ETHNICITY_PREFIX_RE =
   /\[(?:MANDATORY ETHNICITY OVERRIDE|ETHNICITY DEFAULT RULE)[^\]]*\][\s\S]*?(?=\[|$)/gi;
@@ -229,7 +229,7 @@ function stripEthnicityPrefix(text: string): string {
     .trim();
 }
 
-// ── Scene type inference (keyword-based, used for logging) ───────────────────
+// â”€â”€ Scene type inference (keyword-based, used for logging) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function inferSceneType(prompt: string): string {
   const p = prompt.toLowerCase();
@@ -256,7 +256,7 @@ function inferSceneType(prompt: string): string {
   return "talking_head";
 }
 
-// ── Emotional arc detection — extracts motion tone from script thirds ─────────
+// â”€â”€ Emotional arc detection â€” extracts motion tone from script thirds â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function detectTone(text: string): string {
   if (/trembl|grip|clench|rigid|jaw|stiff|fear/i.test(text))
@@ -277,8 +277,8 @@ function detectEmotionalArc(text: string): { opening: string; middle: string; cl
   };
 }
 
-// Per-scene camera moves — each scene gets a different camera direction
-// Close-up and push-in focused — no pull-backs for emotional intimate content
+// Per-scene camera moves â€” each scene gets a different camera direction
+// Close-up and push-in focused â€” no pull-backs for emotional intimate content
 const SCENE_CAMERA_MOVES = [
   'Extreme close-up, camera holds still then slow push toward subject.',
   'Tight close-up on hands or face, shallow depth of field, slow push in.',
@@ -287,7 +287,7 @@ const SCENE_CAMERA_MOVES = [
   'Camera pushes toward face in a slow deliberate drift.',
 ];
 
-// Motion-intent scoring — logging only. Provider is always Seedance (sceneRouter).
+// Motion-intent scoring â€” logging only. Provider is always Seedance (sceneRouter).
 
 const MOTION_VERB_RE = /\b(walk|run|mov|turn|sway|breath|gestur|spin|danc|flow|driv|fall|rise|lift|reach|step|leap|jump|throw|pour|apply|embrac|laugh|cry|react)\w*\b/i;
 
@@ -317,7 +317,7 @@ function computeMotionIntensity(prompt: string, sceneType: string): number {
   return Math.max(0, Math.min(1, score));
 }
 
-// ── 60s async submit handler ──────────────────────────────────────────────────
+// â”€â”€ 60s async submit handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function handle60sAsync(params: {
   user:                 { id: string };
@@ -332,7 +332,7 @@ async function handle60sAsync(params: {
   bodySceneImages:      string[];
   imageUrl?:            string | null;
 }): Promise<Response> {
-  const SCENE_COUNT    = 6;  // 6 × 10s = 60s
+  const SCENE_COUNT    = 6;  // 6 Ã— 10s = 60s
   const CREDIT_COST    = CREDIT_COSTS.video_full_sequence;  // 80 credits
   const { user, nicheSettings, detectedEra, bodySceneImages, imageUrl } = params;
 
@@ -432,7 +432,7 @@ async function handle60sAsync(params: {
   });
 }
 
-// ── POST handler ──────────────────────────────────────────────────────────────
+// â”€â”€ POST handler â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 export async function POST(req: Request) {
   const routeT0 = Date.now();
@@ -464,10 +464,10 @@ export async function POST(req: Request) {
 
   console.log(`[PLAN_GATE] user=${user.id} provider=kling-direct-v2.6`);
 
-  // Video generation uses Kling direct API — no fal.ai needed for video.
+  // Video generation uses Kling direct API â€” no fal.ai needed for video.
   // (fal.ai is still used by generate-scene-images for Flux image generation.)
   if (!process.env.KLING_API_KEY && !(process.env.KLING_ACCESS_KEY && process.env.KLING_SECRET_KEY)) {
-    return Response.json({ error: "KLING_API_KEY not configured — required for Kling direct video generation" }, { status: 500 });
+    return Response.json({ error: "KLING_API_KEY not configured â€” required for Kling direct video generation" }, { status: 500 });
   }
 
   let prompts: string[];
@@ -491,7 +491,7 @@ export async function POST(req: Request) {
   try {
     const body = await parseJsonWithEthnicityFix<{
       prompts?: string[];
-      scenePrompts?: string[];  // 3 Runway-ready prompts from script picker — takes priority over prompts
+      scenePrompts?: string[];  // 3 Runway-ready prompts from script picker â€” takes priority over prompts
       imageUrl?: string | null;
       sceneImages?: string[];
       clipDuration?: number;
@@ -502,7 +502,7 @@ export async function POST(req: Request) {
       niche?: string;
       videoType?: 'quick' | 'cinematic' | 'avatar';
       subjectEthnicity?: SubjectEthnicityInput;
-      voiceoverText?: string;  // narration only (spoken words) — do NOT strip or reparse
+      voiceoverText?: string;  // narration only (spoken words) â€” do NOT strip or reparse
       voiceId?: string;
       storyBeats?: StoryBeat[];
       creativeScenes?: Array<{ time: string; description: string; motion: string }>;
@@ -513,7 +513,7 @@ export async function POST(req: Request) {
     subjectEthnicity = body.subjectEthnicity ?? 'caucasian';
     bodySceneImages = (body.sceneImages ?? []).filter((u): u is string => typeof u === "string" && u.startsWith("https://"));
 
-    // When scenePrompts are passed (from script picker), use them directly — no stripping needed.
+    // When scenePrompts are passed (from script picker), use them directly â€” no stripping needed.
     // voiceoverText in this case is already the clean narration (spoken words only).
     const hasScenePrompts = Array.isArray(body.scenePrompts) && body.scenePrompts.length >= 3;
     if (hasScenePrompts) {
@@ -533,13 +533,13 @@ export async function POST(req: Request) {
             .replace(/\[.*?\]/g, "")
             .replace(/\(.*?\)/g, "")
             .replace(/^\s*#.*$/gm, "")
-            .replace(/^[A-Z][A-Z\s.,!?:—]{8,}$/gm, "")
+            .replace(/^[A-Z][A-Z\s.,!?:â€”]{8,}$/gm, "")
             .replace(/\n{3,}/g, "\n\n")
       ).trim() || undefined;
     }
 
     voiceId = body.voiceId;
-    // scenePrompts from picker override generic prompts — each maps to one Runway clip
+    // scenePrompts from picker override generic prompts â€” each maps to one Runway clip
     prompts      = hasScenePrompts ? body.scenePrompts!.slice(0, 3) : (body.prompts ?? []);
     imageUrl     = body.imageUrl;
     clipDuration = body.clipDuration;
@@ -559,7 +559,7 @@ export async function POST(req: Request) {
     return Response.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  // ── Niche settings ────────────────────────────────────────────────────────────
+  // â”€â”€ Niche settings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const nicheSettings = getNicheSettings(niche);
   console.log(`[NICHE_RECEIVED] niche="${niche ?? "default"}" videoPrefix="${nicheSettings.videoPromptPrefix.substring(0, 60)}"`);
   console.log(`[NICHE_DEFAULTS] lightningMode=${nicheSettings.lightningModeDefault} duration=${nicheSettings.defaultDuration}`);
@@ -576,7 +576,7 @@ export async function POST(req: Request) {
     }
   }
 
-  // Load brand + character memory in parallel (non-blocking — generation continues without either)
+  // Load brand + character memory in parallel (non-blocking â€” generation continues without either)
   const brandMemory = await loadBrandMemory(user.id).catch(err => {
     console.warn("[BRAND_MEMORY] load failed (non-fatal):", err instanceof Error ? err.message : err);
     return null;
@@ -612,7 +612,7 @@ export async function POST(req: Request) {
     return Response.json({ error: "prompts required" }, { status: 400 });
   }
 
-  // Inject creative brief into scene 1 — skip when scenePrompts came from script picker
+  // Inject creative brief into scene 1 â€” skip when scenePrompts came from script picker
   // (those prompts are already complete Runway descriptions, goal text would corrupt them)
   const _hasScenePrompts = prompts.length >= 3 && !goal;
   if (!_hasScenePrompts && goal?.trim() && prompts.length > 0) {
@@ -624,16 +624,16 @@ export async function POST(req: Request) {
       console.log(`[BRIEF_INJECT] scene=1 prompt="${prompts[0].substring(0, 120)}"`);
     }
   } else if (_hasScenePrompts) {
-    console.log(`[BRIEF_INJECT] skipped — scenePrompts from script picker used as-is`);
+    console.log(`[BRIEF_INJECT] skipped â€” scenePrompts from script picker used as-is`);
   }
 
-  // ── Abuse protection (video-specific: cooldown + concurrent job limit) ────
+  // â”€â”€ Abuse protection (video-specific: cooldown + concurrent job limit) â”€â”€â”€â”€
   console.log(`[STAGE_1_ABUSE] start user=${user.id}`);
   const videoAbuse = await Promise.race([
     checkAbuse({ userId: user.id, input: prompts[0] ?? "", isVideoGeneration: true }),
     new Promise<never>((_, reject) => setTimeout(() => reject(new Error('ABUSE_CHECK_TIMEOUT_10s')), 10_000)),
   ]).catch(err => {
-    console.warn(`[STAGE_1_ABUSE] timeout/error: ${err instanceof Error ? err.message : err} — failing open`);
+    console.warn(`[STAGE_1_ABUSE] timeout/error: ${err instanceof Error ? err.message : err} â€” failing open`);
     return { allowed: true, flagLevel: "none" as const, creditMultiplier: 1, cooldownRemainingMs: 0, userMessage: null, queueDelayMs: 0 };
   });
   console.log(`[STAGE_1_ABUSE] done allowed=${videoAbuse.allowed}`);
@@ -646,12 +646,12 @@ export async function POST(req: Request) {
     );
   }
 
-  // ── 60s async submit path ────────────────────────────────────────────────────
+  // â”€â”€ 60s async submit path â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   if (targetDuration === 60 && !isQuickMode) {
     return handle60sAsync({ user, prompts, passedStoryBeats, passedCreativeScenes, voiceoverText, voiceId, niche, nicheSettings, detectedEra, bodySceneImages, imageUrl });
   }
 
-  // ── Credit-protected generation pipeline (30s inline) ────────────────────────
+  // â”€â”€ Credit-protected generation pipeline (30s inline) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   const estimatedCost = videoCreditCost(prompts.length, 0);
 
   let capturedThumbnailUrl: string | null = null;
@@ -665,9 +665,9 @@ export async function POST(req: Request) {
       cost:   estimatedCost,
       run:    async () => {
         lastStageLogged = 'inside_run';
-        console.log(`[STAGE_2_CREDIT] done — inside run`);
+        console.log(`[STAGE_2_CREDIT] done â€” inside run`);
 
-        // ── Guardrail (throw on rejection → auto-rollback) ────────────────────
+        // â”€â”€ Guardrail (throw on rejection â†’ auto-rollback) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         console.log(`[STAGE_3_GUARDRAIL] start`);
         {
           const guardrail = applyGenerationGuardrail({ sceneCount: prompts.length, modelTier: "kling_elevenlabs", validationPasses: 1 });
@@ -703,7 +703,7 @@ export async function POST(req: Request) {
         console.log(`[PLAN] provider=kling-v3 scenes=${klingScenesTotal} mode=${isQuickMode ? "quick" : "cinematic"}`);
         console.log(`[PROVIDER_USAGE] { klingScenes: ${klingScenesTotal} }`);
 
-        // ── Visual Continuity: extract bibles + inject enforcement suffixes ────
+        // â”€â”€ Visual Continuity: extract bibles + inject enforcement suffixes â”€â”€â”€â”€
         console.log(`[STAGE_4_ETHNICITY] start`);
         let bibles: ContinuityBibles | null = null;
         let enforcedPrompts = [...prompts];
@@ -719,7 +719,7 @@ export async function POST(req: Request) {
         lastStageLogged = 'ETHNICITY_done';
         console.log(`[STAGE_4_ETHNICITY] done`);
 
-        // Skip extractBibles when no characterId — saves 5-15s sequential blocking before Kling.
+        // Skip extractBibles when no characterId â€” saves 5-15s sequential blocking before Kling.
         // Character continuity bibles only matter when a saved character is loaded.
         console.log(`[STAGE_5_CONTINUITY] start hasCharacter=${!!characterId}`);
         if (characterId) {
@@ -740,12 +740,12 @@ export async function POST(req: Request) {
             console.warn("[CONTINUITY] bible extraction failed or timed out (non-fatal):", err instanceof Error ? err.message : err);
           }
         } else {
-          console.log(`[STAGE_5_CONTINUITY] skipped — no characterId, saving ~10s`);
+          console.log(`[STAGE_5_CONTINUITY] skipped â€” no characterId, saving ~10s`);
         }
         lastStageLogged = 'CONTINUITY_done';
         console.log(`[STAGE_5_CONTINUITY] done`);
 
-        // Character memory injection — stacks on top of continuity bibles
+        // Character memory injection â€” stacks on top of continuity bibles
         console.log(`[STAGE_6_CHAR_BRAND] start`);
         if (charMemory) {
           const charSuffix = buildKlingCharacterSuffix(charMemory);
@@ -755,7 +755,7 @@ export async function POST(req: Request) {
           }
         }
 
-        // Brand memory injection — appends visual style to Flux image prompts
+        // Brand memory injection â€” appends visual style to Flux image prompts
         if (brandMemory?.fluxStyleSuffix) {
           enforcedPrompts = enforcedPrompts.map(p => `${p}, ${brandMemory.fluxStyleSuffix}`);
           console.log(`[BRAND_INJECT] fluxSuffix="${brandMemory.fluxStyleSuffix.substring(0, 80)}" injected into ${enforcedPrompts.length} prompts`);
@@ -763,20 +763,20 @@ export async function POST(req: Request) {
         lastStageLogged = 'CHAR_BRAND_done';
         console.log(`[STAGE_6_CHAR_BRAND] done`);
 
-        // ── Animated / cartoon style enforcement ──────────────────────────────
+        // â”€â”€ Animated / cartoon style enforcement â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // Include niche in detection so "Animation" niche always triggers animated style
         console.log(`[STAGE_7_PROMPT_ARC] start`);
         const _combinedCtx  = `${goal ?? ""} ${script ?? ""} ${niche ?? ""}`.toLowerCase();
         const _isAnimated   = detectAnimatedStyle(_combinedCtx) || /\banimation\b/i.test(niche ?? "");
         const ANIM_PREFIX   = "In vibrant Disney Pixar 3D animated style, colorful cartoon characters with big expressive eyes, smooth CGI animation, stylized proportions, highly detailed 3D animated render, cinematic lighting, ";
         if (_isAnimated) {
-          // Always prepend — unconditional so every scene is style-locked regardless of prompt wording
+          // Always prepend â€” unconditional so every scene is style-locked regardless of prompt wording
           enforcedPrompts = enforcedPrompts.map(p => `${ANIM_PREFIX}${p}`);
           console.log(`[STYLE_ENFORCED] animation=true niche="${niche ?? ""}" prefix="${ANIM_PREFIX.substring(0, 60)}" scenes=${enforcedPrompts.length}`);
         }
 
-        // ── Cinematic lighting + emotional arc injection (SKIP for animated) ──
-        // Animated content uses CGI-style prompts — camera/arc direction is for live-action only.
+        // â”€â”€ Cinematic lighting + emotional arc injection (SKIP for animated) â”€â”€
+        // Animated content uses CGI-style prompts â€” camera/arc direction is for live-action only.
         const _isEmotional  = !_isAnimated && (
           /\b(beach|sunset|golden|tear|sad|cri|cry|weep|sob|emotion|danc|shore|ocean|wave|romantic|intimate|dusk|twilight|hug|embrac|comfort|vulnerab|loneli|ach|grief|coffee|mug)\b/.test(_combinedCtx)
           || /tears|crying|emotional|dancing|hugging|embracing|comforting/.test(_combinedCtx)
@@ -784,16 +784,16 @@ export async function POST(req: Request) {
         const _isCoupleCtx  = !_isAnimated && (COUPLE_RE.test(goal ?? "") || COUPLE_RE.test(script ?? ""));
         const _total        = enforcedPrompts.length;
 
-        // Extract emotional arc from script text — runs for ALL live-action content
+        // Extract emotional arc from script text â€” runs for ALL live-action content
         // Falls back to niche.emotionalArc label (logged only), then neutral
         const _scriptForArc = (script ?? goal ?? enforcedPrompts.join(' ')).trim();
         const _arc = !_isAnimated && _scriptForArc ? detectEmotionalArc(_scriptForArc) : null;
         if (_arc) {
           console.log(`[EMOTIONAL_ARC] detected: opening="${_arc.opening.substring(0, 60)}" | middle="${_arc.middle.substring(0, 60)}" | close="${_arc.close.substring(0, 60)}"`);
         } else if (nicheSettings.emotionalArc) {
-          console.log(`[EMOTIONAL_ARC] not detected from script — niche arc="${nicheSettings.emotionalArc}" (narrative label for niche="${nicheSettings.key}")`);
+          console.log(`[EMOTIONAL_ARC] not detected from script â€” niche arc="${nicheSettings.emotionalArc}" (narrative label for niche="${nicheSettings.key}")`);
         } else {
-          console.log(`[EMOTIONAL_ARC] not detected — using neutral movement for all scenes`);
+          console.log(`[EMOTIONAL_ARC] not detected â€” using neutral movement for all scenes`);
         }
 
         if (!_isAnimated) {
@@ -810,7 +810,7 @@ export async function POST(req: Request) {
             const pos = _total > 1 ? i / (_total - 1) : 0;
 
             if (!_isEmotional) {
-              // Use arc detected from script for motion — fixes slideshow output
+              // Use arc detected from script for motion â€” fixes slideshow output
               let arcBeat = 'neutral, measured movement';
               if (_arc) {
                 arcBeat = pos <= 0.33 ? _arc.opening : pos <= 0.66 ? _arc.middle : _arc.close;
@@ -857,10 +857,10 @@ export async function POST(req: Request) {
           });
           console.log(`[PROMPT_ARC] enhanced ${_total} scene(s) emotional=${_isEmotional} couple=${_isCoupleCtx}`);
         } else {
-          console.log(`[PROMPT_ARC] SKIPPED for animated content — ${_total} scene(s) use CGI style prompts only`);
+          console.log(`[PROMPT_ARC] SKIPPED for animated content â€” ${_total} scene(s) use CGI style prompts only`);
         }
 
-        // Per-scene negative prompts — suppress wrong tone + anatomy artifacts
+        // Per-scene negative prompts â€” suppress wrong tone + anatomy artifacts
         const _negBase =
           "stock photo pose, studio lighting, CGI, airbrushed, oversaturated, " +
           "man facing backward, subject facing away from camera, back to camera, " +
@@ -873,7 +873,7 @@ export async function POST(req: Request) {
           "wrong grip, object held incorrectly, deformed object, incorrect prop shape, " +
           "phone shaped like remote, distorted device, wrong object in hand, floating object, " +
           "object clipping through body, arm coming from wrong position, " +
-          // Particle / material artifacts — Kling animates sand/water/smoke from face when mentioned in prompt
+          // Particle / material artifacts â€” Kling animates sand/water/smoke from face when mentioned in prompt
           "sand falling from face, sand from mouth, particles from mouth, liquid from mouth, " +
           "water dripping from face, smoke from mouth, material pouring from face, " +
           "sand pouring from lips, debris falling from chin, particles emanating from face";
@@ -890,7 +890,7 @@ export async function POST(req: Request) {
         if (_isAnimated) {
           const negAnim = "photorealistic, realistic humans, live action, real people, photograph, photo, human skin texture, detailed pores, realistic faces, 35mm film, documentary style, human actors, candid photography, stock photo, blurry, deformed, extra limbs, text, watermark, low quality, ugly, bad anatomy, 3d render artifacts";
           for (let i = 0; i < sceneNegativePrompts.length; i++) {
-            sceneNegativePrompts[i] = negAnim; // replace entirely — animated negative is its own set
+            sceneNegativePrompts[i] = negAnim; // replace entirely â€” animated negative is its own set
           }
           console.log(`[ANIMATED_NEG] replaced all ${sceneNegativePrompts.length} scene neg prompts with animated-safe set`);
         }
@@ -922,10 +922,10 @@ export async function POST(req: Request) {
         lastStageLogged = 'PROMPT_ARC_done';
         console.log(`[STAGE_7_PROMPT_ARC] done`);
 
-        // ── Cinema Director Pipeline ──────────────────────────────────────────
+        // â”€â”€ Cinema Director Pipeline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // Replaces paragraph-splitting with structured narrative beat planning.
-        // Beat Director → Shot Planner → Story Validator → Repetition Detector
-        //   → Scene Graph → Prompt Compiler → RenderContracts
+        // Beat Director â†’ Shot Planner â†’ Story Validator â†’ Repetition Detector
+        //   â†’ Scene Graph â†’ Prompt Compiler â†’ RenderContracts
         // Falls back to legacy prompts if pipeline errors.
         console.log(`[STAGE_7B_CINEMA] start scenes=${prompts.length}`);
         let cinemaPipeline: CinemaPipelineResult | null = null;
@@ -939,11 +939,11 @@ export async function POST(req: Request) {
             nicheSettings,
           });
           if (cinemaPipeline.renderContracts.length !== prompts.length) {
-            console.warn(`[CINEMA_PIPELINE] scene count mismatch expected=${prompts.length} got=${cinemaPipeline.renderContracts.length} — falling back`);
+            console.warn(`[CINEMA_PIPELINE] scene count mismatch expected=${prompts.length} got=${cinemaPipeline.renderContracts.length} â€” falling back`);
             cinemaPipeline = null;
           }
         } catch (pipeErr) {
-          console.warn(`[CINEMA_PIPELINE] failed — falling back to legacy prompts:`, pipeErr instanceof Error ? pipeErr.message : pipeErr);
+          console.warn(`[CINEMA_PIPELINE] failed â€” falling back to legacy prompts:`, pipeErr instanceof Error ? pipeErr.message : pipeErr);
         }
         lastStageLogged = 'CINEMA_PIPELINE_done';
         console.log(`[STAGE_7B_CINEMA] done pipeline=${cinemaPipeline ? 'OK' : 'fallback'}`);
@@ -982,11 +982,11 @@ export async function POST(req: Request) {
                 }))
           : null;
 
-        if (isMultiSpeaker) console.log(`[MULTI_SPEAK] detected multi-speaker script — using per-character voice tracks`);
+        if (isMultiSpeaker) console.log(`[MULTI_SPEAK] detected multi-speaker script â€” using per-character voice tracks`);
 
-        // Ambient sound — search all prompts + full script so keywords like "rain" are found
+        // Ambient sound â€” search all prompts + full script so keywords like "rain" are found
         // even when they appear in scene 2+ or only in the script description.
-        // Include voiceoverText — frontend doesn't send body.script, so rain/war keywords
+        // Include voiceoverText â€” frontend doesn't send body.script, so rain/war keywords
         // only exist in voiceoverText (the full script text passed for TTS).
         const _ambientSearchText = [...prompts, script ?? "", goal ?? "", voiceoverText ?? ""].filter(Boolean).join(" ");
         const ambientDesc = pickAmbientDescription(_ambientSearchText);
@@ -998,14 +998,14 @@ export async function POST(req: Request) {
               })
           : Promise.resolve(null);
 
-        // ── Per-scene image assignment ────────────────────────────────────────────
-        // Priority: body.sceneImages[] (all concept images from frontend) → imageUrl fallback
+        // â”€â”€ Per-scene image assignment â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // Priority: body.sceneImages[] (all concept images from frontend) â†’ imageUrl fallback
         const fallbackImageUrl: string | null = _isAnimated ? null : (imageUrl ?? null);
         let sceneImageUrls: Array<string | null> = new Array(prompts.length).fill(null);
 
         if (!_isAnimated && bodySceneImages.length > 0) {
           // Mirror fal.media image to Supabase before sending to Kling.
-          // Kling's Singapore servers can't reliably fetch fal.media CDN URLs → "Internal error".
+          // Kling's Singapore servers can't reliably fetch fal.media CDN URLs â†’ "Internal error".
           let mainImage = bodySceneImages[0] ?? null;
           if (mainImage?.includes("fal.media") || mainImage?.includes("fal.run")) {
             try {
@@ -1019,14 +1019,14 @@ export async function POST(req: Request) {
                   .upload(mirrorPath, imgBuf, { contentType: `image/${ext}`, upsert: true });
                 if (!upErr) {
                   const { data: { publicUrl } } = supabaseAdmin.storage.from("renders").getPublicUrl(mirrorPath);
-                  console.log(`[IMAGE_MIRROR] fal→supabase ok: ${publicUrl.substring(0, 80)}`);
+                  console.log(`[IMAGE_MIRROR] falâ†’supabase ok: ${publicUrl.substring(0, 80)}`);
                   mainImage = publicUrl;
                 } else {
-                  console.warn(`[IMAGE_MIRROR] supabase upload failed: ${upErr.message} — using original fal URL`);
+                  console.warn(`[IMAGE_MIRROR] supabase upload failed: ${upErr.message} â€” using original fal URL`);
                 }
               }
             } catch (mirrorErr) {
-              console.warn(`[IMAGE_MIRROR] fetch failed (non-fatal): ${mirrorErr instanceof Error ? mirrorErr.message : mirrorErr} — using original fal URL`);
+              console.warn(`[IMAGE_MIRROR] fetch failed (non-fatal): ${mirrorErr instanceof Error ? mirrorErr.message : mirrorErr} â€” using original fal URL`);
             }
           }
           for (let i = 0; i < prompts.length; i++) {
@@ -1034,27 +1034,27 @@ export async function POST(req: Request) {
           }
           console.log(`[SCENE_IMAGES] pinning all ${prompts.length} scenes to first image (i2v consistency)`);
         } else if (fallbackImageUrl) {
-          // No per-scene images — use the single reference image for ALL scenes.
+          // No per-scene images â€” use the single reference image for ALL scenes.
           // Kling 2.6 Pro runs i2v (image-to-video); without an image every scene fails with 422.
           for (let i = 0; i < prompts.length; i++) {
             sceneImageUrls[i] = fallbackImageUrl;
           }
-          console.log(`[SCENE_IMAGES] no sceneImages body — using fallbackImageUrl for all ${prompts.length} scenes (i2v)`);
+          console.log(`[SCENE_IMAGES] no sceneImages body â€” using fallbackImageUrl for all ${prompts.length} scenes (i2v)`);
         } else {
-          // No image at all — t2v mode (will fail with Kling i2v model; logged for visibility)
-          console.warn(`[SCENE_IMAGES] WARNING: no imageUrl and no sceneImages — Kling i2v will fail all scenes`);
+          // No image at all â€” t2v mode (will fail with Kling i2v model; logged for visibility)
+          console.warn(`[SCENE_IMAGES] WARNING: no imageUrl and no sceneImages â€” Kling i2v will fail all scenes`);
         }
 
         // Throw if any scene has no image (i2v requires image)
         const missingImages = sceneImageUrls.map((u, i) => u ? null : i).filter((i): i is number => i !== null);
         if (missingImages.length > 0 && bodySceneImages.length > 0) {
-          console.warn(`[SCENE_IMAGES] missing images for scenes: ${missingImages.map(i => i + 1).join(", ")} — will run t2v for those scenes`);
+          console.warn(`[SCENE_IMAGES] missing images for scenes: ${missingImages.map(i => i + 1).join(", ")} â€” will run t2v for those scenes`);
         }
 
         // Capture first scene image as thumbnail for My Videos
         capturedThumbnailUrl = sceneImageUrls[0] ?? fallbackImageUrl;
 
-        // ── 3 parallel Kling 2.6 Pro single-shot calls ───────────────────────────
+        // â”€â”€ 3 parallel Kling 2.6 Pro single-shot calls â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // Each scene gets its own image + unique prompt + unique seed.
         lastStageLogged = 'KLING_start';
         console.log(`[STAGE_8_KLING] start scenes=${prompts.length}`);
@@ -1062,9 +1062,9 @@ export async function POST(req: Request) {
         const genT0   = Date.now();
         const baseSeed = Date.now() % 999_999_999;
 
-        // ── Build clean 3-line Kling prompts from storyboard beats ─────────────
+        // â”€â”€ Build clean 3-line Kling prompts from storyboard beats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // Format: [era]\n[cameraShot].\n[ONE keyAction].
-        // No niche prefix — beats contain all direction Kling needs.
+        // No niche prefix â€” beats contain all direction Kling needs.
         const MAX_KLING_PROMPT = 500;
         const eraAnchor = detectedEra ? `${detectedEra}.` : '';
 
@@ -1074,7 +1074,7 @@ export async function POST(req: Request) {
           'Close-up, static camera.\nSubject reaches forward with one hand, deliberate and slow.',
         ];
 
-        // Use passed beats; otherwise generate inline (~3s) — worth it vs ignoring the script.
+        // Use passed beats; otherwise generate inline (~3s) â€” worth it vs ignoring the script.
         // Skip beat generation when Runway is the primary provider: Runway follows prompts
         // directly and the Kling beat format (generic camera directions) degrades quality on Runway.
         const useRunwayDirect = !!process.env.RUNWAYML_API_SECRET;
@@ -1088,34 +1088,34 @@ export async function POST(req: Request) {
           storyBeats = toStoryBeats(cinemaPipeline.beats);
           console.log(`[STORYBOARD] using ${storyBeats.length} cinema-pipeline beats`);
         } else if (useRunwayDirect) {
-          console.log(`[STORYBOARD] skipped — Runway provider uses prompts directly for better fidelity`);
+          console.log(`[STORYBOARD] skipped â€” Runway provider uses prompts directly for better fidelity`);
         } else {
           const beatScriptText = voiceoverText || goal || prompts.join(" ");
           if (beatScriptText) {
             try {
               storyBeats = await analyzeScriptBeats(beatScriptText, prompts.length, nicheSettings);
-              console.log(`[STORYBOARD] inline beat generation OK — ${storyBeats.length} beats`);
+              console.log(`[STORYBOARD] inline beat generation OK â€” ${storyBeats.length} beats`);
             } catch (beatErr) {
               console.warn(`[STORYBOARD] inline beat generation failed (non-fatal):`, beatErr instanceof Error ? beatErr.message : beatErr);
             }
           }
         }
 
-        // Resolve template (server-side only — internal prompts never reach client)
+        // Resolve template (server-side only â€” internal prompts never reach client)
         const activeTemplate = findTemplate(templateId);
         if (activeTemplate) {
           console.log(`[TEMPLATE] id=${activeTemplate.id} name="${activeTemplate.name}"`);
         }
         const templateNegative = activeTemplate?.negative_prompt ?? '';
 
-        // Story Memory — initialise narrative continuity state from beat 0
+        // Story Memory â€” initialise narrative continuity state from beat 0
         let storyMem = initStoryMemory(
           user.id,
           storyBeats?.[0] ?? null,
-          nicheSettings.emotionalArc ?? "challenge → effort → resolution",
+          nicheSettings.emotionalArc ?? "challenge â†’ effort â†’ resolution",
         );
 
-        // Continuity Engine v2 — snapshot-driven state machine
+        // Continuity Engine v2 â€” snapshot-driven state machine
         // Brand memory is cast to v2 format; falls back gracefully if absent
         const brandMemoryV2: BrandMemoryV2 = {
           characters: brandMemory?.characters?.map((c: { character_id: string; name?: string; referenceImages?: string[]; appearance_lock?: string; wardrobeLock?: string }) => ({
@@ -1145,14 +1145,14 @@ export async function POST(req: Request) {
         if (!snapValidation.passed) {
           console.warn(`[CONTINUITY_ENGINE] initial snapshot invalid: ${snapValidation.errors.join(", ")}`);
         } else {
-          console.log("[CONTINUITY_ENGINE] initial snapshot validated — state machine active");
+          console.log("[CONTINUITY_ENGINE] initial snapshot validated â€” state machine active");
         }
         console.log(`[STORY_MEM] init arc="${storyMem.story_arc}" emotion="${storyMem.current_state.emotion}"`);
 
         // Build per-scene Kling prompts.
         // Priority order:
-        //   1. Cinema Pipeline RenderContracts (new — structured, never raw screenplay)
-        //   2. Scene Compiler (passedSceneGraph — structured)
+        //   1. Cinema Pipeline RenderContracts (new â€” structured, never raw screenplay)
+        //   2. Scene Compiler (passedSceneGraph â€” structured)
         //   3. Template prompt (activeTemplate)
         //   4. Cinema pipeline beats via buildKlingPrompt
         //   5. Creative Director scenes
@@ -1163,13 +1163,13 @@ export async function POST(req: Request) {
           let dirSource: string;
 
           if (cinemaPipeline?.renderContracts?.[i]) {
-            // Cinema Pipeline: structured render contract — never contains raw screenplay
+            // Cinema Pipeline: structured render contract â€” never contains raw screenplay
             const rc = cinemaPipeline.renderContracts[i];
             const charSuffix = charMemory ? `, ${buildKlingCharacterSuffix(charMemory)}` : '';
             final = `${rc.prompt}${charSuffix}`.slice(0, MAX_KLING_PROMPT);
             dirSource = `cinema-pipeline role=${rc.narrativeRole} shot=${cinemaPipeline.shots[i]?.shotType ?? 'unknown'} emotion="${rc.emotion}"`;
           } else if (passedSceneGraph?.scene_graph?.[i]) {
-            // Scene Compiler — deterministic structured prompts with continuity metadata
+            // Scene Compiler â€” deterministic structured prompts with continuity metadata
             final = buildKlingPromptFromScene(passedSceneGraph.scene_graph[i], passedSceneGraph).slice(0, MAX_KLING_PROMPT);
             dirSource = `scene-compiler role=${passedSceneGraph.scene_graph[i].narrative_role} shot=${passedSceneGraph.scene_graph[i].camera?.shot_type}`;
           } else if (i === 0 && activeTemplate?.video_prompt) {
@@ -1211,12 +1211,12 @@ export async function POST(req: Request) {
         // Full constraint system is in the GENERATION_CONSTRAINTS block below.
         const CONTINUITY_PREFIX =
           "CONTINUITY LOCK: Begin from exact final frame of previous scene. " +
-          "Preserve pose, camera position, focal length for first 2 seconds — no new motion. " +
+          "Preserve pose, camera position, focal length for first 2 seconds â€” no new motion. " +
           "Same character, identical clothing, same lighting vector. " +
           "Resume motion naturally after 2-second freeze. " +
           "Continuity overrides creativity.\n";
 
-        // Drift tracking — updated per-scene, applied to the next
+        // Drift tracking â€” updated per-scene, applied to the next
         let driftMotionStrength = 0.80;
         let driftPromptPrefix   = '';
 
@@ -1247,10 +1247,10 @@ export async function POST(req: Request) {
                   }
                 }
               } else {
-                console.warn(`[CHAIN] scene=${i + 1} last-frame failed — using original ref`);
+                console.warn(`[CHAIN] scene=${i + 1} last-frame failed â€” using original ref`);
               }
             } else {
-              console.warn(`[CHAIN] scene=${i + 1} prev clip failed — using original ref`);
+              console.warn(`[CHAIN] scene=${i + 1} prev clip failed â€” using original ref`);
             }
           }
 
@@ -1322,13 +1322,13 @@ export async function POST(req: Request) {
                 console.warn(`[CONTINUITY_ENGINE] snapshot scene=${i + 2} invalid: ${snapCheck.errors.join(", ")}`);
               }
             }
-            // Reset drift prefix after a successful clip — let the detector re-evaluate next frame
+            // Reset drift prefix after a successful clip â€” let the detector re-evaluate next frame
             driftPromptPrefix = '';
             console.log(`[CLIP_OK] scene=${i + 1} ${result.generationMs}ms provider=${routerDecision.provider} emotion="${storyMem.current_state.emotion}" url=${result.videoUrl.substring(0, 80)}`);
             clipReports.push(`scene=${i + 1} | ${routerDecision.provider} | OK ${result.generationMs}ms`);
           } catch (err) {
             const reason = err instanceof Error ? err.message : String(err);
-            console.warn(`[CLIP_FAIL] scene=${i + 1} provider=${routerDecision.provider} attempt=1 reason="${reason.substring(0, 120)}" — retrying with kling`);
+            console.warn(`[CLIP_FAIL] scene=${i + 1} provider=${routerDecision.provider} attempt=1 reason="${reason.substring(0, 120)}" â€” retrying with kling`);
 
             // Auto-regen: single retry always on Kling (reliable fallback)
             try {
@@ -1387,15 +1387,15 @@ export async function POST(req: Request) {
         // Await voiceover + ambient (both launched in parallel with clip generation)
         const ambientBuffer = await ambientPromise;
         if (ambientDesc && ambientBuffer) {
-          console.log(`[AMBIENT] ready — "${ambientDesc.substring(0, 50)}" ${ambientBuffer.length}b`);
+          console.log(`[AMBIENT] ready â€” "${ambientDesc.substring(0, 50)}" ${ambientBuffer.length}b`);
         }
 
         if (voiceoverPromise) {
           const voResult = await voiceoverPromise;
           audio_url = voResult.audioUrl;
-          console.log(`[VOICE_RESULT] audio_url=${audio_url ? audio_url.substring(0, 80) : "MISSING — voiceover failed or text was empty"}`);
+          console.log(`[VOICE_RESULT] audio_url=${audio_url ? audio_url.substring(0, 80) : "MISSING â€” voiceover failed or text was empty"}`);
         } else {
-          console.log(`[VOICE_RESULT] skipped — no voiceoverText provided`);
+          console.log(`[VOICE_RESULT] skipped â€” no voiceoverText provided`);
         }
 
         // Mix voiceover + ambient into one audio track (ambient ducked to 20% under voice)
@@ -1408,10 +1408,10 @@ export async function POST(req: Request) {
             console.warn("[AUDIO_MIX] mix failed, falling back to voice only:", mixErr instanceof Error ? mixErr.message : mixErr);
           }
         } else if (audio_url) {
-          console.log(`[AUDIO_MIX] skipped — no ambient sound matched for this scene`);
+          console.log(`[AUDIO_MIX] skipped â€” no ambient sound matched for this scene`);
         }
 
-        // ── Stitch clips + audio via Railway Composer ────────────────────────────
+        // â”€â”€ Stitch clips + audio via Railway Composer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         const composerUrl = process.env.COMPOSER_SERVICE_URL;
         const composerKey = process.env.COMPOSER_API_KEY ?? "";
         console.log(`[MERGE_START] clips=${clip_urls.length} voice=${!!audio_url} ambient=${!!ambientBuffer} mixed=${finalAudioUrl !== audio_url} composer=${!!composerUrl}`);
@@ -1448,7 +1448,7 @@ export async function POST(req: Request) {
               method:  "POST",
               headers: composerKey ? { "x-api-key": composerKey } : {},
               body:    form,
-              signal:  AbortSignal.timeout(20_000), // Railway always SIGKILL — fail fast, fall through to FFmpeg
+              signal:  AbortSignal.timeout(20_000), // Railway always SIGKILL â€” fail fast, fall through to FFmpeg
             });
 
             if (railwayRes.ok) {
@@ -1464,15 +1464,15 @@ export async function POST(req: Request) {
                 if (!upErr) {
                   const { data: { publicUrl } } = supabaseAdmin.storage.from("renders").getPublicUrl(storePath);
                   stitched_url = publicUrl;
-                  console.log(`[RAILWAY_STITCH_OK] ${clip_urls.length} clips → ${stitched_url.substring(0, 80)}`);
+                  console.log(`[RAILWAY_STITCH_OK] ${clip_urls.length} clips â†’ ${stitched_url.substring(0, 80)}`);
                 } else {
                   console.warn("[RAILWAY_STITCH] upload failed:", upErr.message);
                 }
               }
             } else {
-              // Railway returned HTTP error — fall back to FFmpeg stitch (all clips)
+              // Railway returned HTTP error â€” fall back to FFmpeg stitch (all clips)
               const errText = await railwayRes.text().catch(() => "");
-              console.warn(`[RAILWAY_STITCH] composer HTTP ${railwayRes.status}: ${errText.substring(0, 200)} — falling back to FFmpeg stitch`);
+              console.warn(`[RAILWAY_STITCH] composer HTTP ${railwayRes.status}: ${errText.substring(0, 200)} â€” falling back to FFmpeg stitch`);
               try {
                 stitched_url = await stitchClipsWithAudio({ clipUrls: clip_urls, audioUrl: finalAudioUrl, userId: user.id, editingPlan: cinemaPipeline?.editingPlan });
                 console.log(`[FFMPEG_FALLBACK_OK] railway_error clips=${clip_urls.length} url=${stitched_url.substring(0, 80)}`);
@@ -1481,7 +1481,7 @@ export async function POST(req: Request) {
               }
             }
           } catch (railwayErr) {
-            // Network-level Railway failure — fall back to FFmpeg stitch (all clips)
+            // Network-level Railway failure â€” fall back to FFmpeg stitch (all clips)
             console.warn("[RAILWAY_STITCH] network error:", railwayErr instanceof Error ? railwayErr.message : railwayErr);
             try {
               stitched_url = await stitchClipsWithAudio({ clipUrls: clip_urls, audioUrl: finalAudioUrl, userId: user.id, editingPlan: cinemaPipeline?.editingPlan });
@@ -1491,7 +1491,7 @@ export async function POST(req: Request) {
             }
           }
         } else {
-          console.log(`[RAILWAY_STITCH] skipped — composerUrl=${!!composerUrl} clips=${clip_urls.length}`);
+          console.log(`[RAILWAY_STITCH] skipped â€” composerUrl=${!!composerUrl} clips=${clip_urls.length}`);
           // FFmpeg fallback: concatenate ALL clips then merge audio (no looping)
           if (clip_urls.length > 0) {
             try {
@@ -1645,7 +1645,7 @@ export async function POST(req: Request) {
   } finally {
     // Fire-and-forget local cache update
     releaseVideoSlot(user.id);
-    // Awaited DB safety net — ensures slot is cleared even if process is about to exit
+    // Awaited DB safety net â€” ensures slot is cleared even if process is about to exit
     try {
       const { error: slotErr } = await supabaseAdmin
         .from("rate_limit_state")
