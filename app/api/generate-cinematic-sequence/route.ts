@@ -49,7 +49,7 @@ import type { SceneCompilerProject } from "@/lib/types/scene-compiler";
 import { detectFrameDrift, buildRetryPrompt } from "@/lib/services/drift-detector";
 import { isMultiSpeakerScript, generateMultiSpeakerVoiceover } from "@/lib/services/multi-speaker";
 import { generateRunwayClip } from "@/lib/services/runway";
-import { selectVideoProvider, inferMotionComplexity } from "@/lib/services/model-router";
+import { selectVideoProvider, inferMotionComplexity, assertProviderConfig } from "@/lib/services/model-router";
 import {
   createInitialSnapshot,
   buildNextScene,
@@ -1216,7 +1216,10 @@ export async function POST(req: Request) {
           "Resume motion naturally after 2-second freeze. " +
           "Continuity overrides creativity.\n";
 
-        // Drift tracking â€” updated per-scene, applied to the next
+        // Provider pre-flight — throws if RUNWAYML_API_SECRET is absent
+        // and VIDEO_PROVIDER_FALLBACK=true is not set. Runs once before clip loop.
+        assertProviderConfig();
+
         let driftMotionStrength = 0.80;
         let driftPromptPrefix   = '';
 

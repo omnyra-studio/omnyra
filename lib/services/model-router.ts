@@ -2,14 +2,11 @@
  * Model Router — selects the cheapest provider that meets quality requirements.
  *
  * Priority matrix:
- *   climax/hook scenes → best available (Runway when live, Kling Pro otherwise)
- *   development scenes → Kling Pro (good quality, fast)
- *   resolution scenes  → Kling Pro
- *   b-roll / background → cheapest available (Luma when live, Kling standard)
- *   duration > 45s     → auto-split into chunks
+ *   All scenes → RunwayML gen4_turbo when RUNWAYML_API_SECRET is set (primary)
+ *   Fallback    → Kling Pro when VIDEO_PROVIDER_FALLBACK=true and secret is absent
  *
- * Currently: Runway and Luma are not wired — all routes to Kling Pro.
- * Router logic is correct for when providers are re-added.
+ * Fail-fast: if RUNWAYML_API_SECRET is missing and VIDEO_PROVIDER_FALLBACK is not
+ * set to "true", assertProviderConfig() throws before the scene loop runs.
  */
 
 import type { NarrativeRole } from "@/lib/types/scene-compiler";
@@ -40,15 +37,37 @@ const KLING_STD_COST_PER_CLIP  = 0.4;
 const LUMA_COST_PER_CLIP       = 0.6;
 const RUNWAY_COST_PER_CLIP     = 2.5;
 
-// Providers currently available in the pipeline
-const AVAILABLE_PROVIDERS: VideoProvider[] = ['runway', 'kling']; // 'luma' when wired
-
-function isAvailable(p: VideoProvider): boolean {
-  return AVAILABLE_PROVIDERS.includes(p);
+/** Returns true only when RUNWAYML_API_SECRET is actually present at runtime. */
+function isRunwayAvailable(): boolean {
+  return !!process.env.RUNWAYML_API_SECRET;
 }
 
-function bestOf(...preferred: VideoProvider[]): VideoProvider {
-  return preferred.find(isAvailable) ?? 'kling';
+/**
+ * Pre-flight check — call once before the scene generation loop.
+ * Throws immediately if Runway is the intended primary provider but the API
+ * secret is absent, unless VIDEO_PROVIDER_FALLBACK=true explicitly permits
+ * falling back to Kling.
+ */
+export function assertProviderConfig(): void {
+  const runwayPresent  = isRunwayAvailable();
+  const fallbackOk     = process.env.VIDEO_PROVIDER_FALLBACK === 'true';
+
+  if (!runwayPresent && !fallbackOk) {
+    const msg =
+      '[MODEL_ROUTER] RUNWAYML_API_SECRET is not set and VIDEO_PROVIDER_FALLBACK is not enabled. ' +
+      'Set RUNWAYML_API_SECRET to use Runway (primary) or set VIDEO_PROVIDER_FALLBACK=true to ' +
+      'permit Kling fallback.';
+    console.error(msg);
+    throw new Error(msg);
+  }
+
+  if (!runwayPresent && fallbackOk) {
+    console.warn('[MODEL_ROUTER] RUNWAYML_API_SECRET absent — VIDEO_PROVIDER_FALLBACK=true, routing all scenes to Kling Pro');
+  }
+
+  if (runwayPresent) {
+    console.log('[MODEL_ROUTER] RUNWAYML_API_SECRET present — RunwayML is primary provider');
+  }
 }
 
 export function selectVideoProvider(input: ModelRouterInput): ModelRouterDecision {
@@ -57,31 +76,35 @@ export function selectVideoProvider(input: ModelRouterInput): ModelRouterDecisio
   const shouldSplitScene = durationSeconds > 45;
   const splitChunks      = shouldSplitScene ? Math.ceil(durationSeconds / 10) : undefined;
 
-  // All scenes → Runway (primary provider for quality and prompt fidelity)
-  if (isAvailable('runway')) {
-    return {
+  if (isRunwayAvailable()) {
+    const decision: ModelRouterDecision = {
       provider:       'runway',
       klingMode:      'pro',
       motionStrength: motionComplexity === 'high' ? 0.85 : 0.75,
       shouldSplitScene,
       splitChunks,
-      reasoning: `${narrativeRole} → runway (primary provider)`,
+      reasoning: `${narrativeRole} → runway (RUNWAYML_API_SECRET present, primary provider)`,
     };
+    console.log(`[MODEL_ROUTER] provider=runway role=${narrativeRole} motion=${motionComplexity} reason="${decision.reasoning}"`);
+    return decision;
   }
 
-  // Runway unavailable — fallback to Kling Pro
+  // Runway unavailable — only reachable when VIDEO_PROVIDER_FALLBACK=true
+  // (assertProviderConfig() would have thrown otherwise)
   const motionStrengthMap: Record<MotionComplexity, number> = {
     low: 0.55, medium: 0.75, high: 0.88,
   };
 
-  return {
+  const decision: ModelRouterDecision = {
     provider:       'kling',
     klingMode:      budgetMode ? 'standard' : 'pro',
     motionStrength: hasReferenceImage ? motionStrengthMap[motionComplexity] : 0.70,
     shouldSplitScene,
     splitChunks,
-    reasoning: `${narrativeRole} → kling ${budgetMode ? 'standard' : 'pro'} (runway unavailable)`,
+    reasoning: `${narrativeRole} → kling ${budgetMode ? 'standard' : 'pro'} (runway unavailable, VIDEO_PROVIDER_FALLBACK=true)`,
   };
+  console.log(`[MODEL_ROUTER] provider=kling mode=${decision.klingMode} role=${narrativeRole} motion=${motionComplexity} reason="${decision.reasoning}"`);
+  return decision;
 }
 
 /** Estimate credit cost for a routing decision */

@@ -1,36 +1,66 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://github.com/vercel/next.js/tree/canary/packages/create-next-app).
+# Omnyra AI
+
+Next.js 16 AI video creation studio — cinematic sequence generation, avatar video, ElevenLabs voiceover, Supabase auth & billing.
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
+## Environment Variables
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Set these in Vercel → Project → Settings → Environment Variables (or `.env.local` for local dev).
 
-## Learn More
+### Required — App & Auth
 
-To learn more about Next.js, take a look at the following resources:
+| Variable | Description |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon/public key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key (server-only) |
+| `ANTHROPIC_API_KEY` | Anthropic Claude API key (scene compiler, brief generation) |
+| `STRIPE_SECRET_KEY` | Stripe secret key |
+| `STRIPE_WEBHOOK_SECRET` | Stripe webhook signing secret |
+| `NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Stripe publishable key |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+### Required — Video Generation
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Variable | Description |
+|---|---|
+| `RUNWAYML_API_SECRET` | RunwayML API secret — **primary video provider**. If absent, generation fails fast unless `VIDEO_PROVIDER_FALLBACK=true` is also set. |
+| `FAL_KEY` | Fal.ai API key (image generation via Flux) |
 
-## Deploy on Vercel
+### Video Provider Routing
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+| Variable | Values | Description |
+|---|---|---|
+| `VIDEO_PROVIDER_FALLBACK` | `true` / unset | When `true`, permits falling back to Kling if `RUNWAYML_API_SECRET` is absent. When unset (default), missing Runway secret causes immediate failure — no silent Kling fallback. |
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+**Provider selection logic** (`lib/services/model-router.ts`):
+1. If `RUNWAYML_API_SECRET` is set → RunwayML gen4_turbo for all scenes (primary)
+2. If `RUNWAYML_API_SECRET` is absent + `VIDEO_PROVIDER_FALLBACK=true` → Kling Pro fallback
+3. If `RUNWAYML_API_SECRET` is absent + no fallback flag → request fails immediately with a clear error
+
+### Optional — Additional Providers & Features
+
+| Variable | Description |
+|---|---|
+| `KLING_ACCESS_KEY` | Kling AI access key (fallback video provider) |
+| `KLING_SECRET_KEY` | Kling AI secret key |
+| `ELEVENLABS_API_KEY` | ElevenLabs voiceover generation |
+| `RESEND_API_KEY` | Resend email (transactional + automation) |
+| `APIFY_TOKEN` | Apify scrapers for trend signals |
+| `CRON_SECRET` | Shared secret for Vercel Cron job auth |
+| `POSTHOG_API_KEY` | PostHog analytics |
+| `NEXT_PUBLIC_POSTHOG_KEY` | PostHog client-side key |
+| `NEXT_PUBLIC_POSTHOG_HOST` | PostHog host URL |
+
+### Optional — Infrastructure
+
+| Variable | Description |
+|---|---|
+| `REDIS_URL` | Redis connection string (BullMQ job queues for scene rendering) |
+| `ADMIN_SECRET` | Internal admin API authentication header value |
