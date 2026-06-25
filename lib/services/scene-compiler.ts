@@ -65,6 +65,35 @@ function buildGlobalStyle(niche: string, aspectRatio: string): GlobalStyle {
   };
 }
 
+// ── Hardened JSON parser ──────────────────────────────────────────────────────
+
+function parseClaudeResponse(raw: string): unknown {
+  let cleaned = raw
+    .replace(/```json|```/g, "")
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
+    .replace(/—|–/g, "-")
+    .replace(/[""]/g, '"')
+    .replace(/['']/g, "'")
+    .trim();
+
+  const start = cleaned.indexOf("{");
+  const end   = cleaned.lastIndexOf("}") + 1;
+
+  if (start === -1 || end === 0) {
+    console.error("[SCENE_COMPILER] No JSON object found. Raw snippet:", cleaned.substring(0, 300));
+    throw new Error("[SCENE_COMPILER] No JSON object found in Claude response");
+  }
+
+  cleaned = cleaned.substring(start, end).replace(/,\s*([}\]])/g, "$1");
+
+  try {
+    return JSON.parse(cleaned);
+  } catch (e) {
+    console.error("[SCENE_COMPILER] Final parse failed. Raw snippet:", cleaned.substring(0, 500));
+    throw new Error(`[SCENE_COMPILER] JSON parse error: ${(e as Error).message}`);
+  }
+}
+
 // ── Claude scene graph compiler ───────────────────────────────────────────────
 
 async function callClaudeCompiler(
@@ -88,18 +117,17 @@ async function callClaudeCompiler(
 
   const memoryPreamble = [brandBlock, storyBlock].filter(Boolean).join("\n\n");
 
-  const systemPrompt = `You are Omnyra's Scene Compiler. Output ONLY a valid JSON object. No markdown. No code fences. No explanation. No newlines inside string values. Use only plain ASCII characters in all string values — no em-dashes, curly quotes, or special punctuation. Keep all string values under 80 characters.
+  const SCHEMA_EXAMPLE = '{"scenes":[{"scene_id":"scene_01","timing":{"start":0,"end":10,"duration":10},"narrative_role":"hook","character_state":{"primary_character_id":"char_001","emotion":"string","action_state":"string","wardrobe_lock":true},"environment":{"location":"string","weather":"string","key_objects":["string"]},"camera":{"shot_type":"wide shot","movement":"string","position_lock":true},"motion_brush_instructions":["string"],"dialogue":{"text":"","voice_style":"none","sync_required":false},"continuity":{"uses_previous_frame":false,"frame_anchor_strength":"high","seed_lock":12345},"image_prompt":"string","video_prompt":"string","negative_prompt":"string"}]}';
 
-${memoryPreamble ? `MEMORY LAYERS:\n${memoryPreamble}\n` : ""}Output exactly ${sceneCount} scenes. Shot order: ${SHOT_PROGRESSION.slice(0, sceneCount).join(", ")}.
-
-Character: ${characterAppearance}. Always front-facing. Wardrobe consistent across all scenes.
-
-image_prompt rules: 30-45 words. Start with shot type. Describe action from script beat. End with "photorealistic, cinematic, front-facing subject". No particles/smoke/liquid from face. No supernatural effects.
-
-video_prompt rules: 15-25 words. Motion only. No static descriptions.
-
-JSON schema (compact, single line, no extra whitespace):
-{"scenes":[{"scene_id":"scene_01","timing":{"start":0,"end":10,"duration":10},"narrative_role":"hook","character_state":{"primary_character_id":"char_001","emotion":"string","action_state":"string","wardrobe_lock":true},"environment":{"location":"string","weather":"string","key_objects":["string"]},"camera":{"shot_type":"wide shot","movement":"string","position_lock":true},"motion_brush_instructions":["string"],"dialogue":{"text":"","voice_style":"none","sync_required":false},"continuity":{"uses_previous_frame":false,"frame_anchor_strength":"high","seed_lock":12345},"image_prompt":"string","video_prompt":"string","negative_prompt":"string"}]}``;
+  const systemPrompt = [
+    "You are Omnyra's Scene Compiler. Output ONLY a valid JSON object. No markdown. No code fences. No explanation. Respond with compact, single-line JSON. No newlines inside string values. No explanations. Use only plain ASCII characters in all string values - no em-dashes, curly quotes, or special punctuation. Keep all string values under 80 characters.",
+    memoryPreamble ? `MEMORY LAYERS:\n${memoryPreamble}` : "",
+    `Output exactly ${sceneCount} scenes. Shot order: ${SHOT_PROGRESSION.slice(0, sceneCount).join(", ")}.`,
+    `Character: ${characterAppearance}. Always front-facing. Wardrobe consistent across all scenes.`,
+    'image_prompt rules: 30-45 words. Start with shot type. Describe action from script beat. End with "photorealistic, cinematic, front-facing subject". No particles/smoke/liquid from face. No supernatural effects.',
+    "video_prompt rules: 15-25 words. Motion only. No static descriptions.",
+    `JSON schema (compact, single line):\n${SCHEMA_EXAMPLE}`,
+  ].filter(Boolean).join("\n\n");
 
   const userMessage = `Script: ${input.script.trim()}
 
@@ -108,42 +136,22 @@ Concept: ${input.concept}${input.hook ? `\nHook: ${input.hook}` : ""}${input.tar
 Generate exactly ${sceneCount} scenes. Each scene must visually match a DIFFERENT beat of this script. Different shot distances, different actions, different emotional expressions. The 4 scenes together should tell the complete story of the script.`;
 
   const res = await anthropic.messages.create({
-    model:      "claude-haiku-4-5-20251001",
-    max_tokens: 1500,
+    model:      “claude-haiku-4-5-20251001”,
+    max_tokens: 3000,
     system:     systemPrompt,
-    messages:   [{ role: "user", content: userMessage }],
+    messages:   [{ role: “user”, content: userMessage }],
   });
 
-  if (res.stop_reason === "max_tokens") {
-    console.error(`[SCENE_COMPILER] response truncated at max_tokens=1500 — JSON will be incomplete`);
-    throw new Error("[SCENE_COMPILER] Claude truncated — compact JSON required");
+  if (res.stop_reason === “max_tokens”) {
+    console.error(`[SCENE_COMPILER] response truncated at max_tokens=3000 — JSON will be incomplete`);
+    throw new Error(“[SCENE_COMPILER] Claude truncated — compact JSON required”);
   }
 
-  const rawText = res.content[0]?.type === "text" ? res.content[0].text : "";
-  let raw = rawText
-    .replace(/```json|```/g, "")
-    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "")
-    .replace(/—|–/g, "-")   // em-dash, en-dash → hyphen
-    .replace(/[“”]/g, '"')  // curly double quotes → straight
-    .replace(/[‘’]/g, "'")  // curly single quotes → straight
-    .trim();
-  const start = raw.indexOf("{");
-  const end   = raw.lastIndexOf("}");
-  if (start === -1 || end === -1) {
-    console.error(`[SCENE_COMPILER] No JSON boundary found. Raw (first 300): ${rawText.substring(0, 300)}`);
-    throw new Error("[SCENE_COMPILER] Claude returned no JSON");
-  }
-  raw = raw.slice(start, end + 1).replace(/,\s*([}\]])/g, "$1");
+  const rawText = res.content[0]?.type === “text” ? res.content[0].text : “”;
+  const parsed  = parseClaudeResponse(rawText) as { scenes?: unknown[] };
 
-  let parsed: { scenes?: unknown[] };
-  try {
-    parsed = JSON.parse(raw) as { scenes?: unknown[] };
-  } catch (err) {
-    console.error(`[SCENE_COMPILER] JSON.parse failed: ${(err as Error).message}. Raw (first 500): ${raw.substring(0, 500)}`);
-    throw new Error(`[SCENE_COMPILER] JSON parse error: ${(err as Error).message}`);
-  }
   if (!Array.isArray(parsed.scenes) || parsed.scenes.length === 0) {
-    throw new Error("[SCENE_COMPILER] Claude returned empty scene graph");
+    throw new Error(“[SCENE_COMPILER] Claude returned empty scene graph”);
   }
 
   return parsed.scenes as SceneNode[];
