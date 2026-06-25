@@ -1020,15 +1020,21 @@ export async function POST(req: Request) {
           : Promise.resolve(null);
 
         // ── Per-scene image assignment ────────────────────────────────────────────────────────────
-        // Priority: cinema-pipeline beat[0] → body.sceneImages[] → imageUrl fallback
+        // Priority: body.sceneImages[0] (user-selected) → cinema-pipeline Flux → imageUrl fallback
         const fallbackImageUrl: string | null = _isAnimated ? null : (imageUrl ?? null);
         let sceneImageUrls: Array<string | null> = new Array(prompts.length).fill(null);
 
         let mainImage: string | null = null;
 
-        // When the cinema pipeline ran, generate scene 1 image from its beat[0] render contract
-        // so the reference image is narrative-accurate to the script — not the raw user brief.
-        if (!_isAnimated && cinemaPipeline) {
+        // 1. User-selected image is always primary for Runway i2v.
+        if (!_isAnimated && bodySceneImages.length > 0) {
+          mainImage = bodySceneImages[0] ?? null;
+          if (mainImage) console.log(`[SCENE_IMAGES] using user-selected image as primary ref url=${mainImage.substring(0, 80)}`);
+        }
+
+        // 2. No user image — generate from cinema-pipeline beat[0] so Runway gets a
+        //    narrative-accurate reference instead of no image at all.
+        if (!mainImage && !_isAnimated && cinemaPipeline) {
           const falKey = process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY;
           if (falKey) {
             try {
@@ -1044,19 +1050,14 @@ export async function POST(req: Request) {
               if (fluxRes.ok) {
                 const fluxData = await fluxRes.json() as { images?: { url: string }[] };
                 mainImage = fluxData.images?.[0]?.url ?? null;
-                if (mainImage) console.log(`[SCENE_IMAGES] cinema-pipeline image generated url=${mainImage.substring(0, 80)}`);
+                if (mainImage) console.log(`[SCENE_IMAGES] cinema-pipeline fallback image generated url=${mainImage.substring(0, 80)}`);
               } else {
-                console.warn(`[SCENE_IMAGES] flux generation failed HTTP ${fluxRes.status} — falling back to bodySceneImages`);
+                console.warn(`[SCENE_IMAGES] flux generation failed HTTP ${fluxRes.status} — will use imageUrl fallback`);
               }
             } catch (fluxErr) {
-              console.warn(`[SCENE_IMAGES] flux generation error (non-fatal): ${fluxErr instanceof Error ? fluxErr.message : String(fluxErr)} — falling back to bodySceneImages`);
+              console.warn(`[SCENE_IMAGES] flux generation error (non-fatal): ${fluxErr instanceof Error ? fluxErr.message : String(fluxErr)} — will use imageUrl fallback`);
             }
           }
-        }
-
-        // Fall back to concept image from frontend if cinema-pipeline image not available
-        if (!mainImage && !_isAnimated && bodySceneImages.length > 0) {
-          mainImage = bodySceneImages[0] ?? null;
         }
 
         if (!_isAnimated && mainImage) {
@@ -1336,6 +1337,8 @@ export async function POST(req: Request) {
             budgetMode:       false,
             hasReferenceImage: mode === "i2v",
           });
+          const imgSource = bodySceneImages.length > 0 ? 'user-selected' : (cinemaPipeline ? 'flux-fallback' : 'imageUrl-fallback');
+          console.info('[RUNWAY_IMAGE_SOURCE]', imgSource, sceneImg?.substring(0, 80) ?? 'NONE');
           console.log(`[CLIP_FIRE] scene=${i + 1} mode=${mode} provider=${routerDecision.provider} role=${sceneNarrativeRole} motion=${driftMotionStrength.toFixed(2)} imageUrl=${sceneImg?.substring(0, 80) ?? "NONE"}`);
 
           // Merge cinema pipeline negative prompt with base negatives
@@ -1433,8 +1436,13 @@ export async function POST(req: Request) {
           });
         }
 
-        const postT0     = Date.now();
-        const actualCost = CREDIT_COSTS.video_cinematic;
+        const postT0 = Date.now();
+        const actualCost = successfulClips === prompts.length
+          ? CREDIT_COSTS.video_cinematic
+          : Math.ceil(CREDIT_COSTS.video_cinematic * (successfulClips / prompts.length));
+        if (successfulClips < prompts.length) {
+          console.log(`[CREDIT_REFUND] partial success: ${successfulClips}/${prompts.length} clips — charging ${actualCost} of ${CREDIT_COSTS.video_cinematic} credits`);
+        }
         let stitched_url = clip_urls[0];
         let audio_url: string | undefined;
 

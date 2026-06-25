@@ -413,9 +413,12 @@ async function probeDuration(clipPath: string): Promise<number> {
   return new Promise(resolve => {
     ffmpeg.ffprobe(clipPath, (err, data) => {
       if (err || typeof data?.format?.duration !== 'number') {
-        resolve(6); // fallback: assume 6s clips
+        console.warn('[PROBE_DURATION_FALLBACK] using 10s default for', clipPath.split('/').pop());
+        resolve(10); // fallback: assume 10s Runway clips
       } else {
-        resolve(data.format.duration as number);
+        const d = data.format.duration as number;
+        console.info('[PROBE_DURATION]', clipPath.split('/').pop(), `${d}s`);
+        resolve(d);
       }
     });
   });
@@ -476,6 +479,7 @@ async function runXfadeStitch(params: {
     cmd
       .outputOptions(outputOpts)
       .output(finalPath)
+      .on('start', (cmdline: string) => console.info('[FFMPEG_CMD] xfade:', cmdline))
       .on('end', () => resolve())
       .on('error', (err) => {
         console.error(`[STITCH_XFADE_ERR] ${err.message}`);
@@ -522,6 +526,7 @@ export async function stitchClipsWithAudio(params: {
       console.log(`[STITCH] clip ${i} saved ${buf.length} bytes → ${p}`);
     }
     console.log(`[STITCH] all ${clipPaths.length} clips downloaded to /tmp`);
+    console.info('[STITCH_CLIPS]', { count: clipPaths.length, paths: clipPaths });
 
     // ── Step 2: Download audio to /tmp ───────────────────────────────────────
     let hasAudio = false;
@@ -600,6 +605,7 @@ export async function stitchClipsWithAudio(params: {
             "-movflags", "+faststart",
           ])
           .output(finalPath)
+          .on("start", (cmdline: string) => console.info('[FFMPEG_CMD] concat+audio:', cmdline))
           .on("end", () => resolve())
           .on("error", (err) => {
             console.error(`[STITCH_FFMPEG_ERR] ${err.message}`);
@@ -622,6 +628,7 @@ export async function stitchClipsWithAudio(params: {
             "-movflags", "+faststart",
           ])
           .output(finalPath)
+          .on("start", (cmdline: string) => console.info('[FFMPEG_CMD] concat-only:', cmdline))
           .on("end", () => resolve())
           .on("error", (err) => {
             console.error(`[STITCH_FFMPEG_ERR] ${err.message}`);
