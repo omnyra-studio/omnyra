@@ -26,9 +26,9 @@ interface SceneRow {
 
 export async function GET(
   _req: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const projectId = params.id;
+  const { id: projectId } = await params;
 
   const cookieStore = await cookies();
   const supabase = createServerClient(

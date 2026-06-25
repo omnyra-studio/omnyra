@@ -36,9 +36,9 @@ interface GenerateBody {
 
 export async function POST(
   req: NextRequest,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
-  const projectId = params.id;
+  const { id: projectId } = await params;
 
   // ── Auth ─────────────────────────────────────────────────────────────────────
   const cookieStore = await cookies();
