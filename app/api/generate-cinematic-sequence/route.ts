@@ -704,8 +704,9 @@ export async function POST(req: Request) {
 
         const clipDurationSecs = KLING_CLIP_SECS;
         const plannedTotalSec  = prompts.length * KLING_CLIP_SECS;
+        const plannedProvider  = process.env.RUNWAYML_API_SECRET ? 'runway-gen4-turbo' : 'kling-v2.6-pro';
         console.info("[DURATION_PLAN]", {
-          provider:       "kling-2.6-pro",
+          provider:       plannedProvider,
           scene_count:    prompts.length,
           clip_duration:  KLING_CLIP_SECS,
           planned_total:  plannedTotalSec,
@@ -719,8 +720,8 @@ export async function POST(req: Request) {
         );
 
         const klingScenesTotal = prompts.length;
-        console.log(`[PLAN] provider=kling-v3 scenes=${klingScenesTotal} mode=${isQuickMode ? "quick" : "cinematic"}`);
-        console.log(`[PROVIDER_USAGE] { klingScenes: ${klingScenesTotal} }`);
+        console.log(`[PLAN] provider=${plannedProvider} scenes=${klingScenesTotal} mode=${isQuickMode ? "quick" : "cinematic"}`);
+        console.log(`[PROVIDER_USAGE] { provider: "${plannedProvider}", scenes: ${klingScenesTotal} }`);
 
         // â”€â”€ Visual Continuity: extract bibles + inject enforcement suffixes â”€â”€â”€â”€
         console.log(`[STAGE_4_ETHNICITY] start`);
