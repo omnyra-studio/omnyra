@@ -1400,15 +1400,13 @@ export async function POST(req: Request) {
               .replace(/Character:[^.]*.s*/gi, '')
               .replace(/s+/g, ' ').trim().slice(0, 512);
             console.log();
-            const result = routerDecision.provider === "runway"
-              ? await generateRunwayClip({
+            const result = await generateRunwayClip({
                   prompt:      runwayPrompt,
                   imageUrl:    mode === "i2v" ? sceneImg : undefined,
                   duration:    KLING_CLIP_SECS as 5 | 10,
                   aspectRatio: "9:16",
                   model:       runwayRouting.model,
-                })
-              : await generateKlingClip({ prompt: klingPrompt, ...klingParams });
+                });
 
             extractedUrls[i]  = result.videoUrl;
             sceneProviders[i] = routerDecision.provider;
@@ -1429,27 +1427,9 @@ export async function POST(req: Request) {
             clipReports.push(`scene=${i + 1} | ${routerDecision.provider} | OK ${result.generationMs}ms`);
           } catch (err) {
             const reason = err instanceof Error ? err.message : String(err);
-            console.warn(`[CLIP_FAIL] scene=${i + 1} provider=${routerDecision.provider} attempt=1 reason="${reason.substring(0, 120)}" â€” retrying with kling`);
-
-            // Auto-regen: single retry always on Kling (reliable fallback)
-            try {
-              const retryResult = await generateKlingClip({
-                prompt:         buildRetryPrompt(klingPrompt, 1),
-                ...klingParams,
-                mode:           "pro",
-                motionStrength: Math.max(0.40, driftMotionStrength - 0.20),
-              });
-              extractedUrls[i]  = retryResult.videoUrl;
-              sceneProviders[i] = 'kling'; // retry always falls back to kling
-              storyMem = advanceStoryMemory(storyMem, storyBeats?.[i] ?? null, retryResult.videoUrl);
-              void saveSnapshot(user.id, i, i, continuitySnapshot);
-              console.log(`[CLIP_RETRY_OK] scene=${i + 1} kling-retry ${retryResult.generationMs}ms url=${retryResult.videoUrl.substring(0, 80)}`);
-              clipReports.push(`scene=${i + 1} | kling-retry | RETRY_OK ${retryResult.generationMs}ms`);
-            } catch (retryErr) {
-              const retryReason = retryErr instanceof Error ? retryErr.message : String(retryErr);
-              console.error(`[CLIP_FAIL_FINAL] scene=${i + 1} both attempts failed: ${retryReason.substring(0, 120)}`);
-              clipReports.push(`scene=${i + 1} | kling-retry | FAIL_FINAL | ${retryReason}`);
-            }
+            console.error(`[CLIP_FAIL] scene=${i + 1} provider=runway reason="${reason.substring(0, 200)}"`);
+            clipReports.push(`scene=${i + 1} | runway | FAIL | ${reason}`);
+          }
           }
         }
 
