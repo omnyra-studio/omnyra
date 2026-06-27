@@ -408,10 +408,9 @@ export function buildKlingPromptFromScene(
 
 // Negative terms always appended to every Flux call regardless of scene compiler output
 const FLUX_HARD_NEGATIVE =
-  "boy, male child, masculine child, short hair on child, hoodie on child, " +
-  "bitcoin, cryptocurrency, crypto coins, gold coins with symbols, coin logos, bitcoin symbol, BTC, " +
-  "adult woman replacing child, teenager replacing child, wrong character, " +
-  "text, writing, watermark, extra limbs, deformed, blurry, low quality";
+  "adult woman, teenager, boy, male child, old person, cartoon, anime, painting, drawing, " +
+  "blurry, lowres, deformed hands, extra limbs, bad anatomy, watermark, text, logo, signature, " +
+  "bitcoin, crypto coin, digital currency, nsfw, mature face";
 
 /** Build the full Flux image prompt from a scene node */
 export function buildFluxPromptFromScene(
@@ -453,27 +452,17 @@ export async function compileScenes(
 ): Promise<{ scenes: SimpleScene[] }> {
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-  const systemPrompt = `You are a professional cinematic director.
-
-Create exactly ${numScenes} scenes for this user goal: "${goal}"
+  const systemPrompt = `You are a professional cinematic director creating ${numScenes} scenes (each exactly 10 seconds) for this user goal: "${goal}"
 
 Rules:
-- Return ONLY valid JSON. No other text.
-- Each scene is exactly 10 seconds.
+- Return ONLY valid JSON. No explanations, no markdown.
 - Use compact JSON. No newlines inside string values.
-- Make the scenes visually coherent and tell the story from the goal.
+- Every scene must be visually coherent and advance the story from the user goal.
+- Always describe realistic human characters appropriate to the story.
+- Include a strong negative prompt for each scene.
 
-Output exactly this structure:
-{
-  "scenes": [
-    {
-      "scene_id": "scene_01",
-      "timing": {"start": 0, "end": 10, "duration": 10},
-      "visual_description": "detailed visual prompt for image generation",
-      "negative_prompt": "adult woman, old person, blurry, deformed hands, extra limbs, text, logo, watermark, low quality"
-    }
-  ]
-}`;
+Output exactly:
+{"scenes":[{"scene_id":"scene_01","timing":{"start":0,"end":10,"duration":10},"visual_description":"detailed visual prompt for image generation","negative_prompt":"adult woman, teenager, boy, male child, old person, cartoon, anime, blurry, low quality, deformed, extra limbs, text, logo, watermark, bitcoin, crypto"}]}`;
 
   try {
     const res = await anthropic.messages.create({
@@ -514,7 +503,7 @@ function createGenericFallback(goal: string, numScenes: number): { scenes: Simpl
       scene_id:          `scene_0${i}`,
       timing:            { start: (i - 1) * 10, end: i * 10, duration: 10 },
       visual_description: `Cinematic scene illustrating "${goal}", emotional storytelling, golden hour lighting, realistic`,
-      negative_prompt:   "adult woman, old person, blurry, deformed, text, logo, watermark, low quality",
+      negative_prompt:   "adult woman, teenager, boy, male child, old person, cartoon, anime, blurry, lowres, deformed hands, extra limbs, bad anatomy, watermark, text, logo, signature, bitcoin, crypto coin, nsfw",
     });
   }
   return { scenes };
