@@ -48,7 +48,7 @@ import { buildKlingPromptFromScene, attachLastFrame, getFluxHardNegative } from 
 import type { SceneCompilerProject } from "@/lib/types/scene-compiler";
 import { detectFrameDrift, buildRetryPrompt } from "@/lib/services/drift-detector";
 import { isMultiSpeakerScript, generateMultiSpeakerVoiceover } from "@/lib/services/multi-speaker";
-import { generateRunwayClip } from "@/lib/services/runway";
+import { generateRunwayClip, generateRunwaySeedanceClip, upscaleImageForRunway, enhanceClipWithVideoToVideo } from "@/lib/services/runway";
 import { selectVideoProvider, inferMotionComplexity, assertProviderConfig } from "@/lib/services/model-router";
 import { chooseRunwayModel } from "@/lib/ai/runway-router";
 import { TIER_LIMITS, type UserTier } from "@/lib/types/tiers";
@@ -73,7 +73,7 @@ const saasMetrics = new SaaSMetrics();
 export const maxDuration = 300;
 
 const KLING_CLIP_SECS  = 10;  // 3 Ã— 10s = 30s total video
-const ROUTE_VERSION    = "2026-06-24-v41-runway-10s";
+const ROUTE_VERSION    = "2026-06-27-v42-seedance2-upscale";
 
 // Absolute generation constraints â€” injected into storyboard planner system prompt
 // and distilled into per-scene Kling prompts for Scene 2+.
@@ -1135,6 +1135,16 @@ export async function POST(req: Request) {
         // Capture first scene image as thumbnail for My Videos
         capturedThumbnailUrl = sceneImageUrls[0] ?? fallbackImageUrl;
 
+        // -- Runway image upscale (2x Magnific) -- runs in parallel with voiceover/ambient
+        // Upscale mainImage once before clip loop: higher-res source => sharper video output.
+        // Non-fatal: falls back to original on error or when no Runway key.
+        const upscalePromise: Promise<string | null> =
+          !_isAnimated && mainImage && process.env.RUNWAYML_API_SECRET
+            ? upscaleImageForRunway(mainImage)
+                .then(url => { console.log('[UPSCALE_OK] 2x upscaled image ready'); return url; })
+                .catch(err => { console.warn('[UPSCALE_FAIL] non-fatal:', err instanceof Error ? err.message : err); return null; })
+            : Promise.resolve(null);
+
         // â”€â”€ 3 parallel Kling 2.6 Pro single-shot calls â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // Each scene gets its own image + unique prompt + unique seed.
         lastStageLogged = 'KLING_start';
@@ -1307,6 +1317,17 @@ export async function POST(req: Request) {
         let driftMotionStrength = 0.80;
         let driftPromptPrefix   = '';
 
+        // Await upscaled image (was launched in parallel with voiceover/ambient).
+        // If upscale succeeded, replace all scene image URLs with the 2x version.
+        const upscaledMainImage = await upscalePromise;
+        if (upscaledMainImage) {
+          for (let si = 0; si < sceneImageUrls.length; si++) {
+            if (sceneImageUrls[si] === mainImage) sceneImageUrls[si] = upscaledMainImage;
+          }
+          mainImage = upscaledMainImage;
+          console.log('[UPSCALE_APPLIED] all scenes now use 2x upscaled image');
+        }
+
         for (let i = 0; i < klingScenePrompts.length; i++) {
           if (i > 0) await new Promise(r => setTimeout(r, 1200));
 
@@ -1393,14 +1414,24 @@ export async function POST(req: Request) {
             // Strip Kling-specific CONTINUITY LOCK prefix and narrative voice before
             // sending to Runway — Runway ignores these and defaults to ambient motion.
             const runwayPrompt = klingPrompt
-              .replace(/CONTINUITY LOCK:[sS]*?Continuity overrides creativity.
-?/g, '')
-              .replace(/Continue from previous (?:frame|scene)[^.]*.s*/gi, '')
-              .replace(/Expression and body convey[^.]*.s*/gi, '')
-              .replace(/Character:[^.]*.s*/gi, '')
-              .replace(/s+/g, ' ').trim().slice(0, 512);
+              .replace(/CONTINUITY LOCK:[\s\S]*?Continuity overrides creativity\.\n?/g, '')
+              .replace(/Continue from previous (?:frame|scene)[^.]*\.\s*/gi, '')
+              .replace(/Expression and body convey[^.]*\.\s*/gi, '')
+              .replace(/Character:[^.]*\.\s*/gi, '')
+              .replace(/\s+/g, ' ').trim().slice(0, 512);
             console.log();
-            const result = await generateRunwayClip({
+            // Quality mode: Seedance2 via textToVideo with image as first-frame reference.
+            // Seedance2 produces significantly higher fidelity than gen4_turbo for i2v.
+            // Fast mode: gen4_turbo (existing path) for speed.
+            const result = speedMode === 'quality'
+              ? await generateRunwaySeedanceClip({
+                  prompt:      runwayPrompt,
+                  imageUrl:    mode === "i2v" ? sceneImg : undefined,
+                  duration:    KLING_CLIP_SECS,
+                  aspectRatio: "9:16",
+                  fast:        false,
+                })
+              : await generateRunwayClip({
                   prompt:      runwayPrompt,
                   imageUrl:    mode === "i2v" ? sceneImg : undefined,
                   duration:    KLING_CLIP_SECS as 5 | 10,
@@ -1408,7 +1439,25 @@ export async function POST(req: Request) {
                   model:       runwayRouting.model,
                 });
 
-            extractedUrls[i]  = result.videoUrl;
+            // Quality mode: enhance each clip through Seedance2 video-to-video.
+            // Runs sequentially per clip within the generation loop.
+            // Skipped in fast mode to stay within the 300s Vercel budget.
+            let finalClipUrl = result.videoUrl;
+            if (speedMode === 'quality' && process.env.RUNWAYML_API_SECRET) {
+              try {
+                const enhanced = await enhanceClipWithVideoToVideo({
+                  videoUrl:    result.videoUrl,
+                  prompt:      runwayPrompt,
+                  duration:    KLING_CLIP_SECS,
+                  aspectRatio: '9:16',
+                });
+                finalClipUrl = enhanced.videoUrl;
+                console.log('[V2V_ENHANCE_OK] scene=' + (i + 1) + ' ' + enhanced.generationMs + 'ms enhanced url=' + enhanced.videoUrl.substring(0, 80));
+              } catch (v2vErr) {
+                console.warn('[V2V_ENHANCE_FAIL] scene=' + (i + 1) + ' non-fatal -- using original clip:', v2vErr instanceof Error ? v2vErr.message : v2vErr);
+              }
+            }
+            extractedUrls[i]  = finalClipUrl;
             sceneProviders[i] = routerDecision.provider;
             storyMem = advanceStoryMemory(storyMem, storyBeats?.[i] ?? null, result.videoUrl);
             // Continuity Engine: persist snapshot then advance to next scene state

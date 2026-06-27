@@ -1,5 +1,6 @@
 /**
- * Runway Gen-4 Turbo — image-to-video and text-to-video generation.
+ * Runway Gen-4 Turbo — image-to-video, text-to-video, image upscale,
+ * video-to-video, and Seedance2 generation.
  *
  * Wraps @runwayml/sdk with inline polling (10s intervals, 4-min timeout).
  * Returns the same shape as generateKlingClip so the cinematic route can
@@ -12,6 +13,7 @@ import RunwayML from "@runwayml/sdk";
 
 const RUNWAY_POLL_INTERVAL_MS = 10_000;
 const RUNWAY_TIMEOUT_MS       = 240_000; // 4 minutes max
+const RUNWAY_UPSCALE_TIMEOUT  =  60_000; // 1 minute for upscale
 
 // Only models accepted by the SDK imageToVideo endpoint.
 // gen3a_turbo is NOT valid here — it was a Gen-3 text-to-video model.
@@ -130,4 +132,145 @@ export async function generateRunwayClip(
   );
 
   return { videoUrl, generationMs };
+}
+
+// ── Generic task poller (reused by upscale, textToVideo, videoToVideo) ──────
+
+async function pollRunwayTask(
+  client:     RunwayML,
+  taskId:     string,
+  timeoutMs:  number,
+  label:      string,
+): Promise<string> {
+  const t0       = Date.now();
+  const deadline = t0 + timeoutMs;
+  let task = await client.tasks.retrieve(taskId);
+
+  while (!["SUCCEEDED", "FAILED", "CANCELLED"].includes(task.status ?? "")) {
+    if (Date.now() > deadline) {
+      throw new Error(`${label} task=${taskId} timed out after ${timeoutMs / 1000}s`);
+    }
+    await new Promise<void>(r => setTimeout(r, RUNWAY_POLL_INTERVAL_MS));
+    task = await client.tasks.retrieve(taskId);
+    console.log(`[RUNWAY_POLL] ${label} task=${taskId} status=${task.status} elapsed=${Math.round((Date.now() - t0) / 1000)}s`);
+  }
+
+  if (task.status !== "SUCCEEDED") {
+    throw new Error(`${label} task=${taskId} ended with status=${task.status}`);
+  }
+
+  const output = (task as { output?: string[] }).output;
+  const url    = Array.isArray(output) ? output[0] : undefined;
+  if (!url) throw new Error(`${label} task=${taskId} succeeded but output is empty`);
+  return url;
+}
+
+// ── Image Upscale (Magnific precision 2×) ───────────────────────────────────
+
+/**
+ * Upscale a scene image 2× with Runway Magnific before feeding it to i2v.
+ * Higher-res source → sharper, more detailed video output.
+ * Non-fatal — falls back to original URL on failure.
+ */
+export async function upscaleImageForRunway(imageUri: string): Promise<string> {
+  const client = getClient();
+  const t0     = Date.now();
+  console.log(`[RUNWAY_UPSCALE] start url=${imageUri.substring(0, 80)}`);
+
+  const submitted = await client.imageUpscale.create({
+    imageUri,
+    model:       "magnific_precision_upscaler_v2",
+    flavor:      "photo",
+    scaleFactor: 2,
+    sharpen:     30,
+    ultraDetail: 40,
+  });
+
+  const upscaledUrl = await pollRunwayTask(client, submitted.id, RUNWAY_UPSCALE_TIMEOUT, "UPSCALE");
+  console.log(`[RUNWAY_UPSCALE] done ${Date.now() - t0}ms url=${upscaledUrl.substring(0, 80)}`);
+  return upscaledUrl;
+}
+
+// ── Seedance2 via textToVideo (better i2v — uses image as first-frame ref) ──
+
+export interface RunwaySeedanceParams {
+  prompt:      string;
+  imageUrl?:   string;  // used as first-frame reference — acts as i2v
+  duration?:   number;  // seconds, default 10
+  aspectRatio: "9:16" | "16:9";
+  fast?:       boolean; // true = seedance2_fast, false = seedance2 (quality)
+}
+
+/**
+ * Generate a clip using Runway's Seedance2 model via the textToVideo endpoint.
+ * When imageUrl is provided it's used as a first-frame reference (i2v equivalent)
+ * with significantly higher fidelity than gen4_turbo.
+ */
+export async function generateRunwaySeedanceClip(
+  params: RunwaySeedanceParams,
+): Promise<RunwayClipResult> {
+  const { prompt, imageUrl, duration = 10, aspectRatio, fast = false } = params;
+  const client = getClient();
+  const t0     = Date.now();
+  const model  = fast ? "seedance2_fast" : "seedance2";
+
+  // Seedance2 uses Runway-style ratios (width:height)
+  const ratio = aspectRatio === "9:16" ? "720:1280" : "1280:720";
+
+  const body = {
+    model,
+    promptText: prompt,
+    duration,
+    ratio,
+    audio: false,
+    ...(imageUrl ? { references: [{ uri: imageUrl, position: "first" as const }] } : {}),
+  };
+
+  console.log(`[RUNWAY_SEEDANCE] model=${model} ratio=${ratio} duration=${duration}s hasImage=${!!imageUrl}`);
+  const submitted = await client.textToVideo.create(body as Parameters<typeof client.textToVideo.create>[0]);
+
+  const videoUrl     = await pollRunwayTask(client, submitted.id, RUNWAY_TIMEOUT_MS, "SEEDANCE");
+  const generationMs = Date.now() - t0;
+  console.log(`[RUNWAY_SEEDANCE] done ${generationMs}ms url=${videoUrl.substring(0, 80)}`);
+  return { videoUrl, generationMs };
+}
+
+// ── VideoToVideo Seedance2 enhance (quality post-processing per clip) ────────
+
+export interface RunwayVideoEnhanceParams {
+  videoUrl:    string;
+  prompt?:     string;
+  duration?:   number;
+  aspectRatio: "9:16" | "16:9";
+}
+
+/**
+ * Re-run an existing 10s clip through Runway Seedance2 video-to-video
+ * to enhance detail, texture, and temporal consistency.
+ * Only used in quality speedMode — adds ~60s per clip.
+ */
+export async function enhanceClipWithVideoToVideo(
+  params: RunwayVideoEnhanceParams,
+): Promise<RunwayClipResult> {
+  const { videoUrl, prompt, duration = 10, aspectRatio } = params;
+  const client = getClient();
+  const t0     = Date.now();
+  const ratio  = aspectRatio === "9:16" ? "720:1280" : "1280:720";
+
+  console.log(`[RUNWAY_V2V] start seedance2 videoUrl=${videoUrl.substring(0, 80)}`);
+
+  const body = {
+    model:       "seedance2" as const,
+    promptVideo: videoUrl,
+    duration,
+    ratio,
+    audio:       false,
+    ...(prompt ? { promptText: prompt.slice(0, 500) } : {}),
+  };
+
+  const submitted = await client.videoToVideo.create(body);
+  const enhancedUrl  = await pollRunwayTask(client, submitted.id, RUNWAY_TIMEOUT_MS, "V2V");
+  const generationMs = Date.now() - t0;
+  console.log(`[RUNWAY_V2V] done ${generationMs}ms url=${enhancedUrl.substring(0, 80)}`);
+  return { videoUrl: enhancedUrl, generationMs };
 }
