@@ -76,14 +76,15 @@ export function selectVideoProvider(input: ModelRouterInput): ModelRouterDecisio
   const shouldSplitScene = durationSeconds > 45;
   const splitChunks      = shouldSplitScene ? Math.ceil(durationSeconds / 10) : undefined;
 
-  if (isRunwayAvailable()) {
+  // budgetMode=true means the caller is a free/starter tier — Kling only, no Runway
+  if (isRunwayAvailable() && !budgetMode) {
     const decision: ModelRouterDecision = {
       provider:       'runway',
       klingMode:      'pro',
       motionStrength: motionComplexity === 'high' ? 0.85 : 0.75,
       shouldSplitScene,
       splitChunks,
-      reasoning: `${narrativeRole} → runway (RUNWAYML_API_SECRET present, primary provider)`,
+      reasoning: `${narrativeRole} → runway (primary provider)`,
     };
     console.log(`[MODEL_ROUTER] provider=runway role=${narrativeRole} motion=${motionComplexity} reason="${decision.reasoning}"`);
     return decision;
