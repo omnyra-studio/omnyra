@@ -173,9 +173,8 @@ async function extractLastFrame(videoUrl: string, userId: string, clipIndex: num
     // -sseof is an INPUT option â€” must come before the input file on the command line.
     // fluent-ffmpeg's .inputOptions() places flags before -i, so this is correct.
     await new Promise<void>((resolve, reject) => {
-      ffmpeg()
+      ffmpeg(videoPath)
         .inputOptions(["-sseof", "-1"])
-        .input(videoPath)
         .outputOptions(["-frames:v", "1", "-q:v", "2", "-update", "1"])
         .output(framePath)
         .on("end", () => resolve())
