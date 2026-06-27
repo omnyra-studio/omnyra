@@ -73,7 +73,7 @@ const saasMetrics = new SaaSMetrics();
 export const maxDuration = 300;
 
 const KLING_CLIP_SECS  = 10;  // 3 Ã— 10s = 30s total video
-const ROUTE_VERSION    = "2026-06-27-v42-seedance2-upscale";
+const ROUTE_VERSION    = "2026-06-27-v43-90s-per-scene-parallel";
 
 // Absolute generation constraints â€” injected into storyboard planner system prompt
 // and distilled into per-scene Kling prompts for Scene 2+.
@@ -574,6 +574,18 @@ export async function POST(req: Request) {
         }, { status: 403 });
       }
       targetDuration = 60;
+    }
+    if (body.targetDuration === 90) {
+      const limits = TIER_LIMITS[userTier];
+      if (!limits.runwayAccess) {
+        console.warn(`[TIER_GATE] 90s blocked tier=${userTier}`);
+        return Response.json({
+          error: 'Duration not available on your plan',
+          requiredTier: 'creator',
+          message: 'Upgrade to Creator or Studio to generate 90-second videos',
+        }, { status: 403 });
+      }
+      targetDuration = 90;
     }
     templateId = body.templateId;
     speedMode  = body.speedMode ?? 'fast';
@@ -642,6 +654,11 @@ export async function POST(req: Request) {
     const basePrompt = prompts[0] ?? goal ?? "cinematic scene";
     while (prompts.length < 3) prompts.push(basePrompt);
     console.log(`[SCENE_PAD] padded prompts to 3 for 30s mode`);
+  }
+  if (targetDuration === 90 && prompts.length < 9) {
+    const basePrompt = prompts[0] ?? goal ?? 'cinematic scene';
+    while (prompts.length < 9) prompts.push(basePrompt);
+    console.log(`[SCENE_PAD] padded prompts to 9 for 90s mode`);
   }
 
   // Inject creative brief into scene 1 â€” skip when scenePrompts came from script picker
@@ -1061,69 +1078,84 @@ export async function POST(req: Request) {
           if (mainImage) console.log(`[SCENE_IMAGES] using user-selected image as primary ref url=${mainImage.substring(0, 80)}`);
         }
 
-        // 2. No user image — generate from cinema-pipeline beat[0] so Runway gets a
-        //    narrative-accurate reference instead of no image at all.
+        // 2. Per-scene Flux image generation — each scene gets its own image
+        // based on its renderContract visual description. This is the primary fix
+        // for "video does not match script" — previously one image was used for all scenes.
         if (!mainImage && !_isAnimated && cinemaPipeline) {
           const falKey = process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY;
           if (falKey) {
-            try {
-              const rc0 = cinemaPipeline.renderContracts[0];
-              const imagePrompt = [rc0.environment, rc0.lighting, rc0.cameraState, rc0.characterState, 'photorealistic, cinematic still frame, 9:16 vertical'].filter(Boolean).join('. ');
-              console.info('[IMAGE_PROMPT_USED]', imagePrompt);
-              const fluxRes = await fetch('https://fal.run/fal-ai/flux/dev', {
-                method: 'POST',
-                headers: { Authorization: `Key ${falKey}`, 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt: imagePrompt + ', no visible text or writing, family friendly', negative_prompt: [getFluxHardNegative(), passedSceneGraph?.scene_graph?.[0]?.negative_prompt, 'text, words, writing, signs, letters, numbers, captions, watermarks, gibberish text, banners, placards, marijuana, drugs, weed, cannabis, alcohol, cigarettes, weapons, violence, drug paraphernalia, nudity, nsfw'].filter(Boolean).join(', '), num_images: 1, image_size: { width: 1080, height: 1920 }, num_inference_steps: 28, guidance_scale: 3.5, enable_safety_checker: true }),
-                signal: AbortSignal.timeout(45_000),
-              });
-              if (fluxRes.ok) {
-                const fluxData = await fluxRes.json() as { images?: { url: string }[] };
-                mainImage = fluxData.images?.[0]?.url ?? null;
-                if (mainImage) console.log(`[SCENE_IMAGES] cinema-pipeline fallback image generated url=${mainImage.substring(0, 80)}`);
+            const fluxNeg = [getFluxHardNegative(), passedSceneGraph?.scene_graph?.[0]?.negative_prompt, 'text, words, writing, signs, letters, numbers, captions, watermarks, gibberish text, banners, placards, marijuana, drugs, weed, cannabis, alcohol, cigarettes, weapons, violence, drug paraphernalia, nudity, nsfw'].filter(Boolean).join(', ');
+            const fluxResults = await Promise.allSettled(
+              cinemaPipeline.renderContracts.slice(0, prompts.length).map(async (rc, idx) => {
+                const compilerNeg = passedSceneGraph?.scene_graph?.[idx]?.negative_prompt ?? '';
+                const imgPrompt = [rc.environment, rc.lighting, rc.cameraState, rc.characterState, 'photorealistic, cinematic still frame, 9:16 vertical'].filter(Boolean).join('. ');
+                console.info('[FLUX_SCENE_PROMPT]', idx + 1, imgPrompt.substring(0, 120));
+                const res = await fetch('https://fal.run/fal-ai/flux/dev', {
+                  method: 'POST',
+                  headers: { Authorization: `Key ${falKey}`, 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    prompt: imgPrompt + ', no visible text or writing, family friendly',
+                    negative_prompt: [fluxNeg, compilerNeg].filter(Boolean).join(', '),
+                    num_images: 1,
+                    image_size: { width: 1080, height: 1920 },
+                    num_inference_steps: 28,
+                    guidance_scale: 3.5,
+                    enable_safety_checker: true,
+                  }),
+                  signal: AbortSignal.timeout(45_000),
+                });
+                if (!res.ok) throw new Error(`Flux HTTP ${res.status} scene ${idx + 1}`);
+                const data = await res.json();
+                const url = data.images?.[0]?.url;
+                if (!url) throw new Error(`Flux scene ${idx + 1} returned no image`);
+                console.log(`[FLUX_SCENE_OK] scene=${idx + 1} url=${url.substring(0, 80)}`);
+                return url;
+              })
+            );
+            let lastGoodUrl = null;
+            for (let idx = 0; idx < fluxResults.length; idx++) {
+              const r = fluxResults[idx];
+              if (r.status === 'fulfilled') {
+                sceneImageUrls[idx] = r.value;
+                lastGoodUrl = r.value;
+                if (idx === 0) mainImage = r.value;
               } else {
-                console.warn(`[SCENE_IMAGES] flux generation failed HTTP ${fluxRes.status} — will use imageUrl fallback`);
+                console.warn(`[FLUX_SCENE_FAIL] scene=${idx + 1}: ${r.reason?.message ?? r.reason} -- using prev`);
+                sceneImageUrls[idx] = lastGoodUrl;
               }
-            } catch (fluxErr) {
-              console.warn(`[SCENE_IMAGES] flux generation error (non-fatal): ${fluxErr instanceof Error ? fluxErr.message : String(fluxErr)} — will use imageUrl fallback`);
             }
+            const generated = fluxResults.filter(r => r.status === 'fulfilled').length;
+            console.log(`[FLUX_SCENES] ${generated}/${fluxResults.length} scene images generated`);
           }
         }
 
-        if (!_isAnimated && mainImage) {
-          // Mirror fal.media image to Supabase before sending to Kling/Runway.
-          if (mainImage.includes("fal.media") || mainImage.includes("fal.run")) {
+        if (!_isAnimated) {
+          // Mirror fal.media/fal.run URLs to Supabase for ALL scene images.
+          // fal.media CDN URLs expire and may be blocked by Runway. Mirror all per-scene images.
+          const mirrorOne = async (url, idx) => {
+            if (!url || (!url.includes('fal.media') && !url.includes('fal.run'))) return url;
             try {
-              const imgRes = await fetch(mainImage, { signal: AbortSignal.timeout(15_000) });
-              if (imgRes.ok) {
-                const imgBuf = Buffer.from(await imgRes.arrayBuffer());
-                const ext = mainImage.endsWith(".png") ? "png" : "jpg";
-                const mirrorPath = `${user.id}/kling-mirrors/${Date.now()}.${ext}`;
-                const { error: upErr } = await supabaseAdmin.storage
-                  .from("renders")
-                  .upload(mirrorPath, imgBuf, { contentType: `image/${ext}`, upsert: true });
-                if (!upErr) {
-                  const { data: { publicUrl } } = supabaseAdmin.storage.from("renders").getPublicUrl(mirrorPath);
-                  console.log(`[IMAGE_MIRROR] fal→supabase ok: ${publicUrl.substring(0, 80)}`);
-                  mainImage = publicUrl;
-                } else {
-                  console.warn(`[IMAGE_MIRROR] supabase upload failed: ${upErr.message} — using original fal URL`);
-                }
-              }
-            } catch (mirrorErr) {
-              console.warn(`[IMAGE_MIRROR] fetch failed (non-fatal): ${mirrorErr instanceof Error ? mirrorErr.message : mirrorErr} — using original fal URL`);
-            }
-          }
-          for (let i = 0; i < prompts.length; i++) {
-            sceneImageUrls[i] = mainImage;
-          }
-          console.log(`[SCENE_IMAGES] pinning all ${prompts.length} scenes to ${cinemaPipeline ? 'cinema-pipeline' : 'concept'} image (i2v consistency)`);
+              const r = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+              if (!r.ok) return url;
+              const buf = Buffer.from(await r.arrayBuffer());
+              const ext = url.endsWith('.png') ? 'png' : 'jpg';
+              const mp = `${user.id}/kling-mirrors/${Date.now()}-s${idx}.${ext}`;
+              const { error: ue } = await supabaseAdmin.storage.from('renders').upload(mp, buf, { contentType: `image/${ext}`, upsert: true });
+              if (ue) return url;
+              const { data: { publicUrl } } = supabaseAdmin.storage.from('renders').getPublicUrl(mp);
+              console.log(`[IMAGE_MIRROR] scene=${idx + 1} -> ${publicUrl.substring(0, 80)}`);
+              return publicUrl;
+            } catch { return url; }
+          };
+          const mirrored = await Promise.all(sceneImageUrls.map((u, i) => mirrorOne(u, i)));
+          for (let mi = 0; mi < mirrored.length; mi++) sceneImageUrls[mi] = mirrored[mi];
+          if (mirrored[0]) mainImage = mirrored[0];
+          console.log(`[SCENE_IMAGES] pinning ${sceneImageUrls.filter(Boolean).length}/${prompts.length} per-scene images (i2v consistency)`);
         } else if (fallbackImageUrl) {
-          for (let i = 0; i < prompts.length; i++) {
-            sceneImageUrls[i] = fallbackImageUrl;
-          }
-          console.log(`[SCENE_IMAGES] no sceneImages body — using fallbackImageUrl for all ${prompts.length} scenes (i2v)`);
+          for (let i = 0; i < prompts.length; i++) sceneImageUrls[i] = fallbackImageUrl;
+          console.log(`[SCENE_IMAGES] using fallbackImageUrl for all ${prompts.length} scenes`);
         } else {
-          console.warn(`[SCENE_IMAGES] WARNING: no imageUrl and no sceneImages — Kling i2v will fail all scenes`);
+          console.warn(`[SCENE_IMAGES] WARNING: no imageUrl and no sceneImages -- will run t2v`);
         }
 
         // Throw if any scene has no image (i2v requires image)
@@ -1317,172 +1349,114 @@ export async function POST(req: Request) {
         let driftMotionStrength = 0.80;
         let driftPromptPrefix   = '';
 
-        // Await upscaled image (was launched in parallel with voiceover/ambient).
-        // If upscale succeeded, replace all scene image URLs with the 2x version.
+        // Await upscaled image (parallel with voiceover/ambient).
         const upscaledMainImage = await upscalePromise;
-        if (upscaledMainImage) {
+        if (upscaledMainImage && mainImage) {
           for (let si = 0; si < sceneImageUrls.length; si++) {
             if (sceneImageUrls[si] === mainImage) sceneImageUrls[si] = upscaledMainImage;
           }
           mainImage = upscaledMainImage;
-          console.log('[UPSCALE_APPLIED] all scenes now use 2x upscaled image');
+          console.log('[UPSCALE_APPLIED] all matched scene slots updated');
+        } else if (upscaledMainImage && sceneImageUrls[0]) {
+          sceneImageUrls[0] = upscaledMainImage;
         }
 
-        for (let i = 0; i < klingScenePrompts.length; i++) {
-          if (i > 0) await new Promise(r => setTimeout(r, 1200));
+        let driftMotionStrength = 0.80;
+        let driftPromptPrefix   = '';
 
-          // For Scene 2+, extract last frame of the previous successful clip
-          let sceneImg = sceneImageUrls[i];
-          const originalRefImg = sceneImageUrls[0] ?? null;
+        // -- Parallel clip generation --
+        // Phase 1: scene 0 (anchor). Phase 2: scenes 1..N in parallel using anchor last-frame.
+        // Enables 90s (9 clips) within the 300s Vercel budget — all clips run concurrently.
 
-          if (i > 0) {
-            const prevUrl = extractedUrls[i - 1];
-            if (prevUrl) {
-              const lastFrame = await extractLastFrame(prevUrl, user.id, i - 1);
-              if (lastFrame) {
-                sceneImg = lastFrame;
-                if (passedSceneGraph) attachLastFrame(passedSceneGraph, i, lastFrame);
-                // Continuity Engine: attach frame to current snapshot, then advance to next scene
-                continuitySnapshot = attachLastFrameToSnapshot(continuitySnapshot, lastFrame);
-                console.log(`[CHAIN] scene=${i + 1} chained from scene ${i} url=${lastFrame.substring(0, 80)}`);
+        const extractedUrls: Array<string | null> = new Array(klingScenePrompts.length).fill(null);
+        const sceneProviders: string[] = new Array(klingScenePrompts.length).fill('runway');
 
-                // Drift detection: compare last frame vs original reference (non-blocking within stagger)
-                if (originalRefImg?.startsWith("https://")) {
-                  const drift = await detectFrameDrift(lastFrame, originalRefImg, i, driftMotionStrength);
-                  if (drift) {
-                    driftMotionStrength = drift.adjustment.newMotionStrength;
-                    driftPromptPrefix   = drift.adjustment.prefixOverride ?? '';
-                  }
-                }
-              } else {
-                console.warn(`[CHAIN] scene=${i + 1} last-frame failed â€” using original ref`);
-              }
-            } else {
-              console.warn(`[CHAIN] scene=${i + 1} prev clip failed â€” using original ref`);
-            }
-          }
+        const buildRunwayPrompt = (kp: string): string =>
+          kp
+            .replace(/CONTINUITY LOCK:[\s\S]*?Continuity overrides creativity\.\n?/g, '')
+            .replace(/Continue from previous (?:frame|scene)[^.]*\.\s*/gi, '')
+            .replace(/Expression and body convey[^.]*\.\s*/gi, '')
+            .replace(/Character:[^.]*\.\s*/gi, '')
+            .replace(/\s+/g, ' ').trim().slice(0, 512);
 
-          // Prepend drift correction + story context + continuity for scenes 2+
-          const storyCtx = i > 0 ? buildStoryContextPrefix(storyMem) : '';
-          const transitionBridge = (i > 0 && continuitySnapshot.story.activeBeat)
-            ? buildTransitionBridge(continuitySnapshot.story.activeBeat)
-            : '';
+        const generateOneClip = async (i: number, sceneImg: string | null | undefined): Promise<string | null> => {
           const klingPrompt = i === 0
             ? klingScenePrompts[i]
-            : (driftPromptPrefix + storyCtx + CONTINUITY_PREFIX + klingScenePrompts[i] + transitionBridge).slice(0, 500);
-
-          const mode = sceneImg?.startsWith("https://") ? "i2v" : "t2v";
-
-          // Model router: narrative role now comes from cinema pipeline when available
-          // Cinema pipeline uses 7-value set; map to router's 4-value set.
-          const cinemaRole = cinemaPipeline?.renderContracts?.[i]?.narrativeRole;
-          const sceneNarrativeRole: "hook" | "development" | "climax" | "resolution" =
-            cinemaRole === 'establish' || cinemaRole === 'introduce' ? 'hook'
-            : cinemaRole === 'conflict' || cinemaRole === 'reaction'  ? 'development'
-            : cinemaRole === 'climax'                                  ? 'climax'
-            : cinemaRole === 'resolution'                              ? 'resolution'
-            : (passedSceneGraph?.scene_graph?.[i]?.narrative_role as "hook" | "development" | "climax" | "resolution" | undefined)
-              ?? (i === 0 ? "hook" : i === klingScenePrompts.length - 1 ? "resolution" : "development");
-          const routerDecision = selectVideoProvider({
-            narrativeRole:    sceneNarrativeRole,
-            motionComplexity: inferMotionComplexity(klingScenePrompts[i]),
-            durationSeconds:  KLING_CLIP_SECS,
-            budgetMode:       !tierAllowsRunway,  // forces Kling for free/starter
-            hasReferenceImage: mode === "i2v",
-          });
-          const imgSource = bodySceneImages.length > 0 ? 'user-selected' : (cinemaPipeline ? 'flux-fallback' : 'imageUrl-fallback');
-          console.info('[RUNWAY_IMAGE_SOURCE]', imgSource, sceneImg?.substring(0, 80) ?? 'NONE');
-          console.log(`[CLIP_FIRE] scene=${i + 1} mode=${mode} provider=${routerDecision.provider} role=${sceneNarrativeRole} motion=${driftMotionStrength.toFixed(2)} imageUrl=${sceneImg?.substring(0, 80) ?? "NONE"}`);
-
-          // Merge cinema pipeline negative prompt with base negatives
-          const cinemaNeg = cinemaPipeline?.renderContracts?.[i]?.negativePrompt ?? '';
-          const finalNegativePrompt = [sceneNegativePrompts[i], cinemaNeg].filter(Boolean).join(', ') || undefined;
-
-          const klingParams = {
-            negativePrompt:  finalNegativePrompt,
-            imageUrl:        mode === "i2v" ? sceneImg : undefined,
-            duration:        KLING_CLIP_SECS,
-            aspectRatio:     "9:16" as const,
-            mode:            (routerDecision.klingMode === "standard" ? "std" : "pro") as "pro" | "std",
-            motionStrength:  driftMotionStrength,
-            seed:            baseSeed + i,
-            sceneNumber:     i + 1,
-          };
-
+            : (driftPromptPrefix + buildStoryContextPrefix(storyMem) + CONTINUITY_PREFIX + klingScenePrompts[i]).slice(0, 500);
+          const mode = sceneImg?.startsWith('https://') ? 'i2v' : 't2v';
+          const runwayRouting = chooseRunwayModel(voiceoverText ?? klingPrompt, userTier, speedMode);
+          const runwayPrompt  = buildRunwayPrompt(klingPrompt);
+          console.log(`[CLIP_FIRE] scene=${i + 1}/${klingScenePrompts.length} mode=${mode} model=${runwayRouting.model}`);
           try {
-            const runwayRouting = chooseRunwayModel(voiceoverText ?? klingPrompt, userTier, speedMode);
-            // Strip Kling-specific CONTINUITY LOCK prefix and narrative voice before
-            // sending to Runway — Runway ignores these and defaults to ambient motion.
-            const runwayPrompt = klingPrompt
-              .replace(/CONTINUITY LOCK:[\s\S]*?Continuity overrides creativity\.\n?/g, '')
-              .replace(/Continue from previous (?:frame|scene)[^.]*\.\s*/gi, '')
-              .replace(/Expression and body convey[^.]*\.\s*/gi, '')
-              .replace(/Character:[^.]*\.\s*/gi, '')
-              .replace(/\s+/g, ' ').trim().slice(0, 512);
-            console.log();
-            // Quality mode: Seedance2 via textToVideo with image as first-frame reference.
-            // Seedance2 produces significantly higher fidelity than gen4_turbo for i2v.
-            // Fast mode: gen4_turbo (existing path) for speed.
             const result = speedMode === 'quality'
               ? await generateRunwaySeedanceClip({
-                  prompt:      runwayPrompt,
-                  imageUrl:    mode === "i2v" ? sceneImg : undefined,
-                  duration:    KLING_CLIP_SECS,
-                  aspectRatio: "9:16",
-                  fast:        false,
-                })
+                prompt:      runwayPrompt,
+                imageUrl:    mode === 'i2v' ? sceneImg ?? undefined : undefined,
+                duration:    KLING_CLIP_SECS,
+                aspectRatio: '9:16',
+                fast:        false,
+              })
               : await generateRunwayClip({
-                  prompt:      runwayPrompt,
-                  imageUrl:    mode === "i2v" ? sceneImg : undefined,
-                  duration:    KLING_CLIP_SECS as 5 | 10,
-                  aspectRatio: "9:16",
-                  model:       runwayRouting.model,
-                });
-
-            // Quality mode: enhance each clip through Seedance2 video-to-video.
-            // Runs sequentially per clip within the generation loop.
-            // Skipped in fast mode to stay within the 300s Vercel budget.
-            let finalClipUrl = result.videoUrl;
+                prompt:      runwayPrompt,
+                imageUrl:    mode === 'i2v' ? sceneImg ?? undefined : undefined,
+                duration:    KLING_CLIP_SECS as 5 | 10,
+                aspectRatio: '9:16',
+                model:       runwayRouting.model,
+              });
+            let finalUrl = result.videoUrl;
             if (speedMode === 'quality' && process.env.RUNWAYML_API_SECRET) {
               try {
-                const enhanced = await enhanceClipWithVideoToVideo({
-                  videoUrl:    result.videoUrl,
-                  prompt:      runwayPrompt,
-                  duration:    KLING_CLIP_SECS,
-                  aspectRatio: '9:16',
+                const enh = await enhanceClipWithVideoToVideo({
+                  videoUrl:    result.videoUrl, prompt: runwayPrompt,
+                  duration:    KLING_CLIP_SECS, aspectRatio: '9:16'
                 });
-                finalClipUrl = enhanced.videoUrl;
-                console.log('[V2V_ENHANCE_OK] scene=' + (i + 1) + ' ' + enhanced.generationMs + 'ms enhanced url=' + enhanced.videoUrl.substring(0, 80));
-              } catch (v2vErr) {
-                console.warn('[V2V_ENHANCE_FAIL] scene=' + (i + 1) + ' non-fatal -- using original clip:', v2vErr instanceof Error ? v2vErr.message : v2vErr);
+                finalUrl = enh.videoUrl;
+                console.log(`[V2V_OK] scene=${i + 1} ${enh.generationMs}ms`);
+              } catch (v2e) {
+                console.warn(`[V2V_FAIL] scene=${i + 1}:`, v2e instanceof Error ? v2e.message : v2e);
               }
             }
-            extractedUrls[i]  = finalClipUrl;
-            sceneProviders[i] = routerDecision.provider;
-            storyMem = advanceStoryMemory(storyMem, storyBeats?.[i] ?? null, result.videoUrl);
-            // Continuity Engine: persist snapshot then advance to next scene state
-            void saveSnapshot(user.id, i, i, continuitySnapshot);
-            if (i < klingScenePrompts.length - 1) {
-              const nextBeat    = storyBeats?.[i + 1]?.emotion;
-              continuitySnapshot = buildNextScene(continuitySnapshot, undefined, nextBeat ?? undefined, undefined);
-              const snapCheck    = validateContinuity(continuitySnapshot);
-              if (!snapCheck.passed) {
-                console.warn(`[CONTINUITY_ENGINE] snapshot scene=${i + 2} invalid: ${snapCheck.errors.join(", ")}`);
-              }
-            }
-            // Reset drift prefix after a successful clip â€” let the detector re-evaluate next frame
-            driftPromptPrefix = '';
-            console.log(`[CLIP_OK] scene=${i + 1} ${result.generationMs}ms provider=${routerDecision.provider} emotion="${storyMem.current_state.emotion}" url=${result.videoUrl.substring(0, 80)}`);
-            clipReports.push(`scene=${i + 1} | ${routerDecision.provider} | OK ${result.generationMs}ms`);
+            console.log(`[CLIP_OK] scene=${i + 1} ${result.generationMs}ms url=${finalUrl.substring(0, 80)}`);
+            clipReports.push(`scene=${i + 1} | runway | OK ${result.generationMs}ms`);
+            return finalUrl;
           } catch (err) {
             const reason = err instanceof Error ? err.message : String(err);
-            console.error(`[CLIP_FAIL] scene=${i + 1} provider=runway reason="${reason.substring(0, 200)}"`);
+            console.error(`[CLIP_FAIL] scene=${i + 1} reason="${reason.substring(0, 200)}"`);
             clipReports.push(`scene=${i + 1} | runway | FAIL | ${reason}`);
+            return null;
           }
-          }
+        };
+
+        // Phase 1: anchor scene 0 alone
+        const anchorUrl = await generateOneClip(0, sceneImageUrls[0]);
+        extractedUrls[0] = anchorUrl;
+        storyMem = advanceStoryMemory(storyMem, storyBeats?.[0] ?? null, anchorUrl ?? '');
+
+        // Extract last frame of anchor for scene 1..N first-frame chaining
+        let chainFrame: string | null = null;
+        if (anchorUrl) {
+          chainFrame = await extractLastFrame(anchorUrl, user.id, 0);
+          if (chainFrame) console.log(`[CHAIN] anchor frame ready url=${chainFrame.substring(0, 80)}`);
         }
 
-        console.log(`[CLIPS_TOTAL] success=${extractedUrls.filter(Boolean).length}/${prompts.length} breakdown=${extractedUrls.map((u, i) => `scene${i + 1}:${u ? "OK" : "FAIL"}`).join(" ")}`);
+        // Phase 2: all remaining scenes in parallel (staggered 600ms to avoid 429)
+        if (klingScenePrompts.length > 1) {
+          const restResults = await Promise.allSettled(
+            klingScenePrompts.slice(1).map(async (_, idx) => {
+              const i = idx + 1;
+              if (idx > 0) await new Promise(r => setTimeout(r, idx * 600));
+              const sceneImg = chainFrame ?? sceneImageUrls[i] ?? sceneImageUrls[0];
+              return generateOneClip(i, sceneImg);
+            })
+          );
+          restResults.forEach((r, idx) => {
+            const i = idx + 1;
+            extractedUrls[i] = r.status === 'fulfilled' ? r.value : null;
+            storyMem = advanceStoryMemory(storyMem, storyBeats?.[i] ?? null, extractedUrls[i] ?? '');
+          });
+        }
+
+                console.log(`[CLIPS_TOTAL] success=${extractedUrls.filter(Boolean).length}/${prompts.length} breakdown=${extractedUrls.map((u, i) => `scene${i + 1}:${u ? "OK" : "FAIL"}`).join(" ")}`);
 
         const genElapsed      = Date.now() - genT0;
         console.log(`[TIMING] KLING_GENERATION complete ${genElapsed}ms`);

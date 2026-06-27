@@ -255,7 +255,7 @@ export async function enhanceClipWithVideoToVideo(
   const { videoUrl, prompt, duration = 10, aspectRatio } = params;
   const client = getClient();
   const t0     = Date.now();
-  const ratio  = aspectRatio === "9:16" ? "720:1280" : "1280:720";
+  const ratio = (aspectRatio === "9:16" ? "720:1280" : "1280:720") as "720:1280" | "1280:720";
 
   console.log(`[RUNWAY_V2V] start seedance2 videoUrl=${videoUrl.substring(0, 80)}`);
 
