@@ -1390,9 +1390,19 @@ export async function POST(req: Request) {
 
           try {
             const runwayRouting = chooseRunwayModel(voiceoverText ?? klingPrompt, userTier, speedMode);
+            // Strip Kling-specific CONTINUITY LOCK prefix and narrative voice before
+            // sending to Runway — Runway ignores these and defaults to ambient motion.
+            const runwayPrompt = klingPrompt
+              .replace(/CONTINUITY LOCK:[sS]*?Continuity overrides creativity.
+?/g, '')
+              .replace(/Continue from previous (?:frame|scene)[^.]*.s*/gi, '')
+              .replace(/Expression and body convey[^.]*.s*/gi, '')
+              .replace(/Character:[^.]*.s*/gi, '')
+              .replace(/s+/g, ' ').trim().slice(0, 512);
+            console.log();
             const result = routerDecision.provider === "runway"
               ? await generateRunwayClip({
-                  prompt:      klingPrompt,
+                  prompt:      runwayPrompt,
                   imageUrl:    mode === "i2v" ? sceneImg : undefined,
                   duration:    KLING_CLIP_SECS as 5 | 10,
                   aspectRatio: "9:16",

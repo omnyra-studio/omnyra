@@ -362,7 +362,6 @@ export async function mergeVideoAudio(params: MergeVideoAudioParams): Promise<st
           "-b:a", "128k",
           "-map", "0:v:0",
           "-map", "1:a:0",
-          "-shortest",
           "-movflags", "+faststart",
         ])
         .output(outputPath)
@@ -473,7 +472,7 @@ async function runXfadeStitch(params: {
     ];
 
     if (audioPath) {
-      outputOpts.push('-map', `${clipPaths.length}:a:0`, '-c:a', 'aac', '-b:a', '192k', '-shortest');
+      outputOpts.push('-map', `${clipPaths.length}:a:0`, '-af', `apad=whole_dur=${maxDuration}`, '-c:a', 'aac', '-b:a', '192k');
     }
 
     cmd
@@ -600,7 +599,6 @@ export async function stitchClipsWithAudio(params: {
             "-vf", fadeFilter,
             "-map", "0:v:0",
             "-map", "1:a:0",
-            "-shortest",
             "-t", tLimit,
             "-movflags", "+faststart",
           ])
