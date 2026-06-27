@@ -123,12 +123,12 @@ async function callClaudeCompiler(
     "You are a professional cinematic director. Output ONLY a valid JSON object. No markdown. No code fences. No explanation. Compact single-line JSON only. No newlines inside string values. Plain ASCII only - no em-dashes, curly quotes, or special punctuation. All string values under 80 characters.",
     memoryPreamble ? `MEMORY LAYERS:\n${memoryPreamble}` : "",
     `You are creating scenes for this EXACT story:\n"${input.script.trim()}"`,
-    `Primary character: ${characterAppearance}. If the story involves a child girl, she must be described as: "fair-skinned blonde girl aged 8-9, wearing a dress or skirt, clearly female, long blonde hair". Always front-facing, wardrobe consistent across all scenes. Do NOT change or replace this character.`,
-    `If the story involves a homeless person, scenes 1 and 4 MUST include: "elderly homeless man seated on concrete pavement, weathered face, worn clothing, cardboard sign beside him".`,
+    `PRIMARY CHARACTER LOCK: ${characterAppearance}. If the story involves a child girl, she is ALWAYS described as: "fair-skinned blonde girl aged 8-9, wearing a dress or skirt, clearly female, long blonde hair". Her exact description MUST appear in EVERY scene's image_prompt — no exceptions. Wardrobe identical in every scene. Front-facing always. Do NOT introduce any new characters. Do NOT replace her with a different person.`,
+    `SECONDARY CHARACTER LOCK: If the story involves a homeless person, describe him in EVERY scene he appears as: "elderly homeless man, grey beard, weathered face, worn dark jacket, seated on concrete". NEVER replace him with a young man, a teenager, or any other person.`,
     `Output exactly ${sceneCount} scenes. Shot order: ${SHOT_PROGRESSION.slice(0, sceneCount).join(", ")}.`,
-    "image_prompt rules: 30-45 words. Start with shot type. Show the EXACT action from this story beat. If coins appear, describe them as \"small ordinary coins, loose change, regular currency coins\" - NEVER bitcoin or crypto. End with \"photorealistic, cinematic, front-facing subject\". No particles/smoke from face. No supernatural effects.",
+    "image_prompt rules: 30-50 words. Start with shot type. ALWAYS include the character description from above (copy it verbatim into every image_prompt). Show the EXACT story action for this beat. If coins appear: \"small ordinary coins, loose change\" — NEVER bitcoin or branded items. End with \"photorealistic, cinematic\". No smoke/particles from face.",
     "video_prompt rules: 15-25 words. Motion only. No static descriptions.",
-    "negative_prompt rules: List what must NOT appear. ALWAYS include ALL of these: \"boy, male child, masculine child, short hair on child, hoodie on child, adult woman, teenager, bitcoin, cryptocurrency, crypto coins, gold coins with symbols, coin logos, bitcoin symbol, BTC, wrong age, wrong character, blurry, deformed, text, watermark, extra limbs\".",
+    "negative_prompt rules: ALWAYS include ALL of: \"wrong person, young man, teenager, different character, new character, adult replacing child, boy, male child, branded snack bag, product logo, bitcoin, crypto, text, watermark, blurry, deformed, extra limbs\".",
     `JSON schema (compact, single line):\n${SCHEMA_EXAMPLE}`,
   ].filter(Boolean).join("\n\n");
 
