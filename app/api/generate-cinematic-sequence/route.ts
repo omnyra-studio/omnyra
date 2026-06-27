@@ -636,6 +636,15 @@ export async function POST(req: Request) {
     return Response.json({ error: "prompts required" }, { status: 400 });
   }
 
+  // Ensure exactly 3 scenes for 30s mode — prevents cinema pipeline scene-count
+  // mismatch (renderContracts.length !== prompts.length) from nullifying the pipeline
+  // and falling back to 1 clip (10s instead of 30s).
+  if (targetDuration === 30 && prompts.length < 3) {
+    const basePrompt = prompts[0] ?? goal ?? "cinematic scene";
+    while (prompts.length < 3) prompts.push(basePrompt);
+    console.log(`[SCENE_PAD] padded prompts to 3 for 30s mode`);
+  }
+
   // Inject creative brief into scene 1 â€” skip when scenePrompts came from script picker
   // (those prompts are already complete Runway descriptions, goal text would corrupt them)
   const _hasScenePrompts = prompts.length >= 3 && !goal;
@@ -985,8 +994,13 @@ export async function POST(req: Request) {
         lastStageLogged = 'CINEMA_PIPELINE_done';
         console.log(`[STAGE_7B_CINEMA] done pipeline=${cinemaPipeline ? 'OK' : 'fallback'}`);
 
-        // Per-beat narration replaces full screenplay text for ElevenLabs (more impactful)
-        const resolvedVoiceover = cinemaPipeline?.compositeNarration?.trim() || voiceoverText;
+        // Per-beat narration replaces full screenplay text for ElevenLabs (more impactful).
+        // Fall back to joined prompts when voiceId is set but no script text was provided —
+        // ensures voiceover always fires when the user has selected a voice.
+        const resolvedVoiceover =
+          cinemaPipeline?.compositeNarration?.trim() ||
+          voiceoverText ||
+          (voiceId ? prompts.slice(0, 3).join(". ") : undefined);
 
         const sourceImages: Array<string | null> = new Array(prompts.length).fill(null);
         const clipReports: string[] = [];
