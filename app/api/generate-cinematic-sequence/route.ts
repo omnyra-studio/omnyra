@@ -991,7 +991,7 @@ export async function POST(req: Request) {
         const sourceImages: Array<string | null> = new Array(prompts.length).fill(null);
         const clipReports: string[] = [];
 
-        console.log(`[MOTION_PROMPT] provider=kling-2.6-pro-multishot scenes=${enforcedPrompts.length}`);
+        console.log(`[MOTION_PROMPT] scenes=${enforcedPrompts.length} runway_available=${!!process.env.RUNWAYML_API_SECRET}`);
 
         // Fire voiceover + ambient in parallel when narration text is provided
         // Multi-speaker path: detect [Speaker: Name] labels and generate separate voice tracks

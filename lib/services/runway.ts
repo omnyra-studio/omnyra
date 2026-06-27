@@ -13,12 +13,16 @@ import RunwayML from "@runwayml/sdk";
 const RUNWAY_POLL_INTERVAL_MS = 10_000;
 const RUNWAY_TIMEOUT_MS       = 240_000; // 4 minutes max
 
+// Only models accepted by the SDK imageToVideo endpoint.
+// gen3a_turbo is NOT valid here — it was a Gen-3 text-to-video model.
+export type RunwayImageToVideoModel = "gen4_turbo" | "gen4.5";
+
 export interface RunwayClipParams {
   prompt:      string;
   imageUrl?:   string;   // public HTTPS URL — required for i2v, omit for t2v
   duration:    5 | 10;
   aspectRatio: "9:16" | "16:9";
-  model?:      "gen4_turbo" | "gen3a_turbo"; // default: gen4_turbo
+  model?:      RunwayImageToVideoModel; // default: gen4_turbo
 }
 
 export interface RunwayClipResult {
@@ -26,6 +30,8 @@ export interface RunwayClipResult {
   generationMs: number;
 }
 
+// Valid ratio values for gen4_turbo imageToVideo per SDK types:
+// '1280:720' | '720:1280' | '1104:832' | '832:1104' | '960:960' | '1584:672'
 function toRunwayRatio(ar: "9:16" | "16:9"): "720:1280" | "1280:720" {
   return ar === "9:16" ? "720:1280" : "1280:720";
 }
@@ -44,20 +50,28 @@ export async function generateRunwayClip(
 ): Promise<RunwayClipResult> {
   const { prompt, imageUrl, duration, aspectRatio, model: requestedModel = "gen4_turbo" } = params;
 
+  // Guard: map any legacy gen3a_turbo references to gen4_turbo.
+  // gen3a_turbo is not a valid imageToVideo model — only gen4_turbo and gen4.5 are accepted.
+  const model: RunwayImageToVideoModel = requestedModel === "gen4_turbo" ? "gen4_turbo" : "gen4_turbo";
+
   const client = getClient();
   const ratio  = toRunwayRatio(aspectRatio);
   const t0     = Date.now();
 
-  // Both gen4_turbo and gen3a_turbo support i2v (promptImage) and t2v (no promptImage).
   // Omit promptImage entirely when no imageUrl — empty string causes 400.
+  // Field names match SDK gen4_turbo schema: promptText, promptImage, ratio, duration, model.
   const createPayload = imageUrl
-    ? { model: requestedModel as "gen4_turbo", promptText: prompt, ratio, duration, promptImage: imageUrl }
-    : { model: requestedModel as "gen4_turbo", promptText: prompt, ratio, duration };
+    ? { model, promptText: prompt, ratio, duration, promptImage: imageUrl }
+    : { model, promptText: prompt, ratio, duration };
+
+  console.log(`[RUNWAY] payload model=${model} ratio=${ratio} duration=${duration}s i2v=${!!imageUrl} promptText="${prompt.substring(0, 80)}"`);
 
   // Submit with retry — handles 429 rate-limit and transient network errors
   let submitted: { id: string };
   for (let attempt = 1; attempt <= MAX_SUBMIT_ATTEMPTS; attempt++) {
     try {
+      // Cast required: SDK type requires promptImage for gen4_turbo but we support
+      // optional t2v (no image). The field is accepted by the API when omitted.
       submitted = await client.imageToVideo.create(
         createPayload as Parameters<typeof client.imageToVideo.create>[0],
       );

@@ -1,61 +1,25 @@
+﻿import type { UserTier } from "@/lib/types/tiers";
+import { canUseRunway } from "@/lib/utils/tier-utils";
+import type { RunwayImageToVideoModel } from "@/lib/services/runway";
+
 export type SpeedMode = "fast" | "quality";
-export type RunwayModel = "gen3-turbo" | "gen3-alpha";
 
 export interface RunwayRouting {
-  model:    RunwayModel;
-  provider: "runway";
+  // Only valid imageToVideo models — gen3a_turbo / gen3-turbo are NOT accepted
+  model:    RunwayImageToVideoModel;
+  provider: "runway" | "kling";
   reason:   string;
 }
 
 export function chooseRunwayModel(
   _narration: string,
-  _tier:      string,
+  tier:       UserTier | string,
   speed:      SpeedMode = "fast",
 ): RunwayRouting {
-  const model: RunwayModel = speed === "quality" ? "gen3-alpha" : "gen3-turbo";
-  return { model, provider: "runway", reason: `runway-only speed=${speed}` };
-}
-
-export async function generateWithRetry(
-  prompt:    string,
-  imageUrl:  string,
-  duration:  number,
-  speedMode: SpeedMode = "fast",
-): Promise<unknown> {
-  const model = speedMode === "quality" ? "gen3-alpha" : "gen3-turbo";
-
-  for (let attempt = 1; attempt <= 3; attempt++) {
-    try {
-      const res = await fetch("https://api.runwayml.com/v1/inference", {
-        method:  "POST",
-        headers: {
-          "Authorization": `Bearer ${process.env.RUNWAYML_API_SECRET}`,
-          "Content-Type":  "application/json",
-        },
-        body: JSON.stringify({
-          model,
-          prompt,
-          image:        imageUrl,
-          duration,
-          aspect_ratio: "9:16",
-        }),
-      });
-
-      if (res.status === 429) {
-        const backoff = attempt * 4000;
-        await new Promise(r => setTimeout(r, backoff));
-        continue;
-      }
-
-      if (!res.ok) {
-        const error = await res.text();
-        throw new Error(`Runway error: ${res.status} ${error}`);
-      }
-
-      return await res.json();
-    } catch (e) {
-      if (attempt === 3) throw e;
-      await new Promise(r => setTimeout(r, 3000));
-    }
+  if (!canUseRunway(tier as UserTier)) {
+    return { model: "gen4_turbo", provider: "kling", reason: `tier=${tier} has no runway access` };
   }
+  // gen4.5 is higher quality but slower; gen4_turbo is the default fast path
+  const model: RunwayImageToVideoModel = speed === "quality" ? "gen4.5" : "gen4_turbo";
+  return { model, provider: "runway", reason: `tier=${tier} speed=${speed} model=${model}` };
 }
