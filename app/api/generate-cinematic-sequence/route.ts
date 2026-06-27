@@ -73,7 +73,7 @@ const saasMetrics = new SaaSMetrics();
 export const maxDuration = 300;
 
 const KLING_CLIP_SECS  = 10;  // 3 Ã— 10s = 30s total video
-const ROUTE_VERSION    = "2026-06-27-v43-90s-per-scene-parallel";
+const ROUTE_VERSION    = "2026-06-27-v44-clean-runway-prompts";
 
 // Absolute generation constraints â€” injected into storyboard planner system prompt
 // and distilled into per-scene Kling prompts for Scene 2+.
@@ -574,7 +574,7 @@ export async function POST(req: Request) {
         }, { status: 403 });
       }
       targetDuration = 60;
-    }
+    }
     if (body.targetDuration === 90) {
       const limits = TIER_LIMITS[userTier];
       if (!limits.runwayAccess) {
@@ -1346,9 +1346,6 @@ export async function POST(req: Request) {
         // and VIDEO_PROVIDER_FALLBACK=true is not set. Runs once before clip loop.
         assertProviderConfig();
 
-        let driftMotionStrength = 0.80;
-        let driftPromptPrefix   = '';
-
         // Await upscaled image (parallel with voiceover/ambient).
         const upscaledMainImage = await upscalePromise;
         if (upscaledMainImage && mainImage) {
@@ -1380,13 +1377,14 @@ export async function POST(req: Request) {
             .replace(/\s+/g, ' ').trim().slice(0, 512);
 
         const generateOneClip = async (i: number, sceneImg: string | null | undefined): Promise<string | null> => {
-          const klingPrompt = i === 0
-            ? klingScenePrompts[i]
-            : (driftPromptPrefix + buildStoryContextPrefix(storyMem) + CONTINUITY_PREFIX + klingScenePrompts[i]).slice(0, 500);
+          // All scenes use their dedicated klingScenePrompts directly.
+          // For parallel Runway generation, continuity is handled by chainFrame (anchor last-frame),
+          // not by story-context/continuity-lock text (which was eating the 512-char prompt budget).
+          const klingPrompt = klingScenePrompts[i];
           const mode = sceneImg?.startsWith('https://') ? 'i2v' : 't2v';
           const runwayRouting = chooseRunwayModel(voiceoverText ?? klingPrompt, userTier, speedMode);
           const runwayPrompt  = buildRunwayPrompt(klingPrompt);
-          console.log(`[CLIP_FIRE] scene=${i + 1}/${klingScenePrompts.length} mode=${mode} model=${runwayRouting.model}`);
+          console.log(`[CLIP_FIRE] scene=${i + 1}/${klingScenePrompts.length} mode=${mode} model=${runwayRouting.model} prompt="${runwayPrompt.substring(0, 120)}"`);
           try {
             const result = speedMode === 'quality'
               ? await generateRunwaySeedanceClip({
