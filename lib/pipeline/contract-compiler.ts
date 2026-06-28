@@ -20,6 +20,7 @@ import type {
   CameraSpec,
   CharacterSpec,
   LocationSpec,
+  BrandMemory,
 } from "./types";
 
 const SHARED_NEGATIVE =
@@ -69,9 +70,10 @@ const NICHE_RULES: Record<Niche, NicheRules> = {
 // ── Main export ───────────────────────────────────────────────────────────────
 
 export function compileContracts(
-  plan:      DirectorPlan,
-  skeletons: SceneSkeleton[],
-  timings:   VoiceTiming[],
+  plan:         DirectorPlan,
+  skeletons:    SceneSkeleton[],
+  timings:      VoiceTiming[],
+  brandMemory?: BrandMemory,
 ): SceneContract[] {
   if (skeletons.length !== timings.length) {
     throw new Error(
@@ -80,23 +82,24 @@ export function compileContracts(
   }
 
   const niche = detectNiche(plan.niche);
-  return skeletons.map((skeleton, i) => compileOne(plan, skeleton, timings[i], niche));
+  return skeletons.map((skeleton, i) => compileOne(plan, skeleton, timings[i], niche, brandMemory));
 }
 
 // ── Single contract compilation ───────────────────────────────────────────────
 
 function compileOne(
-  plan:     DirectorPlan,
-  skeleton: SceneSkeleton,
-  timing:   VoiceTiming,
-  niche:    Niche,
+  plan:        DirectorPlan,
+  skeleton:    SceneSkeleton,
+  timing:      VoiceTiming,
+  niche:       Niche,
+  brand?:      BrandMemory,
 ): SceneContract {
   // Resolve entity references
   const characters = resolveCharacters(plan, skeleton.characterIndices);
   const location   = resolveLocation(plan, skeleton.locationIndex);
 
-  // Merge plan-level camera with per-scene overrides + niche bias
-  const camera = resolveCamera(plan, skeleton, niche);
+  // Merge plan-level camera with per-scene overrides + niche bias + brand overlay
+  const camera = resolveCamera(plan, skeleton, niche, brand);
 
   // Clip duration: round up voice duration to nearest 5s boundary, min 5s, max 10s
   const voiceSec      = timing.durationMs / 1000;
@@ -126,6 +129,7 @@ function compileOne(
     action:            skeleton.actionUnit,
     emotion:           skeleton.emotionalState,
     motion:            skeleton.motion,
+    retentionRole:     skeleton.retentionRole,
     requiredProps:     skeleton.requiredProps,
     forbiddenElements: skeleton.forbiddenElements,
     transitionOut:     skeleton.transitionOut,
@@ -174,10 +178,18 @@ function emotionToMovement(emotion: string, skeleton: SceneSkeleton, rules: Nich
   return "static";
 }
 
-function resolveCamera(plan: DirectorPlan, skeleton: SceneSkeleton, niche: Niche): CameraSpec {
+function resolveCamera(plan: DirectorPlan, skeleton: SceneSkeleton, niche: Niche, brand?: BrandMemory): CameraSpec {
   const rules = NICHE_RULES[niche];
-  const shotSize = emotionToShotSize(skeleton.emotionalState, rules);
-  const movement = emotionToMovement(skeleton.emotionalState, skeleton, rules);
+  let shotSize = emotionToShotSize(skeleton.emotionalState, rules);
+  let movement = emotionToMovement(skeleton.emotionalState, skeleton, rules);
+
+  // Brand memory overlay — applied on top of niche rules, below Director overrides
+  if (brand) {
+    if (brand.cameraStyle.framingBias === "close")  shotSize = "medium close-up";
+    if (brand.cameraStyle.framingBias === "wide")   shotSize = "wide shot";
+    if (brand.cameraStyle.movementBias === "static") movement = "static";
+    if (brand.cameraStyle.movementBias === "slow" && movement === "static") movement = "slow push in";
+  }
 
   const base: CameraSpec = {
     lens:     plan.cameraLanguage.dominantLens,

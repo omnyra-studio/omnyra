@@ -85,6 +85,7 @@ export type MotionClass = "cinematic" | "fast" | "standard";
 export interface SceneSkeleton {
   index:            number;
   narrativeRole:    NarrativeRole;
+  retentionRole:    RetentionRole; // viral pacing structure: hook/context/escalation/payoff
   narrationBeat:    string;       // words spoken in this visual unit (from script)
   actionUnit:       string;       // ONE action only — "turns slowly to face camera"
   emotionalState:   string;       // single word
@@ -125,6 +126,7 @@ export interface SceneContract {
   // Identity
   index:         number;
   narrativeRole: NarrativeRole;
+  retentionRole: RetentionRole;
 
   // Timing (from VoiceTiming — authoritative)
   durationSec:    number;        // rounded up to nearest 5 or 10 for Runway
@@ -179,6 +181,24 @@ export interface TemporalLedger {
 
 // ── Pipeline I/O ──────────────────────────────────────────────────────────────
 
+// ── Brand Memory — per-user/brand style identity ─────────────────────────────
+// Passed in from frontend (loaded from Supabase). Applied as an overlay on top
+// of niche rules during SceneSpec compilation. No runtime DB calls needed.
+
+export type RetentionRole = "hook" | "context" | "escalation" | "payoff";
+
+export interface BrandMemory {
+  tone:          "dark" | "neutral" | "uplifting" | "comedic";
+  cameraStyle: {
+    movementBias: "static" | "slow" | "dynamic";
+    framingBias:  "close" | "medium" | "wide";
+  };
+  pacingStyle: {
+    speed: "fast" | "medium" | "slow";
+  };
+  lockedCharacters: string[];   // character names that must persist verbatim
+}
+
 export interface PipelineInput {
   script:             string;
   voiceId:            string;
@@ -188,6 +208,7 @@ export interface PipelineInput {
   targetDuration:     30 | 60 | 90;
   speedMode:          "fast" | "quality";
   aspectRatio?:       "9:16" | "16:9";
+  brandMemory?:       BrandMemory;  // optional — applied as style overlay if present
 }
 
 export interface SceneOutput {
@@ -203,6 +224,19 @@ export interface SceneOutput {
   visionIssues?:  string[]; // violations detected; empty if clean
 }
 
+// ── Scene analytics — heuristic scores computed post-generation ───────────────
+// No ML. No feedback from viewers. Deterministic signals from what the pipeline
+// already knows: vision scores, retention roles, action clarity, pass/fail.
+
+export interface SceneAnalytics {
+  sceneIndex:        number;
+  retentionRole:     RetentionRole;
+  retentionScore:    number;   // 0–1 estimated attention pull for this scene
+  clarityScore:      number;   // 0–1 single-action adherence
+  visualImpact:      number;   // 0–1 based on vision score × role weight
+  consistencyScore:  number;   // 0–1 from vision validator pass
+}
+
 export interface PipelineResult {
   videoUrl:        string;
   audioUrl:        string;
@@ -210,6 +244,8 @@ export interface PipelineResult {
   sceneCount:      number;
   scenes:          SceneOutput[];
   qualityScore:    number;
+  analytics:       SceneAnalytics[];
+  trailerScenes:   number[];   // indices of scenes selected for a 15s trailer cut
 }
 
 // ── Continuity Memory — last-scene state threaded through the loop ────────────

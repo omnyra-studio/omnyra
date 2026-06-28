@@ -18,6 +18,7 @@ import type {
   NarrativeRole,
   TransitionType,
   MotionClass,
+  RetentionRole,
 } from "./types";
 
 const client = new Anthropic();
@@ -164,6 +165,12 @@ SCENE COUNT: ${sceneCount}
 NARRATIVE ROLES (in order): ${roleAssignment}
 ${referenceImageUrl ? `REFERENCE (match character appearance to this): ${referenceImageUrl}` : ""}
 
+RETENTION STRUCTURE (viral pacing — short-form optimized):
+- Scene 1 = HOOK: emotionally loaded, visually simple, readable in <2 seconds
+- Middle early scenes = CONTEXT: establish and build
+- Middle late scenes = ESCALATION: momentum increase, visual energy rises
+- Final scene = PAYOFF: emotional resolution, satisfying visual close
+
 STRICT EXECUTION RULES:
 - Each scene = exactly 1 irreversible narrative event
 - No compressed multi-action beats
@@ -288,11 +295,22 @@ function assembleSkeletons(
     resolution:  "standard",
   };
 
+  // Retention role: viral pacing structure for short-form content
+  // Scene 0 = hook always. Last scene = payoff always.
+  // Middle scenes split: first half = context, second half = escalation.
+  const retentionRole = (i: number, total: number): RetentionRole => {
+    if (i === 0)            return "hook";
+    if (i === total - 1)    return "payoff";
+    const mid = Math.floor(total / 2);
+    return i < mid ? "context" : "escalation";
+  };
+
   return raws.slice(0, expectedCount).map((s, i) => {
     const role = (s.narrativeRole as NarrativeRole) ?? roles[i] ?? "development";
     return {
       index:             i,
       narrativeRole:     role,
+      retentionRole:     retentionRole(i, expectedCount),
       narrationBeat:     String(s.narrationBeat  ?? ""),
       actionUnit:        String(s.actionUnit     ?? ""),
       emotionalState:    String(s.emotionalState ?? "neutral"),

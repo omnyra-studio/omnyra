@@ -29,6 +29,7 @@ import type {
   PipelineResult,
   SceneContract,
   SceneOutput,
+  SceneAnalytics,
 } from "./types";
 import { createMemory, updateMemory, selectProvider } from "./types";
 
@@ -58,7 +59,7 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
   // ── Step 3: SceneContracts — immutable compiled truth ───────────────────────
   // SceneSpec + VoiceTiming + DirectorPlan = contract. Nothing downstream rewrites it.
   log("STEP_3", "Compile contracts — binding specs + timings -> immutable contracts");
-  const contracts = compileContracts(plan, specs, voice.timings);
+  const contracts = compileContracts(plan, specs, voice.timings, input.brandMemory);
 
   // ── Step 4: Images — one Flux image per contract ────────────────────────────
   log("STEP_4", `Images — generating ${contracts.length} Flux images in parallel`);
@@ -90,6 +91,9 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
     "final assembly",
   );
 
+  const analytics    = scoreAnalytics(contracts, clipResults);
+  const trailerScenes = selectTrailerScenes(contracts, clipResults);
+
   const elapsed = Date.now() - t0;
   log("DONE", `elapsed=${(elapsed / 1000).toFixed(1)}s clips=${successCount}/${contracts.length} url=${videoUrl.slice(0, 60)}`);
 
@@ -100,6 +104,8 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
     sceneCount:      contracts.length,
     scenes:          clipResults,
     qualityScore:    successCount / contracts.length,
+    analytics,
+    trailerScenes,
   };
 }
 
@@ -396,6 +402,71 @@ async function generateOneClip(
   }
 
   throw lastErr;
+}
+
+// ── Analytics scoring ─────────────────────────────────────────────────────────
+// Deterministic heuristics from data the pipeline already has.
+// No viewer feedback required — this is a pre-publish quality signal.
+
+function scoreAnalytics(
+  contracts:  SceneContract[],
+  outputs:    SceneOutput[],
+): SceneAnalytics[] {
+  const roleRetentionWeight: Record<string, number> = {
+    hook:        0.95,  // must grab attention immediately
+    context:     0.60,  // informational — lower inherent tension
+    escalation:  0.85,  // rising energy
+    payoff:      0.90,  // emotional resolution — high engagement
+  };
+
+  return contracts.map((c, i) => {
+    const out = outputs[i];
+    const passed = out?.passed ? 1 : 0;
+    const visionScore = out?.visionScore ?? (passed ? 0.8 : 0.3);
+    const role = c.retentionRole ?? "context";
+
+    return {
+      sceneIndex:       c.index,
+      retentionRole:    c.retentionRole,
+      retentionScore:   roleRetentionWeight[role] ?? 0.6,
+      clarityScore:     passed,          // passed validation = action was clear
+      visualImpact:     visionScore * (roleRetentionWeight[role] ?? 0.6),
+      consistencyScore: visionScore,
+    };
+  });
+}
+
+// ── Trailer selector ──────────────────────────────────────────────────────────
+// Selects ~15s worth of scenes ordered by impact, not story order.
+// Returns indices into the contracts array — not scene indices.
+// Trailer generation itself happens downstream using these clip URLs.
+
+export function selectTrailerScenes(
+  contracts: SceneContract[],
+  outputs:   SceneOutput[],
+  targetSec  = 15,
+): number[] {
+  const impactScore = (c: SceneContract, o: SceneOutput): number => {
+    const roleScore: Record<string, number> = { hook: 4, escalation: 3, payoff: 5, context: 1 };
+    const base = roleScore[c.retentionRole ?? "context"] ?? 1;
+    return base * (o?.passed ? 1 : 0.3);
+  };
+
+  const ranked = contracts
+    .map((c, i) => ({ i, score: impactScore(c, outputs[i]), dur: c.clipDurationSec }))
+    .filter(x => outputs[x.i]?.clipUrl)             // only scenes with a clip
+    .sort((a, b) => b.score - a.score);              // highest impact first
+
+  const selected: number[] = [];
+  let totalSec = 0;
+  for (const item of ranked) {
+    if (totalSec + item.dur > targetSec + 2) continue; // allow 2s overshoot
+    selected.push(item.i);
+    totalSec += item.dur;
+    if (totalSec >= targetSec) break;
+  }
+
+  return selected.sort((a, b) => a - b); // restore story order for assembly
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
