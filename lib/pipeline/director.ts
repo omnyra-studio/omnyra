@@ -121,6 +121,25 @@ Return ONLY this JSON structure. No markdown, no explanation:
   }]
 }`;
 
+const NICHE_DIRECTOR_RULES: Record<string, string> = {
+  horror:  "slow camera only, max 2 characters per scene, minimal props, imply threat through framing not description, prefer close and medium shots",
+  romance: "close shots on faces and hands, static or slow push only, soft warm lighting in locations, no crowded scenes",
+  action:  "wide shots for spatial clarity, one decisive motion per scene, strong subject-environment separation, no visual clutter",
+  drama:   "medium and close shots, slow pacing, minimal camera movement, strong single emotional focus per scene",
+  comedy:  "clean readable framing, medium shots preferred, simple unambiguous single action per scene",
+  neutral: "medium shots default, static camera unless action requires movement",
+};
+
+function detectNicheKey(niche: string): string {
+  const n = niche.toLowerCase();
+  if (/horror|scary|dark|haunt|fear/.test(n))     return "horror";
+  if (/romance|love|kiss|relationship/.test(n))   return "romance";
+  if (/action|fight|chase|battle/.test(n))        return "action";
+  if (/drama|sad|loss|death|goodbye/.test(n))     return "drama";
+  if (/comedy|funny|joke|prank/.test(n))          return "comedy";
+  return "neutral";
+}
+
 function buildWorkerPrompt(
   script: string,
   niche: string,
@@ -129,6 +148,8 @@ function buildWorkerPrompt(
 ): string {
   const roles: NarrativeRole[] = ["hook", "development", "development", "climax", "climax", "resolution", "resolution", "resolution", "resolution"];
   const roleAssignment = roles.slice(0, sceneCount).join(", ");
+  const nicheKey = detectNicheKey(niche);
+  const nicheRules = NICHE_DIRECTOR_RULES[nicheKey];
 
   return `Generate a DirectorPlan and ${sceneCount} scene specs for this production job.
 
@@ -138,9 +159,18 @@ ${script}
 """
 
 NICHE: ${niche}
+GENRE RULES: ${nicheRules}
 SCENE COUNT: ${sceneCount}
 NARRATIVE ROLES (in order): ${roleAssignment}
 ${referenceImageUrl ? `REFERENCE (match character appearance to this): ${referenceImageUrl}` : ""}
+
+STRICT EXECUTION RULES:
+- Each scene = exactly 1 irreversible narrative event
+- No compressed multi-action beats
+- No invented characters or props not in script
+- camera.movement must be "static" unless action explicitly requires motion
+- emotionalState must be a single dominant word — no blending
+- actionUnit must be a single verb clause — no "and" compounds
 
 Follow the pipeline contract exactly. Return only valid JSON.`;
 }
