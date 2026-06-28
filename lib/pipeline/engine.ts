@@ -19,6 +19,7 @@ import { runVoiceEngine }       from "./voice-engine";
 import { compileContracts }     from "./contract-compiler";
 import { buildLedger, recordActualDurations, verifyLedger } from "./temporal-ledger";
 import { withRetry }            from "./retry-policy";
+import { validateImage }        from "./vision-validator";
 import { generateRunwayClip, generateRunwaySeedanceClip } from "@/lib/services/runway";
 import { stitchClipsWithAudio } from "@/lib/services/elevenlabs";
 import { mirrorToSupabase }     from "@/lib/utils/mirror-to-supabase";
@@ -69,9 +70,15 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
   // Mirror all fal.media URLs to Supabase (Runway rejects fal.media CDN)
   const mirroredImageUrls = await mirrorImages(imageUrls, input.userId);
 
-  // ── Stage 6: Video Clips ────────────���─────────────────────────────────────
+  // ── Stage 5c: Vision Validation ───────────────────────────────────────────
+  log("STAGE_5C", "Vision Validation — checking images against contracts");
+  const validatedImageUrls = await validateAndRepairImages(
+    contracts, mirroredImageUrls, input.referenceImageUrl, input.userId,
+  );
+
+  // ── Stage 6: Video Clips ────────────────────────────────────────────────
   log("STAGE_6", `Video Clips — generating ${contracts.length} Runway clips in parallel`);
-  const clipResults = await generateClips(contracts, mirroredImageUrls, input.speedMode);
+  const clipResults = await generateClips(contracts, validatedImageUrls, input.speedMode);
 
   // Update ledger with actual durations
   const actualDurationsMs = clipResults.map(r => (r.clipUrl ? r.durationSec * 1000 : undefined));
@@ -192,6 +199,48 @@ async function mirrorImages(imageUrls: string[], userId: string): Promise<string
     log("WARN", `Mirror failed scene=${i + 1}: ${(r.reason as Error)?.message?.slice(0, 60)}`);
     return imageUrls[i];
   });
+}
+
+// ── Stage 5c: Vision validation + repair ──────────────────────────────────────
+
+async function validateAndRepairImages(
+  contracts:          SceneContract[],
+  imageUrls:          string[],
+  referenceImageUrl:  string | undefined,
+  userId:             string,
+): Promise<string[]> {
+  const falKey = process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY;
+  const results = [...imageUrls];
+
+  await Promise.allSettled(
+    contracts.map(async (contract, i) => {
+      const url = imageUrls[i];
+      if (!url) return;
+
+      const vr = await validateImage(url, contract);
+      if (vr.passed) return;
+
+      log("VISION_FAIL", `scene=${contract.index + 1} score=${vr.score.toFixed(2)} issues=${vr.issues.join("; ")}`);
+
+      if (!falKey) return; // can't retry without Flux key — keep original
+
+      // Retry once with a tightened prompt that front-loads clothing compliance
+      try {
+        const repairedUrl = await generateOneImage(contract, falKey, undefined);
+        const recheck     = await validateImage(repairedUrl, contract);
+        log("VISION_REPAIR", `scene=${contract.index + 1} repair_score=${recheck.score.toFixed(2)} passed=${recheck.passed}`);
+        // Use repaired image only if it actually passes or beats original
+        if (recheck.score >= vr.score) {
+          const mirrored = await mirrorToSupabase(repairedUrl, userId, i);
+          results[i] = mirrored ?? repairedUrl;
+        }
+      } catch (repairErr) {
+        log("WARN", `Vision repair failed scene=${contract.index + 1}: ${(repairErr as Error)?.message?.slice(0, 60)}`);
+      }
+    })
+  );
+
+  return results;
 }
 
 // ── Stage 6: Clip generation ───────────────────────────────────────────────────

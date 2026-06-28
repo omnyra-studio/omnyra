@@ -187,14 +187,16 @@ export interface PipelineInput {
 }
 
 export interface SceneOutput {
-  index:         number;
-  imageUrl:      string;
-  clipUrl:       string | null;
-  durationSec:   number;
-  provider:      string;
-  imageAttempts: number;
-  clipAttempts:  number;
-  passed:        boolean;
+  index:          number;
+  imageUrl:       string;
+  clipUrl:        string | null;
+  durationSec:    number;
+  provider:       string;
+  imageAttempts:  number;
+  clipAttempts:   number;
+  passed:         boolean;
+  visionScore?:   number;   // 0–1 from vision validator; undefined if check skipped
+  visionIssues?:  string[]; // violations detected; empty if clean
 }
 
 export interface PipelineResult {
