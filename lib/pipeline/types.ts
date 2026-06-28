@@ -237,6 +237,29 @@ export interface SceneAnalytics {
   consistencyScore:  number;   // 0–1 from vision validator pass
 }
 
+// ── Debug packet — one per pipeline stage ─────────────────────────────────────
+// Collected when PIPELINE_DEBUG=true env var is set.
+// Never throws. Never blocks. Just captures what happened at each gate.
+
+export type PipelineStage =
+  | "director"
+  | "voice"
+  | "compile"
+  | "contract_gate"
+  | "images"
+  | "vision_gate"
+  | "clips"
+  | "assembly";
+
+export interface DebugPacket {
+  stage:           PipelineStage;
+  status:          "ok" | "fail";
+  latencyMs:       number;
+  inputSnapshot:   Record<string, unknown>;
+  outputSnapshot:  Record<string, unknown>;
+  error?:          string;
+}
+
 export interface PipelineResult {
   videoUrl:        string;
   audioUrl:        string;
@@ -246,6 +269,7 @@ export interface PipelineResult {
   qualityScore:    number;
   analytics:       SceneAnalytics[];
   trailerScenes:   number[];   // indices of scenes selected for a 15s trailer cut
+  debugPackets?:   DebugPacket[]; // populated only when PIPELINE_DEBUG=true
 }
 
 // ── Continuity Memory — last-scene state threaded through the loop ────────────

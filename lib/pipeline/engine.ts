@@ -28,6 +28,8 @@ import { mirrorToSupabase }     from "@/lib/utils/mirror-to-supabase";
 import type {
   PipelineInput,
   PipelineResult,
+  PipelineStage,
+  DebugPacket,
   SceneContract,
   SceneOutput,
   SceneAnalytics,
@@ -35,77 +37,154 @@ import type {
 import { createMemory, updateMemory, selectProvider } from "./types";
 
 const FAL_ENDPOINT = "https://fal.run/fal-ai/flux/dev";
+const DEBUG_PIPELINE = process.env.PIPELINE_DEBUG === "true";
+
+// ── Debug packet collector ────────────────────────────────────────────────────
+
+function stage<T>(
+  packets:  DebugPacket[],
+  name:     PipelineStage,
+  input:    Record<string, unknown>,
+  fn:       () => Promise<T>,
+): Promise<T> {
+  if (!DEBUG_PIPELINE) return fn();
+
+  const t = Date.now();
+  return fn().then(
+    result => {
+      packets.push({
+        stage:          name,
+        status:         "ok",
+        latencyMs:      Date.now() - t,
+        inputSnapshot:  input,
+        outputSnapshot: summarise(result),
+      });
+      return result;
+    },
+    err => {
+      packets.push({
+        stage:          name,
+        status:         "fail",
+        latencyMs:      Date.now() - t,
+        inputSnapshot:  input,
+        outputSnapshot: {},
+        error:          err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    },
+  );
+}
+
+function summarise(v: unknown): Record<string, unknown> {
+  if (v === null || v === undefined) return {};
+  if (typeof v !== "object") return { value: v };
+  const obj = v as Record<string, unknown>;
+  // Truncate large arrays and strings to keep snapshots readable
+  const summary: Record<string, unknown> = {};
+  for (const [k, val] of Object.entries(obj)) {
+    if (Array.isArray(val))        summary[k] = `Array(${val.length})`;
+    else if (typeof val === "string" && val.length > 120) summary[k] = val.slice(0, 120) + "…";
+    else summary[k] = val;
+  }
+  return summary;
+}
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 export async function runPipeline(input: PipelineInput): Promise<PipelineResult> {
   const t0 = Date.now();
-  log("START", `script=${input.script.length}chars voice=${input.voiceId} niche=${input.niche} target=${input.targetDuration}s`);
+  const packets: DebugPacket[] = [];
+  log("START", `script=${input.script.length}chars voice=${input.voiceId} niche=${input.niche} target=${input.targetDuration}s debug=${DEBUG_PIPELINE}`);
 
   // ── Step 1: Director — locked plan + per-scene visual specs ─────────────────
   log("STEP_1", "Director AI — building plan and scene specs");
-  const { plan, skeletons: specs } = await runDirectorAI(
-    input.script,
-    input.voiceId,
-    input.niche,
-    input.targetDuration,
-    input.referenceImageUrl,
+  const { plan, skeletons: specs } = await stage(
+    packets, "director",
+    { scriptLen: input.script.length, niche: input.niche, targetDuration: input.targetDuration },
+    () => runDirectorAI(input.script, input.voiceId, input.niche, input.targetDuration, input.referenceImageUrl),
   );
 
   // ── Step 2: Voice — timing authority, freezes the timeline ──────────────────
   log("STEP_2", `Voice Engine — generating narration voice=${input.voiceId}`);
-  const voice = await runVoiceEngine(specs, input.voiceId, input.userId);
+  const voice = await stage(
+    packets, "voice",
+    { voiceId: input.voiceId, sceneCount: specs.length },
+    () => runVoiceEngine(specs, input.voiceId, input.userId),
+  );
   log("STEP_2_DONE", `totalDuration=${(voice.totalDurationMs / 1000).toFixed(2)}s scenes=${voice.timings.length}`);
 
   // ── Step 3: SceneContracts — immutable compiled truth ───────────────────────
-  // SceneSpec + VoiceTiming + DirectorPlan = contract. Nothing downstream rewrites it.
   log("STEP_3", "Compile contracts — binding specs + timings -> immutable contracts");
-  const contracts = compileContracts(plan, specs, voice.timings, input.brandMemory);
+  const contracts = await stage(
+    packets, "compile",
+    { skeletonCount: specs.length, timingCount: voice.timings.length },
+    async () => compileContracts(plan, specs, voice.timings, input.brandMemory),
+  );
 
   // ── Execution Contract gate — throws before any credit is spent ─────────────
-  // Voice defines time. Time defines scenes. Violations abort here, not after Runway.
-  try {
-    validateExecutionContract(contracts, voice);
-    log("CONTRACT_OK", `${contracts.length} scenes passed execution contract`);
-  } catch (err) {
-    if (err instanceof ExecutionContractViolation) {
-      log("CONTRACT_FAIL", err.message);
-      throw err; // surface to caller — never silently continue
-    }
-    throw err;
-  }
+  await stage(
+    packets, "contract_gate",
+    { contractCount: contracts.length, voiceDurationMs: voice.totalDurationMs },
+    async () => {
+      try {
+        validateExecutionContract(contracts, voice);
+        log("CONTRACT_OK", `${contracts.length} scenes passed execution contract`);
+      } catch (err) {
+        if (err instanceof ExecutionContractViolation) {
+          log("CONTRACT_FAIL", err.message);
+        }
+        throw err;
+      }
+      return {};
+    },
+  );
 
   // ── Step 4: Images — one Flux image per contract ────────────────────────────
   log("STEP_4", `Images — generating ${contracts.length} Flux images in parallel`);
-  const rawImageUrls = await generateImages(contracts, input.referenceImageUrl);
+  const rawImageUrls = await stage(
+    packets, "images",
+    { contractCount: contracts.length },
+    () => generateImages(contracts, input.referenceImageUrl),
+  );
 
   // Mirror fal.media URLs to Supabase (Runway rejects fal.media CDN)
   const imageUrls = await mirrorImages(rawImageUrls, input.userId);
 
   // ── Step 5: Vision gate — validate image against contract before Runway ──────
   log("STEP_5", "Vision gate — checking images against contracts, repairing failures");
-  const validatedUrls = await validateAndRepairImages(contracts, imageUrls, input.userId);
+  const validatedUrls = await stage(
+    packets, "vision_gate",
+    { imageCount: imageUrls.length },
+    () => validateAndRepairImages(contracts, imageUrls, input.userId),
+  );
 
   // ── Step 6: Clips — one Runway clip per contract ─────────────────────────────
   log("STEP_6", `Clips — generating ${contracts.length} Runway clips sequentially`);
-  const clipResults = await generateClips(contracts, validatedUrls, input.speedMode);
+  const clipResults = await stage(
+    packets, "clips",
+    { contractCount: contracts.length, speedMode: input.speedMode },
+    () => generateClips(contracts, validatedUrls, input.speedMode),
+  );
 
   const successCount = clipResults.filter(r => r.passed).length;
   if (successCount === 0) throw new Error("All clip generation failed — cannot assemble");
 
   // ── Step 7: Assembly — voice-synced single pass ──────────────────────────────
-  // maxDuration = authoritative voice duration. FFmpeg -t caps output exactly here.
   const maxDuration = voice.totalDurationMs / 1000;
   log("STEP_7", `Assembly — ${successCount}/${contracts.length} clips maxDuration=${maxDuration.toFixed(2)}s`);
 
   const clipUrls = clipResults.map(r => r.clipUrl).filter(Boolean) as string[];
-  const videoUrl = await withRetry(
-    () => stitchClipsWithAudio({ clipUrls, audioUrl: voice.audioUrl, userId: input.userId, maxDuration }),
-    "assembly",
-    "final assembly",
+  const videoUrl = await stage(
+    packets, "assembly",
+    { clipCount: clipUrls.length, maxDuration },
+    () => withRetry(
+      () => stitchClipsWithAudio({ clipUrls, audioUrl: voice.audioUrl, userId: input.userId, maxDuration }),
+      "assembly",
+      "final assembly",
+    ),
   );
 
-  const analytics    = scoreAnalytics(contracts, clipResults);
+  const analytics     = scoreAnalytics(contracts, clipResults);
   const trailerScenes = selectTrailerScenes(contracts, clipResults);
 
   const elapsed = Date.now() - t0;
@@ -120,6 +199,7 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
     qualityScore:    successCount / contracts.length,
     analytics,
     trailerScenes,
+    debugPackets: DEBUG_PIPELINE ? packets : undefined,
   };
 }
 
