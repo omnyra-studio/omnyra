@@ -29,6 +29,7 @@ import type {
   SceneContract,
   SceneOutput,
 } from "./types";
+import { createMemory, updateMemory, selectProvider } from "./types";
 
 const FAL_ENDPOINT = "https://fal.run/fal-ai/flux/dev";
 
@@ -70,7 +71,7 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
   const validatedUrls = await validateAndRepairImages(contracts, imageUrls, input.userId);
 
   // ── Step 6: Clips — one Runway clip per contract ─────────────────────────────
-  log("STEP_6", `Clips — generating ${contracts.length} Runway clips in parallel`);
+  log("STEP_6", `Clips — generating ${contracts.length} Runway clips sequentially`);
   const clipResults = await generateClips(contracts, validatedUrls, input.speedMode);
 
   const successCount = clipResults.filter(r => r.passed).length;
@@ -221,58 +222,61 @@ async function validateAndRepairImages(
 }
 
 // ── Step 6: Clip generation ────────────────────────────────────────────────────
+// Sequential: each scene locks its contract before the next begins.
+// ContinuityMemory threads through the loop — previous scene state available.
+// Last-frame chaining: anchor (scene 0) last frame used as scene 1..N reference.
 
 async function generateClips(
   contracts: SceneContract[],
   imageUrls: string[],
   speedMode: "fast" | "quality",
 ): Promise<SceneOutput[]> {
-  // Scene 0 (anchor) first — its last frame feeds scenes 1..N for continuity
-  const anchorResult = await generateOneClip(contracts[0], imageUrls[0], speedMode);
-  const results: SceneOutput[] = [anchorResult];
-
-  if (contracts.length === 1) return results;
-
-  // Extract anchor last frame for visual continuity on scenes 1..N
+  const results: SceneOutput[] = [];
+  let memory = createMemory();
   let chainFrame: string | null = null;
-  if (anchorResult.clipUrl) {
+
+  for (let i = 0; i < contracts.length; i++) {
+    const contract = contracts[i];
+    const sceneImg  = imageUrls[i] || chainFrame || imageUrls[0];
+
+    // Determine provider: use selectProvider first, respect speedMode override
+    const routedProvider = selectProvider("video", contract);
+    const useQuality = speedMode === "quality" || routedProvider === "seedance2";
+
+    log("CLIP_START", `scene=${contract.index + 1} role=${contract.narrativeRole} provider=${useQuality ? "seedance2" : "gen4_turbo"}`);
+
     try {
-      const { extractLastFrame } = await import("@/lib/utils/extract-last-frame");
-      chainFrame = await extractLastFrame(anchorResult.clipUrl, "", 0);
-      if (chainFrame) log("CHAIN", "anchor last frame ready");
-    } catch {
-      log("WARN", "Last frame extraction failed — scenes 1..N use own images");
-    }
-  }
+      const result = await generateOneClip(contract, sceneImg, useQuality ? "quality" : "fast");
+      results.push(result);
 
-  // Scenes 1..N in parallel (600ms stagger avoids Runway 429)
-  const restResults = await Promise.allSettled(
-    contracts.slice(1).map(async (contract, idx) => {
-      if (idx > 0) await sleep(idx * 600);
-      const sceneImg = imageUrls[contract.index] || chainFrame || imageUrls[0];
-      return generateOneClip(contract, sceneImg, speedMode);
-    })
-  );
+      // Update continuity memory with locked contract state
+      memory = updateMemory(memory, contract);
 
-  restResults.forEach((r, idx) => {
-    if (r.status === "fulfilled") {
-      results.push(r.value);
-    } else {
-      log("WARN", `Clip failed scene=${idx + 2}: ${(r.reason as Error)?.message?.slice(0, 80)}`);
+      // Extract last frame of scene 0 for chaining into scene 1..N
+      if (i === 0 && result.clipUrl) {
+        try {
+          const { extractLastFrame } = await import("@/lib/utils/extract-last-frame");
+          chainFrame = await extractLastFrame(result.clipUrl, "", 0);
+          if (chainFrame) log("CHAIN", "anchor last frame ready for continuity");
+        } catch {
+          log("WARN", "Last frame extraction failed — scenes 1..N use own images");
+        }
+      }
+    } catch (err) {
+      log("WARN", `Clip failed scene=${contract.index + 1}: ${(err as Error)?.message?.slice(0, 80)}`);
       results.push({
-        index:         idx + 1,
-        imageUrl:      imageUrls[idx + 1] ?? "",
+        index:         contract.index,
+        imageUrl:      sceneImg,
         clipUrl:       null,
-        durationSec:   contracts[idx + 1].clipDurationSec,
+        durationSec:   contract.clipDurationSec,
         provider:      "runway",
         imageAttempts: 1,
-        clipAttempts:  2,
+        clipAttempts:  3,
         passed:        false,
       });
     }
-  });
+  }
 
-  results.sort((a, b) => a.index - b.index);
   return results;
 }
 

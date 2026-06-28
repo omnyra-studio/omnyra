@@ -208,6 +208,62 @@ export interface PipelineResult {
   qualityScore:    number;
 }
 
+// ── Continuity Memory — last-scene state threaded through the loop ────────────
+// No databases. No bibles. Just the previous scene's locked state.
+// Passed to the vision validator for continuity checks.
+
+export interface ContinuityMemory {
+  lastScene: {
+    sceneIndex:   number;
+    characters:   string[];   // character names
+    props:        string[];   // requiredProps
+    location:     string;     // location name
+    emotion:      string;
+    clothing:     string;     // locked clothing description — must not change
+  } | null;
+}
+
+export function createMemory(): ContinuityMemory {
+  return { lastScene: null };
+}
+
+export function updateMemory(memory: ContinuityMemory, contract: SceneContract): ContinuityMemory {
+  return {
+    lastScene: {
+      sceneIndex: contract.index,
+      characters: contract.characters.map(c => c.name),
+      props:      contract.requiredProps,
+      location:   contract.location.name,
+      emotion:    contract.emotion,
+      clothing:   contract.characters[0]?.clothing ?? "",
+    },
+  };
+}
+
+// ── Provider routing — deterministic, no AI logic ─────────────────────────────
+// Simple if/else. Never scoring, never fuzzy.
+
+export type MediaProvider = "flux" | "gen4_turbo" | "seedance2" | "elevenlabs";
+
+export function selectProvider(
+  task:      "image" | "video" | "voice",
+  contract?: Pick<SceneContract, "narrativeRole" | "action">,
+): MediaProvider {
+  if (task === "voice") return "elevenlabs";
+  if (task === "image") return "flux";
+
+  // Video: route by narrative role
+  // hook/resolution → Runway gen4_turbo (stable, cinematic)
+  // climax          → Seedance2 (higher motion fidelity)
+  // development     → gen4_turbo (default)
+  if (task === "video") {
+    if (contract?.narrativeRole === "climax") return "seedance2";
+    return "gen4_turbo";
+  }
+
+  return "gen4_turbo";
+}
+
 // ── Retry policy ──────────────────────────────────────────────────────────────
 
 export type RetryCategory =
