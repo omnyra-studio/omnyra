@@ -73,7 +73,7 @@ const saasMetrics = new SaaSMetrics();
 export const maxDuration = 300;
 
 const KLING_CLIP_SECS  = 10;  // 3 Ã— 10s = 30s total video
-const ROUTE_VERSION    = "2026-06-27-v44-clean-runway-prompts";
+const ROUTE_VERSION    = "2026-06-27-v45-per-scene-images-fix";
 
 // Absolute generation constraints â€” injected into storyboard planner system prompt
 // and distilled into per-scene Kling prompts for Scene 2+.
@@ -1081,7 +1081,7 @@ export async function POST(req: Request) {
         // 2. Per-scene Flux image generation — each scene gets its own image
         // based on its renderContract visual description. This is the primary fix
         // for "video does not match script" — previously one image was used for all scenes.
-        if (!mainImage && !_isAnimated && cinemaPipeline) {
+        if (!_isAnimated && cinemaPipeline) {
           const falKey = process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY;
           if (falKey) {
             const fluxNeg = [getFluxHardNegative(), passedSceneGraph?.scene_graph?.[0]?.negative_prompt, 'text, words, writing, signs, letters, numbers, captions, watermarks, gibberish text, banners, placards, marijuana, drugs, weed, cannabis, alcohol, cigarettes, weapons, violence, drug paraphernalia, nudity, nsfw'].filter(Boolean).join(', ');
@@ -1116,9 +1116,14 @@ export async function POST(req: Request) {
             for (let idx = 0; idx < fluxResults.length; idx++) {
               const r = fluxResults[idx];
               if (r.status === 'fulfilled') {
-                sceneImageUrls[idx] = r.value;
+                // For scene 0: keep user-provided image if they supplied one.
+                // For scenes 1..N: always use unique Flux image so each clip matches its script.
+                const keepUserImage = idx === 0 && sceneImageUrls[0] && !sceneImageUrls[0].includes('fal.');
+                if (!keepUserImage) {
+                  sceneImageUrls[idx] = r.value;
+                  if (idx === 0) mainImage = r.value;
+                }
                 lastGoodUrl = r.value;
-                if (idx === 0) mainImage = r.value;
               } else {
                 console.warn(`[FLUX_SCENE_FAIL] scene=${idx + 1}: ${r.reason?.message ?? r.reason} -- using prev`);
                 sceneImageUrls[idx] = lastGoodUrl;
@@ -1329,18 +1334,7 @@ export async function POST(req: Request) {
           console.log(`[TEMPLATE_NEG] injected "${templateNegative.substring(0, 80)}" into ${sceneNegativePrompts.length} scenes`);
         }
 
-        const extractedUrls: Array<string | null> = new Array(prompts.length).fill(null);
-        const sceneProviders: string[]             = new Array(prompts.length).fill('kling');
         const slaFallbackIndices: number[] = [];
-
-        // Absolute continuity constraint (distilled for Kling 500-char prompt limit)
-        // Full constraint system is in the GENERATION_CONSTRAINTS block below.
-        const CONTINUITY_PREFIX =
-          "CONTINUITY LOCK: Begin from exact final frame of previous scene. " +
-          "Preserve pose, camera position, focal length for first 2 seconds â€” no new motion. " +
-          "Same character, identical clothing, same lighting vector. " +
-          "Resume motion naturally after 2-second freeze. " +
-          "Continuity overrides creativity.\n";
 
         // Provider pre-flight — throws if RUNWAYML_API_SECRET is absent
         // and VIDEO_PROVIDER_FALLBACK=true is not set. Runs once before clip loop.
@@ -1358,9 +1352,6 @@ export async function POST(req: Request) {
           sceneImageUrls[0] = upscaledMainImage;
         }
 
-        let driftMotionStrength = 0.80;
-        let driftPromptPrefix   = '';
-
         // -- Parallel clip generation --
         // Phase 1: scene 0 (anchor). Phase 2: scenes 1..N in parallel using anchor last-frame.
         // Enables 90s (9 clips) within the 300s Vercel budget — all clips run concurrently.
@@ -1368,13 +1359,24 @@ export async function POST(req: Request) {
         const extractedUrls: Array<string | null> = new Array(klingScenePrompts.length).fill(null);
         const sceneProviders: string[] = new Array(klingScenePrompts.length).fill('runway');
 
-        const buildRunwayPrompt = (kp: string): string =>
-          kp
+        // Runway prompt budget is 512 chars. Strip internal continuity tokens (handled by
+        // chainFrame instead) then inject a FULL MOTION directive so every clip has active
+        // movement — no static, no looping, no freeze frames.
+        const RUNWAY_MOTION_SUFFIX =
+          “ Full dynamic motion: continuous action, realistic physics, active camera movement. No static poses, no looping.”;
+
+        const buildRunwayPrompt = (kp: string, sceneIndex: number): string => {
+          const cleaned = kp
             .replace(/CONTINUITY LOCK:[\s\S]*?Continuity overrides creativity\.\n?/g, '')
             .replace(/Continue from previous (?:frame|scene)[^.]*\.\s*/gi, '')
             .replace(/Expression and body convey[^.]*\.\s*/gi, '')
             .replace(/Character:[^.]*\.\s*/gi, '')
-            .replace(/\s+/g, ' ').trim().slice(0, 512);
+            .replace(/\s+/g, ' ').trim();
+          const chainNote = sceneIndex > 0
+            ? “ Smooth continuation from previous clip's final frame, same character and lighting.”
+            : “”;
+          return `${cleaned}${chainNote}${RUNWAY_MOTION_SUFFIX}`.slice(0, 512);
+        };
 
         const generateOneClip = async (i: number, sceneImg: string | null | undefined): Promise<string | null> => {
           // All scenes use their dedicated klingScenePrompts directly.
@@ -1383,7 +1385,7 @@ export async function POST(req: Request) {
           const klingPrompt = klingScenePrompts[i];
           const mode = sceneImg?.startsWith('https://') ? 'i2v' : 't2v';
           const runwayRouting = chooseRunwayModel(voiceoverText ?? klingPrompt, userTier, speedMode);
-          const runwayPrompt  = buildRunwayPrompt(klingPrompt);
+          const runwayPrompt  = buildRunwayPrompt(klingPrompt, i);
           console.log(`[CLIP_FIRE] scene=${i + 1}/${klingScenePrompts.length} mode=${mode} model=${runwayRouting.model} prompt="${runwayPrompt.substring(0, 120)}"`);
           try {
             const result = speedMode === 'quality'
@@ -1443,7 +1445,9 @@ export async function POST(req: Request) {
             klingScenePrompts.slice(1).map(async (_, idx) => {
               const i = idx + 1;
               if (idx > 0) await new Promise(r => setTimeout(r, idx * 600));
-              const sceneImg = chainFrame ?? sceneImageUrls[i] ?? sceneImageUrls[0];
+              // Prefer per-scene Flux image (unique env/lighting per script beat);
+              // fall back to chainFrame (anchor continuity) only when no per-scene image.
+              const sceneImg = sceneImageUrls[i] ?? chainFrame ?? sceneImageUrls[0];
               return generateOneClip(i, sceneImg);
             })
           );
