@@ -17,7 +17,7 @@
 import { runDirectorAI }       from "./director";
 import { runVoiceEngine }       from "./voice-engine";
 import { compileContracts }     from "./contract-compiler";
-import { withRetry }            from "./retry-policy";
+import { withRetry, classifyError, getRetryDecision } from "./retry-policy";
 import { validateImage }        from "./vision-validator";
 import { generateRunwayClip, generateRunwaySeedanceClip } from "@/lib/services/runway";
 import { stitchClipsWithAudio } from "@/lib/services/elevenlabs";
@@ -187,30 +187,35 @@ async function validateAndRepairImages(
   const falKey  = process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY;
   const results = [...imageUrls];
 
-  await Promise.allSettled(
-    contracts.map(async (contract, i) => {
-      const url = imageUrls[i];
-      if (!url) return;
+  // Run sequentially so each scene can reference the previous contract for continuity
+  for (let i = 0; i < contracts.length; i++) {
+    const contract  = contracts[i];
+    const prevContract = i > 0 ? contracts[i - 1] : undefined;
+    const url       = imageUrls[i];
+    if (!url) continue;
 
-      const vr = await validateImage(url, contract);
-      if (vr.passed) return;
+    const vr = await validateImage(url, contract, prevContract);
+    if (vr.passed) continue;
 
-      log("VISION_FAIL", `scene=${contract.index + 1} score=${vr.score.toFixed(2)} issues=${vr.issues.join("; ")}`);
-      if (!falKey) return;
+    log("VISION_FAIL", `scene=${contract.index + 1} score=${vr.score.toFixed(2)} issues=${vr.issues.join("; ")}`);
+    if (!falKey) continue;
 
+    // Retry once — regenerate the failing scene only, never restart pipeline
+    for (let attempt = 1; attempt <= 2; attempt++) {
       try {
         const repairedUrl = await generateOneImage(contract, falKey, undefined);
-        const recheck     = await validateImage(repairedUrl, contract);
-        log("VISION_REPAIR", `scene=${contract.index + 1} score=${recheck.score.toFixed(2)} passed=${recheck.passed}`);
+        const recheck     = await validateImage(repairedUrl, contract, prevContract);
+        log("VISION_REPAIR", `scene=${contract.index + 1} attempt=${attempt} score=${recheck.score.toFixed(2)} passed=${recheck.passed}`);
         if (recheck.score >= vr.score) {
           const mirrored = await mirrorToSupabase(repairedUrl, userId, i);
           results[i] = mirrored ?? repairedUrl;
+          break;
         }
       } catch (err) {
-        log("WARN", `Vision repair failed scene=${contract.index + 1}: ${(err as Error)?.message?.slice(0, 60)}`);
+        log("WARN", `Vision repair failed scene=${contract.index + 1} attempt=${attempt}: ${(err as Error)?.message?.slice(0, 60)}`);
       }
-    })
-  );
+    }
+  }
 
   return results;
 }
@@ -276,12 +281,21 @@ async function generateOneClip(
   imageUrl:  string,
   speedMode: "fast" | "quality",
 ): Promise<SceneOutput> {
-  let attempts = 0;
+  // Attempt 1–2: primary provider (gen4_turbo for fast, Seedance2 for quality)
+  // Attempt 3:   provider switch — if primary fails twice, cross to the other
+  let attempts     = 0;
+  let usedProvider = speedMode === "quality" ? "seedance2" : "gen4_turbo";
+  let lastErr: unknown;
 
-  const result = await withRetry(
-    async () => {
-      attempts++;
-      const r = speedMode === "quality"
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    attempts++;
+    try {
+      const switchNow = attempt === 3; // switch provider on third attempt
+      const useQuality = switchNow
+        ? speedMode !== "quality"  // cross-switch: fast→quality, quality→fast
+        : speedMode === "quality";
+
+      const r = useQuality
         ? await generateRunwaySeedanceClip({
             prompt:      contract.videoPrompt,
             imageUrl:    imageUrl || undefined,
@@ -295,23 +309,30 @@ async function generateOneClip(
             duration:    contract.clipDurationSec as 5 | 10,
             aspectRatio: "9:16",
           });
-      log("CLIP_OK", `scene=${contract.index + 1} ${r.generationMs}ms`);
-      return r;
-    },
-    "clip",
-    `clip scene=${contract.index + 1}`,
-  );
 
-  return {
-    index:         contract.index,
-    imageUrl,
-    clipUrl:       result.videoUrl,
-    durationSec:   contract.clipDurationSec,
-    provider:      "runway",
-    imageAttempts: 1,
-    clipAttempts:  attempts,
-    passed:        true,
-  };
+      usedProvider = useQuality ? "seedance2" : "gen4_turbo";
+      log("CLIP_OK", `scene=${contract.index + 1} provider=${usedProvider} attempt=${attempt} ${r.generationMs}ms`);
+
+      return {
+        index:         contract.index,
+        imageUrl,
+        clipUrl:       r.videoUrl,
+        durationSec:   contract.clipDurationSec,
+        provider:      usedProvider,
+        imageAttempts: 1,
+        clipAttempts:  attempts,
+        passed:        true,
+      };
+    } catch (err) {
+      lastErr = err;
+      const decision = getRetryDecision(err, attempt, "clip");
+      log("WARN", `Clip scene=${contract.index + 1} attempt=${attempt} ${decision.category}${decision.switchProvider ? " → switching provider" : ""}`);
+      if (!decision.shouldRetry && !decision.switchProvider) break;
+      if (decision.delayMs > 0) await sleep(decision.delayMs);
+    }
+  }
+
+  throw lastErr;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────

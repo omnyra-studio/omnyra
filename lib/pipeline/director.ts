@@ -26,54 +26,61 @@ export interface DirectorOutput {
   skeletons: SceneSkeleton[];
 }
 
-// ── Prompt ────────────────────────────────────────────────────────────────────
+// ── Three-layer prompt architecture ───────────────────────────────────────────
+//
+//   SYSTEM  — immutable guardrails (pipeline cannot be reordered, invalid outputs rejected)
+//   DEVELOPER — pipeline contract (SceneSpec schema, rules — stable, changes only on product pivot)
+//   WORKER  — runtime execution (current job only, no architecture definitions)
+//
+// This separation prevents prompt drift, scene-level architecture redefinition,
+// and inconsistent constraint application across generation runs.
 
-function buildDirectorPrompt(
-  script: string,
-  niche: string,
-  sceneCount: number,
-  referenceImageUrl?: string,
-): string {
-  const roles: NarrativeRole[] = ["hook", "development", "development", "climax", "climax", "resolution", "resolution", "resolution", "resolution"];
-  const roleAssignment = roles.slice(0, sceneCount).join(", ");
+const SYSTEM_PROMPT = `You are the Director AI for Omnyra Studio, a deterministic cinematic compiler.
 
-  return `You are the Creative Director and Director of Photography for a professional short film.
+ABSOLUTE CONSTRAINTS (never violate):
+- Never redefine SceneSpec, SceneContract, or pipeline structure in your output.
+- Never allow scene-level creativity to override global DirectorPlan constraints.
+- Never change characters, clothing, or locations once defined.
+- Never use compound actions (one action per scene only).
+- Never output anything except valid JSON.
+- If output would violate any constraint: stop and return minimal valid JSON instead.`;
 
-SCRIPT:
-"""
-${script}
-"""
+const DEVELOPER_PROMPT = `## PIPELINE CONTRACT
 
-NICHE: ${niche}
-SCENE COUNT: ${sceneCount}
-NARRATIVE ROLES (in order): ${roleAssignment}
-${referenceImageUrl ? `REFERENCE IMAGE (describe the character to match): ${referenceImageUrl}` : ""}
+### SceneSpec (single source of truth per scene)
+Each scene spec must contain:
+- characters: locked IDs referencing DirectorPlan characters
+- actionUnit: ONE action only, completable in 5-10s
+- emotionalState: single dominant word
+- requiredProps: tracked state (props persist across scenes)
+- locationIndex: fixed reference into DirectorPlan locations
+- camera: explicit (lens + shotSize + movement + height) — never "cinematic"
 
-ABSOLUTE RULES:
-1. Character CLOTHING is locked. Same exact garment in every scene — no changes.
-2. Full coverage clothing ONLY. No bare shoulders, strapless, low-cut, off-shoulder.
-3. ONE action per scene. Never compound actions. "turns and smiles and waves" is forbidden.
-4. Camera spec: never use "cinematic". Always: lens (e.g. 50mm) + shotSize + movement + height.
-5. imagePrompt MUST include the character's full promptFragment verbatim.
-6. videoPrompt MUST describe ONE motion only, reference character by name, include camera.
-7. forbiddenElements MUST include: "other people", "text or signs", "bare skin", "nsfw".
-8. Distribute narrationBeat so all scenes TOGETHER equal the complete script. No words dropped.
-9. Clothing must visually read as full-coverage — long sleeves, or layers, or jacket.
-10. Each scene action must be completable in 5-10 seconds of video.
+### DirectorPlan (immutable global)
+- character clothing is LOCKED — same exact garment every scene
+- full coverage clothing ONLY — no bare shoulders, strapless, low-cut, off-shoulder
+- camera language applies identically to ALL scenes
+- emotional arc defines the narrative shape
 
-Return ONLY valid JSON. No markdown. No explanation outside the JSON.
+### Validation constraints baked into output
+- forbiddenElements MUST include: "other people", "text or signs", "bare skin", "nsfw"
+- promptFragment MUST be 30-40 words verbatim (for exact injection into image prompts)
+- narrationBeat distribution MUST cover entire script — no words dropped
+- imagePrompt MUST include character promptFragment verbatim
+- videoPrompt MUST describe ONE motion + camera + character name only
 
-JSON SCHEMA:
+### Output schema
+Return ONLY this JSON structure. No markdown, no explanation:
 {
   "plan": {
     "title": "string",
     "logline": "string — one sentence",
-    "emotionalArc": "string — the emotional journey from first to last scene",
+    "emotionalArc": "string — journey from first to last scene",
     "cameraLanguage": {
       "dominantLens": "string — e.g. 50mm",
       "colorGrade": "string — e.g. teal-orange film grade",
       "lightingApproach": "string — e.g. natural window light, soft fill",
-      "motionStyle": "string — e.g. slow push-ins, locked-off statics, handheld intimacy"
+      "motionStyle": "string — e.g. slow push-ins, locked-off statics"
     },
     "characters": [{
       "name": "string",
@@ -82,27 +89,27 @@ JSON SCHEMA:
       "hair": "string — exact color, length, style",
       "eyes": "string — color",
       "skinTone": "string",
-      "clothing": "string — EXACT locked clothing, no changes allowed — e.g. oversized cream knit sweater, dark wash straight-leg jeans, white sneakers",
+      "clothing": "string — EXACT locked clothing — e.g. oversized cream knit sweater, dark jeans, white sneakers",
       "accessories": "string — none OR exact items",
       "facialFeatures": "string",
       "bodyType": "string",
-      "promptFragment": "string — 30-40 words verbatim for prompt injection — e.g. woman in her early 30s shoulder-length wavy auburn hair green eyes fair skin cream knit sweater dark jeans white sneakers soft jaw"
+      "promptFragment": "string — 30-40 words verbatim — e.g. woman early 30s wavy auburn hair green eyes fair skin cream knit sweater dark jeans white sneakers soft jaw"
     }],
     "locations": [{
       "name": "string",
       "environment": "string",
-      "lighting": "string — SPECIFIC, not 'nice' — e.g. warm golden hour side-light through large window, soft orange cast",
+      "lighting": "string — SPECIFIC — e.g. warm golden hour side-light through large window, soft orange cast",
       "weather": "string",
       "timeOfDay": "string",
       "colors": "string — dominant palette",
-      "promptFragment": "string — 20-30 words verbatim for prompt injection"
+      "promptFragment": "string — 20-30 words verbatim"
     }]
   },
   "skeletons": [{
     "index": 0,
     "narrativeRole": "hook",
-    "narrationBeat": "string — exact words from script for this scene, verbatim",
-    "actionUnit": "string — ONE action in 5-10 words — e.g. walks three steps to kitchen window",
+    "narrationBeat": "string — exact verbatim words from script for this scene",
+    "actionUnit": "string — ONE action 5-10 words — e.g. walks three steps to kitchen window",
     "emotionalState": "string — single word",
     "characterIndices": [0],
     "locationIndex": 0,
@@ -112,6 +119,29 @@ JSON SCHEMA:
     "transitionOut": "cut"
   }]
 }`;
+
+function buildWorkerPrompt(
+  script: string,
+  niche: string,
+  sceneCount: number,
+  referenceImageUrl?: string,
+): string {
+  const roles: NarrativeRole[] = ["hook", "development", "development", "climax", "climax", "resolution", "resolution", "resolution", "resolution"];
+  const roleAssignment = roles.slice(0, sceneCount).join(", ");
+
+  return `Generate a DirectorPlan and ${sceneCount} scene specs for this production job.
+
+SCRIPT:
+"""
+${script}
+"""
+
+NICHE: ${niche}
+SCENE COUNT: ${sceneCount}
+NARRATIVE ROLES (in order): ${roleAssignment}
+${referenceImageUrl ? `REFERENCE (match character appearance to this): ${referenceImageUrl}` : ""}
+
+Follow the pipeline contract exactly. Return only valid JSON.`;
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
@@ -127,11 +157,12 @@ export async function runDirectorAI(
 
   console.log(`[DIRECTOR] planning ${sceneCount} scenes for ${targetDuration}s niche=${niche}`);
 
+  // Three-layer prompt: SYSTEM (guardrails) + DEVELOPER (pipeline contract) + WORKER (this job)
   const response = await client.messages.create({
     model:      "claude-opus-4-8",
     max_tokens: 8000,
-    system:     "You are a professional film director. Return ONLY valid JSON. No explanation, no markdown fences.",
-    messages:   [{ role: "user", content: buildDirectorPrompt(script, niche, sceneCount, referenceImageUrl) }],
+    system:     `${SYSTEM_PROMPT}\n\n${DEVELOPER_PROMPT}`,
+    messages:   [{ role: "user", content: buildWorkerPrompt(script, niche, sceneCount, referenceImageUrl) }],
   });
 
   const raw = response.content[0].type === "text" ? response.content[0].text : "";
