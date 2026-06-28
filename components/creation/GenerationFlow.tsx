@@ -588,6 +588,7 @@ export default function GenerationFlow({
           }
         } catch { /* non-fatal — Kling falls back to FALLBACK_DIRECTIONS */ }
 
+        console.log('[VOICE_DEBUG] sending voiceId=', selectedVoice);
         const res = await fetch('/api/generate-cinematic-sequence', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1768,7 +1769,7 @@ export default function GenerationFlow({
                       }}
                     >
                       {c.imageUrl ? (
-                        <img src={c.imageUrl} alt={c.title} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                        <img src={c.imageUrl} alt={c.title} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; console.error('[IMG_LOAD_FAIL]', (e.target as HTMLImageElement).src); }} />
                       ) : (
                         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           <div style={{ fontSize: '2rem', opacity: 0.3 }}>🎬</div>
@@ -2025,20 +2026,13 @@ export default function GenerationFlow({
               </div>
             )}
 
-            {/* ── 4. Video preview (clips ready, before combine) ── */}
+            {/* ── 4. Status: clips ready (no raw clip player — final video shown after combine) ── */}
             {!finalVideo && (clipUrls.length > 0 || videoUrl) && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <video
-                  src={clipUrls[0] ?? videoUrl ?? ''}
-                  controls playsInline muted
-                  style={{ width: '100%', borderRadius: 14, background: '#000', maxHeight: 500 }}
-                />
-                <div style={{ borderRadius: 10, padding: '10px 14px', background: 'rgba(212,168,67,0.07)', border: '1px solid rgba(212,168,67,0.2)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ color: '#D4A843', fontSize: 14 }}>✓</span>
-                  <span style={{ color: '#D4A843', fontSize: '0.8rem', fontWeight: 600 }}>
-                    {clipUrls.length > 1 ? `${clipUrls.length} scenes ready` : 'Scene ready'} — add a voice below to create your final video
-                  </span>
-                </div>
+              <div style={{ borderRadius: 10, padding: '10px 14px', background: 'rgba(212,168,67,0.07)', border: '1px solid rgba(212,168,67,0.2)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ color: '#D4A843', fontSize: 14 }}>✓</span>
+                <span style={{ color: '#D4A843', fontSize: '0.8rem', fontWeight: 600 }}>
+                  {clipUrls.length > 1 ? `${clipUrls.length} scenes ready` : 'Scene ready'} — add a voice below to create your final video
+                </span>
               </div>
             )}
 
@@ -2160,8 +2154,8 @@ export default function GenerationFlow({
                   </div>
                 )}
 
-                {/* Combine button — shown when clips/video AND voice are both ready */}
-                {(clipUrls.length > 0 || videoUrl) && voiceReady && (
+                {/* Combine button — shown when final video exists and voice is ready */}
+                {finalVideo && (
                   <button
                     onClick={combineVideoVoice}
                     disabled={combining}

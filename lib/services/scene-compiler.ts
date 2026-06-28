@@ -49,7 +49,9 @@ export const COMPILER_NEGATIVE_BASE =
   "sand from mouth, particles from mouth, liquid from mouth, smoke from mouth, " +
   "sand from eyes, liquid from eyes, glowing eyes, supernatural aura, " +
   "body horror, melting skin, floating objects, disconnected limbs, " +
-  "unstable motion, chaotic jitter, back of head, rear view of subject";
+  "unstable motion, chaotic jitter, back of head, rear view of subject, " +
+  "nude, naked, topless, bikini, swimwear, revealing clothing, bare skin, sexual, suggestive, inappropriate, nsfw, explicit, " +
+  "bare shoulders, strapless clothing, strapless dress, low cut, cleavage, exposed back, spaghetti straps, off-shoulder, halter top";
 
 // ── Global style by niche ─────────────────────────────────────────────────────
 
@@ -129,6 +131,7 @@ async function callClaudeCompiler(
     "image_prompt rules: 30-50 words. Start with shot type. ALWAYS include the character description from above (copy it verbatim into every image_prompt). Show the EXACT story action for this beat. If coins appear: \"small ordinary coins, loose change\" — NEVER bitcoin or branded items. End with \"photorealistic, cinematic\". No smoke/particles from face.",
     "video_prompt rules: 15-25 words. Motion only. No static descriptions.",
     "negative_prompt rules: ALWAYS include ALL of: \"wrong person, young man, teenager, different character, new character, adult replacing child, boy, male child, branded snack bag, product logo, bitcoin, crypto, text, watermark, blurry, deformed, extra limbs\".",
+    "Characters must be fully clothed and modest at all times. Always dress characters in full-coverage clothing — loose linen shirt, jacket, cardigan, or dress with sleeves. No strapless, backless, off-shoulder, or low-cut garments. Beach scenes: sundress, shorts and top, or light jacket only. Never generate nude, topless, bare-shouldered, or revealing imagery.",
     `JSON schema (compact, single line):\n${SCHEMA_EXAMPLE}`,
   ].filter(Boolean).join("\n\n");
 
