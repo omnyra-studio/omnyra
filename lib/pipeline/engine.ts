@@ -1,23 +1,22 @@
 /**
- * Pipeline Engine — Orchestrator
+ * Pipeline Engine — deterministic scene compiler with media backends.
  *
- * Executes the full production pipeline in deterministic order:
+ * Execution model:
+ *   DirectorPlan + SceneSpecs  →  locked global constraints + per-scene intent
+ *   Voice                      →  timing authority (freezes timeline)
+ *   SceneContracts             →  SceneSpec + VoiceTiming + DirectorPlan = immutable truth
+ *   Images                     →  one Flux image per contract
+ *   Vision validate + repair   →  gate before wasting a Runway credit
+ *   Clips                      →  one Runway clip per contract
+ *   Assembly                   →  single FFmpeg pass, voice-duration capped
  *
- *   1. DirectorPlan + SceneSkeletons  (Claude — global constraints + visual intent)
- *   2. Voice Engine                   (ElevenLabs — timing authority)
- *   3. Contract Compiler              (deterministic — skeleton + voice -> contracts)
- *   4. Temporal Ledger                (sync tracking — built from contracts)
- *   5. Scene Images                   (Flux — one per contract, with retry)
- *   6. Video Clips                    (Runway — parallel, with retry)
- *   7. Assembly                       (FFmpeg — voice-synced, ledger-corrected)
- *
- * INVARIANT: No stage invents structure. Everything compiles downward.
+ * INVARIANT: SceneContract is the single source of truth.
+ * Nothing downstream may redefine it. Everything reads from it.
  */
 
 import { runDirectorAI }       from "./director";
 import { runVoiceEngine }       from "./voice-engine";
 import { compileContracts }     from "./contract-compiler";
-import { buildLedger, recordActualDurations, verifyLedger } from "./temporal-ledger";
 import { withRetry }            from "./retry-policy";
 import { validateImage }        from "./vision-validator";
 import { generateRunwayClip, generateRunwaySeedanceClip } from "@/lib/services/runway";
@@ -29,7 +28,6 @@ import type {
   PipelineResult,
   SceneContract,
   SceneOutput,
-  TemporalLedger,
 } from "./types";
 
 const FAL_ENDPOINT = "https://fal.run/fal-ai/flux/dev";
@@ -40,9 +38,9 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
   const t0 = Date.now();
   log("START", `script=${input.script.length}chars voice=${input.voiceId} niche=${input.niche} target=${input.targetDuration}s`);
 
-  // ── Stage 1: Director AI ────────────────────────────────────────────────────
-  log("STAGE_1", "Director AI — building plan and scene skeletons");
-  const { plan, skeletons } = await runDirectorAI(
+  // ── Step 1: Director — locked plan + per-scene visual specs ─────────────────
+  log("STEP_1", "Director AI — building plan and scene specs");
+  const { plan, skeletons: specs } = await runDirectorAI(
     input.script,
     input.voiceId,
     input.niche,
@@ -50,78 +48,60 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
     input.referenceImageUrl,
   );
 
-  // ── Stage 2: Voice Engine ───────────────────────────────────────────────────
-  log("STAGE_2", `Voice Engine — generating narration voice=${input.voiceId}`);
-  const voice = await runVoiceEngine(skeletons, input.voiceId, input.userId);
-  log("STAGE_2_DONE", `totalDuration=${(voice.totalDurationMs/1000).toFixed(2)}s scenes=${voice.timings.length}`);
+  // ── Step 2: Voice — timing authority, freezes the timeline ──────────────────
+  log("STEP_2", `Voice Engine — generating narration voice=${input.voiceId}`);
+  const voice = await runVoiceEngine(specs, input.voiceId, input.userId);
+  log("STEP_2_DONE", `totalDuration=${(voice.totalDurationMs / 1000).toFixed(2)}s scenes=${voice.timings.length}`);
 
-  // ── Stage 3: Contract Compiler ─────────────────────────────────────��────────
-  log("STAGE_3", "Contract Compiler — binding skeletons + timings -> contracts");
-  const contracts = compileContracts(plan, skeletons, voice.timings);
+  // ── Step 3: SceneContracts — immutable compiled truth ───────────────────────
+  // SceneSpec + VoiceTiming + DirectorPlan = contract. Nothing downstream rewrites it.
+  log("STEP_3", "Compile contracts — binding specs + timings -> immutable contracts");
+  const contracts = compileContracts(plan, specs, voice.timings);
 
-  // ── Stage 4: Temporal Ledger ─────────��───────────────────────────────────────
-  log("STAGE_4", "Temporal Ledger — initialising sync tracking");
-  let ledger = buildLedger(contracts);
+  // ── Step 4: Images — one Flux image per contract ────────────────────────────
+  log("STEP_4", `Images — generating ${contracts.length} Flux images in parallel`);
+  const rawImageUrls = await generateImages(contracts, input.referenceImageUrl);
 
-  // ── Stage 5: Scene Images ─────────────────────────────────────────────────
-  log("STAGE_5", `Scene Images — generating ${contracts.length} Flux images in parallel`);
-  const imageUrls = await generateImages(contracts, input.referenceImageUrl);
+  // Mirror fal.media URLs to Supabase (Runway rejects fal.media CDN)
+  const imageUrls = await mirrorImages(rawImageUrls, input.userId);
 
-  // Mirror all fal.media URLs to Supabase (Runway rejects fal.media CDN)
-  const mirroredImageUrls = await mirrorImages(imageUrls, input.userId);
+  // ── Step 5: Vision gate — validate image against contract before Runway ──────
+  log("STEP_5", "Vision gate — checking images against contracts, repairing failures");
+  const validatedUrls = await validateAndRepairImages(contracts, imageUrls, input.userId);
 
-  // ── Stage 5c: Vision Validation ───────────────────────────────────────────
-  log("STAGE_5C", "Vision Validation — checking images against contracts");
-  const validatedImageUrls = await validateAndRepairImages(
-    contracts, mirroredImageUrls, input.referenceImageUrl, input.userId,
+  // ── Step 6: Clips — one Runway clip per contract ─────────────────────────────
+  log("STEP_6", `Clips — generating ${contracts.length} Runway clips in parallel`);
+  const clipResults = await generateClips(contracts, validatedUrls, input.speedMode);
+
+  const successCount = clipResults.filter(r => r.passed).length;
+  if (successCount === 0) throw new Error("All clip generation failed — cannot assemble");
+
+  // ── Step 7: Assembly — voice-synced single pass ──────────────────────────────
+  // maxDuration = authoritative voice duration. FFmpeg -t caps output exactly here.
+  const maxDuration = voice.totalDurationMs / 1000;
+  log("STEP_7", `Assembly — ${successCount}/${contracts.length} clips maxDuration=${maxDuration.toFixed(2)}s`);
+
+  const clipUrls = clipResults.map(r => r.clipUrl).filter(Boolean) as string[];
+  const videoUrl = await withRetry(
+    () => stitchClipsWithAudio({ clipUrls, audioUrl: voice.audioUrl, userId: input.userId, maxDuration }),
+    "assembly",
+    "final assembly",
   );
-
-  // ── Stage 6: Video Clips ────────────────────────────────────────────────
-  log("STAGE_6", `Video Clips — generating ${contracts.length} Runway clips in parallel`);
-  const clipResults = await generateClips(contracts, validatedImageUrls, input.speedMode);
-
-  // Update ledger with actual durations
-  const actualDurationsMs = clipResults.map(r => (r.clipUrl ? r.durationSec * 1000 : undefined));
-  ledger = recordActualDurations(ledger, actualDurationsMs);
-
-  // ── Stage 7: Assembly ────��────────────────────────────────────────────────
-  log("STAGE_7", `Assembly — voice-synced FFmpeg assembly strategy=${ledger.assemblyStrategy}`);
-  const clipUrls     = clipResults.map(r => r.clipUrl).filter(Boolean) as string[];
-  const successCount = clipUrls.length;
-
-  if (successCount === 0) {
-    throw new Error("All clip generation failed — cannot assemble video");
-  }
-
-  const videoUrl = await assembleVideo(
-    clipUrls,
-    voice.audioUrl,
-    ledger,
-    input.userId,
-  );
-
-  // ── Verify output ─────────────────────────────────────────────────────────
-  const assembledDurationMs = voice.totalDurationMs; // FFmpeg syncs to voice
-  const verification = verifyLedger(ledger, assembledDurationMs);
-  if (!verification.valid) {
-    log("WARN", `Assembly verification: ${verification.error}`);
-  }
 
   const elapsed = Date.now() - t0;
-  log("DONE", `elapsed=${(elapsed/1000).toFixed(1)}s clips=${successCount}/${contracts.length} video=${videoUrl.slice(0, 60)}`);
+  log("DONE", `elapsed=${(elapsed / 1000).toFixed(1)}s clips=${successCount}/${contracts.length} url=${videoUrl.slice(0, 60)}`);
 
   return {
     videoUrl,
     audioUrl:        voice.audioUrl,
-    durationSeconds: voice.totalDurationMs / 1000,
+    durationSeconds: maxDuration,
     sceneCount:      contracts.length,
     scenes:          clipResults,
-    qualityScore:    computeQualityScore(clipResults, verification.valid),
-    temporalLedger:  ledger,
+    qualityScore:    successCount / contracts.length,
   };
 }
 
-// ── Stage 5: Image generation ──────────────────────────────────────────────────
+// ── Step 4: Image generation ───────────────────────────────────────────────────
 
 async function generateImages(
   contracts:          SceneContract[],
@@ -145,16 +125,13 @@ async function generateImages(
 
   let lastGoodUrl = referenceImageUrl ?? "";
   return results.map((r, i) => {
-    if (r.status === "fulfilled") {
-      lastGoodUrl = r.value;
-      return r.value;
-    }
+    if (r.status === "fulfilled") { lastGoodUrl = r.value; return r.value; }
     log("WARN", `Image failed scene=${i + 1}: ${(r.reason as Error)?.message?.slice(0, 80)}`);
     return lastGoodUrl;
   });
 }
 
-async function generateOneImage(
+export async function generateOneImage(
   contract:           SceneContract,
   falKey:             string,
   referenceImageUrl?: string,
@@ -183,7 +160,7 @@ async function generateOneImage(
   return url;
 }
 
-// ── Stage 5b: Mirror images ───────────────────────────────────────────────────
+// ── Mirror images ──────────────────────────────────────────────────────────────
 
 async function mirrorImages(imageUrls: string[], userId: string): Promise<string[]> {
   const results = await Promise.allSettled(
@@ -193,7 +170,6 @@ async function mirrorImages(imageUrls: string[], userId: string): Promise<string
         : Promise.resolve(url)
     )
   );
-
   return results.map((r, i) => {
     if (r.status === "fulfilled") return r.value ?? imageUrls[i];
     log("WARN", `Mirror failed scene=${i + 1}: ${(r.reason as Error)?.message?.slice(0, 60)}`);
@@ -201,15 +177,14 @@ async function mirrorImages(imageUrls: string[], userId: string): Promise<string
   });
 }
 
-// ── Stage 5c: Vision validation + repair ──────────────────────────────────────
+// ── Step 5: Vision gate ────────────────────────────────────────────────────────
 
 async function validateAndRepairImages(
-  contracts:          SceneContract[],
-  imageUrls:          string[],
-  referenceImageUrl:  string | undefined,
-  userId:             string,
+  contracts: SceneContract[],
+  imageUrls: string[],
+  userId:    string,
 ): Promise<string[]> {
-  const falKey = process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY;
+  const falKey  = process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY;
   const results = [...imageUrls];
 
   await Promise.allSettled(
@@ -221,21 +196,18 @@ async function validateAndRepairImages(
       if (vr.passed) return;
 
       log("VISION_FAIL", `scene=${contract.index + 1} score=${vr.score.toFixed(2)} issues=${vr.issues.join("; ")}`);
+      if (!falKey) return;
 
-      if (!falKey) return; // can't retry without Flux key — keep original
-
-      // Retry once with a tightened prompt that front-loads clothing compliance
       try {
         const repairedUrl = await generateOneImage(contract, falKey, undefined);
         const recheck     = await validateImage(repairedUrl, contract);
-        log("VISION_REPAIR", `scene=${contract.index + 1} repair_score=${recheck.score.toFixed(2)} passed=${recheck.passed}`);
-        // Use repaired image only if it actually passes or beats original
+        log("VISION_REPAIR", `scene=${contract.index + 1} score=${recheck.score.toFixed(2)} passed=${recheck.passed}`);
         if (recheck.score >= vr.score) {
           const mirrored = await mirrorToSupabase(repairedUrl, userId, i);
           results[i] = mirrored ?? repairedUrl;
         }
-      } catch (repairErr) {
-        log("WARN", `Vision repair failed scene=${contract.index + 1}: ${(repairErr as Error)?.message?.slice(0, 60)}`);
+      } catch (err) {
+        log("WARN", `Vision repair failed scene=${contract.index + 1}: ${(err as Error)?.message?.slice(0, 60)}`);
       }
     })
   );
@@ -243,36 +215,35 @@ async function validateAndRepairImages(
   return results;
 }
 
-// ── Stage 6: Clip generation ───────────────────────────────────────────────────
+// ── Step 6: Clip generation ────────────────────────────────────────────────────
 
 async function generateClips(
-  contracts:  SceneContract[],
-  imageUrls:  string[],
-  speedMode:  "fast" | "quality",
+  contracts: SceneContract[],
+  imageUrls: string[],
+  speedMode: "fast" | "quality",
 ): Promise<SceneOutput[]> {
-  // Scene 0 (anchor) runs first — its last frame feeds scenes 1..N
+  // Scene 0 (anchor) first — its last frame feeds scenes 1..N for continuity
   const anchorResult = await generateOneClip(contracts[0], imageUrls[0], speedMode);
   const results: SceneOutput[] = [anchorResult];
 
   if (contracts.length === 1) return results;
 
-  // Extract last frame of anchor for scene 1..N continuity
+  // Extract anchor last frame for visual continuity on scenes 1..N
   let chainFrame: string | null = null;
   if (anchorResult.clipUrl) {
     try {
       const { extractLastFrame } = await import("@/lib/utils/extract-last-frame");
       chainFrame = await extractLastFrame(anchorResult.clipUrl, "", 0);
-      if (chainFrame) log("CHAIN", `anchor last frame ready`);
+      if (chainFrame) log("CHAIN", "anchor last frame ready");
     } catch {
-      log("WARN", "Last frame extraction failed — scenes 1..N will use own images");
+      log("WARN", "Last frame extraction failed — scenes 1..N use own images");
     }
   }
 
-  // Scenes 1..N in parallel (staggered 600ms to avoid Runway 429)
+  // Scenes 1..N in parallel (600ms stagger avoids Runway 429)
   const restResults = await Promise.allSettled(
     contracts.slice(1).map(async (contract, idx) => {
       if (idx > 0) await sleep(idx * 600);
-      // Prefer per-scene image; chainFrame as continuity anchor only if no scene image
       const sceneImg = imageUrls[contract.index] || chainFrame || imageUrls[0];
       return generateOneClip(contract, sceneImg, speedMode);
     })
@@ -296,7 +267,6 @@ async function generateClips(
     }
   });
 
-  // Re-sort by index (parallel execution may complete out of order)
   results.sort((a, b) => a.index - b.index);
   return results;
 }
@@ -334,7 +304,7 @@ async function generateOneClip(
 
   return {
     index:         contract.index,
-    imageUrl:      imageUrl,
+    imageUrl,
     clipUrl:       result.videoUrl,
     durationSec:   contract.clipDurationSec,
     provider:      "runway",
@@ -344,38 +314,7 @@ async function generateOneClip(
   };
 }
 
-// ── Stage 7: Assembly ──────────────────────────────────────────────────────────
-
-async function assembleVideo(
-  clipUrls:  string[],
-  audioUrl:  string,
-  ledger:    TemporalLedger,
-  userId:    string,
-): Promise<string> {
-  log("ASSEMBLY", `${clipUrls.length} clips + audio strategy=${ledger.assemblyStrategy}`);
-
-  // maxDuration = authoritative voice duration (seconds) — FFmpeg syncs to this
-  const maxDuration = ledger.totalVoiceDurationMs / 1000;
-
-  return withRetry(
-    () => stitchClipsWithAudio({ clipUrls, audioUrl, userId, maxDuration }),
-    "assembly",
-    "final assembly",
-  );
-}
-
-// ── Quality score ──────────────────────────────────────────────────────────────
-
-function computeQualityScore(
-  scenes:   SceneOutput[],
-  verified: boolean,
-): number {
-  const successRate = scenes.filter(s => s.passed).length / scenes.length;
-  const verifyBonus = verified ? 0.1 : 0;
-  return Math.min(1, successRate * 0.9 + verifyBonus);
-}
-
-// ── Helpers ───��─────────────────────────────────��─────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
 function log(tag: string, msg: string): void {
   console.log(`[PIPELINE:${tag}] ${msg}`);

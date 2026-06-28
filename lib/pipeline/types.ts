@@ -206,7 +206,6 @@ export interface PipelineResult {
   sceneCount:      number;
   scenes:          SceneOutput[];
   qualityScore:    number;
-  temporalLedger:  TemporalLedger;
 }
 
 // ── Retry policy ──────────────────────────────────────────────────────────────
