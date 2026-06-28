@@ -20,6 +20,7 @@ import { compileContracts }     from "./contract-compiler";
 import { withRetry, classifyError, getRetryDecision } from "./retry-policy";
 import { validateImage }        from "./vision-validator";
 import { generateRunwayClip, generateRunwaySeedanceClip } from "@/lib/services/runway";
+import { generateKlingClip, isDirectKlingAvailable } from "@/lib/providers/kling-direct";
 import { stitchClipsWithAudio } from "@/lib/services/elevenlabs";
 import { mirrorToSupabase }     from "@/lib/utils/mirror-to-supabase";
 
@@ -125,10 +126,41 @@ async function generateImages(
   );
 
   let lastGoodUrl = referenceImageUrl ?? "";
-  return results.map((r, i) => {
-    if (r.status === "fulfilled") { lastGoodUrl = r.value; return r.value; }
-    log("WARN", `Image failed scene=${i + 1}: ${(r.reason as Error)?.message?.slice(0, 80)}`);
-    return lastGoodUrl;
+  const finalResults = await Promise.allSettled(
+    results.map(async (r, i) => {
+      if (r.status === "fulfilled") { lastGoodUrl = r.value; return r.value; }
+      log("WARN", `Flux failed scene=${i + 1}: ${(r.reason as Error)?.message?.slice(0, 80)} — trying DALL·E fallback`);
+      // DALL·E fallback — only if OPENAI_API_KEY is configured
+      const openaiKey = process.env.OPENAI_API_KEY;
+      if (!openaiKey) { return lastGoodUrl; }
+      try {
+        const dalle = await fetch("https://api.openai.com/v1/images/generations", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${openaiKey}`, "Content-Type": "application/json" },
+          body: JSON.stringify({
+            model:   "dall-e-3",
+            prompt:  contracts[i].imagePrompt.slice(0, 1000),
+            n:       1,
+            size:    "1024x1792",
+            quality: "standard",
+          }),
+          signal: AbortSignal.timeout(50_000),
+        });
+        if (!dalle.ok) throw new Error(`DALL·E HTTP ${dalle.status}`);
+        const data = await dalle.json();
+        const url  = data.data?.[0]?.url;
+        if (!url) throw new Error("DALL·E returned no URL");
+        log("IMG_DALLE_OK", `scene=${i + 1} url=${url.slice(0, 60)}`);
+        return url;
+      } catch (err) {
+        log("WARN", `DALL·E fallback failed scene=${i + 1}: ${(err as Error)?.message?.slice(0, 60)}`);
+        return lastGoodUrl;
+      }
+    })
+  );
+  return finalResults.map((r, i) => {
+    if (r.status === "fulfilled") return r.value;
+    return lastGoodUrl || "";
   });
 }
 
@@ -243,7 +275,7 @@ async function generateClips(
     const routedProvider = selectProvider("video", contract);
     const useQuality = speedMode === "quality" || routedProvider === "seedance2";
 
-    log("CLIP_START", `scene=${contract.index + 1} role=${contract.narrativeRole} provider=${useQuality ? "seedance2" : "gen4_turbo"}`);
+    log("CLIP_START", `scene=${contract.index + 1} role=${contract.narrativeRole} motion=${contract.motion} routed=${routedProvider}`);
 
     try {
       const result = await generateOneClip(contract, sceneImg, useQuality ? "quality" : "fast");
@@ -285,16 +317,43 @@ async function generateOneClip(
   imageUrl:  string,
   speedMode: "fast" | "quality",
 ): Promise<SceneOutput> {
-  // Attempt 1–2: primary provider (gen4_turbo for fast, Seedance2 for quality)
-  // Attempt 3:   provider switch — if primary fails twice, cross to the other
+  // Attempt 1–2: primary provider (routed by motion/role)
+  // Attempt 3:   cross-switch (gen4_turbo ↔ Seedance2)
+  // Attempt 4:   Kling final fallback (if configured) — then abort
   let attempts     = 0;
   let usedProvider = speedMode === "quality" ? "seedance2" : "gen4_turbo";
   let lastErr: unknown;
 
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  const MAX_ATTEMPTS = isDirectKlingAvailable() ? 4 : 3;
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     attempts++;
     try {
-      const switchNow = attempt === 3; // switch provider on third attempt
+      // Attempt 4 = Kling last-resort fallback
+      if (attempt === 4) {
+        const r = await generateKlingClip({
+          prompt:      contract.videoPrompt,
+          imageUrl:    imageUrl || undefined,
+          duration:    contract.clipDurationSec,
+          aspectRatio: "9:16",
+          mode:        "std",
+          sceneNumber: contract.index + 1,
+        });
+        usedProvider = "kling";
+        log("CLIP_OK", `scene=${contract.index + 1} provider=kling attempt=4 ${r.generationMs}ms`);
+        return {
+          index:         contract.index,
+          imageUrl,
+          clipUrl:       r.videoUrl,
+          durationSec:   contract.clipDurationSec,
+          provider:      "kling",
+          imageAttempts: 1,
+          clipAttempts:  attempts,
+          passed:        true,
+        };
+      }
+
+      const switchNow  = attempt === 3; // cross-switch on third attempt
       const useQuality = switchNow
         ? speedMode !== "quality"  // cross-switch: fast→quality, quality→fast
         : speedMode === "quality";
@@ -330,8 +389,8 @@ async function generateOneClip(
     } catch (err) {
       lastErr = err;
       const decision = getRetryDecision(err, attempt, "clip");
-      log("WARN", `Clip scene=${contract.index + 1} attempt=${attempt} ${decision.category}${decision.switchProvider ? " → switching provider" : ""}`);
-      if (!decision.shouldRetry && !decision.switchProvider) break;
+      log("WARN", `Clip scene=${contract.index + 1} attempt=${attempt} ${decision.category}${decision.switchProvider ? " → switching provider" : ""}${attempt === MAX_ATTEMPTS ? " → abort" : ""}`);
+      if (attempt < MAX_ATTEMPTS && !decision.shouldRetry && !decision.switchProvider) break;
       if (decision.delayMs > 0) await sleep(decision.delayMs);
     }
   }

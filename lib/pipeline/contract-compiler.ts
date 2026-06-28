@@ -86,6 +86,7 @@ function compileOne(
     narrationText:     skeleton.narrationBeat,
     action:            skeleton.actionUnit,
     emotion:           skeleton.emotionalState,
+    motion:            skeleton.motion,
     requiredProps:     skeleton.requiredProps,
     forbiddenElements: skeleton.forbiddenElements,
     transitionOut:     skeleton.transitionOut,

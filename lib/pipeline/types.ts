@@ -80,12 +80,15 @@ export interface DirectorPlan {
 // Defines WHAT each scene IS.
 // NO duration field — that is the Voice Engine's authority.
 
+export type MotionClass = "cinematic" | "fast" | "standard";
+
 export interface SceneSkeleton {
   index:            number;
   narrativeRole:    NarrativeRole;
   narrationBeat:    string;       // words spoken in this visual unit (from script)
   actionUnit:       string;       // ONE action only — "turns slowly to face camera"
   emotionalState:   string;       // single word
+  motion:           MotionClass;  // routing hint: cinematic→gen4_turbo, fast→kling, standard→gen4_turbo
   characterIndices: number[];     // indices into DirectorPlan.characters
   locationIndex:    number;       // index into DirectorPlan.locations
   requiredProps:    string[];
@@ -133,6 +136,7 @@ export interface SceneContract {
   narrationText:    string;
   action:           string;
   emotion:          string;
+  motion:           MotionClass;
   requiredProps:    string[];
   forbiddenElements: string[];
   transitionOut:    TransitionType;
@@ -243,20 +247,22 @@ export function updateMemory(memory: ContinuityMemory, contract: SceneContract):
 // ── Provider routing — deterministic, no AI logic ─────────────────────────────
 // Simple if/else. Never scoring, never fuzzy.
 
-export type MediaProvider = "flux" | "gen4_turbo" | "seedance2" | "elevenlabs";
+export type MediaProvider = "flux" | "gen4_turbo" | "seedance2" | "kling" | "elevenlabs";
 
 export function selectProvider(
   task:      "image" | "video" | "voice",
-  contract?: Pick<SceneContract, "narrativeRole" | "action">,
+  contract?: Pick<SceneContract, "narrativeRole" | "action" | "motion">,
 ): MediaProvider {
   if (task === "voice") return "elevenlabs";
   if (task === "image") return "flux";
 
-  // Video: route by narrative role
-  // hook/resolution → Runway gen4_turbo (stable, cinematic)
-  // climax          → Seedance2 (higher motion fidelity)
-  // development     → gen4_turbo (default)
+  // Video: route by motion class first, then narrative role
+  // fast      → Kling (reactive, fast motion)
+  // cinematic → gen4_turbo (stable, locked camera)
+  // climax    → Seedance2 (high motion fidelity, longer continuity)
+  // default   → gen4_turbo
   if (task === "video") {
+    if (contract?.motion === "fast") return "kling";
     if (contract?.narrativeRole === "climax") return "seedance2";
     return "gen4_turbo";
   }

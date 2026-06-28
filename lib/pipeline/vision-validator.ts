@@ -131,22 +131,23 @@ function parseVisionResponse(
       issues:         string[];
     };
 
-    // clothing_ok and no_forbidden are hard requirements
-    const hardFail = !parsed.clothing_ok || !parsed.no_forbidden;
+    // Hard gates: all three must pass — these are non-negotiable binary requirements
+    // location_match and continuity_ok are logged but non-blocking (too easy to false-negative)
+    const hardFail = !parsed.clothing_ok || !parsed.no_forbidden || !parsed.has_subject;
 
     const score =
-      Number(parsed.clothing_ok)    * 0.30 +
-      Number(parsed.no_forbidden)   * 0.25 +
-      Number(parsed.has_subject)    * 0.20 +
-      Number(parsed.location_match) * 0.15 +
-      (hasContinuity ? Number(parsed.continuity_ok ?? true) * 0.10 : 0.10);
+      Number(parsed.clothing_ok)    * 0.35 +
+      Number(parsed.no_forbidden)   * 0.30 +
+      Number(parsed.has_subject)    * 0.25 +
+      Number(parsed.location_match) * 0.10;
 
-    const passed = !hardFail && score >= PASS_THRESHOLD;
+    const passed = !hardFail;
     const issues = Array.isArray(parsed.issues) ? [...parsed.issues] : [];
 
     if (!parsed.clothing_ok)              issues.unshift("clothing violation detected");
     if (!parsed.no_forbidden)             issues.unshift("forbidden element detected");
-    if (hasContinuity && parsed.continuity_ok === false) issues.push("continuity break — character appears different from previous scene");
+    if (!parsed.has_subject)              issues.unshift("no human subject detected — wrong image");
+    if (hasContinuity && parsed.continuity_ok === false) issues.push("continuity warning — character may differ from previous scene");
 
     return { passed, score, issues };
   } catch {

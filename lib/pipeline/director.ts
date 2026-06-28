@@ -17,6 +17,7 @@ import type {
   CameraSpec,
   NarrativeRole,
   TransitionType,
+  MotionClass,
 } from "./types";
 
 const client = new Anthropic();
@@ -250,19 +251,30 @@ function assembleSkeletons(
 
   const roles: NarrativeRole[] = ["hook", "development", "development", "climax", "climax", "resolution", "resolution", "resolution", "resolution"];
 
-  return raws.slice(0, expectedCount).map((s, i) => ({
-    index:             i,
-    narrativeRole:     (s.narrativeRole as NarrativeRole) ?? roles[i] ?? "development",
-    narrationBeat:     String(s.narrationBeat  ?? ""),
-    actionUnit:        String(s.actionUnit     ?? ""),
-    emotionalState:    String(s.emotionalState ?? "neutral"),
-    characterIndices:  Array.isArray(s.characterIndices) ? (s.characterIndices as number[]) : [0],
-    locationIndex:     typeof s.locationIndex === "number" ? s.locationIndex : 0,
-    requiredProps:     Array.isArray(s.requiredProps) ? (s.requiredProps as string[]) : [],
-    forbiddenElements: Array.isArray(s.forbiddenElements)
-      ? (s.forbiddenElements as string[])
-      : ["other people", "text or signs", "bare skin", "nsfw"],
-    cameraOverride:    s.cameraOverride as Partial<CameraSpec> | undefined ?? undefined,
-    transitionOut:     (s.transitionOut as TransitionType) ?? "cut",
-  }));
+  const motionByRole: Record<NarrativeRole, MotionClass> = {
+    hook:        "cinematic",
+    development: "cinematic",
+    climax:      "fast",
+    resolution:  "standard",
+  };
+
+  return raws.slice(0, expectedCount).map((s, i) => {
+    const role = (s.narrativeRole as NarrativeRole) ?? roles[i] ?? "development";
+    return {
+      index:             i,
+      narrativeRole:     role,
+      narrationBeat:     String(s.narrationBeat  ?? ""),
+      actionUnit:        String(s.actionUnit     ?? ""),
+      emotionalState:    String(s.emotionalState ?? "neutral"),
+      motion:            motionByRole[role] ?? "cinematic",
+      characterIndices:  Array.isArray(s.characterIndices) ? (s.characterIndices as number[]) : [0],
+      locationIndex:     typeof s.locationIndex === "number" ? s.locationIndex : 0,
+      requiredProps:     Array.isArray(s.requiredProps) ? (s.requiredProps as string[]) : [],
+      forbiddenElements: Array.isArray(s.forbiddenElements)
+        ? (s.forbiddenElements as string[])
+        : ["other people", "text or signs", "bare skin", "nsfw"],
+      cameraOverride:    s.cameraOverride as Partial<CameraSpec> | undefined ?? undefined,
+      transitionOut:     (s.transitionOut as TransitionType) ?? "cut",
+    };
+  });
 }
