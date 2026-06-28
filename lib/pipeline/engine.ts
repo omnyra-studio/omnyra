@@ -19,6 +19,7 @@ import { runVoiceEngine }       from "./voice-engine";
 import { compileContracts }     from "./contract-compiler";
 import { withRetry, classifyError, getRetryDecision } from "./retry-policy";
 import { validateImage }        from "./vision-validator";
+import { validateExecutionContract, ExecutionContractViolation } from "./execution-contract";
 import { generateRunwayClip, generateRunwaySeedanceClip } from "@/lib/services/runway";
 import { generateKlingClip, isDirectKlingAvailable } from "@/lib/providers/kling-direct";
 import { stitchClipsWithAudio } from "@/lib/services/elevenlabs";
@@ -60,6 +61,19 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
   // SceneSpec + VoiceTiming + DirectorPlan = contract. Nothing downstream rewrites it.
   log("STEP_3", "Compile contracts — binding specs + timings -> immutable contracts");
   const contracts = compileContracts(plan, specs, voice.timings, input.brandMemory);
+
+  // ── Execution Contract gate — throws before any credit is spent ─────────────
+  // Voice defines time. Time defines scenes. Violations abort here, not after Runway.
+  try {
+    validateExecutionContract(contracts, voice);
+    log("CONTRACT_OK", `${contracts.length} scenes passed execution contract`);
+  } catch (err) {
+    if (err instanceof ExecutionContractViolation) {
+      log("CONTRACT_FAIL", err.message);
+      throw err; // surface to caller — never silently continue
+    }
+    throw err;
+  }
 
   // ── Step 4: Images — one Flux image per contract ────────────────────────────
   log("STEP_4", `Images — generating ${contracts.length} Flux images in parallel`);
