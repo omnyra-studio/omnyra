@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client';
 import { splitPromptIntoClips } from '@/lib/seedance/split-prompt';
 import { NICHE_TOOLS } from '@/lib/tools-config';
 import UpgradeModal from '@/components/UpgradeModal';
-import { canAccess60s } from '@/lib/utils/tier-utils';
+import { canAccess60s, canAccess90s } from '@/lib/utils/tier-utils';
 import {
   SUBJECT_ETHNICITY_OPTIONS,
   type SubjectEthnicity,
@@ -119,7 +119,7 @@ export default function GenerationFlow({
   const [favorites,     setFavorites]     = useState<string[]>([]);
   const [stitching,     setStitching]     = useState(false);
   const [finalVideo,    setFinalVideo]    = useState<string | null>(null);
-  const [targetDuration,    setTargetDuration]    = useState<30 | 60>(30);
+  const [targetDuration,    setTargetDuration]    = useState<30 | 60 | 90>(30);
   const [asyncJobId,        setAsyncJobId]        = useState<string | null>(null);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
   const [userPlan,          setUserPlan]          = useState<'free' | 'starter' | 'creator' | 'studio'>('free');
@@ -507,6 +507,8 @@ export default function GenerationFlow({
     setClipUrls([]);
     setFinalVideo(null);
 
+    let _pipelineTicker: ReturnType<typeof setInterval> | null = null;
+
     try {
       if (videoType === 'avatar') {
         // Avatar: single clip → Hedra lipsync
@@ -563,8 +565,24 @@ export default function GenerationFlow({
               ];
             })();
 
-        setVideoStatus('Generating cinematic sequence…');
+        setVideoStatus('Director…');
         setVideoProgress(10);
+
+        // Advance through Director pipeline stages while the server call runs.
+        // Stages: Director(10%) → Voice(26%) → Images(42%) → Clips(58%) → Assembly(74%)
+        const PIPELINE_STAGES = [
+          { pct: 10, label: 'Director…'  },
+          { pct: 26, label: 'Voice…'     },
+          { pct: 42, label: 'Images…'    },
+          { pct: 58, label: 'Clips…'     },
+          { pct: 74, label: 'Assembly…'  },
+        ];
+        let _pipelineStage = 0;
+        _pipelineTicker = setInterval(() => {
+          _pipelineStage = Math.min(_pipelineStage + 1, PIPELINE_STAGES.length - 1);
+          setVideoProgress(PIPELINE_STAGES[_pipelineStage].pct);
+          setVideoStatus(PIPELINE_STAGES[_pipelineStage].label);
+        }, 28_000); // ~28s per stage → ~140s total matches typical 2-3 min run
 
         // Call creative director first (~2s) to get niche-specific motion directions for Kling
         type CreativeScene = { time: string; description: string; motion: string };
@@ -603,6 +621,7 @@ export default function GenerationFlow({
             clipDuration:   10,
             goal:           selectedConcept.description,
             voiceoverText:  editedScript || selectedScript?.script || selectedConcept.description,
+            script:         editedScript || selectedScript?.script || undefined,
             videoType,
             subjectEthnicity,
             voiceId:        selectedVoice || '',
@@ -616,6 +635,7 @@ export default function GenerationFlow({
           }),
         });
         const data = await res.json();
+        clearInterval(_pipelineTicker);
 
         if (!res.ok || data.error) {
           setVideoStatus('Error — ' + (data.error ?? `HTTP ${res.status}`));
@@ -647,6 +667,7 @@ export default function GenerationFlow({
         }
       }
     } catch (err) {
+      clearInterval(_pipelineTicker);
       const msg = err instanceof Error ? err.message : 'Generation failed';
       setVideoStatus('Error — ' + msg);
       setVideoStarted(false);
@@ -1769,7 +1790,20 @@ export default function GenerationFlow({
                       }}
                     >
                       {c.imageUrl ? (
-                        <img src={c.imageUrl} alt={c.title} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; console.error('[IMG_LOAD_FAIL]', (e.target as HTMLImageElement).src); }} />
+                        <img
+                          src={c.imageUrl}
+                          alt={c.title}
+                          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
+                          onError={(e) => {
+                            const img = e.target as HTMLImageElement;
+                            console.error('[IMG_LOAD_FAIL]', img.src);
+                            img.style.display = 'none';
+                            const fb = document.createElement('div');
+                            fb.style.cssText = 'position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:2rem;opacity:0.3';
+                            fb.textContent = '🎬';
+                            img.parentElement?.appendChild(fb);
+                          }}
+                        />
                       ) : (
                         <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           <div style={{ fontSize: '2rem', opacity: 0.3 }}>🎬</div>
@@ -1925,7 +1959,7 @@ export default function GenerationFlow({
                     fontWeight: 600, fontSize: '0.8rem',
                   }}
                 >
-                  30s · 3 scenes · 25cr
+                  30s · 3 scenes · 50cr
                 </button>
                 <button
                   type="button"
@@ -1940,7 +1974,22 @@ export default function GenerationFlow({
                     fontWeight: 600, fontSize: '0.8rem',
                   }}
                 >
-                  60s · 6 scenes · 65cr {!canAccess60s(userPlan) && '🔒'}
+                  60s · 6 scenes · 100cr {!canAccess60s(userPlan) && '🔒'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => canAccess90s(userPlan) ? setTargetDuration(90) : setShowUpgradeModal(true)}
+                  style={{
+                    flex: 1, padding: '10px 16px', borderRadius: 8,
+                    cursor: 'pointer',
+                    opacity: canAccess90s(userPlan) ? 1 : 0.55,
+                    background: targetDuration === 90 ? '#C9A84C' : 'transparent',
+                    border: '1px solid #C9A84C',
+                    color: targetDuration === 90 ? '#000' : '#C9A84C',
+                    fontWeight: 600, fontSize: '0.8rem',
+                  }}
+                >
+                  90s · 9 scenes · 150cr {!canAccess90s(userPlan) && '🔒'}
                 </button>
               </div>
             )}
@@ -2013,7 +2062,7 @@ export default function GenerationFlow({
                 ) : (
                   <>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', color: '#4A3060' }}>
-                      {['Script','Images','Clips','Voice','Stitch'].map((s, i) => (
+                      {['Director','Voice','Images','Clips','Assembly'].map((s, i) => (
                         <span key={s} style={{ color: videoProgress > i * 20 ? '#C084FC' : '#4A3060' }}>{s}</span>
                       ))}
                     </div>
