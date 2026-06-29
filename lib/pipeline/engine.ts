@@ -20,7 +20,7 @@ import { compileContracts }     from "./contract-compiler";
 import { withRetry, classifyError, getRetryDecision } from "./retry-policy";
 import { validateImage }        from "./vision-validator";
 import { validateExecutionContract } from "./execution-contract";
-import { generateRunwayClip, generateRunwaySeedanceClip } from "@/lib/services/runway";
+import { generateRunwayClip } from "@/lib/services/runway";
 import { generateKlingClip, isDirectKlingAvailable } from "@/lib/providers/kling-direct";
 import { stitchClipsWithAudio } from "@/lib/services/elevenlabs";
 import { mirrorToSupabase }     from "@/lib/utils/mirror-to-supabase";
@@ -143,13 +143,10 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
   // Mirror fal.media URLs to Supabase (Runway rejects fal.media CDN)
   const imageUrls = await mirrorImages(rawImageUrls, input.userId);
 
-  // ── Step 5: Vision gate — validate image against contract before Runway ──────
-  log("STEP_5", "Vision gate — checking images against contracts, repairing failures");
-  const validatedUrls = await stage(
-    packets, "vision_gate",
-    { imageCount: imageUrls.length },
-    () => validateAndRepairImages(contracts, imageUrls, input.userId),
-  );
+  // ── Step 5: Vision gate — DISABLED, using images as-is ──────────────────────
+  log("STEP_5", "Vision gate disabled — using images as-is");
+  console.info("[VISION_GATE_DISABLED] skipping vision check — using image as-is");
+  const validatedUrls = imageUrls;
 
   // ── Step 6: Clips — one Runway clip per contract ─────────────────────────────
   log("STEP_6", `Clips — generating ${contracts.length} Runway clips sequentially`);
@@ -446,27 +443,15 @@ async function generateOneClip(
         };
       }
 
-      const switchNow  = attempt === 3; // cross-switch on third attempt
-      const useQuality = switchNow
-        ? speedMode !== "quality"  // cross-switch: fast→quality, quality→fast
-        : speedMode === "quality";
+      // Runway Gen-4 Turbo only — Seedance disabled (returns 400 validation errors)
+      const r = await generateRunwayClip({
+        prompt:      contract.videoPrompt,
+        imageUrl:    imageUrl || undefined,
+        duration:    contract.clipDurationSec as 5 | 10,
+        aspectRatio: "9:16",
+      });
 
-      const r = useQuality
-        ? await generateRunwaySeedanceClip({
-            prompt:      contract.videoPrompt,
-            imageUrl:    imageUrl || undefined,
-            duration:    contract.clipDurationSec,
-            aspectRatio: "9:16",
-            fast:        false,
-          })
-        : await generateRunwayClip({
-            prompt:      contract.videoPrompt,
-            imageUrl:    imageUrl || undefined,
-            duration:    contract.clipDurationSec as 5 | 10,
-            aspectRatio: "9:16",
-          });
-
-      usedProvider = useQuality ? "seedance2" : "gen4_turbo";
+      usedProvider = "gen4_turbo";
       log("CLIP_OK", `scene=${contract.index + 1} provider=${usedProvider} attempt=${attempt} ${r.generationMs}ms`);
 
       return {

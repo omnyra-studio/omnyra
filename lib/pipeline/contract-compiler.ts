@@ -257,18 +257,18 @@ function buildVideoPrompt(
   const rules  = NICHE_RULES[niche];
   const motion = rules.staticDefault ? camera.movement : camera.movement;
 
-  // Structured video prompt — SUBJECT → ACTION → CAMERA → FOCUS
-  // No storytelling expansion, no adjectives beyond emotion, one action only
-  const lines = [
-    `SUBJECT: ${name}, ${skeleton.emotionalState}`,
-    `ACTION: ${action}`,
-    `CAMERA: ${camera.shotSize}, ${motion}, ${camera.lens} lens`,
-    `LOCATION: ${location.environment}, ${location.lighting}`,
-    `FOCUS: ${char ? `${name}'s face and body language` : "main subject"}`,
-    `NICHE: ${niche}`,
-  ];
+  // Natural language prompt for Runway Gen-4 — no pipe-separated structured format
+  // Formula: [character description] [action] [environment] [camera] photorealistic
+  const charDesc = char?.promptFragment?.trim() || `${name}, ${skeleton.emotionalState}`;
+  const prompt = [
+    charDesc,
+    action,
+    `${location.environment}, ${location.lighting}`,
+    `${camera.shotSize}, ${motion}`,
+    "photorealistic, cinematic",
+  ].filter(Boolean).join(", ");
 
-  return lines.join(" | ").slice(0, 500);
+  return prompt.slice(0, 500);
 }
 
 function buildNegativePrompt(
