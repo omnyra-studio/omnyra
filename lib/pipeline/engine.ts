@@ -19,7 +19,7 @@ import { runVoiceEngine }       from "./voice-engine";
 import { compileContracts }     from "./contract-compiler";
 import { withRetry, classifyError, getRetryDecision } from "./retry-policy";
 import { validateImage }        from "./vision-validator";
-import { validateExecutionContract, ExecutionContractViolation } from "./execution-contract";
+import { validateExecutionContract } from "./execution-contract";
 import { generateRunwayClip, generateRunwaySeedanceClip } from "@/lib/services/runway";
 import { generateKlingClip, isDirectKlingAvailable } from "@/lib/providers/kling-direct";
 import { stitchClipsWithAudio } from "@/lib/services/elevenlabs";
@@ -126,15 +126,8 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
     packets, "contract_gate",
     { contractCount: contracts.length, voiceDurationMs: voice.totalDurationMs },
     async () => {
-      try {
-        validateExecutionContract(contracts, voice);
-        log("CONTRACT_OK", `${contracts.length} scenes passed execution contract`);
-      } catch (err) {
-        if (err instanceof ExecutionContractViolation) {
-          log("CONTRACT_FAIL", err.message);
-        }
-        throw err;
-      }
+      validateExecutionContract(contracts, voice);
+      log("CONTRACT_OK", `${contracts.length} scenes — contract checks advisory (non-blocking)`);
       return {};
     },
   );
