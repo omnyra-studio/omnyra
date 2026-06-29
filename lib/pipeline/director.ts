@@ -155,12 +155,16 @@ function buildWorkerPrompt(
   script: string,
   niche: string,
   sceneCount: number,
+  targetDuration: 30 | 60 | 90,
   referenceImageUrl?: string,
 ): string {
   const roles: NarrativeRole[] = ["hook", "development", "development", "climax", "climax", "resolution", "resolution", "resolution", "resolution"];
   const roleAssignment = roles.slice(0, sceneCount).join(", ");
   const nicheKey = detectNicheKey(niche);
   const nicheRules = NICHE_DIRECTOR_RULES[nicheKey];
+  const maxNarrationSec = targetDuration - 2;
+  const secPerScene = Math.round(targetDuration / sceneCount);
+  const wordsPerScene = Math.round(secPerScene * 2.5);
 
   return `Generate a DirectorPlan and ${sceneCount} scene specs for this production job.
 
@@ -174,6 +178,14 @@ GENRE RULES: ${nicheRules}
 SCENE COUNT: ${sceneCount}
 NARRATIVE ROLES (in order): ${roleAssignment}
 ${referenceImageUrl ? `REFERENCE (match character appearance to this): ${referenceImageUrl}` : ""}
+
+NARRATION TIMING RULES (non-negotiable):
+- Target video duration: ${targetDuration}s
+- Maximum total narration: ${maxNarrationSec}s of spoken audio
+- Each scene gets approximately ${secPerScene}s
+- Word budget per scene: ${wordsPerScene} words MAX
+- Write SHORT. Punchy. One thought per scene. Never pad.
+- If in doubt, cut the last sentence.
 
 RETENTION STRUCTURE (viral pacing — short-form optimized):
 - Scene 1 = HOOK: emotionally loaded, visually simple, readable in <2 seconds
@@ -210,7 +222,7 @@ export async function runDirectorAI(
     model:      "claude-opus-4-8",
     max_tokens: 8000,
     system:     `${SYSTEM_PROMPT}\n\n${DEVELOPER_PROMPT}`,
-    messages:   [{ role: "user", content: buildWorkerPrompt(script, niche, sceneCount, referenceImageUrl) }],
+    messages:   [{ role: "user", content: buildWorkerPrompt(script, niche, sceneCount, targetDuration, referenceImageUrl) }],
   });
 
   const raw = response.content[0].type === "text" ? response.content[0].text : "";

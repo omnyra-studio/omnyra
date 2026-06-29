@@ -71,11 +71,14 @@ export function validateExecutionContract(
       );
     }
 
-    // Compound action check — "and" signals multiple actions
-    if (/\band\b/.test(contract.action.toLowerCase())) {
+    // Compound action check — reject only sequenced multi-action phrases, not compound gestures
+    if (
+      /\b(and then|after that|then|before|while also)\b/i.test(contract.action) &&
+      contract.action.length > 70
+    ) {
       throw new ExecutionContractViolation(
         "COMPOUND_ACTION",
-        `Scene ${i + 1}: action "${contract.action.slice(0, 60)}" contains "and" — split into separate scenes`,
+        `Scene ${i + 1}: action "${contract.action.slice(0, 60)}" describes a sequence of actions — split into separate scenes`,
       );
     }
 
@@ -160,7 +163,10 @@ export function auditExecutionContract(
     }
     // Collect remaining violations by re-running individual checks
     for (const c of contracts) {
-      if (/\band\b/.test(c.action?.toLowerCase() ?? "")) {
+      if (
+        /\b(and then|after that|then|before|while also)\b/i.test(c.action ?? "") &&
+        (c.action?.length ?? 0) > 70
+      ) {
         violations.push(`[COMPOUND_ACTION] scene ${c.index + 1}: "${c.action?.slice(0, 60)}"`);
       }
       if (!c.emotion?.trim()) {
