@@ -316,14 +316,8 @@ export function selectProvider(
   if (task === "voice") return "elevenlabs";
   if (task === "image") return "flux";
 
-  // Video: route by motion class first, then narrative role
-  // fast      → Kling (reactive, fast motion)
-  // cinematic → gen4_turbo (stable, locked camera)
-  // climax    → Seedance2 (high motion fidelity, longer continuity)
-  // default   → gen4_turbo
   if (task === "video") {
     if (contract?.motion === "fast") return "kling";
-    if (contract?.narrativeRole === "climax") return "seedance2";
     return "gen4_turbo";
   }
 

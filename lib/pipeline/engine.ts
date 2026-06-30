@@ -361,9 +361,8 @@ async function generateClips(
     const contract = contracts[i];
     const sceneImg  = imageUrls[i] || chainFrame || imageUrls[0];
 
-    // Determine provider: use selectProvider first, respect speedMode override
     const routedProvider = selectProvider("video", contract);
-    const useQuality = speedMode === "quality" || routedProvider === "seedance2";
+    const useQuality = speedMode === "quality";
 
     log("CLIP_START", `scene=${contract.index + 1} role=${contract.narrativeRole} motion=${contract.motion} routed=${routedProvider}`);
 
@@ -407,11 +406,8 @@ async function generateOneClip(
   imageUrl:  string,
   speedMode: "fast" | "quality",
 ): Promise<SceneOutput> {
-  // Attempt 1–2: primary provider (routed by motion/role)
-  // Attempt 3:   cross-switch (gen4_turbo ↔ Seedance2)
-  // Attempt 4:   Kling final fallback (if configured) — then abort
   let attempts     = 0;
-  let usedProvider = speedMode === "quality" ? "seedance2" : "gen4_turbo";
+  let usedProvider = "gen4_turbo";
   let lastErr: unknown;
 
   const MAX_ATTEMPTS = isDirectKlingAvailable() ? 4 : 3;
