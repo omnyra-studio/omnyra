@@ -88,6 +88,8 @@ export async function generateRunwayClip(
         await new Promise<void>(r => setTimeout(r, delay));
         continue;
       }
+      const body = (err as Record<string, unknown>);
+      console.error(`[RUNWAY_SUBMIT_FAIL] status=${status} error=${JSON.stringify(body.error ?? body.message ?? String(err))}`);
       throw err;
     }
   }
@@ -115,8 +117,10 @@ export async function generateRunwayClip(
   }
 
   if (task.status !== "SUCCEEDED") {
+    const t = task as { failure?: string; failureCode?: string };
+    console.error(`[RUNWAY_TASK_FAIL] task=${taskId} status=${task.status} failureCode=${t.failureCode ?? "none"} failure=${t.failure ?? "none"}`);
     throw new Error(
-      `Runway task=${taskId} ended with status=${task.status}`,
+      `Runway task=${taskId} status=${task.status} failureCode=${t.failureCode ?? "none"} failure=${t.failure ?? "none"}`,
     );
   }
 
