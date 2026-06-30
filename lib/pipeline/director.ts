@@ -177,14 +177,15 @@ NICHE: ${niche}
 GENRE RULES: ${nicheRules}
 SCENE COUNT: ${sceneCount}
 NARRATIVE ROLES (in order): ${roleAssignment}
-${referenceImageUrl ? `REFERENCE (match character appearance to this): ${referenceImageUrl}` : ""}
+${referenceImageUrl ? `REFERENCE IMAGE: The image provided above shows the actual character(s). Match all appearance attributes (face, hair, skin tone, build) exactly to what you see. Do NOT invent or alter any character attributes.` : ""}
 
 NARRATION TIMING RULES (non-negotiable):
 - Target video duration: ${targetDuration}s
 - Maximum total narration: ${maxNarrationSec}s of spoken audio
 - Each scene gets approximately ${secPerScene}s
 - Word budget per scene: ${wordsPerScene} words MAX
-- Write SHORT. Punchy. One thought per scene. Never pad.
+- Total narration across ALL scenes must fill approximately ${targetDuration}s at natural speaking pace (~2.5 words/second = ~${Math.round(targetDuration * 2.5)} total words). Do not undershoot the time budget.
+- Write SHORT per scene. Punchy. One thought. Never pad individual beats.
 - If in doubt, cut the last sentence.
 
 RETENTION STRUCTURE (viral pacing — short-form optimized):
@@ -218,11 +219,19 @@ export async function runDirectorAI(
   console.log(`[DIRECTOR] planning ${sceneCount} scenes for ${targetDuration}s niche=${niche}`);
 
   // Three-layer prompt: SYSTEM (guardrails) + DEVELOPER (pipeline contract) + WORKER (this job)
+  const workerText = buildWorkerPrompt(script, niche, sceneCount, targetDuration, referenceImageUrl);
+  const userContent = referenceImageUrl
+    ? [
+        { type: "image" as const, source: { type: "url" as const, url: referenceImageUrl } },
+        { type: "text"  as const, text:   workerText },
+      ]
+    : workerText;
+
   const response = await client.messages.create({
     model:      "claude-opus-4-8",
     max_tokens: 8000,
     system:     `${SYSTEM_PROMPT}\n\n${DEVELOPER_PROMPT}`,
-    messages:   [{ role: "user", content: buildWorkerPrompt(script, niche, sceneCount, targetDuration, referenceImageUrl) }],
+    messages:   [{ role: "user", content: userContent }],
   });
 
   const raw = response.content[0].type === "text" ? response.content[0].text : "";

@@ -24,9 +24,10 @@ const VOICE_SETTINGS = {
 // ── Main export ───────────────────────────────────────────────────────────────
 
 export async function runVoiceEngine(
-  skeletons: SceneSkeleton[],
-  voiceId:   string,
-  userId:    string,
+  skeletons:      SceneSkeleton[],
+  voiceId:        string,
+  userId:         string,
+  originalScript?: string,
 ): Promise<VoiceEngineResult> {
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) throw new Error("ELEVENLABS_API_KEY not set");
@@ -34,8 +35,9 @@ export async function runVoiceEngine(
   // Validate voice exists before generating — fail fast
   await assertVoiceExists(voiceId, apiKey);
 
-  // Concatenate all narration beats in order — this is the full voiceover
-  const fullScript = skeletons.map(s => s.narrationBeat.trim()).join(" ");
+  // Use the original user script when available — Director's narrationBeats are
+  // paraphrased for visual pacing and often drop words, producing short audio.
+  const fullScript = originalScript?.trim() || skeletons.map(s => s.narrationBeat.trim()).join(" ");
   console.log(`[VOICE_ENGINE] generating ${fullScript.length} chars voice=${voiceId}`);
 
   // Generate MP3

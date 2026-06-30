@@ -110,7 +110,7 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
   const voice = await stage(
     packets, "voice",
     { voiceId: input.voiceId, sceneCount: specs.length },
-    () => runVoiceEngine(specs, input.voiceId, input.userId),
+    () => runVoiceEngine(specs, input.voiceId, input.userId, input.script),
   );
   log("STEP_2_DONE", `totalDuration=${(voice.totalDurationMs / 1000).toFixed(2)}s scenes=${voice.timings.length}`);
 
@@ -161,7 +161,13 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
   if (successCount === 0) throw new Error("All clip generation failed — cannot assemble");
 
   // ── Step 7: Assembly — voice-synced single pass ──────────────────────────────
-  const maxDuration = voice.totalDurationMs / 1000;
+  // targetDuration is the governing constraint. Voice narration is often shorter
+  // (Director writes punchy beats). Video plays on after narration ends — clips
+  // fill the remaining time. Without this floor, 16.75s voice → 17s output on a
+  // 30s target, because maxDuration was set from voice duration alone.
+  const voiceDurationSec = voice.totalDurationMs / 1000;
+  const maxDuration = Math.max(voiceDurationSec, input.targetDuration);
+  console.info(`[ASSEMBLY_DURATION] voiceSec=${voiceDurationSec.toFixed(2)} targetSec=${input.targetDuration} maxDuration=${maxDuration.toFixed(2)}`);
   log("STEP_7", `Assembly — ${successCount}/${contracts.length} clips maxDuration=${maxDuration.toFixed(2)}s`);
 
   const clipUrls = clipResults.map(r => r.clipUrl).filter(Boolean) as string[];
