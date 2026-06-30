@@ -557,7 +557,7 @@ export async function POST(req: Request) {
     imageUrl     = body.imageUrl;
     clipDuration = body.clipDuration;
     sceneTypes   = body.sceneTypes;
-    script       = body.script;
+    script       = body.script ?? body.voiceoverText;
     goal         = body.goal ?? (hasScenePrompts ? undefined : body.prompts?.[0]);
     characterId  = body.characterId;
     niche        = body.niche;
@@ -737,6 +737,7 @@ export async function POST(req: Request) {
         // ── NEW PIPELINE: Director AI + Voice-first + SceneContracts ──────────────
         // Activates when script text is present (new production flow).
         // Falls through to legacy path when only prompts[] are provided.
+        console.info('[GATE_CHECK]', 'script=', !!script, 'length=', script?.length ?? 0);
         if (script && script.trim().length > 20 && process.env.RUNWAYML_API_SECRET) {
           lastStageLogged = 'DIRECTOR_PIPELINE_start';
           console.log('[PIPELINE_V2] Director pipeline activated');

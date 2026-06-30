@@ -105,6 +105,7 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
   );
 
   // ── Step 2: Voice — timing authority, freezes the timeline ──────────────────
+  console.info(`[VOICE_ID_CHECK] voiceId=${input.voiceId} scriptLen=${input.script.length}`);
   log("STEP_2", `Voice Engine — generating narration voice=${input.voiceId}`);
   const voice = await stage(
     packets, "voice",
@@ -259,6 +260,7 @@ export async function generateOneImage(
   falKey:             string,
   referenceImageUrl?: string,
 ): Promise<string> {
+  console.info(`[FLUX_REF_CHECK] scene=${contract.index + 1} referenceImageUrl=${referenceImageUrl?.slice(0, 80) ?? "none"}`);
   const res = await fetch(FAL_ENDPOINT, {
     method:  "POST",
     headers: { Authorization: `Key ${falKey}`, "Content-Type": "application/json" },
@@ -270,6 +272,7 @@ export async function generateOneImage(
       num_inference_steps: 28,
       guidance_scale:  3.5,
       enable_safety_checker: true,
+      ...(referenceImageUrl ? { image_url: referenceImageUrl, strength: 0.85 } : {}),
     }),
     signal: AbortSignal.timeout(50_000),
   });
