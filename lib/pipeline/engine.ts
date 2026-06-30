@@ -209,7 +209,7 @@ async function generateImages(
   const results = await Promise.allSettled(
     contracts.map((contract, i) =>
       withRetry(
-        () => generateOneImage(contract, falKey, i === 0 ? referenceImageUrl : undefined),
+        () => generateOneImage(contract, falKey, referenceImageUrl, i === 0 ? 0.85 : 0.65),
         "image",
         `image scene=${contract.index + 1}`,
       )
@@ -259,8 +259,9 @@ export async function generateOneImage(
   contract:           SceneContract,
   falKey:             string,
   referenceImageUrl?: string,
+  referenceStrength:  number = 0.85,
 ): Promise<string> {
-  console.info(`[FLUX_REF_CHECK] scene=${contract.index + 1} referenceImageUrl=${referenceImageUrl?.slice(0, 80) ?? "none"}`);
+  console.info(`[FLUX_REF_CHECK] scene=${contract.index + 1} referenceImageUrl=${referenceImageUrl?.slice(0, 80) ?? "none"} strength=${referenceStrength}`);
   const res = await fetch(FAL_ENDPOINT, {
     method:  "POST",
     headers: { Authorization: `Key ${falKey}`, "Content-Type": "application/json" },
@@ -272,7 +273,7 @@ export async function generateOneImage(
       num_inference_steps: 28,
       guidance_scale:  3.5,
       enable_safety_checker: true,
-      ...(referenceImageUrl ? { image_url: referenceImageUrl, strength: 0.85 } : {}),
+      ...(referenceImageUrl ? { image_url: referenceImageUrl, strength: referenceStrength } : {}),
     }),
     signal: AbortSignal.timeout(50_000),
   });
