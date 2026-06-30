@@ -27,13 +27,17 @@ export async function mirrorToSupabase(
     if (!res.ok) return url;
 
     const buf = Buffer.from(await res.arrayBuffer());
-    const ext = url.endsWith(".png") ? "png" : "jpg";
+    const srcType = res.headers.get("content-type")?.split(";")[0].trim() ?? "";
+    const ext     = srcType === "image/png"  ? "png"
+                  : srcType === "image/webp" ? "webp"
+                  : "jpeg";
+    const mimeType    = `image/${ext}`;
     const storagePath = `${userId}/scene-images/${Date.now()}-s${index}.${ext}`;
 
     const supabase = getAdmin();
     const { error } = await supabase.storage
       .from("renders")
-      .upload(storagePath, buf, { contentType: `image/${ext}`, upsert: true });
+      .upload(storagePath, buf, { contentType: mimeType, upsert: true });
 
     if (error) {
       console.warn(`[MIRROR] upload failed scene=${index + 1}: ${error.message}`);
@@ -42,7 +46,7 @@ export async function mirrorToSupabase(
 
     const { data } = supabase.storage.from("renders").getPublicUrl(storagePath);
     const mirrored = data.publicUrl;
-    console.log(`[MIRROR] scene=${index + 1} -> ${mirrored.slice(0, 70)}`);
+    console.log(`[MIRROR] scene=${index + 1} format=${mimeType} -> ${mirrored.slice(0, 70)}`);
     return mirrored ?? url;
   } catch (err) {
     console.warn(`[MIRROR] failed scene=${index + 1}:`, err instanceof Error ? err.message : err);

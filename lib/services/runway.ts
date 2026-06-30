@@ -66,6 +66,7 @@ export async function generateRunwayClip(
     ? { model, promptText: prompt, ratio, duration, promptImage: imageUrl }
     : { model, promptText: prompt, ratio, duration };
 
+  console.info(`[RUNWAY_IMAGE_CHECK] imageUrl=${imageUrl?.substring(0, 120) ?? "none"}`);
   console.log(`[RUNWAY] payload model=${model} ratio=${ratio} duration=${duration}s i2v=${!!imageUrl} promptText="${prompt.substring(0, 80)}"`);
 
   // Submit with retry — handles 429 rate-limit and transient network errors
