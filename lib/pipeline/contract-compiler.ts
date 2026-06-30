@@ -101,9 +101,11 @@ function compileOne(
   // Merge plan-level camera with per-scene overrides + niche bias + brand overlay
   const camera = resolveCamera(plan, skeleton, niche, brand);
 
-  // Clip duration: round up voice duration to nearest 5s boundary, min 5s, max 10s
+  // Clip duration: always 10s — assembly trims to voice duration during stitch.
+  // 5s clips caused 25s output (5+10+10) for a 30s target when the hook narration was short.
   const voiceSec      = timing.durationMs / 1000;
-  const clipDurationSec = voiceSec <= 5 ? 5 : 10;
+  const clipDurationSec = 10;
+  console.info(`[CLIP_DURATION_CALC] scene=${skeleton.index + 1} voiceSec=${voiceSec.toFixed(1)} calculatedClip=${clipDurationSec}s`);
 
   // Build locked prompts from compiled data
   const imagePrompt   = buildImagePrompt(skeleton, characters, location, camera, niche);
@@ -222,8 +224,9 @@ function buildImagePrompt(
   camera:     CameraSpec,
   niche:      Niche,
 ): string {
-  const char    = characters[0];
-  const subject = char ? char.promptFragment : "unspecified subject";
+  const subject = characters.length > 0
+    ? characters.map(c => c.promptFragment?.trim()).filter(Boolean).join(" and ")
+    : "unspecified subject";
   const action  = sanitiseAction(skeleton.actionUnit);
   const rules   = NICHE_RULES[niche];
 
@@ -251,15 +254,19 @@ function buildVideoPrompt(
   camera:     CameraSpec,
   niche:      Niche,
 ): string {
-  const char   = characters[0];
-  const name   = char?.name ?? "subject";
   const action = sanitiseAction(skeleton.actionUnit);
   const rules  = NICHE_RULES[niche];
   const motion = rules.staticDefault ? camera.movement : camera.movement;
 
-  // Natural language prompt for Runway Gen-4 — no pipe-separated structured format
-  // Formula: [character description] [action] [environment] [camera] photorealistic
-  const charDesc = char?.promptFragment?.trim() || `${name}, ${skeleton.emotionalState}`;
+  // Include ALL characters so Runway knows about every person in the scene.
+  // Single character: use promptFragment directly.
+  // Multiple characters: join promptFragments with "and" so both appear in the prompt.
+  const charDesc = characters.length > 1
+    ? characters.map(c => c.promptFragment?.trim()).filter(Boolean).join(" and ")
+    : (characters[0]?.promptFragment?.trim() || `${characters[0]?.name ?? "subject"}, ${skeleton.emotionalState}`);
+
+  console.info(`[CHARACTER_BIBLE] scene=${skeleton.index + 1} chars=${characters.length} charDesc="${charDesc.slice(0, 120)}"`);
+
   const prompt = [
     charDesc,
     action,
