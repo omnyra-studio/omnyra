@@ -17,6 +17,7 @@
 import { runDirectorAI }       from "./director";
 import { runVoiceEngine }       from "./voice-engine";
 import { compileContracts }     from "./contract-compiler";
+import { buildCharacterNotes, saveCharacterNotes } from "./character-notes";
 import { withRetry, classifyError, getRetryDecision } from "./retry-policy";
 import { validateImage }        from "./vision-validator";
 import { validateExecutionContract } from "./execution-contract";
@@ -105,12 +106,12 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
   );
 
   // ── Step 2: Voice — timing authority, freezes the timeline ──────────────────
-  console.info(`[VOICE_ID_CHECK] voiceId=${input.voiceId} scriptLen=${input.script.length}`);
+  console.info(`[VOICE_ID_CHECK] entering voice engine voiceId="${input.voiceId}" scriptLen=${input.script.length}`);
   log("STEP_2", `Voice Engine — generating narration voice=${input.voiceId}`);
   const voice = await stage(
     packets, "voice",
     { voiceId: input.voiceId, sceneCount: specs.length },
-    () => runVoiceEngine(specs, input.voiceId, input.userId, input.script),
+    () => runVoiceEngine(specs, input.voiceId, input.userId, input.script, input.targetDuration),
   );
   log("STEP_2_DONE", `totalDuration=${(voice.totalDurationMs / 1000).toFixed(2)}s scenes=${voice.timings.length}`);
 
@@ -121,6 +122,11 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
     { skeletonCount: specs.length, timingCount: voice.timings.length },
     async () => compileContracts(plan, specs, voice.timings, input.brandMemory),
   );
+
+  // ── Step 3b: Character Notes — two-way linking, logging, Supabase save ──────
+  // Built immediately after contracts so logs appear before any media generation.
+  // Warnings here indicate Director failed to assign multi-character scenes correctly.
+  const characterNotes = buildCharacterNotes(plan, specs);
 
   // ── Execution Contract gate — throws before any credit is spent ─────────────
   await stage(
@@ -161,12 +167,11 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
   if (successCount === 0) throw new Error("All clip generation failed — cannot assemble");
 
   // ── Step 7: Assembly — voice-synced single pass ──────────────────────────────
-  // targetDuration is the governing constraint. Voice narration is often shorter
-  // (Director writes punchy beats). Video plays on after narration ends — clips
-  // fill the remaining time. Without this floor, 16.75s voice → 17s output on a
-  // 30s target, because maxDuration was set from voice duration alone.
+  // Cap at targetDuration + 2s grace so a 44s voice can't produce a 44s video on
+  // a 30s target. Script trimming in the voice engine should prevent this, but this
+  // is a hard ceiling in case trimming math is slightly off.
   const voiceDurationSec = voice.totalDurationMs / 1000;
-  const maxDuration = Math.max(voiceDurationSec, input.targetDuration);
+  const maxDuration = Math.min(voiceDurationSec, input.targetDuration + 2);
   console.info(`[ASSEMBLY_DURATION] voiceSec=${voiceDurationSec.toFixed(2)} targetSec=${input.targetDuration} maxDuration=${maxDuration.toFixed(2)}`);
   log("STEP_7", `Assembly — ${successCount}/${contracts.length} clips maxDuration=${maxDuration.toFixed(2)}s`);
 
@@ -180,6 +185,9 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
       "final assembly",
     ),
   );
+
+  // Persist character notes non-fatally now that we have the final video URL
+  void saveCharacterNotes(characterNotes, input.userId, videoUrl).catch(() => {});
 
   const analytics     = scoreAnalytics(contracts, clipResults);
   const trailerScenes = selectTrailerScenes(contracts, clipResults);

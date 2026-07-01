@@ -741,9 +741,11 @@ export async function POST(req: Request) {
         if (script && script.trim().length > 20 && process.env.RUNWAYML_API_SECRET) {
           lastStageLogged = 'DIRECTOR_PIPELINE_start';
           console.log('[PIPELINE_V2] Director pipeline activated');
+          const resolvedVoiceId = voiceId || 'EXAVITQu4vr4xnSDxMaL';
+          console.log(`[PIPELINE_VOICE] bodyVoiceId="${voiceId ?? "none"}" resolvedVoiceId="${resolvedVoiceId}"`);
           const pipelineInput: PipelineInput = {
             script:             script.trim(),
-            voiceId:            voiceId ?? 'EXAVITQu4vr4xnSDxMaL',
+            voiceId:            resolvedVoiceId,
             niche:              niche ?? 'lifestyle',
             referenceImageUrl:  (imageUrl ?? bodySceneImages[0]) || undefined,
             userId:             user.id,

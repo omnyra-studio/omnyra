@@ -95,26 +95,10 @@ Output ONLY valid JSON. No markdown. No backticks. No explanation.
   "retentionTips": ["tip1", "tip2", "tip3"]
 }`;
 
+  const userMessage = `Concept: ${concept.trim()}\n\nRaw Script: ${(rawScript ?? concept).trim()}\n\nEnhance this for maximum retention and virality in the ${nicheSettings.name} niche.`;
+
   try {
-    const result = await anthropic.messages.create({
-      model: "claude-haiku-4-5-20251001",
-      max_tokens: 800,
-      system: systemPrompt,
-      messages: [{
-        role: "user",
-        content: `Concept: ${concept.trim()}\n\nRaw Script: ${(rawScript ?? concept).trim()}\n\nEnhance this for maximum retention and virality in the ${nicheSettings.name} niche.`,
-      }],
-    });
-
-    const text = result.content[0]?.type === "text" ? result.content[0].text : "";
-    const start = text.indexOf("{");
-    const end   = text.lastIndexOf("}");
-    if (start === -1 || end === -1) {
-      console.error("[CREATIVE_DIRECTOR] no JSON in response:", text.substring(0, 200));
-      return Response.json({ error: "Creative director returned no valid JSON" }, { status: 502 });
-    }
-
-    const enhanced = JSON.parse(text.slice(start, end + 1)) as {
+    type Enhanced = {
       enhancedConcept: string;
       cleanScript: string;
       scenes: Array<{ time: string; description: string; motion: string }>;
@@ -122,7 +106,58 @@ Output ONLY valid JSON. No markdown. No backticks. No explanation.
       retentionTips: string[];
     };
 
-    console.log(`[CREATIVE_DIRECTOR] niche=${nicheSettings.key} hook="${trendingHook}" script_words=${enhanced.cleanScript?.split(" ").length ?? 0}`);
+    let enhanced: Enhanced | null = null;
+    let rawText = "";
+
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const messages: Array<{ role: "user" | "assistant"; content: string }> =
+        attempt === 1
+          ? [{ role: "user", content: userMessage }]
+          : [
+              { role: "user",      content: userMessage },
+              { role: "assistant", content: rawText },
+              { role: "user",      content: "Your previous response contained invalid JSON. Return ONLY a valid JSON object. No trailing commas after the last element in any array. No comments. No markdown fences. Ensure the JSON array has NO trailing commas after the last element." },
+            ];
+
+      const result = await anthropic.messages.create({
+        model:      "claude-haiku-4-5-20251001",
+        max_tokens: 1000,
+        system:     systemPrompt,
+        messages,
+      });
+
+      rawText = result.content[0]?.type === "text" ? result.content[0].text : "";
+      const start = rawText.indexOf("{");
+      const end   = rawText.lastIndexOf("}");
+
+      if (start === -1 || end === -1) {
+        console.error(`[CREATIVE_DIRECTOR] attempt=${attempt} no JSON in response:`, rawText.substring(0, 300));
+        if (attempt === 2) return Response.json({ error: "Creative director failed to return valid JSON — please retry" }, { status: 502 });
+        continue;
+      }
+
+      const repaired = rawText.slice(start, end + 1).replace(/,(\s*[}\]])/g, '$1');
+      try {
+        enhanced = JSON.parse(repaired) as Enhanced;
+      } catch (e) {
+        console.error(`[CREATIVE_DIRECTOR] attempt=${attempt} JSON parse failed: ${(e as Error).message}`);
+        console.error("[CREATIVE_DIRECTOR] Full raw output:", rawText.slice(0, 2000));
+        if (attempt === 2) return Response.json({ error: "Creative director returned malformed JSON — please retry" }, { status: 502 });
+        continue;
+      }
+
+      if (!enhanced.cleanScript || !Array.isArray(enhanced.scenes) || enhanced.scenes.length === 0) {
+        console.error(`[CREATIVE_DIRECTOR] attempt=${attempt} schema invalid — missing cleanScript or scenes`);
+        if (attempt === 2) return Response.json({ error: "Creative director output incomplete — please retry" }, { status: 502 });
+        enhanced = null;
+        continue;
+      }
+
+      console.log(`[CREATIVE_DIRECTOR] attempt=${attempt} OK niche=${nicheSettings.key} hook="${trendingHook}" script_words=${enhanced.cleanScript.split(" ").length}`);
+      break;
+    }
+
+    if (!enhanced) return Response.json({ error: "Creative director failed — please retry" }, { status: 502 });
 
     return Response.json({
       success: true,

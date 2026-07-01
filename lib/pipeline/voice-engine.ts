@@ -24,24 +24,45 @@ const VOICE_SETTINGS = {
 // ── Main export ───────────────────────────────────────────────────────────────
 
 export async function runVoiceEngine(
-  skeletons:      SceneSkeleton[],
-  voiceId:        string,
-  userId:         string,
+  skeletons:       SceneSkeleton[],
+  voiceId:         string,
+  userId:          string,
   originalScript?: string,
+  targetDuration?: 30 | 60 | 90,
 ): Promise<VoiceEngineResult> {
   const apiKey = process.env.ELEVENLABS_API_KEY;
   if (!apiKey) throw new Error("ELEVENLABS_API_KEY not set");
 
+  // Bug 1 guard: log the exact voiceId entering and leaving this function
+  // so any swap between PIPELINE:START and the ElevenLabs call is immediately visible.
+  const resolvedId = voiceId || "EXAVITQu4vr4xnSDxMaL";
+  console.log(`[VOICE_ENGINE_ID] requested=${voiceId} using=${resolvedId}`);
+
   // Validate voice exists before generating — fail fast
-  await assertVoiceExists(voiceId, apiKey);
+  await assertVoiceExists(resolvedId, apiKey);
 
   // Use the original user script when available — Director's narrationBeats are
   // paraphrased for visual pacing and often drop words, producing short audio.
-  const fullScript = originalScript?.trim() || skeletons.map(s => s.narrationBeat.trim()).join(" ");
-  console.log(`[VOICE_ENGINE] generating ${fullScript.length} chars voice=${voiceId}`);
+  const rawScript = originalScript?.trim() || skeletons.map(s => s.narrationBeat.trim()).join(" ");
+
+  // Bug 2 guard: trim script to fit targetDuration before hitting ElevenLabs.
+  // ~14 chars/sec at natural narration pace. Allow 10% overshoot grace.
+  const targetSec   = targetDuration ?? 30;
+  const estimatedSec = rawScript.length / 14.0;
+  const maxAllowedSec = targetSec * 1.1;
+  let fullScript = rawScript;
+  if (estimatedSec > maxAllowedSec) {
+    const maxChars = Math.round(targetSec * 14.0);
+    fullScript = trimToSentence(rawScript, maxChars);
+    console.log(`[DURATION_GUARD] scriptChars=${rawScript.length} estimatedSec=${estimatedSec.toFixed(1)} targetSec=${targetSec} action=trimmed → newChars=${fullScript.length} newEstimatedSec=${(fullScript.length / 14).toFixed(1)}`);
+  } else {
+    console.log(`[DURATION_GUARD] scriptChars=${rawScript.length} estimatedSec=${estimatedSec.toFixed(1)} targetSec=${targetSec} action=ok`);
+  }
+
+  console.log(`[VOICE_ENGINE] generating ${fullScript.length} chars voice=${resolvedId}`);
 
   // Generate MP3
-  const { audioBuffer, durationMs } = await generateAudio(fullScript, voiceId, apiKey);
+  const { audioBuffer, durationMs } = await generateAudio(fullScript, resolvedId, apiKey);
 
   // Upload to Supabase storage
   const audioUrl = await uploadAudio(audioBuffer, userId);
@@ -189,6 +210,17 @@ function distributeTimings(
   }
 
   return timings;
+}
+
+function trimToSentence(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  const candidate = text.slice(0, maxChars);
+  // Find last sentence-ending punctuation
+  const lastEnd = Math.max(candidate.lastIndexOf('.'), candidate.lastIndexOf('!'), candidate.lastIndexOf('?'));
+  if (lastEnd > maxChars * 0.5) return candidate.slice(0, lastEnd + 1).trim();
+  // Fall back to last word boundary
+  const lastSpace = candidate.lastIndexOf(' ');
+  return (lastSpace > 0 ? candidate.slice(0, lastSpace) : candidate).trim() + '.';
 }
 
 function countWords(text: string): number {

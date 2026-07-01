@@ -61,7 +61,7 @@ const DEVELOPER_PROMPT = `## PIPELINE CONTRACT
 
 ### SceneSpec (single source of truth per scene)
 Each scene spec must contain:
-- characters: locked IDs referencing DirectorPlan characters
+- characters: characterIndices — set ONLY the indices of characters who PHYSICALLY APPEAR in this specific scene. This MUST vary across skeletons. If only character B (index 1) appears in a scene: [1]. If only character A (index 0): [0]. If both: [0, 1]. NEVER default all scenes to [0] when multiple characters exist.
 - actionUnit: ONE action only, completable in 5-10s
 - emotionalState: single dominant word
 - requiredProps: tracked state (props persist across scenes)
@@ -202,6 +202,14 @@ STRICT EXECUTION RULES:
 - emotionalState must be a single dominant word — no blending
 - actionUnit must be a single verb clause — no "and" compounds
 
+CHARACTER SCENE ASSIGNMENT (mandatory — most common pipeline failure):
+- Before writing skeletons, count how many distinct characters the script mentions by name or role.
+- If the script has 2 or more characters, they MUST be listed as separate objects in plan.characters.
+- For EACH skeleton, set characterIndices to ONLY the indices of the characters who appear in that specific scene.
+- Example: script has Person A (index 0) and Person B (index 1). Scene 1 shows only A → [0]. Scene 3 shows only B → [1]. Scene 5 shows both → [0, 1].
+- If you write [0] for every skeleton despite having 2 characters defined: that is a critical bug. Every scene will render with the wrong person.
+- If the script has only one character, all skeletons may use [0]. Otherwise they MUST differ where appropriate.
+
 Follow the pipeline contract exactly. Return only valid JSON.`;
 }
 
@@ -227,36 +235,96 @@ export async function runDirectorAI(
       ]
     : workerText;
 
-  const response = await client.messages.create({
-    model:      "claude-opus-4-8",
-    max_tokens: 8000,
-    system:     `${SYSTEM_PROMPT}\n\n${DEVELOPER_PROMPT}`,
-    messages:   [{ role: "user", content: userContent }],
-  });
+  const systemContent = `${SYSTEM_PROMPT}\n\n${DEVELOPER_PROMPT}`;
+  let raw = "";
+  let parsed: { plan: Record<string, unknown>; skeletons: Record<string, unknown>[] } | null = null;
 
-  const raw = response.content[0].type === "text" ? response.content[0].text : "";
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    // Attempt 2 uses multi-turn: previous bad response + correction request
+    type MsgParam = { role: "user" | "assistant"; content: typeof userContent | string };
+    const messages: MsgParam[] = attempt === 1
+      ? [{ role: "user", content: userContent }]
+      : [
+          { role: "user",      content: workerText },
+          { role: "assistant", content: raw },
+          { role: "user",      content: "Your previous response contained invalid JSON. Return ONLY a valid JSON object. No trailing commas after the last element in any array or object. No comments. No markdown fences. No text before or after the JSON." },
+        ];
 
-  // Parse — be resilient to trailing text
-  const jsonStart = raw.indexOf("{");
-  const jsonEnd   = raw.lastIndexOf("}");
-  if (jsonStart === -1 || jsonEnd === -1) {
-    console.error("[DIRECTOR] No JSON found. Raw:", raw.slice(0, 800));
-    throw new Error("Director AI returned no valid JSON");
+    const response = await client.messages.create({
+      model:      "claude-opus-4-8",
+      max_tokens: 8000,
+      system:     systemContent,
+      messages:   messages as Parameters<typeof client.messages.create>[0]["messages"],
+    });
+
+    raw = response.content[0]?.type === "text" ? response.content[0].text : "";
+
+    // Extract JSON block
+    const jsonStart = raw.indexOf("{");
+    const jsonEnd   = raw.lastIndexOf("}");
+    if (jsonStart === -1 || jsonEnd === -1) {
+      console.error(`[DIRECTOR] attempt=${attempt} no JSON found. Raw:`, raw.slice(0, 500));
+      if (attempt === 2) throw new Error("Scene planning failed — please retry your request");
+      continue;
+    }
+
+    // Repair common LLM JSON mistakes (trailing commas) then parse
+    const jsonStr = repairJson(raw.slice(jsonStart, jsonEnd + 1));
+    try {
+      parsed = JSON.parse(jsonStr) as { plan: Record<string, unknown>; skeletons: Record<string, unknown>[] };
+    } catch (e) {
+      console.error(`[DIRECTOR] attempt=${attempt} JSON parse failed: ${(e as Error).message}`);
+      console.error("[DIRECTOR] Full raw output:", raw.slice(0, 3000));
+      if (attempt === 2) throw new Error("Scene planning failed — please retry your request");
+      continue;
+    }
+
+    // Schema validation — missing fields = treat as corrupt and retry
+    if (!validateDirectorOutput(parsed, sceneCount)) {
+      console.error(`[DIRECTOR] attempt=${attempt} schema validation failed — missing required fields`);
+      if (attempt === 2) throw new Error("Scene planning failed — please retry your request");
+      parsed = null;
+      continue;
+    }
+
+    console.log(`[DIRECTOR] attempt=${attempt} JSON parsed and validated OK`);
+    break;
   }
 
-  let parsed: { plan: Record<string, unknown>; skeletons: Record<string, unknown>[] };
-  try {
-    parsed = JSON.parse(raw.slice(jsonStart, jsonEnd + 1));
-  } catch (e) {
-    console.error("[DIRECTOR] JSON parse failed:", (e as Error).message, "Raw:", raw.slice(jsonStart, jsonStart + 300));
-    throw new Error("Director AI returned malformed JSON");
-  }
+  if (!parsed) throw new Error("Scene planning failed — please retry your request");
 
   const plan      = assemblePlan(parsed.plan, voiceId, niche, sceneCount);
   const skeletons = assembleSkeletons(parsed.skeletons, sceneCount);
 
   console.log(`[DIRECTOR] plan="${plan.title}" characters=${plan.characters.length} locations=${plan.locations.length} skeletons=${skeletons.length}`);
   return { plan, skeletons };
+}
+
+// ── JSON repair + validation ──────────────────────────────────────────────────
+
+function repairJson(raw: string): string {
+  // Remove trailing commas before ] or } — the most common LLM mistake
+  return raw.replace(/,(\s*[}\]])/g, '$1');
+}
+
+function validateDirectorOutput(
+  parsed: { plan: Record<string, unknown>; skeletons: Record<string, unknown>[] },
+  expectedSceneCount: number,
+): boolean {
+  if (!parsed.plan || typeof parsed.plan !== "object") return false;
+  const plan = parsed.plan as Record<string, unknown>;
+  if (!plan.title)                                   return false;
+  if (!Array.isArray(plan.characters))               return false;
+  if (!Array.isArray(plan.locations))                return false;
+  if (!Array.isArray(parsed.skeletons) || parsed.skeletons.length === 0) return false;
+
+  for (const s of parsed.skeletons as Record<string, unknown>[]) {
+    if (typeof s.index !== "number")        return false;
+    if (!s.narrativeRole)                   return false;
+    if (!s.actionUnit)                      return false;
+    if (!Array.isArray(s.characterIndices)) return false;
+  }
+  return true;
 }
 
 // ── Assemblers ────────────────────────────────────────────────────────────────

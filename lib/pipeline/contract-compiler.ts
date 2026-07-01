@@ -98,6 +98,17 @@ function compileOne(
   const characters = resolveCharacters(plan, skeleton.characterIndices);
   const location   = resolveLocation(plan, skeleton.locationIndex);
 
+  console.log(
+    `[CHAR_RESOLVE] scene=${skeleton.index + 1} indices=[${skeleton.characterIndices.join(",")}] ` +
+    `→ names=[${characters.map(c => c.name).join(",")}]`
+  );
+  if (plan.characters.length > 1 && characters.length === 1) {
+    console.warn(
+      `[CHARACTER_BIBLE_WARN] scene=${skeleton.index + 1} expected multiple characters ` +
+      `(plan has ${plan.characters.length}) but only got 1 — Director may have defaulted all scenes to index 0`
+    );
+  }
+
   // Merge plan-level camera with per-scene overrides + niche bias + brand overlay
   const camera = resolveCamera(plan, skeleton, niche, brand);
 
@@ -265,7 +276,7 @@ function buildVideoPrompt(
     ? characters.map(c => c.promptFragment?.trim()).filter(Boolean).join(" and ")
     : (characters[0]?.promptFragment?.trim() || `${characters[0]?.name ?? "subject"}, ${skeleton.emotionalState}`);
 
-  console.info(`[CHARACTER_BIBLE] scene=${skeleton.index + 1} chars=${characters.length} charDesc="${charDesc.slice(0, 120)}"`);
+  console.info(`[CHARACTER_BIBLE] scene=${skeleton.index + 1} chars=${characters.length} names=[${characters.map(c => c.name).join(",")}] charDesc="${charDesc.slice(0, 120)}"`);
 
   const prompt = [
     charDesc,
