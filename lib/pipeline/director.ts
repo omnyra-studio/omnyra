@@ -130,7 +130,14 @@ Return ONLY this JSON structure. No markdown, no explanation:
     "cameraOverride": null,
     "transitionOut": "cut"
   }]
-}`;
+}
+
+### characterIndices rules
+- characterIndices references plan.characters by array index (0-based)
+- Single-character scene: [0]
+- Multi-character scene (couple / two people together): [0, 1]
+- If a scene features the second character alone: [1]
+- NEVER leave characterIndices as [0] for every scene when the script involves two people interacting — distribute them correctly across scenes`;
 
 const NICHE_DIRECTOR_RULES: Record<string, string> = {
   horror:  "slow camera only, max 2 characters per scene, minimal props, imply threat through framing not description, prefer close and medium shots",
@@ -293,8 +300,9 @@ export async function runDirectorAI(
 
   if (!parsed) throw new Error("Scene planning failed — please retry your request");
 
-  const plan      = assemblePlan(parsed.plan, voiceId, niche, sceneCount);
-  const skeletons = assembleSkeletons(parsed.skeletons, sceneCount);
+  const plan           = assemblePlan(parsed.plan, voiceId, niche, sceneCount);
+  const characterNames = plan.characters.map(c => c.name);
+  const skeletons      = assembleSkeletons(parsed.skeletons, sceneCount, characterNames);
 
   console.log(`[DIRECTOR] plan="${plan.title}" characters=${plan.characters.length} locations=${plan.locations.length} skeletons=${skeletons.length}`);
   return { plan, skeletons };
@@ -378,8 +386,9 @@ function assemblePlan(
 }
 
 function assembleSkeletons(
-  raws: Record<string, unknown>[],
-  expectedCount: number,
+  raws:           Record<string, unknown>[],
+  expectedCount:  number,
+  characterNames: string[] = [],
 ): SceneSkeleton[] {
   if (!Array.isArray(raws) || raws.length === 0) {
     throw new Error(`Director returned 0 skeletons (expected ${expectedCount})`);
@@ -394,9 +403,6 @@ function assembleSkeletons(
     resolution:  "standard",
   };
 
-  // Retention role: viral pacing structure for short-form content
-  // Scene 0 = hook always. Last scene = payoff always.
-  // Middle scenes split: first half = context, second half = escalation.
   const retentionRole = (i: number, total: number): RetentionRole => {
     if (i === 0)            return "hook";
     if (i === total - 1)    return "payoff";
@@ -404,7 +410,7 @@ function assembleSkeletons(
     return i < mid ? "context" : "escalation";
   };
 
-  return raws.slice(0, expectedCount).map((s, i) => {
+  const skeletons: SceneSkeleton[] = raws.slice(0, expectedCount).map((s, i) => {
     const role = (s.narrativeRole as NarrativeRole) ?? roles[i] ?? "development";
     return {
       index:             i,
@@ -424,4 +430,51 @@ function assembleSkeletons(
       transitionOut:     (s.transitionOut as TransitionType) ?? "cut",
     };
   });
+
+  // Bug 4 fix: if Director gave [0] to every scene despite multiple characters,
+  // try to reassign indices by matching character names in each scene's narration text.
+  if (characterNames.length > 1) {
+    const allUseIndex0 = skeletons.every(
+      s => s.characterIndices.length === 1 && s.characterIndices[0] === 0,
+    );
+
+    if (allUseIndex0) {
+      console.warn(
+        `[CHARACTER_BIBLE_WARN] Director assigned characterIndices=[0] to every scene ` +
+        `but ${characterNames.length} characters defined (${characterNames.join(", ")}) — ` +
+        `attempting name-based reassignment`,
+      );
+      const nameLower = characterNames.map(n => n.toLowerCase());
+      for (const skeleton of skeletons) {
+        const text = skeleton.narrationBeat.toLowerCase();
+        const mentioned = nameLower
+          .map((n, idx) => ({ idx, hit: text.includes(n) }))
+          .filter(x => x.hit)
+          .map(x => x.idx);
+
+        if (mentioned.length >= 2) {
+          skeleton.characterIndices = mentioned; // both characters present in this scene
+        } else if (mentioned.length === 1) {
+          skeleton.characterIndices = mentioned; // only one character mentioned
+        } else {
+          // No name found — for 2-character scripts default to couple (both present)
+          skeleton.characterIndices = characterNames.length === 2 ? [0, 1] : [0];
+        }
+      }
+    }
+  }
+
+  // Per-scene character bible log — visible in Vercel logs after every Director run
+  for (const skeleton of skeletons) {
+    const chars = skeleton.characterIndices
+      .map(idx => characterNames[idx] ?? `char${idx}`)
+      .join(", ");
+    console.log(
+      `[CHARACTER_BIBLE] scene=${skeleton.index + 1} ` +
+      `indices=[${skeleton.characterIndices.join(",")}] ` +
+      `characters="${chars}"`,
+    );
+  }
+
+  return skeletons;
 }
