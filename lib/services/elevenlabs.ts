@@ -574,7 +574,20 @@ export async function stitchClipsWithAudio(params: {
     }
 
     // ── Step 3: Write concat list ────────────────────────────────────────────
-    const concatList = clipPaths.map(p => `file '${p}'`).join("\n");
+    // When video track is longer than the audio cap, trim the last clip so
+    // ffmpeg concat doesn't include extra silent video after audio ends.
+    const maxDur = params.maxDuration ?? 30;
+    let concatList: string;
+    if (maxDur < videoTrackDuration && clipPaths.length > 1) {
+      const lastClipDur = maxDur - (clipPaths.length - 1) * 10;
+      console.log(`[STITCH_TRIM] videoTrackDuration=${videoTrackDuration.toFixed(2)}s > maxDur=${maxDur}s — trimming last clip to ${lastClipDur.toFixed(2)}s`);
+      concatList = [
+        ...clipPaths.slice(0, -1).map(p => `file '${p}'`),
+        `file '${clipPaths[clipPaths.length - 1]}'\nduration ${lastClipDur.toFixed(3)}`,
+      ].join("\n");
+    } else {
+      concatList = clipPaths.map(p => `file '${p}'`).join("\n");
+    }
     writeFileSync(concatListPath, concatList);
     console.log(`[STITCH] concat list written:\n${concatList}`);
 

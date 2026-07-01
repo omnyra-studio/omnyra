@@ -25,7 +25,10 @@ export interface ObjectRegistry {
 }
 
 export interface ContinuityBibles {
+  /** @deprecated Use `characters` array instead — single `character` only ever captured one person */
   character: CharacterBible | null;
+  /** Structured per-character array — replaces the single `character` blob */
+  characters: CharacterBible[];
   environment: EnvironmentBible | null;
   objects: ObjectRegistry;
   hasCharacter: boolean;
@@ -53,7 +56,7 @@ export interface ContinuityScore {
 export async function extractBibles(prompts: string[], script?: string): Promise<ContinuityBibles> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    return { character: null, environment: null, objects: { props: [] }, hasCharacter: false };
+    return { character: null, characters: [], environment: null, objects: { props: [] }, hasCharacter: false };
   }
 
   const client = new Anthropic({ apiKey });
@@ -64,26 +67,27 @@ export async function extractBibles(prompts: string[], script?: string): Promise
   try {
     const response = await client.messages.create({
       model: "claude-haiku-4-5-20251001",
-      max_tokens: 700,
+      max_tokens: 1000,
       messages: [{
         role: "user",
-        content: `Analyze these video scene prompts and extract recurring visual elements for continuity enforcement.
+        content: `Analyze these video scene prompts and extract ALL recurring characters and visual elements for continuity enforcement.
 ${scriptContext}
 Scene Prompts:
 ${combined}
 
-Identify any recurring characters, environments, or objects that must remain consistent across all scenes.
+IMPORTANT: List EVERY distinct character who appears. Do not merge multiple people into one entry.
 Return ONLY valid JSON — no markdown, no explanation:
 {
-  "character": {
-    "present": true,
-    "gender": "woman",
-    "ageRange": "late 20s",
-    "hair": "dark brown wavy hair",
-    "clothing": ["white linen shirt", "high-waisted jeans"],
-    "accessories": ["gold hoop earrings"],
-    "raw": "one-sentence description of the character"
-  },
+  "characters": [
+    {
+      "gender": "woman",
+      "ageRange": "late 20s",
+      "hair": "dark brown wavy hair",
+      "clothing": ["white linen shirt", "high-waisted jeans"],
+      "accessories": ["gold hoop earrings"],
+      "raw": "one-sentence description of this character"
+    }
+  ],
   "environment": {
     "locationType": "outdoor",
     "timeOfDay": "golden hour",
@@ -98,33 +102,49 @@ Return ONLY valid JSON — no markdown, no explanation:
   }
 }
 
-If NO recurring character appears in these scenes, set character.present = false and return null values.
+If NO recurring characters appear, return an empty characters array.
 If no specific environment is repeated, set environment to null.`,
       }],
     });
     text = response.content[0]?.type === "text" ? response.content[0].text : "{}";
   } catch (err) {
     console.warn("[visual-continuity] extractBibles failed:", err instanceof Error ? err.message : err);
-    return { character: null, environment: null, objects: { props: [] }, hasCharacter: false };
+    return { character: null, characters: [], environment: null, objects: { props: [] }, hasCharacter: false };
   }
 
   try {
+    type RawChar = { gender?: string; ageRange?: string; hair?: string; clothing?: string[]; accessories?: string[]; raw?: string };
     type RawBibles = {
-      character?: { present?: boolean; gender?: string; ageRange?: string; hair?: string; clothing?: string[]; accessories?: string[]; raw?: string };
+      characters?: RawChar[];
+      /** @deprecated legacy single-char field — kept for backwards parse compat */
+      character?: { present?: boolean } & RawChar;
       environment?: { locationType?: string; timeOfDay?: string; keyElements?: string[]; atmosphere?: string; raw?: string } | null;
       objects?: { props?: Array<{ name: string; count: number }> };
     };
     const parsed = (tryParseJson<RawBibles>(text) ?? {}) as RawBibles;
-    const hasCharacter = parsed.character?.present === true;
+
+    const toCharBible = (c: RawChar): CharacterBible => ({
+      gender:      c.gender      ?? "person",
+      ageRange:    c.ageRange    ?? "adult",
+      hair:        c.hair        ?? "",
+      clothing:    c.clothing    ?? [],
+      accessories: c.accessories ?? [],
+      raw:         c.raw         ?? "",
+    });
+
+    // Prefer the new `characters` array; fall back to legacy single `character` field
+    const rawChars: RawChar[] = Array.isArray(parsed.characters) && parsed.characters.length > 0
+      ? parsed.characters
+      : (parsed.character?.present === true ? [parsed.character] : []);
+
+    const characters = rawChars.map(toCharBible);
+    const hasCharacter = characters.length > 0;
+
+    console.log(`[EXTRACT_BIBLES] ${characters.length} character(s) extracted`);
+
     return {
-      character: hasCharacter ? {
-        gender:      parsed.character.gender      ?? "person",
-        ageRange:    parsed.character.ageRange    ?? "adult",
-        hair:        parsed.character.hair        ?? "",
-        clothing:    parsed.character.clothing    ?? [],
-        accessories: parsed.character.accessories ?? [],
-        raw:         parsed.character.raw         ?? "",
-      } : null,
+      character:   hasCharacter ? characters[0] : null, // legacy compat
+      characters,
       environment: parsed.environment ? {
         locationType: parsed.environment.locationType ?? "any",
         timeOfDay:    parsed.environment.timeOfDay    ?? "any",
@@ -136,7 +156,7 @@ If no specific environment is repeated, set environment to null.`,
       hasCharacter,
     };
   } catch {
-    return { character: null, environment: null, objects: { props: [] }, hasCharacter: false };
+    return { character: null, characters: [], environment: null, objects: { props: [] }, hasCharacter: false };
   }
 }
 

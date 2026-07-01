@@ -95,6 +95,7 @@ export interface SceneSkeleton {
   requiredProps:    string[];
   forbiddenElements: string[];
   cameraOverride?:  Partial<CameraSpec>; // per-scene deviation from plan defaults
+  primaryActorIndex: number;             // index into DirectorPlan.characters of action performer
   transitionOut:    TransitionType;
 }
 
@@ -177,6 +178,20 @@ export interface TemporalLedger {
   cumulativeDriftMs:            number;  // positive = video runs long, negative = short
   entries:                      TemporalLedgerEntry[];
   assemblyStrategy: "trim_last" | "extend_last" | "pad_silence" | "exact";
+}
+
+// ── CharacterNote — structured per-character memory (replaces single blob bible) ──
+// Built from DirectorPlan.characters + SceneSkeleton.characterIndices after
+// contract compilation. Two-way linked: note.linkedSceneIds ↔ skeleton.characterIndices.
+// Persisted to character_notes table in Supabase keyed by video_url.
+
+export interface CharacterNote {
+  id:             string;   // 8-char UUID fragment — stable for the generation run
+  name:           string;
+  role:           "protagonist" | "antagonist" | "supporting" | "background";
+  visualTraits:   string;   // verbatim promptFragment from DirectorPlan — exact injection text
+  voiceNotes:     string;   // speech pattern / tone (populated by Voice Engine if available)
+  linkedSceneIds: number[]; // scene indices where this character physically appears
 }
 
 // ── Pipeline I/O ──────────────────────────────────────────────────────────────

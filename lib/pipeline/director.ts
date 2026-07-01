@@ -130,9 +130,17 @@ Return ONLY this JSON structure. No markdown, no explanation:
     "cameraOverride": null,
     "transitionOut": "cut",
     "shotType": "wide",
-    "cameraMove": "slow push in"
+    "cameraMove": "slow push in",
+    "primaryActorIndex": 0
   }]
 }
+
+### primaryActorIndex rules (required)
+The index (into plan.characters) of the character who is PERFORMING the actionUnit in this scene.
+For single-character scenes this is always 0.
+For multi-character scenes (e.g. [0, 1]), this is the character doing the action verb.
+Example: Daniel (index 1) "lowers onto one knee" → primaryActorIndex: 1.
+Example: both characters appear but Mara (index 0) "reaches for his hand" → primaryActorIndex: 0.
 
 ### shotType rules (required on every skeleton)
 Valid values: "wide", "medium", "close-up", "extreme close-up"
@@ -466,6 +474,7 @@ function assembleSkeletons(
         ...(s.shotType   ? { shotSize: normaliseShotType(String(s.shotType))   } : {}),
         ...(s.cameraMove ? { movement: normaliseCameraMove(String(s.cameraMove)) } : {}),
       },
+      primaryActorIndex: typeof s.primaryActorIndex === "number" ? s.primaryActorIndex : 0,
       transitionOut:     (s.transitionOut as TransitionType) ?? "cut",
     };
   });

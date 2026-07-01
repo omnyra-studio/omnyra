@@ -267,23 +267,25 @@ function buildVideoPrompt(
   niche:      Niche,
   plan?:      DirectorPlan,
 ): string {
-  const action    = sanitiseAction(skeleton.actionUnit);
-  const shotType  = camera.shotSize;
+  const actionRaw  = sanitiseAction(skeleton.actionUnit);
+  const shotType   = camera.shotSize;
   const cameraMove = camera.movement;
 
-  // charDesc: max 60 chars — first-name + 2 key visual anchors.
-  // Runway already has the reference image for identity; the prompt drives MOTION.
-  const charDescRaw = characters.length > 1
-    ? characters.map(c => {
-        const frag = c.promptFragment?.trim() ?? c.name;
-        // Extract: name + hair + clothing (first ~60 chars of fragment)
-        return frag.slice(0, 60);
-      }).join(" and ")
-    : (characters[0]?.promptFragment?.trim() ?? `${characters[0]?.name ?? "subject"}`);
+  // Primary actor: the character PERFORMING the action (not just appearing in scene).
+  // For multi-char scenes, Runway gets the actor's description + actor name in the action.
+  const primaryIdx = skeleton.primaryActorIndex ?? 0;
+  const primaryChar = characters[primaryIdx] ?? characters[0];
 
-  console.info(`[CHARACTER_BIBLE] scene=${skeleton.index + 1} chars=${characters.length} names=[${characters.map(c => c.name).join(",")}] charDesc="${charDescRaw.slice(0, 120)}"`);
+  const charDescRaw = primaryChar?.promptFragment?.trim() ?? `${primaryChar?.name ?? "subject"}`;
+
+  console.info(`[CHARACTER_BIBLE] scene=${skeleton.index + 1} chars=${characters.length} names=[${characters.map(c => c.name).join(",")}] primaryActor="${primaryChar?.name ?? "?"}" charDesc="${charDescRaw.slice(0, 120)}"`);
 
   const charDesc = charDescRaw.length > 60 ? charDescRaw.slice(0, 60).trimEnd() : charDescRaw;
+
+  // Prefix action with actor name so Runway knows WHO is moving (critical for multi-char)
+  const action = characters.length > 1 && primaryChar?.name
+    ? `${primaryChar.name} ${actionRaw}`
+    : actionRaw;
 
   // Environment context from niche — gives Runway a consistent world across all clips
   const nicheKey = plan?.niche ?? "";

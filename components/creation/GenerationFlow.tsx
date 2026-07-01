@@ -180,9 +180,9 @@ export default function GenerationFlow({
       const vs = (d.voices ?? []) as ElevenLabsVoice[];
       setVoices(vs);
       if (!selectedVoice) {
-        const preferred = profileVoiceId && vs.some(v => v.voice_id === profileVoiceId)
-          ? profileVoiceId
-          : vs[0]?.voice_id ?? '';
+        // Use profile voice directly — don't require it to be in the voices list
+        // (cloned/custom voices may not appear in the ElevenLabs default list)
+        const preferred = profileVoiceId ?? vs[0]?.voice_id ?? '';
         console.log(`[STORYBOARD_VOICE] requested=${profileVoiceId ?? 'none'} using=${preferred}`);
         if (preferred) setSelectedVoice(preferred);
       }

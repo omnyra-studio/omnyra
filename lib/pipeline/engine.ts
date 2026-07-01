@@ -40,6 +40,26 @@ import { createMemory, updateMemory, selectProvider } from "./types";
 const FAL_ENDPOINT = "https://fal.run/fal-ai/flux/dev";
 const DEBUG_PIPELINE = process.env.PIPELINE_DEBUG === "true";
 
+// ── Script trimmer — sentence-boundary safe ───────────────────────────────────
+// Runs BEFORE Director so both Director and Voice Engine see identical text.
+function trimScriptToTarget(script: string, targetDuration: number = 30): string {
+  const raw = script.trim();
+  const guardTargetSec = targetDuration - 1;  // 29s for 30s target
+  const estimatedSec = raw.length / 14.0;
+  const maxAllowedSec = guardTargetSec * 1.1;
+  if (estimatedSec <= maxAllowedSec) return raw;
+  const maxChars = Math.round(guardTargetSec * 14.0);
+  const candidate = raw.slice(0, maxChars);
+  const lastEnd = Math.max(
+    candidate.lastIndexOf('.'),
+    candidate.lastIndexOf('!'),
+    candidate.lastIndexOf('?'),
+  );
+  if (lastEnd > maxChars * 0.5) return candidate.slice(0, lastEnd + 1).trim();
+  const lastSpace = candidate.lastIndexOf(' ');
+  return (lastSpace > 0 ? candidate.slice(0, lastSpace) : candidate).trim() + '.';
+}
+
 // ── Debug packet collector ────────────────────────────────────────────────────
 
 function stage<T>(
@@ -97,21 +117,29 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
   const packets: DebugPacket[] = [];
   log("START", `script=${input.script.length}chars voice=${input.voiceId} niche=${input.niche} target=${input.targetDuration}s debug=${DEBUG_PIPELINE}`);
 
+  // ── Step 0: Trim script to fit target duration BEFORE Director ───────────────
+  // Director and Voice Engine both receive the trimmed script so scenes always
+  // cover exactly the words that will be spoken — no scenes referencing unspoken beats.
+  const trimmedScript = trimScriptToTarget(input.script, input.targetDuration);
+  if (trimmedScript.length < input.script.length) {
+    console.log(`[SCRIPT_TRIM] original=${input.script.length}chars trimmed=${trimmedScript.length}chars preview="${trimmedScript.slice(0, 100)}"`);
+  }
+
   // ── Step 1: Director — locked plan + per-scene visual specs ─────────────────
   log("STEP_1", "Director AI — building plan and scene specs");
   const { plan, skeletons: specs } = await stage(
     packets, "director",
-    { scriptLen: input.script.length, niche: input.niche, targetDuration: input.targetDuration },
-    () => runDirectorAI(input.script, input.voiceId, input.niche, input.targetDuration, input.referenceImageUrl),
+    { scriptLen: trimmedScript.length, niche: input.niche, targetDuration: input.targetDuration },
+    () => runDirectorAI(trimmedScript, input.voiceId, input.niche, input.targetDuration, input.referenceImageUrl),
   );
 
   // ── Step 2: Voice — timing authority, freezes the timeline ──────────────────
-  console.info(`[VOICE_ID_CHECK] entering voice engine voiceId="${input.voiceId}" scriptLen=${input.script.length}`);
+  console.info(`[VOICE_ID_CHECK] entering voice engine voiceId="${input.voiceId}" scriptLen=${trimmedScript.length}`);
   log("STEP_2", `Voice Engine — generating narration voice=${input.voiceId}`);
   const voice = await stage(
     packets, "voice",
     { voiceId: input.voiceId, sceneCount: specs.length },
-    () => runVoiceEngine(specs, input.voiceId, input.userId, input.script, input.targetDuration),
+    () => runVoiceEngine(specs, input.voiceId, input.userId, trimmedScript, input.targetDuration),
   );
   log("STEP_2_DONE", `totalDuration=${(voice.totalDurationMs / 1000).toFixed(2)}s scenes=${voice.timings.length}`);
 
