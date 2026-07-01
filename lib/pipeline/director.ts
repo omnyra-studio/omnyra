@@ -336,27 +336,12 @@ function validateDirectorOutput(
   if (!Array.isArray(plan.locations))                return false;
   if (!Array.isArray(parsed.skeletons) || parsed.skeletons.length === 0) return false;
 
-  const VALID_SHOT_TYPES  = new Set(["wide", "medium", "close-up", "extreme close-up"]);
-  const VALID_CAMERA_MOVES = new Set([
-    "slow push in", "tracking left", "tracking right", "slow pull back",
-    "handheld drift", "low angle rise", "orbit right", "static hold with subject motion",
-  ]);
-
   for (const s of parsed.skeletons as Record<string, unknown>[]) {
     if (typeof s.index !== "number")        return false;
     if (!s.narrativeRole)                   return false;
     if (!s.actionUnit)                      return false;
     if (!Array.isArray(s.characterIndices)) return false;
-    if (!s.shotType || !VALID_SHOT_TYPES.has(s.shotType as string))    return false;
-    if (!s.cameraMove || !VALID_CAMERA_MOVES.has(s.cameraMove as string)) return false;
   }
-
-  // Enforce shot variety — at least 2 different shotTypes across all skeletons
-  if ((parsed.skeletons as Record<string, unknown>[]).length >= 3) {
-    const shotTypes = new Set((parsed.skeletons as Record<string, unknown>[]).map(s => s.shotType as string));
-    if (shotTypes.size < 2) return false;
-  }
-
   return true;
 }
 
@@ -410,6 +395,31 @@ function assemblePlan(
   };
 }
 
+// Normalise Director output to canonical shotType/cameraMove values.
+// Fuzzy: "close up" → "close-up", "push in" → "slow push in", etc.
+// Never throws — returns a sensible default if nothing matches.
+function normaliseShotType(raw: string): string {
+  const v = raw.toLowerCase().trim();
+  if (v.includes("extreme") || v.includes("ecу") || v.includes("ecu")) return "extreme close-up";
+  if (v.includes("close"))    return "close-up";
+  if (v.includes("wide") || v.includes("establishing")) return "wide";
+  if (v.includes("medium") || v.includes("mid"))        return "medium";
+  return "medium"; // safe default
+}
+
+function normaliseCameraMove(raw: string): string {
+  const v = raw.toLowerCase().trim();
+  if ((v.includes("push") && v.includes("in")) || v.includes("dolly in") || v.includes("zoom in"))  return "slow push in";
+  if ((v.includes("pull") && v.includes("back")) || v.includes("dolly out") || v.includes("zoom out")) return "slow pull back";
+  if (v.includes("track") && (v.includes("left") || v.includes("l")))  return "tracking left";
+  if (v.includes("track") && (v.includes("right") || v.includes("r"))) return "tracking right";
+  if (v.includes("orbit") || v.includes("arc"))    return "orbit right";
+  if (v.includes("handheld") || v.includes("drift") || v.includes("shaky")) return "handheld drift";
+  if (v.includes("rise") || v.includes("crane") || v.includes("low angle")) return "low angle rise";
+  if (v.includes("static") || v.includes("locked") || v.includes("still"))  return "static hold with subject motion";
+  return "slow push in"; // safe cinematic default
+}
+
 function assembleSkeletons(
   raws:           Record<string, unknown>[],
   expectedCount:  number,
@@ -453,8 +463,8 @@ function assembleSkeletons(
         : ["other people", "text or signs", "bare skin", "nsfw"],
       cameraOverride:    {
         ...(s.cameraOverride as Partial<CameraSpec> | null ?? {}),
-        ...(s.shotType   ? { shotSize: s.shotType as string }   : {}),
-        ...(s.cameraMove ? { movement: s.cameraMove as string } : {}),
+        ...(s.shotType   ? { shotSize: normaliseShotType(String(s.shotType))   } : {}),
+        ...(s.cameraMove ? { movement: normaliseCameraMove(String(s.cameraMove)) } : {}),
       },
       transitionOut:     (s.transitionOut as TransitionType) ?? "cut",
     };
@@ -490,6 +500,23 @@ function assembleSkeletons(
           skeleton.characterIndices = characterNames.length === 2 ? [0, 1] : [0];
         }
       }
+    }
+  }
+
+  // Enforce shot variety — if Director gave every scene the same shotType, override
+  // with the cinematic wide→medium→close-up progression. Never retriggers AI.
+  if (skeletons.length >= 3) {
+    const PROGRESSION: string[] = ["wide", "medium", "close-up"];
+    const shotSizes = skeletons.map(s => s.cameraOverride?.shotSize ?? "medium");
+    const unique = new Set(shotSizes);
+    if (unique.size === 1) {
+      console.warn(`[CAMERA_VARIETY] All scenes have shotType="${[...unique][0]}" — forcing wide→medium→close-up progression`);
+      skeletons.forEach((sk, i) => {
+        sk.cameraOverride = {
+          ...sk.cameraOverride,
+          shotSize: PROGRESSION[Math.min(i, PROGRESSION.length - 1)],
+        };
+      });
     }
   }
 
