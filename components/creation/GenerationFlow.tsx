@@ -168,15 +168,25 @@ export default function GenerationFlow({
 
   useEffect(() => {
     setVoicesLoading(true);
-    fetch('/api/voices')
-      .then(r => r.json())
-      .then(d => {
-        const vs = (d.voices ?? []) as ElevenLabsVoice[];
-        setVoices(vs);
-        if (vs.length > 0 && !selectedVoice) setSelectedVoice(vs[0].voice_id);
-      })
-      .catch(() => {})
-      .finally(() => setVoicesLoading(false));
+    const supabase = createClient();
+    Promise.all([
+      fetch('/api/voices').then(r => r.json()).catch(() => ({ voices: [] })),
+      supabase.auth.getUser().then(({ data: { user } }) =>
+        user
+          ? supabase.from('profiles').select('voice_id').eq('id', user.id).single().then(({ data }) => data?.voice_id as string | null ?? null)
+          : null
+      ).catch(() => null),
+    ]).then(([d, profileVoiceId]) => {
+      const vs = (d.voices ?? []) as ElevenLabsVoice[];
+      setVoices(vs);
+      if (!selectedVoice) {
+        const preferred = profileVoiceId && vs.some(v => v.voice_id === profileVoiceId)
+          ? profileVoiceId
+          : vs[0]?.voice_id ?? '';
+        console.log(`[STORYBOARD_VOICE] requested=${profileVoiceId ?? 'none'} using=${preferred}`);
+        if (preferred) setSelectedVoice(preferred);
+      }
+    }).finally(() => setVoicesLoading(false));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
