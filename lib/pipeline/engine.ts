@@ -224,13 +224,16 @@ async function generateImages(
   }
 
   const results = await Promise.allSettled(
-    contracts.map((contract, i) =>
-      withRetry(
-        () => generateOneImage(contract, falKey, referenceImageUrl, i === 0 ? 0.85 : 0.65),
+    contracts.map((contract, i) => {
+      const shot = contract.camera.shotSize.toLowerCase();
+      const fluxStrength = (shot.includes("close-up") || shot.includes("close up"))
+        ? 0.75 : 0.55;
+      return withRetry(
+        () => generateOneImage(contract, falKey, referenceImageUrl, fluxStrength),
         "image",
         `image scene=${contract.index + 1}`,
-      )
-    )
+      );
+    })
   );
 
   let lastGoodUrl = referenceImageUrl ?? "";

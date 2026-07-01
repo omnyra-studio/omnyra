@@ -22,6 +22,7 @@ import type {
   LocationSpec,
   BrandMemory,
 } from "./types";
+import { getNicheSettings } from "../config/nicheSettings";
 
 const SHARED_NEGATIVE =
   "blur, low quality, watermark, text overlay, written words, legible text, " +
@@ -120,7 +121,7 @@ function compileOne(
 
   // Build locked prompts from compiled data
   const imagePrompt   = buildImagePrompt(skeleton, characters, location, camera, niche);
-  const videoPrompt   = buildVideoPrompt(skeleton, characters, location, camera, niche);
+  const videoPrompt   = buildVideoPrompt(skeleton, characters, location, camera, niche, plan);
   const negativePrompt = buildNegativePrompt(skeleton, characters);
 
   console.log(
@@ -264,34 +265,44 @@ function buildVideoPrompt(
   location:   LocationSpec,
   camera:     CameraSpec,
   niche:      Niche,
+  plan?:      DirectorPlan,
 ): string {
-  const action = sanitiseAction(skeleton.actionUnit);
-  const rules  = NICHE_RULES[niche];
-  const motion = rules.staticDefault ? camera.movement : camera.movement;
+  const action    = sanitiseAction(skeleton.actionUnit);
+  const shotType  = camera.shotSize;
+  const cameraMove = camera.movement;
 
-  // Include ALL characters so Runway knows about every person in the scene.
-  // Single character: use promptFragment directly.
-  // Multiple characters: join promptFragments with "and" so both appear in the prompt.
+  // charDesc: max 60 chars — first-name + 2 key visual anchors.
+  // Runway already has the reference image for identity; the prompt drives MOTION.
   const charDescRaw = characters.length > 1
-    ? characters.map(c => c.promptFragment?.trim()).filter(Boolean).join(" and ")
-    : (characters[0]?.promptFragment?.trim() || `${characters[0]?.name ?? "subject"}, ${skeleton.emotionalState}`);
+    ? characters.map(c => {
+        const frag = c.promptFragment?.trim() ?? c.name;
+        // Extract: name + hair + clothing (first ~60 chars of fragment)
+        return frag.slice(0, 60);
+      }).join(" and ")
+    : (characters[0]?.promptFragment?.trim() ?? `${characters[0]?.name ?? "subject"}`);
 
   console.info(`[CHARACTER_BIBLE] scene=${skeleton.index + 1} chars=${characters.length} names=[${characters.map(c => c.name).join(",")}] charDesc="${charDescRaw.slice(0, 120)}"`);
 
-  // Truncate charDesc first to leave budget for action + style (image anchor the identity anyway).
-  const charDesc = charDescRaw.length > 180 ? charDescRaw.slice(0, 180).trimEnd() : charDescRaw;
+  const charDesc = charDescRaw.length > 60 ? charDescRaw.slice(0, 60).trimEnd() : charDescRaw;
 
-  // nicheMotionSuffix carries camera grammar and cinematic style — never truncated.
-  const nicheMotionSuffix = `${camera.shotSize}, ${motion}, ${location.environment}, photorealistic, cinematic`;
+  // Environment context from niche — gives Runway a consistent world across all clips
+  const nicheKey = plan?.niche ?? "";
+  const nicheEnv = getNicheSettings(nicheKey).environmentContext ?? location.environment;
 
-  // Join as sentences so Runway parses action as a motion directive, not image metadata.
-  // Order: identity anchor → motion directive → cinematic style.
-  const prompt = [charDesc, action, nicheMotionSuffix]
+  // Formula: shotType, charDesc, action, environment, cameraMove, cinematic style
+  const prompt = [
+    shotType,
+    charDesc,
+    action,
+    nicheEnv,
+    cameraMove,
+    "cinematic 9:16 vertical, golden hour, shallow depth of field, film grain",
+  ]
     .filter(Boolean)
-    .join(". ")
-    .slice(0, 500);
+    .join(", ")
+    .slice(0, 400);
 
-  console.info(`[RUNWAY_PROMPT_BUILT] scene=${skeleton.index + 1} chars=${prompt.length} action="${action}" promptPreview="${prompt.slice(0, 80)}"`);
+  console.info(`[RUNWAY_PROMPT_BUILT] scene=${skeleton.index + 1} totalChars=${prompt.length} shotType="${shotType}" cameraMove="${cameraMove}" action="${action}" prompt="${prompt}"`);
 
   return prompt;
 }

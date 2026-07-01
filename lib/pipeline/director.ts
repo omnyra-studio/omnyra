@@ -128,9 +128,19 @@ Return ONLY this JSON structure. No markdown, no explanation:
     "requiredProps": ["string"],
     "forbiddenElements": ["other people", "text or signs", "bare skin", "nsfw"],
     "cameraOverride": null,
-    "transitionOut": "cut"
+    "transitionOut": "cut",
+    "shotType": "wide",
+    "cameraMove": "slow push in"
   }]
 }
+
+### shotType rules (required on every skeleton)
+Valid values: "wide", "medium", "close-up", "extreme close-up"
+A 3-scene plan MUST use at least 2 different shotTypes. A common progression: scene 1 = "wide", scene 2 = "medium", scene 3 = "close-up". Never assign the same shotType to every scene.
+
+### cameraMove rules (required on every skeleton)
+Valid values: "slow push in", "tracking left", "tracking right", "slow pull back", "handheld drift", "low angle rise", "orbit right", "static hold with subject motion"
+Choose the move that best matches the scene action and emotionalState. Never repeat the same cameraMove across all scenes.
 
 ### characterIndices rules
 - characterIndices references plan.characters by array index (0-based)
@@ -326,12 +336,27 @@ function validateDirectorOutput(
   if (!Array.isArray(plan.locations))                return false;
   if (!Array.isArray(parsed.skeletons) || parsed.skeletons.length === 0) return false;
 
+  const VALID_SHOT_TYPES  = new Set(["wide", "medium", "close-up", "extreme close-up"]);
+  const VALID_CAMERA_MOVES = new Set([
+    "slow push in", "tracking left", "tracking right", "slow pull back",
+    "handheld drift", "low angle rise", "orbit right", "static hold with subject motion",
+  ]);
+
   for (const s of parsed.skeletons as Record<string, unknown>[]) {
     if (typeof s.index !== "number")        return false;
     if (!s.narrativeRole)                   return false;
     if (!s.actionUnit)                      return false;
     if (!Array.isArray(s.characterIndices)) return false;
+    if (!s.shotType || !VALID_SHOT_TYPES.has(s.shotType as string))    return false;
+    if (!s.cameraMove || !VALID_CAMERA_MOVES.has(s.cameraMove as string)) return false;
   }
+
+  // Enforce shot variety — at least 2 different shotTypes across all skeletons
+  if ((parsed.skeletons as Record<string, unknown>[]).length >= 3) {
+    const shotTypes = new Set((parsed.skeletons as Record<string, unknown>[]).map(s => s.shotType as string));
+    if (shotTypes.size < 2) return false;
+  }
+
   return true;
 }
 
@@ -426,7 +451,11 @@ function assembleSkeletons(
       forbiddenElements: Array.isArray(s.forbiddenElements)
         ? (s.forbiddenElements as string[])
         : ["other people", "text or signs", "bare skin", "nsfw"],
-      cameraOverride:    s.cameraOverride as Partial<CameraSpec> | undefined ?? undefined,
+      cameraOverride:    {
+        ...(s.cameraOverride as Partial<CameraSpec> | null ?? {}),
+        ...(s.shotType   ? { shotSize: s.shotType as string }   : {}),
+        ...(s.cameraMove ? { movement: s.cameraMove as string } : {}),
+      },
       transitionOut:     (s.transitionOut as TransitionType) ?? "cut",
     };
   });

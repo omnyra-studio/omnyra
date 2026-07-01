@@ -12,6 +12,7 @@ export interface NichePlaybook {
 export interface NicheSettings {
   name: string;
   key: string;
+  environmentContext?: string; // injected into Runway video prompt for environmental grounding
   /**
    * Classification priority — HIGHER number = HIGHER priority in tie-breaking.
    * When two niches score within TIE_THRESHOLD of the top score, the highest
@@ -341,6 +342,7 @@ export const NICHE_SETTINGS: Record<string, NicheSettings> = {
   relationships_dating: {
     name: 'Relationships & Dating',
     key: 'relationships_dating',
+    environmentContext: 'wet sand beach shoreline, golden hour light, shallow ocean waves, warm amber atmosphere',
     priority: 8,
     triggerKeywords: ['relationship', 'dating', 'healthy relationships', 'dating advice', 'communication', 'red flags', 'love', 'couple', 'marriage', 'partner', 'romance', 'anniversary', 'soulmate', 'boyfriend', 'girlfriend', 'green flags', 'attachment style', 'breakup', 'attraction', 'kindness', 'compassion', 'empathy', 'caring', 'care for others', 'friendship', 'trust', 'vulnerability', 'intimacy', 'connection', 'bond', 'heartbreak', 'social skills', 'people skills', 'communication skills', 'longing', 'emotional connection'],
     negativeKeywords: ['toxic manipulation', 'control tactics', 'emotional abuse advice', 'manipulation tactics', 'coercion', 'revenge', 'cheating exposed'],
