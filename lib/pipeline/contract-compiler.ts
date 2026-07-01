@@ -26,6 +26,9 @@ import { getNicheSettings } from "../config/nicheSettings";
 
 const SHARED_NEGATIVE =
   "blur, low quality, watermark, text overlay, written words, legible text, " +
+  // Explicit text/tattoo block — prevents Flux hallucinating names as visible writing
+  "text, words, letters, typography, captions, signs, labels, tattoos, " +
+  "writing on skin, readable text, inscriptions, body text, name tattoo, " +
   "extra limbs, extra fingers, mutated hands, deformed anatomy, body horror, " +
   "nude, naked, topless, bare shoulders, strapless, off-shoulder, low-cut, cleavage, " +
   "revealing clothing, nsfw, sexual, explicit, " +
@@ -229,6 +232,21 @@ function resolveCamera(plan: DirectorPlan, skeleton: SceneSkeleton, niche: Niche
 
 // ── Prompt builders ───────────────────────────────────────────────────────────
 
+// Strip leading "Name, " from a promptFragment so character names never appear
+// as readable text in Flux output. Director sometimes prepends "Harriy, a woman..."
+// which Flux renders as a name tattoo or text overlay on the subject.
+function stripLeadingName(fragment: string, characterNames: string[]): string {
+  let f = fragment.trim();
+  // Remove any known character name that appears as "Name, " or "Name " at the start
+  for (const name of characterNames) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    f = f.replace(new RegExp(`^${escaped}[,\\s]+`, 'i'), '');
+  }
+  // Also strip any single CamelCase word followed by comma at the start (unknown name)
+  f = f.replace(/^[A-Z][a-z]+(?:\s[A-Z][a-z]+)*,\s*/, '');
+  return f.trim();
+}
+
 function buildImagePrompt(
   skeleton:   SceneSkeleton,
   characters: CharacterSpec[],
@@ -236,8 +254,12 @@ function buildImagePrompt(
   camera:     CameraSpec,
   niche:      Niche,
 ): string {
+  const characterNames = characters.map(c => c.name).filter(Boolean);
   const subject = characters.length > 0
-    ? characters.map(c => c.promptFragment?.trim()).filter(Boolean).join(" and ")
+    ? characters
+        .map(c => stripLeadingName(c.promptFragment?.trim() ?? '', characterNames))
+        .filter(Boolean)
+        .join(" and ")
     : "unspecified subject";
   const action  = sanitiseAction(skeleton.actionUnit);
   const rules   = NICHE_RULES[niche];
@@ -255,7 +277,7 @@ function buildImagePrompt(
     lightingHint,
     `${camera.lens} lens, ${camera.dof}`,
     `${camera.framing}`,
-    "photorealistic, 9:16 vertical, physically plausible lighting, no text",
+    "photorealistic, 9:16 vertical, physically plausible lighting, no text, no written words",
   ].filter(Boolean).join(", ");
 }
 

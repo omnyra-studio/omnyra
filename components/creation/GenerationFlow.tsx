@@ -137,6 +137,7 @@ export default function GenerationFlow({
   const [voiceReady,       setVoiceReady]       = useState(false);
   const [combining,        setCombining]        = useState(false);
 
+  const profileVoiceRef   = useRef<string>('');  // profile voice ID — source of truth for API calls
   const pollRef           = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInputRef      = useRef<HTMLInputElement>(null);
   const audioRef          = useRef<HTMLAudioElement | null>(null);
@@ -179,11 +180,18 @@ export default function GenerationFlow({
     ]).then(([d, profileVoiceId]) => {
       const vs = (d.voices ?? []) as ElevenLabsVoice[];
       setVoices(vs);
+      // Cache the profile voice in a ref — this is the authoritative ID for API calls.
+      // Cloned/custom voices don't appear in the ElevenLabs default list so we can't
+      // validate against it. Store raw from profile, never fall back to voices[0].
+      if (profileVoiceId) {
+        profileVoiceRef.current = profileVoiceId;
+        console.log(`[STORYBOARD_VOICE] profile voice loaded: ${profileVoiceId}`);
+      } else {
+        console.warn('[STORYBOARD_VOICE] no profile voice_id found — will use UI selection');
+      }
       if (!selectedVoice) {
-        // Use profile voice directly — don't require it to be in the voices list
-        // (cloned/custom voices may not appear in the ElevenLabs default list)
+        // Pre-select in the UI: profile voice if available, else first in list
         const preferred = profileVoiceId ?? vs[0]?.voice_id ?? '';
-        console.log(`[STORYBOARD_VOICE] requested=${profileVoiceId ?? 'none'} using=${preferred}`);
         if (preferred) setSelectedVoice(preferred);
       }
     }).finally(() => setVoicesLoading(false));
@@ -385,7 +393,7 @@ export default function GenerationFlow({
           voiceoverText: editedScript || selectedScript?.script || videoPrompt,
           videoType,
           subjectEthnicity,
-          voiceId: selectedVoice || '',
+          voiceId: profileVoiceRef.current || selectedVoice || '',
           niche: niche || nichePrefill || undefined,
           speedMode,
         }),
@@ -616,7 +624,8 @@ export default function GenerationFlow({
           }
         } catch { /* non-fatal — Kling falls back to FALLBACK_DIRECTIONS */ }
 
-        console.log('[VOICE_DEBUG] sending voiceId=', selectedVoice);
+        const resolvedVoiceId = profileVoiceRef.current || selectedVoice;
+        console.log(`[VOICE_DEBUG] profileVoice="${profileVoiceRef.current}" selectedVoice="${selectedVoice}" sending="${resolvedVoiceId}"`);
         const res = await fetch('/api/generate-cinematic-sequence', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -634,7 +643,7 @@ export default function GenerationFlow({
             script:         editedScript || selectedScript?.script || undefined,
             videoType,
             subjectEthnicity,
-            voiceId:        selectedVoice || '',
+            voiceId:        resolvedVoiceId || '',
             niche:          niche || nichePrefill || undefined,
             storyBeats:     storyBeats.length > 0 ? storyBeats : undefined,
             creativeScenes: creativeScenes.length > 0 ? creativeScenes : undefined,
@@ -817,7 +826,10 @@ export default function GenerationFlow({
   // ── Step A: Generate voice only ────────────────────────────────────────────
   const generateVoice = async () => {
     const scriptText = (editedScript || selectedScript?.script) ?? selectedConcept?.description ?? '';
-    const voiceToUse = selectedVoice || (voices.length > 0 ? voices[0].voice_id : '');
+    // Profile voice ref is authoritative — it's set from Supabase profile on mount.
+    // Fall back to selectedVoice (UI picker) only if profile didn't load.
+    const voiceToUse = profileVoiceRef.current || selectedVoice;
+    console.log(`[generateVoice] profileVoice="${profileVoiceRef.current}" selectedVoice="${selectedVoice}" using="${voiceToUse}"`);
     if (!voiceToUse || !scriptText) return;
     setVoiceGenerating(true);
     setVoiceReady(false);
@@ -945,7 +957,8 @@ export default function GenerationFlow({
       };
 
       const ttsPromise: Promise<string | null> = (async () => {
-        const voiceToUse = selectedVoice || (voices.length > 0 ? voices[0].voice_id : '');
+        const voiceToUse = profileVoiceRef.current || selectedVoice;
+        console.log(`[combineVideoVoice] profileVoice="${profileVoiceRef.current}" selectedVoice="${selectedVoice}" using="${voiceToUse}"`);
         if (!voiceToUse || !scriptText) return null;
         try {
           const ttsRes = await fetch('/api/voice', {
