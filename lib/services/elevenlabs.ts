@@ -195,7 +195,7 @@ export async function elevenLabsVoiceover(
 ): Promise<ElevenLabsVoiceoverResult> {
   const apiKey = getApiKey();
   const voiceId = params.voiceId ?? DEFAULT_VOICE_ID;
-  console.log(`[VOICE_SELECTION] requested=${params.voiceId ?? "none"} used=${voiceId} default=${DEFAULT_VOICE_ID}`);
+  console.log(`[VOICE_ENGINE_ID] requested=${params.voiceId ?? "none"} using=${voiceId}`);
   const text = prepareScriptForTts(params.text.trim());
   if (!text) throw new Error("Voiceover text is required");
 
@@ -526,6 +526,9 @@ export async function stitchClipsWithAudio(params: {
     }
     console.log(`[STITCH] all ${clipPaths.length} clips downloaded to /tmp`);
     console.info('[STITCH_CLIPS]', { count: clipPaths.length, paths: clipPaths });
+    const clipDurations = await Promise.all(clipPaths.map(p => probeDuration(p)));
+    const videoTrackDuration = clipDurations.reduce((sum, d) => sum + d, 0);
+    console.log(`[STITCH_TRACK] videoTrackDuration=${videoTrackDuration.toFixed(2)}s clips=${clipPaths.length}`);
 
     // ── Step 2: Download audio to /tmp ───────────────────────────────────────
     let hasAudio = false;
@@ -580,7 +583,8 @@ export async function stitchClipsWithAudio(params: {
     console.log(`[STITCH] running ffmpeg concat + audio merge hasAudio=${hasAudio} maxDuration=${tLimit}s`);
 
     const totalDuration = params.maxDuration ?? 30;
-    const fadeFilter = `fade=t=in:st=0:d=0.5,fade=t=out:st=${totalDuration - 0.5}:d=0.5`;
+    const fadeOutStart = Math.min(totalDuration - 0.5, videoTrackDuration - 0.5);
+    const fadeFilter = `fade=t=in:st=0:d=0.5,fade=t=out:st=${fadeOutStart.toFixed(2)}:d=0.5`;
 
     if (hasAudio) {
       // Concat + audio in one pass

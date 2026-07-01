@@ -173,6 +173,9 @@ export async function runPipeline(input: PipelineInput): Promise<PipelineResult>
   const voiceDurationSec = voice.totalDurationMs / 1000;
   const maxDuration = Math.min(voiceDurationSec, input.targetDuration + 2);
   console.info(`[ASSEMBLY_DURATION] voiceSec=${voiceDurationSec.toFixed(2)} targetSec=${input.targetDuration} maxDuration=${maxDuration.toFixed(2)}`);
+  if (voiceDurationSec > input.targetDuration + 0.5) {
+    console.warn(`[DURATION_OVERSHOOT] voice=${voiceDurationSec.toFixed(2)}s exceeds target=${input.targetDuration}s by ${(voiceDurationSec - input.targetDuration).toFixed(2)}s — last clip may freeze to cover audio`);
+  }
   log("STEP_7", `Assembly — ${successCount}/${contracts.length} clips maxDuration=${maxDuration.toFixed(2)}s`);
 
   const clipUrls = clipResults.map(r => r.clipUrl).filter(Boolean) as string[];

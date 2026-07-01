@@ -117,6 +117,7 @@ export async function POST(request: Request) {
     .single();
 
   const voiceId = bodyVoiceId ?? (profile?.voice_id as string | null) ?? DEFAULT_VOICE_ID;
+  console.log(`[VOICE_ENGINE_ID] requested=${bodyVoiceId ?? "none"} using=${voiceId}`);
 
   const adminSupabase = createClient(
     cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_URL),

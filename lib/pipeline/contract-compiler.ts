@@ -272,21 +272,28 @@ function buildVideoPrompt(
   // Include ALL characters so Runway knows about every person in the scene.
   // Single character: use promptFragment directly.
   // Multiple characters: join promptFragments with "and" so both appear in the prompt.
-  const charDesc = characters.length > 1
+  const charDescRaw = characters.length > 1
     ? characters.map(c => c.promptFragment?.trim()).filter(Boolean).join(" and ")
     : (characters[0]?.promptFragment?.trim() || `${characters[0]?.name ?? "subject"}, ${skeleton.emotionalState}`);
 
-  console.info(`[CHARACTER_BIBLE] scene=${skeleton.index + 1} chars=${characters.length} names=[${characters.map(c => c.name).join(",")}] charDesc="${charDesc.slice(0, 120)}"`);
+  console.info(`[CHARACTER_BIBLE] scene=${skeleton.index + 1} chars=${characters.length} names=[${characters.map(c => c.name).join(",")}] charDesc="${charDescRaw.slice(0, 120)}"`);
 
-  const prompt = [
-    charDesc,
-    action,
-    `${location.environment}, ${location.lighting}`,
-    `${camera.shotSize}, ${motion}`,
-    "photorealistic, cinematic",
-  ].filter(Boolean).join(", ");
+  // Truncate charDesc first to leave budget for action + style (image anchor the identity anyway).
+  const charDesc = charDescRaw.length > 180 ? charDescRaw.slice(0, 180).trimEnd() : charDescRaw;
 
-  return prompt.slice(0, 500);
+  // nicheMotionSuffix carries camera grammar and cinematic style — never truncated.
+  const nicheMotionSuffix = `${camera.shotSize}, ${motion}, ${location.environment}, photorealistic, cinematic`;
+
+  // Join as sentences so Runway parses action as a motion directive, not image metadata.
+  // Order: identity anchor → motion directive → cinematic style.
+  const prompt = [charDesc, action, nicheMotionSuffix]
+    .filter(Boolean)
+    .join(". ")
+    .slice(0, 500);
+
+  console.info(`[RUNWAY_PROMPT_BUILT] scene=${skeleton.index + 1} chars=${prompt.length} action="${action}" promptPreview="${prompt.slice(0, 80)}"`);
+
+  return prompt;
 }
 
 function buildNegativePrompt(

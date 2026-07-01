@@ -46,17 +46,19 @@ export async function runVoiceEngine(
   const rawScript = originalScript?.trim() || skeletons.map(s => s.narrationBeat.trim()).join(" ");
 
   // Bug 2 guard: trim script to fit targetDuration before hitting ElevenLabs.
-  // ~14 chars/sec at natural narration pace. Allow 10% overshoot grace.
-  const targetSec   = targetDuration ?? 30;
+  // ~14 chars/sec at natural narration pace. Target 2s below the ceiling so the
+  // formula's ~13% underestimate still lands under targetDuration.
+  const originalTargetSec = targetDuration ?? 30;
+  const targetSec   = originalTargetSec - 2;
   const estimatedSec = rawScript.length / 14.0;
   const maxAllowedSec = targetSec * 1.1;
   let fullScript = rawScript;
   if (estimatedSec > maxAllowedSec) {
     const maxChars = Math.round(targetSec * 14.0);
     fullScript = trimToSentence(rawScript, maxChars);
-    console.log(`[DURATION_GUARD] scriptChars=${rawScript.length} estimatedSec=${estimatedSec.toFixed(1)} targetSec=${targetSec} action=trimmed → newChars=${fullScript.length} newEstimatedSec=${(fullScript.length / 14).toFixed(1)}`);
+    console.log(`[DURATION_GUARD] scriptChars=${rawScript.length} estimatedSec=${estimatedSec.toFixed(1)} targetSec=${originalTargetSec} guardTarget=${targetSec} action=trimmed → newChars=${fullScript.length} newEstimatedSec=${(fullScript.length / 14).toFixed(1)}`);
   } else {
-    console.log(`[DURATION_GUARD] scriptChars=${rawScript.length} estimatedSec=${estimatedSec.toFixed(1)} targetSec=${targetSec} action=ok`);
+    console.log(`[DURATION_GUARD] scriptChars=${rawScript.length} estimatedSec=${estimatedSec.toFixed(1)} targetSec=${originalTargetSec} guardTarget=${targetSec} action=ok`);
   }
 
   console.log(`[VOICE_ENGINE] generating ${fullScript.length} chars voice=${resolvedId}`);
