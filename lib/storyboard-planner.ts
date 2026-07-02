@@ -4,15 +4,17 @@ import type { NicheSettings } from './config/nicheSettings';
 const anthropic = new Anthropic();
 
 export interface StoryBeat {
-  beatNumber: number;
-  purpose: string;
-  emotion: string;
-  bodyLanguage: string;
-  composition: string;
-  lighting: string;
-  keyAction: string;
+  beatNumber:    number;
+  purpose:       string;
+  emotion:       string;       // VISIBLE human behavior: "smiling with disbelief", not "joy"
+  bodyLanguage:  string;
+  composition:   string;
+  lighting:      string;
+  keyAction:     string;
   environmentFocus: string;
-  cameraShot: string;
+  cameraShot:    string;
+  imperfections: string[];     // 2-3 lived-in environment details ("softly wrinkled blanket")
+  camera:        string;       // one move from CAMERA_VOCABULARY
 }
 
 export async function analyzeScriptBeats(
@@ -24,9 +26,27 @@ export async function analyzeScriptBeats(
     ? "\n- HISTORY NICHE: authentic period uniforms, period-accurate props and settings, zero modern items."
     : "";
 
+  const CAMERA_OPTIONS = [
+    "slow handheld push-in",
+    "subtle handheld sway",
+    "orbiting handheld move",
+    "locked-off shot with natural micro-movement",
+  ];
+
   const systemPrompt = `You are a professional cinematic photographer and storyboard artist for Omnyra.
 Your job: break a script into exactly ${sceneCount} cinematic beats that LITERALLY show what the script describes.
 Generate photorealistic, emotionally powerful scene descriptions suitable for short-form video.
+
+REALISM RULES (NEW — APPLY TO EVERY BEAT):
+- "emotion" must be a VISIBLE HUMAN BEHAVIOR, not an abstract label.
+  WRONG: "joy", "sadness", "anticipation"
+  RIGHT: "smiling with disbelief, hand covering mouth", "eyes widening with excitement", "jaw clenching, gaze dropping to floor"
+- "imperfections": include EXACTLY 2-3 lived-in, specific environment details that ground the scene in reality.
+  Examples: "softly wrinkled blanket", "half-finished coffee on counter", "phone tripod visible in corner", "condensation ring on table", "open MacBook with dim screen nearby"
+  Perfection reads as AI. Specificity reads as real.
+- "camera": choose EXACTLY ONE move from this list (rotate to avoid repeats):
+  ${CAMERA_OPTIONS.map((c, i) => `${i + 1}. "${c}"`).join(', ')}
+  NEVER write "smooth", "perfect", "cinematic movement", or any option not on this list.
 
 STRICT SAFETY RULES (NEVER BREAK — these prevent AI image artifacts):
 - NO surreal, bizarre, or horror elements of any kind
@@ -69,7 +89,7 @@ CONTINUITY RULES (ABSOLUTE — match the generation constraint system):
 - ENVIRONMENT MUST EXCLUDE: ${nicheSettings.environmentExclude}
 
 Respond with valid JSON only. No markdown. No backticks.
-Format: { "beats": [{ "beatNumber": 1, "purpose": "...", "emotion": "...", "bodyLanguage": "...", "composition": "...", "lighting": "...", "keyAction": "...", "environmentFocus": "...", "cameraShot": "..." }] }`;
+Format: { "beats": [{ "beatNumber": 1, "purpose": "...", "emotion": "VISIBLE BEHAVIOR e.g. smiling with disbelief", "bodyLanguage": "...", "composition": "...", "lighting": "...", "keyAction": "...", "environmentFocus": "...", "cameraShot": "...", "imperfections": ["lived-in detail 1", "lived-in detail 2", "lived-in detail 3"], "camera": "slow handheld push-in" }] }`;
 
   const result = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',
@@ -84,16 +104,27 @@ Format: { "beats": [{ "beatNumber": 1, "purpose": "...", "emotion": "...", "body
   const text = result.content[0]?.type === 'text' ? result.content[0].text : '';
   const start = text.indexOf('{');
   const end = text.lastIndexOf('}');
-  if (start === -1 || end === -1) throw new Error('[STORYBOARD] model returned no JSON object');
+  if (start === -1 || end === -1) {
+    console.error('[STORYBOARD_PARSE_FAIL] raw LLM output (no JSON found):', text.slice(0, 500));
+    throw new Error('[STORYBOARD] model returned no JSON object');
+  }
 
-  const parsed = JSON.parse(text.slice(start, end + 1)) as { beats?: StoryBeat[] };
+  let parsed: { beats?: StoryBeat[] };
+  try {
+    parsed = JSON.parse(text.slice(start, end + 1)) as { beats?: StoryBeat[] };
+  } catch (parseErr) {
+    console.error('[STORYBOARD_PARSE_FAIL] JSON.parse threw — raw fragment:', text.slice(start, start + 500));
+    throw new Error(`[STORYBOARD] JSON parse failed: ${parseErr instanceof Error ? parseErr.message : parseErr}`);
+  }
+
   if (!Array.isArray(parsed.beats) || parsed.beats.length === 0) {
+    console.error('[STORYBOARD_PARSE_FAIL] beats missing — parsed object:', JSON.stringify(parsed).slice(0, 300));
     throw new Error('[STORYBOARD] beats array missing or empty in model response');
   }
 
   console.log(`[STORYBOARD] extracted ${parsed.beats.length} beats`);
   parsed.beats.forEach((b, i) => {
-    console.log(`[BEAT_${i + 1}] purpose="${b.purpose}" emotion="${b.emotion}" action="${b.keyAction}"`);
+    console.log(`[BEAT_${i + 1}] purpose="${b.purpose}" emotion="${b.emotion}" action="${b.keyAction}" camera="${b.camera ?? 'none'}" imperfections=${JSON.stringify(b.imperfections ?? [])}`);
   });
 
   return parsed.beats;

@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { cleanEnv } from '@/lib/supabase/admin';
 import { getFluxHardNegative } from '@/lib/services/scene-compiler';
+import { REALISM_IMAGE_PREFIX, NEGATIVE_BLOCK } from '@/lib/realism-engine';
 import {
   buildCharacterBriefFromEthnicity,
   CAUCASIAN_DEFAULT_SYSTEM_RULE,
@@ -21,8 +22,16 @@ async function generateConceptImage(
   imageSize: { width: number; height: number },
   inferenceSteps: number,
   resolvedEthnicity: ReturnType<typeof resolveSubjectEthnicity>,
+  hyperRealMode = false,
+  identityBlock = '',
 ): Promise<string> {
-  const locked = applySubjectEthnicityLock(`${stylePrefix}, ${description}`, resolvedEthnicity);
+  // Hyper-Real Mode: prepend REALISM_IMAGE_PREFIX + identity block for visual realism.
+  // Identity block is byte-identical across all scenes — built once, passed down.
+  const realismParts = hyperRealMode
+    ? [REALISM_IMAGE_PREFIX, identityBlock].filter(Boolean).join(', ')
+    : '';
+  const baseDescription = [realismParts, description].filter(Boolean).join(', ');
+  const locked = applySubjectEthnicityLock(`${stylePrefix}, ${baseDescription}`, resolvedEthnicity);
   const fullPrompt = `${locked.prompt}, ${ratioPrompt}, natural dramatic lighting, sharp focus, high detail, cinematic color grade, no visible text or writing, family friendly, suitable for all audiences`;
   const fullNegative = [negativeStyle, locked.negativeAddon].filter(Boolean).join(', ');
   try {
@@ -61,6 +70,8 @@ export async function POST(req: Request) {
     aspectRatio = '9:16',
     quality = 'fast',
     subjectEthnicity,
+    hyperRealMode = false,
+    identityBlock = '',
   } = await parseJsonWithEthnicityFix<{
     prompt: string;
     characterBrief?: string;
@@ -70,6 +81,8 @@ export async function POST(req: Request) {
     aspectRatio?: string;
     quality?: string;
     subjectEthnicity?: SubjectEthnicityInput;
+    hyperRealMode?: boolean;
+    identityBlock?: string;
   }>(req);
 
   if (!prompt?.trim()) {
@@ -99,8 +112,12 @@ export async function POST(req: Request) {
                                      'cinematic lifestyle photography, environmental wide shot, golden hour, person in real setting, NOT a portrait';
 
   // Negative prompt to prevent wrong style bleeding
-  // Base negative — block explicit content, text/signs, and drug paraphernalia
-  const baseNegative = [getFluxHardNegative(), 'nudity, topless, lingerie, explicit sexual content, nsfw, text, words, writing, signs, letters, numbers, captions, watermarks, gibberish text, banners, placards, marijuana, drugs, weed, cannabis, alcohol, cigarettes, weapons, violence, drug paraphernalia'].join(', ');
+  // Base negative — block explicit content, text/signs, and AI artifacting
+  const baseNegative = [
+    getFluxHardNegative(),
+    NEGATIVE_BLOCK,
+    'nudity, topless, lingerie, explicit sexual content, nsfw, text, words, writing, signs, letters, numbers, captions, watermarks, gibberish text, banners, placards, marijuana, drugs, weed, cannabis, alcohol, cigarettes, weapons, violence, drug paraphernalia',
+  ].join(', ');
   const negativeStyle =
     visualStyle === 'Lifestyle' ? `${baseNegative}, portrait, headshot, talking head, studio background, direct camera stare, mugshot` :
     visualStyle === 'UGC'       ? `${baseNegative}, studio lighting, professional photography, clean background` :
@@ -172,7 +189,7 @@ export async function POST(req: Request) {
     const imageUrls = await Promise.all(
       four.map(c => generateConceptImage(
         c.description, falKey, stylePrefix, ratioPrompt, negativeStyle, imageSize, inferenceSteps,
-        resolvedEthnicity,
+        resolvedEthnicity, hyperRealMode, identityBlock,
       ))
     );
 

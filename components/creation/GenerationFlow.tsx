@@ -88,6 +88,9 @@ export default function GenerationFlow({
   const [mediaFile,      setMediaFile]      = useState<File | null>(null);
   const [lightningMode,  setLightningMode]  = useState(false);
   const [loadingState,   setLoadingState]   = useState('');
+  // Realism Engine
+  const [hyperRealMode,  setHyperRealMode]  = useState(true);
+  const [identityNotes,  setIdentityNotes]  = useState({ face: '', skin: '', eyes: '', hair: '', makeup: '', wardrobe: '', jewelry: '', body: '' });
 
   const [scripts,        setScripts]        = useState<VersionResult[]>([]);
   const [selectedScript, setSelectedScript] = useState<VersionResult | null>(null);
@@ -488,6 +491,10 @@ export default function GenerationFlow({
       .catch(() => {});
 
     try {
+      // Build identity block once per video — byte-identical across all scenes
+      const builtIdentity = hyperRealMode
+        ? Object.values(identityNotes).filter(Boolean).join(', ')
+        : '';
       const res = await fetch('/api/generate-concepts', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -500,6 +507,8 @@ export default function GenerationFlow({
           aspectRatio,
           quality,
           subjectEthnicity,
+          hyperRealMode,
+          identityBlock: builtIdentity,
         }),
       });
       const data = await res.json();
@@ -1764,6 +1773,66 @@ export default function GenerationFlow({
                         resize: 'vertical', fontFamily: 'inherit', outline: 'none',
                       }}
                     />
+                  )}
+                </div>
+
+                {/* ── Realism Engine ─────────────────────────────────────────────── */}
+                <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(147,112,219,0.2)', borderRadius: 12, padding: '14px 16px', marginBottom: 12 }}>
+                  {/* Hyper-Real Mode toggle */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: hyperRealMode ? 14 : 0 }}>
+                    <div>
+                      <div style={{ color: '#E8DEFF', fontSize: '0.85rem', fontWeight: 600 }}>Hyper-Real Mode</div>
+                      <div style={{ color: '#9370DB', fontSize: '0.75rem', marginTop: 2 }}>Injects realism engine into every Flux + Runway prompt</div>
+                    </div>
+                    <button
+                      onClick={() => setHyperRealMode(v => !v)}
+                      style={{
+                        width: 44, height: 24, borderRadius: 12, border: 'none', cursor: 'pointer', flexShrink: 0,
+                        background: hyperRealMode ? '#9370DB' : 'rgba(255,255,255,0.1)',
+                        position: 'relative', transition: 'background 0.2s',
+                      }}
+                    >
+                      <span style={{
+                        position: 'absolute', top: 3, left: hyperRealMode ? 23 : 3,
+                        width: 18, height: 18, borderRadius: '50%', background: '#fff',
+                        transition: 'left 0.2s', display: 'block',
+                      }} />
+                    </button>
+                  </div>
+
+                  {/* Character Identity fields — only shown when Hyper-Real ON */}
+                  {hyperRealMode && (
+                    <div>
+                      <div style={{ color: '#B09FC0', fontSize: '0.75rem', marginBottom: 10, fontWeight: 500 }}>Character Identity — lock these so the same person appears in every scene</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                        {(['face', 'skin', 'eyes', 'hair', 'makeup', 'wardrobe', 'jewelry', 'body'] as const).map(field => (
+                          <div key={field}>
+                            <div style={{ color: '#9370DB', fontSize: '0.7rem', marginBottom: 3, textTransform: 'capitalize' }}>{field}</div>
+                            <input
+                              type="text"
+                              value={identityNotes[field]}
+                              onChange={e => setIdentityNotes(n => ({ ...n, [field]: e.target.value }))}
+                              placeholder={
+                                field === 'face'     ? 'oval face, high cheekbones, full lips' :
+                                field === 'skin'     ? 'fair skin, visible pores, natural flush' :
+                                field === 'eyes'     ? 'deep brown eyes, slight almond shape' :
+                                field === 'hair'     ? 'wavy dark hair, shoulder length' :
+                                field === 'makeup'   ? 'minimal, natural brow, mascara only' :
+                                field === 'wardrobe' ? 'white linen shirt, light wash jeans' :
+                                field === 'jewelry'  ? 'small gold hoop earrings' :
+                                                       'slim, 5\'6", natural posture'
+                              }
+                              style={{
+                                width: '100%', boxSizing: 'border-box',
+                                background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(147,112,219,0.2)',
+                                borderRadius: 8, padding: '7px 10px',
+                                color: '#E8DEFF', fontSize: '0.75rem', fontFamily: 'inherit', outline: 'none',
+                              }}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                   )}
                 </div>
 

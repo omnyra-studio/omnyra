@@ -68,6 +68,13 @@ import { SaaSMetrics } from "@/lib/saas/saas-metrics";
 import type { CinemaPipelineResult } from "@/lib/cinema/types";
 import { runPipeline } from "@/lib/pipeline/engine";
 import type { PipelineInput } from "@/lib/pipeline/types";
+import {
+  buildRunwayPrompt as realismBuildRunwayPrompt,
+  buildFluxPrompt,
+  buildIdentityFromMemory,
+  NEGATIVE_BLOCK,
+  pickCamera,
+} from "@/lib/realism-engine";
 
 const saasMetrics = new SaaSMetrics();
 
@@ -75,7 +82,7 @@ const saasMetrics = new SaaSMetrics();
 export const maxDuration = 300;
 
 const KLING_CLIP_SECS  = 10;  // 3 Ã— 10s = 30s total video
-const ROUTE_VERSION    = "2026-06-28-v46-director-pipeline";
+const ROUTE_VERSION    = "2026-07-02-v22-runway-hedra-realism";
 
 // Absolute generation constraints — injected into storyboard planner system prompt
 // and distilled into per-scene Kling prompts for Scene 2+.
@@ -368,7 +375,7 @@ async function handle60sAsync(params: {
     'Medium close-up, slow pan right.\nSubject pauses, composing themselves.',
     'Close-up, static camera.\nSubject meets the camera with resolve.',
   ];
-  const klingPrompts = Array.from({ length: SCENE_COUNT }, (_, i) => {
+  const scenePrompts = Array.from({ length: SCENE_COUNT }, (_, i) => {
     if (beats[i]) return buildKlingPrompt(beats[i], eraAnchor);
     if (params.passedCreativeScenes?.[i]?.motion) {
       return [eraAnchor, params.passedCreativeScenes[i].motion].filter(Boolean).join('\n').slice(0, 500);
@@ -376,62 +383,54 @@ async function handle60sAsync(params: {
     return FALLBACK_60[i % FALLBACK_60.length];
   });
 
-  // Submit all 6 Kling tasks with 2s stagger (avoid 429)
-  const taskIds: string[]    = [];
-  const taskEndpoints: string[] = [];
-  for (let i = 0; i < SCENE_COUNT; i++) {
-    if (i > 0) await new Promise(r => setTimeout(r, 2_000));
-    try {
-      const { taskId, endpoint } = await submitKlingTask({
-        prompt:         klingPrompts[i],
-        imageUrl:       mainImageUrl,
-        duration:       10,
-        aspectRatio:    "9:16",
-        mode:           "pro",
-        motionStrength: 0.80,
-        seed:           baseSeed + i,
-      });
-      taskIds.push(taskId);
-      taskEndpoints.push(endpoint);
-      console.log(`[60S_SUBMIT] scene=${i + 1}/${SCENE_COUNT} task_id=${taskId}`);
-    } catch (err) {
-      console.error(`[60S_SUBMIT_FAIL] scene=${i + 1}:`, err instanceof Error ? err.message : err);
-      return Response.json({ error: `Failed to submit scene ${i + 1}: ${err instanceof Error ? err.message : "unknown"}` }, { status: 502 });
-    }
-  }
-
-  // Deduct credits + save async job
+  // Run all 6 Runway clips in parallel — each has a 240s internal poll timeout,
+  // so 6 parallel clips ≈ 90s worst-case, well within the 300s Vercel limit.
+  // Kling async job pattern removed: Runway follows prompts directly.
   try { await deductCreditsAtomic(user.id, CREDIT_COST); } catch { /* best-effort */ }
 
-  const { data: job, error: jobErr } = await supabaseAdmin
-    .from("kling_async_jobs")
-    .insert({
-      user_id:        user.id,
-      status:         "generating",
-      scene_count:    SCENE_COUNT,
-      target_duration: 60,
-      task_ids:       taskIds,
-      task_endpoints: taskEndpoints,
-      main_image_url: mainImageUrl ?? null,
-      prompts:        klingPrompts,
-      audio_url:      null,
-      niche:          params.niche ?? null,
-      credit_cost:    CREDIT_COST,
+  const clipResults = await Promise.allSettled(
+    scenePrompts.map(async (prompt, i) => {
+      if (i > 0) await new Promise(r => setTimeout(r, i * 600)); // stagger 600ms
+      const beat = beats[i] ?? null;
+      const motion = prompt.replace(/\s+/g, ' ').trim();
+      const runwayPrompt = realismBuildRunwayPrompt({
+        motion,
+        emotion: beat?.emotion ?? '',
+        camera:  beat?.camera ?? pickCamera(i),
+      });
+      console.log(`[60S_CLIP_FIRE] scene=${i + 1}/${SCENE_COUNT} prompt="${runwayPrompt.slice(0, 120)}"`);
+      const result = await generateRunwayClip({
+        prompt:      runwayPrompt,
+        imageUrl:    mainImageUrl,
+        duration:    10,
+        aspectRatio: '9:16',
+        model:       'gen4_turbo',
+      });
+      console.log(`[60S_CLIP_OK] scene=${i + 1} ${result.generationMs}ms url=${result.videoUrl.slice(0, 80)}`);
+      return result.videoUrl;
     })
-    .select("id")
-    .single();
+  );
 
-  if (jobErr || !job) {
-    console.error("[60S_JOB_SAVE] failed:", jobErr?.message);
-    return Response.json({ error: "Failed to save async job" }, { status: 500 });
+  const clipUrls60 = clipResults
+    .map(r => r.status === 'fulfilled' ? r.value : null)
+    .filter((u): u is string => u !== null);
+
+  if (clipUrls60.length === 0) {
+    return Response.json({ error: "All 60s Runway clips failed" }, { status: 502 });
   }
 
-  console.log(`[60S_ASYNC] jobId=${job.id} tasks=${taskIds.length} submitted`);
+  console.log(`[60S_COMPLETE] ${clipUrls60.length}/${SCENE_COUNT} clips succeeded`);
   return Response.json({
-    jobId:            job.id,
-    status:           "generating",
-    sceneCount:       SCENE_COUNT,
-    estimatedSeconds: 240,
+    data: {
+      success:       true,
+      clip_urls:     clipUrls60,
+      stitched_url:  clipUrls60[0],
+      hasMotion:     true,
+      clips_succeeded: clipUrls60.length,
+      clips_failed:  SCENE_COUNT - clipUrls60.length,
+      pipeline_version: ROUTE_VERSION,
+      SEQUENCE_ROUTE_VERSION: ROUTE_VERSION,
+    },
   });
 }
 
@@ -475,10 +474,9 @@ export async function POST(req: Request) {
   console.log(`[TIER_GATE] user=${user.id} tier=${userTier}`);
   console.info('[ENV_CHECK] RUNWAY_KEY_PRESENT=', !!process.env.RUNWAYML_API_SECRET);
 
-  // Video generation uses Kling direct API — no fal.ai needed for video.
-  // (fal.ai is still used by generate-scene-images for Flux image generation.)
-  if (!process.env.KLING_API_KEY && !(process.env.KLING_ACCESS_KEY && process.env.KLING_SECRET_KEY)) {
-    return Response.json({ error: "KLING_API_KEY not configured — required for Kling direct video generation" }, { status: 500 });
+  // Cinematic route now uses Runway for all clips. Kling is removed from this flow.
+  if (!process.env.RUNWAYML_API_SECRET) {
+    return Response.json({ error: "RUNWAYML_API_SECRET not configured — required for cinematic video generation" }, { status: 500 });
   }
 
   let prompts: string[];
@@ -777,7 +775,7 @@ export async function POST(req: Request) {
               source_images:   pipelineResult.scenes.map(s => s.imageUrl),
               quality_score:   pipelineResult.qualityScore,
               pipeline_version: 'director-v1',
-              SEQUENCE_ROUTE_VERSION: '2026-06-28-v46-director-pipeline',
+              SEQUENCE_ROUTE_VERSION: ROUTE_VERSION,
             },
             actualCost: pipelineCost,
           };
@@ -1136,11 +1134,21 @@ export async function POST(req: Request) {
         if (!_isAnimated && cinemaPipeline) {
           const falKey = process.env.FAL_API_KEY ?? process.env.FALAI_API_KEY;
           if (falKey) {
-            const fluxNeg = [getFluxHardNegative(), passedSceneGraph?.scene_graph?.[0]?.negative_prompt, 'text, words, writing, signs, letters, numbers, captions, watermarks, gibberish text, banners, placards, marijuana, drugs, weed, cannabis, alcohol, cigarettes, weapons, violence, drug paraphernalia, nudity, nsfw'].filter(Boolean).join(', ');
+            const fluxNeg = [getFluxHardNegative(), passedSceneGraph?.scene_graph?.[0]?.negative_prompt, NEGATIVE_BLOCK, 'text, words, writing, signs, letters, numbers, captions, watermarks, gibberish text, banners, placards, marijuana, drugs, weed, cannabis, alcohol, cigarettes, weapons, violence, drug paraphernalia, nudity, nsfw'].filter(Boolean).join(', ');
             const fluxResults = await Promise.allSettled(
               cinemaPipeline.renderContracts.slice(0, prompts.length).map(async (rc, idx) => {
                 const compilerNeg = passedSceneGraph?.scene_graph?.[idx]?.negative_prompt ?? '';
-                const imgPrompt = [rc.environment, rc.lighting, rc.cameraState, rc.characterState, 'photorealistic, cinematic still frame, 9:16 vertical'].filter(Boolean).join('. ');
+                const beat = storyBeats?.[idx];
+                // Use realism engine Flux prompt with identity block for visual consistency
+                const imgPrompt = identityBlock
+                  ? buildFluxPrompt({
+                      identity:      identityBlock,
+                      action:        rc.characterState ?? '',
+                      environment:   [rc.environment, rc.lighting, rc.cameraState].filter(Boolean).join('. '),
+                      imperfections: beat?.imperfections?.join(', '),
+                      lighting:      rc.lighting ?? '',
+                    })
+                  : [rc.environment, rc.lighting, rc.cameraState, rc.characterState, 'photorealistic, cinematic still frame, 9:16 vertical'].filter(Boolean).join('. ');
                 console.info('[FLUX_SCENE_PROMPT]', idx + 1, imgPrompt.substring(0, 120));
                 const res = await fetch('https://fal.run/fal-ai/flux/dev', {
                   method: 'POST',
@@ -1411,46 +1419,72 @@ export async function POST(req: Request) {
         const extractedUrls: Array<string | null> = new Array(klingScenePrompts.length).fill(null);
         const sceneProviders: string[] = new Array(klingScenePrompts.length).fill('runway');
 
-        // Runway prompt budget is 512 chars. Strip internal continuity tokens (handled by
-        // chainFrame instead) then inject a FULL MOTION directive so every clip has active
-        // movement — no static, no looping, no freeze frames.
-        const RUNWAY_MOTION_SUFFIX =
-          " Full dynamic motion: continuous action, realistic physics, active camera movement. No static poses, no looping.";
+        // Identity block — built ONCE, passed to every Flux + Runway call for this video.
+        // Byte-identical across all scenes: prevents character drift between clips.
+        const identityBlock = charMemory
+          ? buildIdentityFromMemory(charMemory.core_prompt, charMemory.visual_signature)
+          : '';
+        if (identityBlock) console.log(`[REALISM_IDENTITY] built: "${identityBlock.slice(0, 100)}"`);
 
-        const buildRunwayPrompt = (kp: string, sceneIndex: number): string => {
-          const cleaned = kp
+        // Realism-engine Runway prompt builder — replaces inline legacy version.
+        // Strips internal continuity tokens that were eating the 512-char budget,
+        // injects motion + visible emotion + camera vocabulary from storyboard beat.
+        const buildRunwayScenePrompt = (kp: string, sceneIndex: number, beat?: StoryBeat | null): string => {
+          const motion = kp
             .replace(/CONTINUITY LOCK:[\s\S]*?Continuity overrides creativity\.\n?/g, '')
             .replace(/Continue from previous (?:frame|scene)[^.]*\.\s*/gi, '')
             .replace(/Expression and body convey[^.]*\.\s*/gi, '')
             .replace(/Character:[^.]*\.\s*/gi, '')
             .replace(/\s+/g, ' ').trim();
-          const chainNote = sceneIndex > 0
-            ? " Smooth continuation from previous clip's final frame, same character and lighting."
-            : "";
-          return `${cleaned}${chainNote}${RUNWAY_MOTION_SUFFIX}`.slice(0, 512);
+          const emotion = beat?.emotion ?? '';
+          const camera  = beat?.camera ?? pickCamera(sceneIndex);
+          const prompt = realismBuildRunwayPrompt({ motion, emotion, camera });
+          console.log(`[RUNWAY_REALISM_PROMPT] scene=${sceneIndex + 1} camera="${camera}" emotion="${emotion.slice(0, 60)}" prompt="${prompt.slice(0, 120)}"`);
+          return prompt;
         };
 
         const generateOneClip = async (i: number, sceneImg: string | null | undefined): Promise<string | null> => {
-          // All scenes use their dedicated klingScenePrompts directly.
-          // For parallel Runway generation, continuity is handled by chainFrame (anchor last-frame),
-          // not by story-context/continuity-lock text (which was eating the 512-char prompt budget).
           const klingPrompt = klingScenePrompts[i];
-          const mode = sceneImg?.startsWith('https://') ? 'i2v' : 't2v';
+          const beat        = storyBeats?.[i] ?? null;
+
+          // Generate fresh Supabase signed URL immediately before Runway submit.
+          // Stale signed tokens cause 400 rejections — always generate, then submit.
+          let freshImgUrl: string | undefined;
+          if (sceneImg?.startsWith('https://')) {
+            if (sceneImg.includes('supabase') && sceneImg.includes('/object/public/')) {
+              // Convert public URL → fresh signed URL (30 min expiry)
+              try {
+                const pathMatch = sceneImg.match(/\/object\/public\/([^?]+)/);
+                if (pathMatch) {
+                  const [bucket, ...rest] = pathMatch[1].split('/');
+                  const { data: signedData } = await supabaseAdmin.storage
+                    .from(bucket).createSignedUrl(rest.join('/'), 1800);
+                  if (signedData?.signedUrl) {
+                    freshImgUrl = signedData.signedUrl;
+                    console.log(`[SIGNED_URL] scene=${i + 1} fresh signed URL generated`);
+                  }
+                }
+              } catch { /* non-fatal — fall back to original */ }
+            }
+            freshImgUrl = freshImgUrl ?? sceneImg;
+          }
+
+          const mode = freshImgUrl ? 'i2v' : 't2v';
           const runwayRouting = chooseRunwayModel(voiceoverText ?? klingPrompt, userTier, speedMode);
-          const runwayPrompt  = buildRunwayPrompt(klingPrompt, i);
+          const runwayPrompt  = buildRunwayScenePrompt(klingPrompt, i, beat);
           console.log(`[CLIP_FIRE] scene=${i + 1}/${klingScenePrompts.length} mode=${mode} model=${runwayRouting.model} prompt="${runwayPrompt.substring(0, 120)}"`);
           try {
             const result = speedMode === 'quality'
               ? await generateRunwaySeedanceClip({
                 prompt:      runwayPrompt,
-                imageUrl:    mode === 'i2v' ? sceneImg ?? undefined : undefined,
+                imageUrl:    mode === 'i2v' ? freshImgUrl : undefined,
                 duration:    KLING_CLIP_SECS,
                 aspectRatio: '9:16',
                 fast:        false,
               })
               : await generateRunwayClip({
                 prompt:      runwayPrompt,
-                imageUrl:    mode === 'i2v' ? sceneImg ?? undefined : undefined,
+                imageUrl:    mode === 'i2v' ? freshImgUrl : undefined,
                 duration:    KLING_CLIP_SECS as 5 | 10,
                 aspectRatio: '9:16',
                 model:       runwayRouting.model,
