@@ -214,5 +214,7 @@ export function toStoryBeats(beats: CinematicBeat[]): StoryBeat[] {
     keyAction:        b.characterAction,
     environmentFocus: b.environment,
     cameraShot:       b.cameraIntention,
+    imperfections:    [],
+    camera:           'locked-off shot with natural micro-movement',
   }));
 }
