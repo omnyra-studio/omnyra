@@ -163,6 +163,8 @@ export async function POST(req: Request) {
           keyAction:        scene.video_prompt,
           environmentFocus: scene.environment.location,
           cameraShot:       scene.camera.movement,
+          imperfections:    [],
+          camera:           'locked-off shot with natural micro-movement',
         }));
 
         return { data: { scenes: imageResults, beats, sceneGraph } };
